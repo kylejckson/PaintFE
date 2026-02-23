@@ -1,0 +1,25 @@
+# Rust build output
+/target
+
+# Private / internal files
+_WEBSITE/
+UI_Structure/
+UI_Structure.md
+CLAUDE.md
+LINUX_PACKAGING.md
+WEBSITE_AUDIT.md
+SCRIPTING_API_REFERENCE.md
+LOCALIZATION_STRINGS.md
+localization_strings.txt
+gen_icons.py
+SIGNING_PLAN.md
+GIT_GUIDE.html
+
+# VS Code workspace file (contains local paths)
+PaintFE.code-workspace
+
+# Python virtual environment (auto-generated, never commit)
+.venv/
+
+# Windows debug symbols
+*.pdb

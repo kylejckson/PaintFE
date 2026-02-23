@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=PaintFE
+GenericName=Image Editor
+Comment=Fast, GPU-accelerated raster image editor
+Exec=PaintFE %F
+Icon=PaintFE
+Type=Application
+Categories=Graphics;RasterGraphics;2DGraphics;
+MimeType=image/png;image/jpeg;image/webp;image/bmp;image/tiff;image/gif;
+Keywords=paint;image;editor;photo;raster;
+StartupNotify=true
+StartupWMClass=PaintFE

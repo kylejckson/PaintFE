@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.paintfe.PaintFE</id>
+  <name>PaintFE</name>
+  <summary>Fast, GPU-accelerated raster image editor</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+
+  <description>
+    <p>
+      PaintFE is a raster image editor built with Rust, egui, and wgpu. It features
+      GPU-accelerated compositing, non-destructive layer workflow, a scriptable filter
+      pipeline via Rhai, and optional AI-powered background removal (BiRefNet / U²-Net).
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>GPU-accelerated compositing and filter processing</li>
+      <li>Full layer stack with blend modes and opacity</li>
+      <li>18 color adjustments, 23 filters, 4 generators</li>
+      <li>Rhai scripting API for batch automation</li>
+      <li>Animated GIF and APNG import/export</li>
+      <li>TIFF, JPEG, PNG, WebP, BMP file support</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">io.github.paintfe.PaintFE.desktop</launchable>
+
+  <url type="homepage">https://paintfe.com</url>
+  <url type="bugtracker">https://github.com/your-repo/paintfe/issues</url>
+
+  <provides>
+    <binary>PaintFE</binary>
+  </provides>
+
+  <releases>
+    <release version="0.1.0" date="2026-01-01">
+      <description><p>Initial release.</p></description>
+    </release>
+  </releases>
+
+  <content_rating type="oars-1.1"/>
+</component>

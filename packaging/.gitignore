@@ -1,0 +1,9 @@
+# Downloaded at build time
+.tools/
+.flatpak-build/
+
+# Generated from Cargo.lock — regenerate with build-flatpak.sh
+flatpak/cargo-sources.json
+
+# AppImage output (drops in repo root)
+../../*.AppImage

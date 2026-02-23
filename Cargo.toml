@@ -1,0 +1,39 @@
+[package]
+name = "PaintFE"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = "0.24.0"    # Wrapper for egui (the GUI framework)
+egui = "0.24.0"      # The core GUI library
+image = { version = "0.24.7", features = ["jpeg", "png", "webp", "bmp", "tga", "ico", "tiff"] }
+tiff = "0.9"         # Direct dependency for TIFF compression options
+rfd = "0.12"         # Native file dialogs (Open/Save)
+rayon = "1.7"        # Parallel processing for faster compositing
+uuid = { version = "1.0", features = ["v4"] }  # Unique identifiers for projects
+serde = { version = "1", features = ["derive"] }  # Serialization framework
+bincode = "1"        # Binary serialization for .pfe files
+
+gif = "0.13"             # Direct GIF encoder/decoder (multi-frame animation)
+png = "0.17"             # Direct PNG encoder/decoder (APNG animation support)
+color_quant = "1"        # Color quantization for GIF palette reduction
+
+arboard = "3"         # System clipboard (copy/paste images to/from OS)
+wgpu = "0.20"                                    # GPU acceleration (WebGPU API)
+bytemuck = { version = "1", features = ["derive"] } # Safe casting for GPU buffers
+pollster = "0.3"                                 # Block on async GPU init
+ab_glyph = "0.2"                                 # Font loading + glyph rasterization
+font-kit = "0.14"                                # System font enumeration
+libloading = "0.8"                               # Dynamic library loading for optional ONNX Runtime
+rawloader = "0.37"                               # RAW camera file decoding (CR2, NEF, ARW, DNG, etc.)
+imagepipe = "0.5"                                # RAW demosaicing + color pipeline
+rhai = { version = "1.24", features = ["sync"] } # Embedded scripting engine (sandboxed)
+clap = { version = "4", features = ["derive"] } # CLI argument parsing for headless batch mode
+glob = "0.3"                                     # Glob pattern expansion for batch file inputs
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winapi = { version = "0.3", features = ["winuser", "windef", "shellapi", "dwmapi"] }
+
+[build-dependencies]
+# Embeds the ICO file into the Windows EXE (window icon, taskbar icon, explorer icon)
+winresource = "0.1"

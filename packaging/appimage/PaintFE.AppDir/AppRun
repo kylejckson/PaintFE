@@ -1,0 +1,13 @@
+#!/bin/sh
+# AppRun — entry point executed by the AppImage runtime
+SELF="$(readlink -f "$0")"
+HERE="$(dirname "$SELF")"
+
+export PATH="$HERE/usr/bin:$PATH"
+export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+export LD_LIBRARY_PATH="$HERE/usr/lib:${LD_LIBRARY_PATH}"
+
+# wgpu: prefer Vulkan via host ICD — do NOT bundle libvulkan.so.1
+# If the host has no Vulkan, wgpu falls back to GLES/OpenGL automatically.
+
+exec "$HERE/usr/bin/PaintFE" "$@"
