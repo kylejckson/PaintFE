@@ -55,7 +55,7 @@ map_channels(|r, g, b, a| {
 
 APIs: Canvas (`width`, `height`, `is_selected`), Pixel (`get/set_pixel`, `for_each_pixel`, `for_region`, `map_channels`), Effect (23 functions), Transform (`flip`, `rotate`, `resize_image`, `resize_canvas`), Utility (`rand_int/float`, `rgb_to_hsl`, `sleep`, `progress`, math). Scripts respect the active selection.
 
-Full reference: `SCRIPTING_API_REFERENCE.md` or [website](https://paintfe.com/scripting.html).
+Full reference: [paintfe.com/scripting.html](https://paintfe.com/scripting.html)
 
 ---
 
@@ -111,7 +111,7 @@ Animated export: each visible layer = one frame. FPS, loop count, and GIF palett
 - **Async readback** -- double-buffered staging (ping-pong) during interactive strokes.
 - **rayon** -- compositing, filter cores, and chunk ops are parallelized on the CPU path.
 
-More detail: [performance.html](https://paintfe.com/performance.html) and `CLAUDE.md`.
+More detail: [performance.html](https://paintfe.com/performance.html).
 
 ---
 
