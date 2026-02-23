@@ -129,7 +129,7 @@ PaintFE requires a recent stable Rust toolchain (edition 2024).
 
 ```sh
 # Clone the repository
-git clone https://github.com/your-repo/paintfe
+git clone https://github.com/kylejckson/paintfe
 cd paintfe
 
 # Debug build
