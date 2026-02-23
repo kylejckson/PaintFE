@@ -26,7 +26,7 @@
   <launchable type="desktop-id">io.github.paintfe.PaintFE.desktop</launchable>
 
   <url type="homepage">https://paintfe.com</url>
-  <url type="bugtracker">https://github.com/your-repo/paintfe/issues</url>
+  <url type="bugtracker">https://github.com/kylejckson/paintfe/issues</url>
 
   <provides>
     <binary>PaintFE</binary>
