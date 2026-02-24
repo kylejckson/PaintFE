@@ -39,7 +39,7 @@
 
   <Dependencies>
     <!-- Windows 10 1809 (17763) minimum — required for Win32 full trust apps -->
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersion="10.0.99999.0" />
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
   </Dependencies>
 
   <Resources>
