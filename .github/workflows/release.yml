@@ -170,15 +170,21 @@ jobs:
           & packaging\msix\gen-assets.ps1
 
       - name: Stage PackageLayout
+        shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path packaging\msix\PackageLayout | Out-Null
           Copy-Item target\release\PaintFE.exe packaging\msix\PackageLayout\
           $tag = "${{ github.ref_name }}".TrimStart('v')
           $ver = "$tag.0"
-          $src = [System.IO.File]::ReadAllText("$PWD\packaging\msix\AppxManifest.xml")
-          $src = $src.TrimStart([char]0xFEFF)
+          # Read raw bytes, strip UTF-8 BOM (EF BB BF) if present, decode, patch, re-encode, write
+          $bytes = [System.IO.File]::ReadAllBytes("$PWD\packaging\msix\AppxManifest.xml")
+          if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+            $bytes = $bytes[3..($bytes.Length - 1)]
+          }
+          $src = [System.Text.Encoding]::UTF8.GetString($bytes)
           $src = $src -replace 'Version="[\d.]+"', "Version=`"$ver`""
-          [System.IO.File]::WriteAllText("$PWD\packaging\msix\PackageLayout\AppxManifest.xml", $src, [System.Text.UTF8Encoding]::new($false))
+          $outBytes = [System.Text.Encoding]::UTF8.GetBytes($src)
+          [System.IO.File]::WriteAllBytes("$PWD\packaging\msix\PackageLayout\AppxManifest.xml", $outBytes)
           Copy-Item -Recurse -Force packaging\msix\assets packaging\msix\PackageLayout\assets
 
       - name: Locate makeappx.exe

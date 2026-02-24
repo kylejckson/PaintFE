@@ -53,10 +53,15 @@ New-Item -ItemType Directory -Force -Path $layout | Out-Null
 # Binary
 Copy-Item $bin "$layout\PaintFE.exe"
 
-# Manifest — inject version number
-$manifest = Get-Content "$msixDir\AppxManifest.xml" -Raw
-$manifest  = $manifest -replace 'Version="[\d.]+"', "Version=`"$Version`""
-Set-Content "$layout\AppxManifest.xml" $manifest -Encoding UTF8
+# Manifest — inject version number (raw bytes to guarantee BOM-free UTF-8 output)
+$bytes = [System.IO.File]::ReadAllBytes("$msixDir\AppxManifest.xml")
+if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+    $bytes = $bytes[3..($bytes.Length - 1)]
+}
+$manifest = [System.Text.Encoding]::UTF8.GetString($bytes)
+$manifest = $manifest -replace 'Version="[\d.]+"', "Version=`"$Version`""
+$outBytes = [System.Text.Encoding]::UTF8.GetBytes($manifest)
+[System.IO.File]::WriteAllBytes("$layout\AppxManifest.xml", $outBytes)
 
 # Store assets
 $assetsOut = Join-Path $msixDir "assets"
