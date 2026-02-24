@@ -12,3 +12,10 @@ PaintFE.code-workspace
 
 # Windows debug symbols
 *.pdb
+
+# MSIX build output
+*.msix
+
+# Local-only notes / submission guides
+NOTES.md
+TODO.md

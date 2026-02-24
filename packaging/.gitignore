@@ -7,3 +7,11 @@ flatpak/cargo-sources.json
 
 # AppImage output (drops in repo root)
 ../../*.AppImage
+
+# MSIX — generated at build time, never commit
+msix/PackageLayout/
+msix/assets/
+../../PaintFE.msix
+
+# MS Store submission instructions — local reference only, keep off GitHub
+msix/MS_STORE_SUBMISSION.md

@@ -85,10 +85,127 @@ jobs:
           name: PaintFE-linux
           path: target/release/PaintFE
 
+  # ── AppImage build ─────────────────────────────────────────────────────────
+  build-appimage:
+    name: Build (AppImage)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libvulkan-dev \
+            libwayland-dev \
+            libegl1-mesa-dev \
+            libssl-dev \
+            pkg-config
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: appimage-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: appimage-cargo-
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Build AppImage
+        run: bash packaging/appimage/build-appimage.sh
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaintFE-appimage
+          path: packaging/appimage/PaintFE-x86_64.AppImage
+
+  # ── MSIX build (Microsoft Store submission package) ────────────────────────
+  # NOTE: The MSIX is NOT attached to the GitHub Release — it contains
+  #       placeholder Publisher info and must be submitted manually via
+  #       Partner Center (partner.microsoft.com). Microsoft re-signs it there.
+  #       Download the artifact from the Actions tab after each release run,
+  #       then upload to Partner Center → Your App → Submissions → New submission.
+  build-msix:
+    name: Build (MSIX / MS Store)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: msix-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: msix-cargo-
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Generate Store icon assets
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          & packaging\msix\gen-assets.ps1
+
+      - name: Stage PackageLayout
+        run: |
+          New-Item -ItemType Directory -Force -Path packaging\msix\PackageLayout | Out-Null
+          Copy-Item target\release\PaintFE.exe packaging\msix\PackageLayout\
+          $tag = "${{ github.ref_name }}".TrimStart('v')
+          $ver = "$tag.0"
+          (Get-Content packaging\msix\AppxManifest.xml -Raw) `
+            -replace 'Version="[\d.]+"', "Version=`"$ver`"" |
+          Set-Content packaging\msix\PackageLayout\AppxManifest.xml -Encoding UTF8
+          Copy-Item -Recurse -Force packaging\msix\assets packaging\msix\PackageLayout\assets
+
+      - name: Locate makeappx.exe
+        id: find_makeappx
+        run: |
+          $exe = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
+            -Filter makeappx.exe -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match "x64" } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $exe) { Write-Error "makeappx.exe not found"; exit 1 }
+          echo "path=$exe" >> $env:GITHUB_OUTPUT
+
+      - name: Pack MSIX
+        run: |
+          & "${{ steps.find_makeappx.outputs.path }}" `
+            pack /d packaging\msix\PackageLayout /p PaintFE.msix /nv
+
+      - name: Upload MSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaintFE-msix-store-submission
+          path: PaintFE.msix
+          retention-days: 30
+
   # ── Create GitHub Release ──────────────────────────────────────────────────
   release:
     name: Publish Release
-    needs: [build-windows, build-linux]
+    needs: [build-windows, build-linux, build-appimage]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -105,8 +222,16 @@ jobs:
           name: PaintFE-linux
           path: dist/linux
 
-      - name: Make Linux binary executable
-        run: chmod +x dist/linux/PaintFE
+      - name: Download AppImage
+        uses: actions/download-artifact@v4
+        with:
+          name: PaintFE-appimage
+          path: dist/linux
+
+      - name: Make binaries executable
+        run: |
+          chmod +x dist/linux/PaintFE
+          chmod +x dist/linux/PaintFE-x86_64.AppImage
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -117,3 +242,4 @@ jobs:
           files: |
             dist/windows/PaintFE.exe
             dist/linux/PaintFE
+            dist/linux/PaintFE-x86_64.AppImage

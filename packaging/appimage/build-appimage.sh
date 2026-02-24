@@ -11,11 +11,15 @@ APPDIR="$REPO_ROOT/packaging/appimage/PaintFE.AppDir"
 TOOLS_DIR="$REPO_ROOT/packaging/.tools"
 mkdir -p "$TOOLS_DIR"
 
-echo "==> [1/4] Building release binary..."
-cd "$REPO_ROOT"
-cargo build --release
-
 BIN="$REPO_ROOT/target/release/PaintFE"
+if [ -f "$BIN" ]; then
+  echo "==> [1/4] Release binary already built — skipping cargo build."
+else
+  echo "==> [1/4] Building release binary..."
+  cd "$REPO_ROOT"
+  cargo build --release
+fi
+
 if [ ! -f "$BIN" ]; then
   echo "ERROR: release binary not found at $BIN"; exit 1
 fi

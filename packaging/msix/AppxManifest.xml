@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PaintFE — AppxManifest.xml
+  ─────────────────────────────────────────────────────────────────────────────
+  Before submitting to the Microsoft Store, replace the two PLACEHOLDER values:
+
+    PLACEHOLDER_PUBLISHER_ID
+      Your Publisher string from Partner Center.
+      Example: "CN=Kyle Jackson, O=KyleJackson, L=YourCity, S=YourState, C=US"
+      Found at: Partner Center → Account settings → Legal info → Publisher
+
+    PLACEHOLDER_PACKAGE_NAME
+      Your Package Identity Name from Partner Center.
+      Example: "12345YourName.PaintFE"
+      Found at: Partner Center → Your App → App identity
+
+  Everything else can stay as-is for initial submission.
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 rescap">
+
+  <Identity
+    Name="PLACEHOLDER_PACKAGE_NAME"
+    Publisher="PLACEHOLDER_PUBLISHER_ID"
+    Version="1.0.0.0"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>PaintFE</DisplayName>
+    <PublisherDisplayName>Kyle Jackson</PublisherDisplayName>
+    <Description>A fast, GPU-accelerated raster image editor built in Rust. Free, open source, no subscriptions, no telemetry.</Description>
+    <Logo>assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <!-- Windows 10 1809 (17763) minimum — required for Win32 full trust apps -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersion="10.0.99999.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="PaintFE" Executable="PaintFE.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="PaintFE"
+        Description="Fast, GPU-accelerated raster image editor"
+        BackgroundColor="transparent"
+        Square150x150Logo="assets\Square150x150Logo.png"
+        Square44x44Logo="assets\Square44x44Logo.png">
+        <uap:DefaultTile
+          Wide310x150Logo="assets\Wide310x150Logo.png"
+          ShortName="PaintFE"
+          ShowNameOnSquare150x150Logo="on"
+          ShowNameOnWide310x150Logo="on" />
+        <uap:SplashScreen Image="assets\SplashScreen.png" BackgroundColor="#0d0d14" />
+        <uap:LockScreen Notification="badge" BadgeLogo="assets\Square44x44Logo.png" />
+      </uap:VisualElements>
+
+      <Extensions>
+        <!-- Register as handler for common image file types -->
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="paintfe-image">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.pfe</uap:FileType>
+              <uap:FileType>.png</uap:FileType>
+              <uap:FileType>.jpg</uap:FileType>
+              <uap:FileType>.jpeg</uap:FileType>
+              <uap:FileType>.webp</uap:FileType>
+              <uap:FileType>.bmp</uap:FileType>
+              <uap:FileType>.tiff</uap:FileType>
+              <uap:FileType>.tga</uap:FileType>
+              <uap:FileType>.gif</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- Full trust required for a native Rust/wgpu desktop app -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+
+</Package>
