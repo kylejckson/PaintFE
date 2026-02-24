@@ -56,11 +56,13 @@
         Square44x44Logo="assets\Square44x44Logo.png">
         <uap:DefaultTile
           Wide310x150Logo="assets\Wide310x150Logo.png"
-          ShortName="PaintFE"
-          ShowNameOnSquare150x150Logo="on"
-          ShowNameOnWide310x150Logo="on" />
+          ShortName="PaintFE">
+          <uap:ShowNameOnTiles>
+            <uap:ShowOn Tile="square150x150Logo" />
+            <uap:ShowOn Tile="wide310x150Logo" />
+          </uap:ShowNameOnTiles>
+        </uap:DefaultTile>
         <uap:SplashScreen Image="assets\SplashScreen.png" BackgroundColor="#0d0d14" />
-        <uap:LockScreen Notification="badge" BadgeLogo="assets\Square44x44Logo.png" />
       </uap:VisualElements>
 
       <Extensions>

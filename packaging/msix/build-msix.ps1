@@ -59,7 +59,7 @@ if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $by
     $bytes = $bytes[3..($bytes.Length - 1)]
 }
 $manifest = [System.Text.Encoding]::UTF8.GetString($bytes)
-$manifest = $manifest -creplace 'Version="[\d.]+"', "Version=`"$Version`""
+$manifest = $manifest -creplace '(?<=\s)Version="[\d.]+"', "Version=`"$Version`""
 $outBytes = [System.Text.Encoding]::UTF8.GetBytes($manifest)
 [System.IO.File]::WriteAllBytes("$layout\AppxManifest.xml", $outBytes)
 
