@@ -2650,7 +2650,7 @@ impl SettingsWindow {
             .spacing([16.0, 6.0])
             .show(ui, |ui| {
                 ui.label(egui::RichText::new("Version").strong());
-                ui.label("1.0.0");
+                ui.label(env!("CARGO_PKG_VERSION"));
                 ui.end_row();
 
                 ui.label(egui::RichText::new("Author").strong());
