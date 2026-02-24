@@ -175,9 +175,10 @@ jobs:
           Copy-Item target\release\PaintFE.exe packaging\msix\PackageLayout\
           $tag = "${{ github.ref_name }}".TrimStart('v')
           $ver = "$tag.0"
-          (Get-Content packaging\msix\AppxManifest.xml -Raw) `
-            -replace 'Version="[\d.]+"', "Version=`"$ver`"" |
-          ForEach-Object { [System.IO.File]::WriteAllText("$PWD\packaging\msix\PackageLayout\AppxManifest.xml", $_, [System.Text.UTF8Encoding]::new($false)) }
+          $src = [System.IO.File]::ReadAllText("$PWD\packaging\msix\AppxManifest.xml")
+          $src = $src.TrimStart([char]0xFEFF)
+          $src = $src -replace 'Version="[\d.]+"', "Version=`"$ver`""
+          [System.IO.File]::WriteAllText("$PWD\packaging\msix\PackageLayout\AppxManifest.xml", $src, [System.Text.UTF8Encoding]::new($false))
           Copy-Item -Recurse -Force packaging\msix\assets packaging\msix\PackageLayout\assets
 
       - name: Locate makeappx.exe
