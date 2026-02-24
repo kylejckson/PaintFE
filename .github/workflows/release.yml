@@ -106,6 +106,7 @@ jobs:
             libwayland-dev \
             libegl1-mesa-dev \
             libssl-dev \
+            libfuse2 \
             pkg-config
 
       - name: Install Rust toolchain
@@ -131,7 +132,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: PaintFE-appimage
-          path: packaging/appimage/PaintFE-x86_64.AppImage
+          path: PaintFE-x86_64.AppImage
 
   # ── MSIX build (Microsoft Store submission package) ────────────────────────
   # NOTE: The MSIX is NOT attached to the GitHub Release — it contains
@@ -176,13 +177,14 @@ jobs:
           $ver = "$tag.0"
           (Get-Content packaging\msix\AppxManifest.xml -Raw) `
             -replace 'Version="[\d.]+"', "Version=`"$ver`"" |
-          Set-Content packaging\msix\PackageLayout\AppxManifest.xml -Encoding UTF8
+          ForEach-Object { [System.IO.File]::WriteAllText("$PWD\packaging\msix\PackageLayout\AppxManifest.xml", $_, [System.Text.UTF8Encoding]::new($false)) }
           Copy-Item -Recurse -Force packaging\msix\assets packaging\msix\PackageLayout\assets
 
       - name: Locate makeappx.exe
         id: find_makeappx
         run: |
-          $exe = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
+          $pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $exe = Get-ChildItem "$pf86\Windows Kits\10\bin" `
             -Filter makeappx.exe -Recurse -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -match "x64" } |
             Sort-Object LastWriteTime -Descending |

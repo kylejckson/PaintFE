@@ -1,6 +1,6 @@
 [package]
 name = "PaintFE"
-version = "1.0.1"
+version = "1.0.3"
 edition = "2024"
 
 [dependencies]

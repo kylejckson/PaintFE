@@ -25,8 +25,8 @@
   IgnorableNamespaces="uap uap3 rescap">
 
   <Identity
-    Name="PLACEHOLDER_PACKAGE_NAME"
-    Publisher="PLACEHOLDER_PUBLISHER_ID"
+    Name="KyleJackson.PaintFE"
+    Publisher="CN=41907F2B-F013-479C-A4C0-909E9A09ED7E"
     Version="1.0.0.0"
     ProcessorArchitecture="x64" />
 

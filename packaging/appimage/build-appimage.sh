@@ -31,7 +31,7 @@ chmod +x "$APPDIR/usr/bin/PaintFE"
 chmod +x "$APPDIR/AppRun"
 
 # Copy icon — adjust path if your icon asset differs
-ICON="$REPO_ROOT/assets/icons/ui/app_icon.png"
+ICON="$REPO_ROOT/assets/icons/app_icon.png"
 if [ -f "$ICON" ]; then
   cp "$ICON" "$APPDIR/PaintFE.png"
   cp "$ICON" "$APPDIR/usr/share/icons/hicolor/256x256/apps/PaintFE.png"
