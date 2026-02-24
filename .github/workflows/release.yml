@@ -182,7 +182,7 @@ jobs:
             $bytes = $bytes[3..($bytes.Length - 1)]
           }
           $src = [System.Text.Encoding]::UTF8.GetString($bytes)
-          $src = $src -replace 'Version="[\d.]+"', "Version=`"$ver`""
+          $src = $src -creplace 'Version="[\d.]+"', "Version=`"$ver`""
           $outBytes = [System.Text.Encoding]::UTF8.GetBytes($src)
           [System.IO.File]::WriteAllBytes("$PWD\packaging\msix\PackageLayout\AppxManifest.xml", $outBytes)
           Copy-Item -Recurse -Force packaging\msix\assets packaging\msix\PackageLayout\assets
