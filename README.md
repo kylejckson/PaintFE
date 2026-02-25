@@ -9,8 +9,9 @@ Free, open-source raster image editor built in Rust. Single portable binary, no 
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Platform: Windows + Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue)
 ![Built in Rust](https://img.shields.io/badge/built%20in-Rust-orange)
-![Version](https://img.shields.io/badge/version-v1.0.0-purple)
+[![Version](https://img.shields.io/github/v/release/kylejckson/PaintFE?color=purple)](https://github.com/kylejckson/PaintFE/releases/latest)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/kylejckson/PaintFE/badge)](https://scorecard.dev/viewer/?uri=github.com/kylejckson/PaintFE)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12019/badge)](https://www.bestpractices.dev/projects/12019)
 
 ---
 
