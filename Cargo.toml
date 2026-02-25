@@ -24,7 +24,7 @@ bytemuck = { version = "1", features = ["derive"] } # Safe casting for GPU buffe
 pollster = "0.3"                                 # Block on async GPU init
 ab_glyph = "0.2"                                 # Font loading + glyph rasterization
 font-kit = "0.14"                                # System font enumeration
-libloading = "0.8"                               # Dynamic library loading for optional ONNX Runtime
+libloading = "0.9"                               # Dynamic library loading for optional ONNX Runtime
 rawloader = "0.37"                               # RAW camera file decoding (CR2, NEF, ARW, DNG, etc.)
 imagepipe = "0.5"                                # RAW demosaicing + color pipeline
 rhai = { version = "1.24", features = ["sync"] } # Embedded scripting engine (sandboxed)
