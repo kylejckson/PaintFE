@@ -6,6 +6,32 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    # Suppress major-version bumps that require significant migration work.
+    # egui/eframe, wgpu, rfd, and bincode each involve large API rewrites;
+    # image, gif, png, tiff, libloading, pollster are deferred for stability.
+    ignore:
+      - dependency-name: "egui"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "eframe"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "wgpu"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "rfd"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "bincode"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "image"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "gif"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "png"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "tiff"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "libloading"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "pollster"
+        update-types: ["version-update:semver-major"]
 
   # Keep GitHub Actions up to date
   - package-ecosystem: "github-actions"
@@ -13,3 +39,13 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    # Suppress major-version action bumps; only allow patch/minor updates.
+    ignore:
+      - dependency-name: "actions/upload-artifact"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "actions/download-artifact"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "actions/checkout"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "actions/cache"
+        update-types: ["version-update:semver-major"]
