@@ -15,7 +15,7 @@ serde = { version = "1", features = ["derive"] }  # Serialization framework
 bincode = "1"        # Binary serialization for .pfe files
 
 gif = "0.13"             # Direct GIF encoder/decoder (multi-frame animation)
-png = "0.17"             # Direct PNG encoder/decoder (APNG animation support)
+png = "0.18"             # Direct PNG encoder/decoder (APNG animation support)
 color_quant = "1"        # Color quantization for GIF palette reduction
 
 arboard = "3"         # System clipboard (copy/paste images to/from OS)
