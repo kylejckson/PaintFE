@@ -194,7 +194,7 @@ FE is the periodic table symbol for Iron. It's built in Rust. That's the joke. C
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+MIT License. See [LICENSE](LICENSE.md) for details.
 
 ```
 Copyright (c) PaintFE Contributors
