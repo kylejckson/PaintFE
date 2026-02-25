@@ -224,19 +224,19 @@ jobs:
       contents: write
     steps:
       - name: Download Windows binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: PaintFE-windows
           path: dist/windows
 
       - name: Download Linux binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: PaintFE-linux
           path: dist/linux
 
       - name: Download AppImage
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: PaintFE-appimage
           path: dist/linux
