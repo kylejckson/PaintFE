@@ -12,7 +12,7 @@ rfd = "0.12"         # Native file dialogs (Open/Save)
 rayon = "1.7"        # Parallel processing for faster compositing
 uuid = { version = "1.0", features = ["v4"] }  # Unique identifiers for projects
 serde = { version = "1", features = ["derive"] }  # Serialization framework
-bincode = "1"        # Binary serialization for .pfe files
+bincode = "3"        # Binary serialization for .pfe files
 
 gif = "0.13"             # Direct GIF encoder/decoder (multi-frame animation)
 png = "0.17"             # Direct PNG encoder/decoder (APNG animation support)
