@@ -169,20 +169,9 @@ There are no required system dependencies beyond a working GPU driver that suppo
 
 ## Contributing
 
-PaintFE is open source and contributions are welcome. Whether it's a bug fix, a new filter, a translation, or docs improvements -- all help is appreciated.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full details on setting up a dev build, code style, commit conventions, and how to submit a pull request or translation.
 
-**Ways to contribute**
-
-- **Report a bug**: open a GitHub issue with your OS, GPU, PaintFE version, steps to reproduce, and the log file from `%APPDATA%\PaintFE\paintfe.log` (Windows) or `~/.local/share/PaintFE/paintfe.log` (Linux).
-- **Request a feature**: open a feature request issue describing the use case and what you'd expect it to do.
-- **Submit a translation**: copy `locales/en.txt`, translate, and open a PR. No code required.
-- **Fix something**: fork the repo, make your change, and open a pull request. Please include a short description of what changed and why.
-
-For non-trivial features, opening an issue to discuss the approach first is a good idea. It avoids duplicated effort and helps the review go faster.
-
-**Financial support**
-
-If PaintFE has saved you time and you want to contribute financially, Ko-fi and GitHub Sponsors links are on the [Contribute page](https://paintfe.com/support.html). There are no tiers, no perks, and no guilt if you skip it. Just use it. Make things with it.
+Bug reports, feature requests, translations, and pull requests are all welcome.
 
 ---
 
