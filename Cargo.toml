@@ -21,7 +21,7 @@ color_quant = "1"        # Color quantization for GIF palette reduction
 arboard = "3"         # System clipboard (copy/paste images to/from OS)
 wgpu = "0.20"                                    # GPU acceleration (WebGPU API)
 bytemuck = { version = "1", features = ["derive"] } # Safe casting for GPU buffers
-pollster = "0.3"                                 # Block on async GPU init
+pollster = "0.4"                                 # Block on async GPU init
 ab_glyph = "0.2"                                 # Font loading + glyph rasterization
 font-kit = "0.14"                                # System font enumeration
 libloading = "0.8"                               # Dynamic library loading for optional ONNX Runtime
