@@ -13,6 +13,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 - Automated SHA-256 checksum file (`checksums-SHA256.txt`) published alongside binaries on every GitHub Release.
 - OpenSSF Scorecard GitHub Action (`scorecard.yml`) for automated security posture scoring.
 
+### Fixed
+- Resolved all 556 Rust 1.93 Clippy lints (`needless_range_loop`, `manual_clamp`, `match_like_matches_macro`, `ptr_arg`, `field_reassign_with_default`, `wrong_self_convention`, `if_same_then_else`, `doc_lazy_continuation`, `needless_update`, `struct_update_has_no_effect`) to restore a clean CI gate.
+- Corrected `dtolnay/rust-toolchain` action SHA in `ci.yml`.
+
 ---
 
 ## [1.0.8] - 2026-02-21
