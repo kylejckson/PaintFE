@@ -10,4 +10,21 @@ export LD_LIBRARY_PATH="$HERE/usr/lib:${LD_LIBRARY_PATH}"
 # wgpu: prefer Vulkan via host ICD — do NOT bundle libvulkan.so.1
 # If the host has no Vulkan, wgpu falls back to GLES/OpenGL automatically.
 
+# ── XDG icon integration ─────────────────────────────────────────────────────
+# Wayland compositors (GNOME, KDE) look up the window icon from the XDG icon
+# theme by app-id, NOT from the icon embedded in the binary. They run as
+# separate processes so they cannot see our XDG_DATA_DIRS export above.
+# Copying the icon to ~/.local/share/icons makes it visible system-wide.
+ICON_SRC="$HERE/PaintFE.png"
+ICON_DST="$HOME/.local/share/icons/hicolor/256x256/apps/PaintFE.png"
+if [ -f "$ICON_SRC" ] && [ ! -f "$ICON_DST" ]; then
+    mkdir -p "$(dirname "$ICON_DST")"
+    cp "$ICON_SRC" "$ICON_DST"
+    # Ask the icon cache to refresh (best-effort; ignore errors)
+    xdg-icon-resource forceupdate >/dev/null 2>&1 || true
+    gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
+    kbuildsycoca5 --noincremental >/dev/null 2>&1 || true
+fi
+# ─────────────────────────────────────────────────────────────────────────────
+
 exec "$HERE/usr/bin/PaintFE" "$@"
