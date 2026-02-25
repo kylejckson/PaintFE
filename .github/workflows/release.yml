@@ -37,7 +37,7 @@ jobs:
         run: cargo build --release
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: PaintFE-windows
           path: target/release/PaintFE.exe
@@ -82,7 +82,7 @@ jobs:
         run: cargo build --release
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: PaintFE-linux
           path: target/release/PaintFE
@@ -131,7 +131,7 @@ jobs:
         run: bash packaging/appimage/build-appimage.sh
 
       - name: Upload AppImage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: PaintFE-appimage
           path: PaintFE-x86_64.AppImage
@@ -209,7 +209,7 @@ jobs:
             pack /d packaging\msix\PackageLayout /p PaintFE.msix /nv
 
       - name: Upload MSIX artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: PaintFE-msix-store-submission
           path: PaintFE.msix
