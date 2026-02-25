@@ -41,12 +41,16 @@ impl ViewUniforms {
     /// Identity projection for offscreen compositing.
     pub fn identity(opacity: f32) -> Self {
         let view_proj: [[f32; 4]; 4] = [
-            [ 2.0,  0.0, 0.0, 0.0],
-            [ 0.0, -2.0, 0.0, 0.0],
-            [ 0.0,  0.0, 1.0, 0.0],
-            [-1.0,  1.0, 0.0, 1.0],
+            [2.0, 0.0, 0.0, 0.0],
+            [0.0, -2.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [-1.0, 1.0, 0.0, 1.0],
         ];
-        Self { view_proj, opacity, _pad: [0.0; 3] }
+        Self {
+            view_proj,
+            opacity,
+            _pad: [0.0; 3],
+        }
     }
 }
 
@@ -54,8 +58,8 @@ impl ViewUniforms {
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 pub struct BlendUniforms {
-    pub view_proj:  [[f32; 4]; 4],
-    pub opacity:    f32,
+    pub view_proj: [[f32; 4]; 4],
+    pub opacity: f32,
     pub blend_mode: u32,
     pub _pad: [f32; 2],
 }
@@ -63,12 +67,17 @@ pub struct BlendUniforms {
 impl BlendUniforms {
     pub fn identity(opacity: f32, blend_mode: u32) -> Self {
         let view_proj: [[f32; 4]; 4] = [
-            [ 2.0,  0.0, 0.0, 0.0],
-            [ 0.0, -2.0, 0.0, 0.0],
-            [ 0.0,  0.0, 1.0, 0.0],
-            [-1.0,  1.0, 0.0, 1.0],
+            [2.0, 0.0, 0.0, 0.0],
+            [0.0, -2.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [-1.0, 1.0, 0.0, 1.0],
         ];
-        Self { view_proj, opacity, blend_mode, _pad: [0.0; 2] }
+        Self {
+            view_proj,
+            opacity,
+            blend_mode,
+            _pad: [0.0; 2],
+        }
     }
 }
 
@@ -76,15 +85,23 @@ impl BlendUniforms {
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 pub struct DisplayUniforms {
-    pub offset: [f32; 2],        // Pan offset in screen pixels
-    pub scale: f32,              // Zoom factor
+    pub offset: [f32; 2], // Pan offset in screen pixels
+    pub scale: f32,       // Zoom factor
     pub _pad0: f32,
     pub viewport_size: [f32; 2], // Viewport dimensions
     pub image_size: [f32; 2],    // Image dimensions
 }
 
 impl DisplayUniforms {
-    pub fn new(offset_x: f32, offset_y: f32, scale: f32, vp_w: f32, vp_h: f32, img_w: f32, img_h: f32) -> Self {
+    pub fn new(
+        offset_x: f32,
+        offset_y: f32,
+        scale: f32,
+        vp_w: f32,
+        vp_h: f32,
+        img_w: f32,
+        img_h: f32,
+    ) -> Self {
         Self {
             offset: [offset_x, offset_y],
             scale,
@@ -234,44 +251,42 @@ impl Compositor {
         });
 
         // Group 0: BlendUniforms (view_proj, opacity, blend_mode)
-        let blend_uniform_bgl =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("blend_uniform_bgl"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
+        let blend_uniform_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("blend_uniform_bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
 
         // Group 1 & 2: texture + sampler (reuse same layout for both fg and bg)
-        let tex_sampler_bgl =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("tex_sampler_bgl"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
+        let tex_sampler_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("tex_sampler_bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-            });
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
 
         let uber_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("uber_composite_pipeline_layout"),
@@ -333,19 +348,20 @@ impl Compositor {
             source: wgpu::ShaderSource::Wgsl(super::shaders::DISPLAY_SHADER.into()),
         });
 
-        let display_uniform_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("display_uniform_bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let display_uniform_bgl =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("display_uniform_bgl"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
 
         let display_tex_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("display_tex_bgl"),
@@ -483,7 +499,7 @@ impl Compositor {
             });
         }
 
-        let mut read_idx: usize = 0;  // ping = background (read)
+        let mut read_idx: usize = 0; // ping = background (read)
         let mut write_idx: usize = 1; // pong = destination (write)
 
         for (layer_i, (opacity, blend_mode, layer_tex)) in layers.iter().enumerate() {
@@ -507,7 +523,11 @@ impl Compositor {
                 self.cached_blend_slots.push((buf, bg));
             } else {
                 // Reuse existing buffer — just update contents
-                queue.write_buffer(&self.cached_blend_slots[layer_i].0, 0, bytemuck::bytes_of(&uniforms));
+                queue.write_buffer(
+                    &self.cached_blend_slots[layer_i].0,
+                    0,
+                    bytemuck::bytes_of(&uniforms),
+                );
             }
             let uniform_bg = &self.cached_blend_slots[layer_i].1;
 
@@ -516,8 +536,14 @@ impl Compositor {
                 label: Some("fg_bg"),
                 layout: &self.tex_sampler_bgl,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&layer_tex.view) },
-                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(sampler) },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&layer_tex.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(sampler),
+                    },
                 ],
             });
 
@@ -526,8 +552,14 @@ impl Compositor {
                 label: Some("bg_bg"),
                 layout: &self.tex_sampler_bgl,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(ping_pong[read_idx]) },
-                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(sampler) },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(ping_pong[read_idx]),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(sampler),
+                    },
                 ],
             });
 
@@ -549,7 +581,7 @@ impl Compositor {
                 });
 
                 pass.set_pipeline(&self.uber_pipeline);
-                pass.set_bind_group(0, &uniform_bg, &[]);
+                pass.set_bind_group(0, uniform_bg, &[]);
                 pass.set_bind_group(1, &fg_bg, &[]);
                 pass.set_bind_group(2, &bg_bg, &[]);
                 pass.draw(0..6, 0..1);
@@ -667,10 +699,7 @@ impl Compositor {
         let buffer_size = (bytes_per_row * height) as u64;
 
         // A2: Reuse cached staging buffer if large enough
-        let need_new = match cached_staging {
-            Some((_, sz)) if *sz >= buffer_size => false,
-            _ => true,
-        };
+        let need_new = !matches!(cached_staging, Some((_, sz)) if *sz >= buffer_size);
         if need_new {
             let new_buf = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("readback_staging"),
@@ -694,14 +723,18 @@ impl Compositor {
                 aspect: wgpu::TextureAspect::All,
             },
             wgpu::ImageCopyBuffer {
-                buffer: &staging,
+                buffer: staging,
                 layout: wgpu::ImageDataLayout {
                     offset: 0,
                     bytes_per_row: Some(bytes_per_row),
                     rows_per_image: Some(height),
                 },
             },
-            wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
         );
 
         queue.submit(std::iter::once(encoder.finish()));
@@ -714,8 +747,14 @@ impl Compositor {
         device.poll(wgpu::Maintain::Wait);
         match rx.recv() {
             Ok(Ok(())) => {}
-            Ok(Err(e)) => { eprintln!("[GPU] readback_texture map error: {:?}", e); return vec![]; }
-            Err(e) => { eprintln!("[GPU] readback_texture channel error: {:?}", e); return vec![]; }
+            Ok(Err(e)) => {
+                eprintln!("[GPU] readback_texture map error: {:?}", e);
+                return vec![];
+            }
+            Err(e) => {
+                eprintln!("[GPU] readback_texture channel error: {:?}", e);
+                return vec![];
+            }
         }
 
         let mapped = slice.get_mapped_range();
@@ -737,7 +776,7 @@ impl Compositor {
     pub(crate) fn aligned_bytes_per_row(width: u32) -> u32 {
         let unaligned = width * 4;
         let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
-        (unaligned + align - 1) / align * align
+        unaligned.div_ceil(align) * align
     }
 
     /// Read back a sub-region of a texture as packed RGBA bytes.
@@ -759,10 +798,7 @@ impl Compositor {
         let buffer_size = (bytes_per_row * region_h) as u64;
 
         // A2: Reuse cached staging buffer if large enough
-        let need_new = match cached_staging {
-            Some((_, sz)) if *sz >= buffer_size => false,
-            _ => true,
-        };
+        let need_new = !matches!(cached_staging, Some((_, sz)) if *sz >= buffer_size);
         if need_new {
             let new_buf = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("readback_region_staging"),
@@ -782,18 +818,26 @@ impl Compositor {
             wgpu::ImageCopyTexture {
                 texture,
                 mip_level: 0,
-                origin: wgpu::Origin3d { x: src_x, y: src_y, z: 0 },
+                origin: wgpu::Origin3d {
+                    x: src_x,
+                    y: src_y,
+                    z: 0,
+                },
                 aspect: wgpu::TextureAspect::All,
             },
             wgpu::ImageCopyBuffer {
-                buffer: &staging,
+                buffer: staging,
                 layout: wgpu::ImageDataLayout {
                     offset: 0,
                     bytes_per_row: Some(bytes_per_row),
                     rows_per_image: Some(region_h),
                 },
             },
-            wgpu::Extent3d { width: region_w, height: region_h, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: region_w,
+                height: region_h,
+                depth_or_array_layers: 1,
+            },
         );
 
         queue.submit(std::iter::once(encoder.finish()));
@@ -806,8 +850,14 @@ impl Compositor {
         device.poll(wgpu::Maintain::Wait);
         match rx.recv() {
             Ok(Ok(())) => {}
-            Ok(Err(e)) => { eprintln!("[GPU] readback_texture_region map error: {:?}", e); return vec![]; }
-            Err(e) => { eprintln!("[GPU] readback_texture_region channel error: {:?}", e); return vec![]; }
+            Ok(Err(e)) => {
+                eprintln!("[GPU] readback_texture_region map error: {:?}", e);
+                return vec![];
+            }
+            Err(e) => {
+                eprintln!("[GPU] readback_texture_region channel error: {:?}", e);
+                return vec![];
+            }
         }
 
         let mapped = slice.get_mapped_range();

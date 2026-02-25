@@ -1,4 +1,4 @@
-﻿// ============================================================================
+// ============================================================================
 // EFFECTS ENGINE â€” GPU-ready, rayon-parallelized image effects
 // ============================================================================
 //
@@ -15,9 +15,9 @@
 //   - Artistic: Ink, Oil Painting, Color Filter
 // ============================================================================
 
-use image::{RgbaImage, GrayImage, Rgba};
+use crate::canvas::{CanvasState, TiledImage};
+use image::{GrayImage, Rgba, RgbaImage};
 use rayon::prelude::*;
-use crate::canvas::{TiledImage, CanvasState};
 
 // ============================================================================
 // SHARED HELPERS
@@ -25,17 +25,15 @@ use crate::canvas::{TiledImage, CanvasState};
 
 /// Apply a spatial effect (reads neighbours) with selection masking.
 /// `processor` receives (source image, x, y) and returns the output pixel.
-fn apply_spatial_effect<F>(
-    flat: &RgbaImage,
-    mask: Option<&GrayImage>,
-    processor: F,
-) -> RgbaImage
+fn apply_spatial_effect<F>(flat: &RgbaImage, mask: Option<&GrayImage>, processor: F) -> RgbaImage
 where
     F: Fn(&RgbaImage, u32, u32) -> Rgba<u8> + Sync,
 {
     let w = flat.width() as usize;
     let h = flat.height() as usize;
-    if w == 0 || h == 0 { return flat.clone(); }
+    if w == 0 || h == 0 {
+        return flat.clone();
+    }
 
     let src_raw = flat.as_raw();
     let mut dst_raw = vec![0u8; w * h * 4];
@@ -45,39 +43,42 @@ where
     let mask_w = mask.map_or(0, |m| m.width() as usize);
     let mask_h = mask.map_or(0, |m| m.height() as usize);
 
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        let row_in = &src_raw[y * stride..(y + 1) * stride];
-        for x in 0..w {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            let row_in = &src_raw[y * stride..(y + 1) * stride];
+            for x in 0..w {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     row_out[pi..pi + 4].copy_from_slice(&row_in[pi..pi + 4]);
                     continue;
                 }
+                let px = processor(flat, x as u32, y as u32);
+                row_out[pi] = px[0];
+                row_out[pi + 1] = px[1];
+                row_out[pi + 2] = px[2];
+                row_out[pi + 3] = px[3];
             }
-            let px = processor(flat, x as u32, y as u32);
-            row_out[pi]     = px[0];
-            row_out[pi + 1] = px[1];
-            row_out[pi + 2] = px[2];
-            row_out[pi + 3] = px[3];
-        }
-    });
+        });
 
     RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap()
 }
 
 /// Per-pixel transform with selection masking (like adjustments helper).
-fn apply_per_pixel<F>(
-    flat: &RgbaImage,
-    mask: Option<&GrayImage>,
-    transform: F,
-) -> RgbaImage
+fn apply_per_pixel<F>(flat: &RgbaImage, mask: Option<&GrayImage>, transform: F) -> RgbaImage
 where
     F: Fn(u32, u32, f32, f32, f32, f32) -> (f32, f32, f32, f32) + Sync,
 {
     let w = flat.width() as usize;
     let h = flat.height() as usize;
-    if w == 0 || h == 0 { return flat.clone(); }
+    if w == 0 || h == 0 {
+        return flat.clone();
+    }
 
     let src_raw = flat.as_raw();
     let mut dst_raw = vec![0u8; w * h * 4];
@@ -86,34 +87,41 @@ where
     let mask_w = mask.map_or(0, |m| m.width() as usize);
     let mask_h = mask.map_or(0, |m| m.height() as usize);
 
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        let row_in = &src_raw[y * stride..(y + 1) * stride];
-        for x in 0..w {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            let row_in = &src_raw[y * stride..(y + 1) * stride];
+            for x in 0..w {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     row_out[pi..pi + 4].copy_from_slice(&row_in[pi..pi + 4]);
                     continue;
                 }
+                let r = row_in[pi] as f32;
+                let g = row_in[pi + 1] as f32;
+                let b = row_in[pi + 2] as f32;
+                let a = row_in[pi + 3] as f32;
+                let (nr, ng, nb, na) = transform(x as u32, y as u32, r, g, b, a);
+                row_out[pi] = nr.round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 1] = ng.round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 2] = nb.round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 3] = na.round().clamp(0.0, 255.0) as u8;
             }
-            let r = row_in[pi] as f32;
-            let g = row_in[pi + 1] as f32;
-            let b = row_in[pi + 2] as f32;
-            let a = row_in[pi + 3] as f32;
-            let (nr, ng, nb, na) = transform(x as u32, y as u32, r, g, b, a);
-            row_out[pi]     = nr.round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 1] = ng.round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 2] = nb.round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 3] = na.round().clamp(0.0, 255.0) as u8;
-        }
-    });
+        });
 
     RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap()
 }
 
 /// Write effect result back to a layer.
 fn commit_to_layer(state: &mut CanvasState, layer_idx: usize, result: &RgbaImage) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     state.layers[layer_idx].pixels = TiledImage::from_rgba_image(result);
     state.mark_dirty(None);
 }
@@ -147,9 +155,9 @@ fn sample_bilinear(img: &RgbaImage, fx: f32, fy: f32) -> [f32; 4] {
     let mut out = [0.0f32; 4];
     for c in 0..4 {
         out[c] = p00[c] * (1.0 - dx) * (1.0 - dy)
-               + p10[c] * dx * (1.0 - dy)
-               + p01[c] * (1.0 - dx) * dy
-               + p11[c] * dx * dy;
+            + p10[c] * dx * (1.0 - dy)
+            + p01[c] * (1.0 - dx) * dy
+            + p11[c] * dx * dy;
     }
     out
 }
@@ -169,7 +177,11 @@ fn hash_u32(mut x: u32) -> u32 {
 /// Hash to f32 in [0, 1).
 #[inline]
 fn hash_f32(x: u32, y: u32, seed: u32) -> f32 {
-    let h = hash_u32(x.wrapping_mul(374761393).wrapping_add(y.wrapping_mul(668265263)).wrapping_add(seed));
+    let h = hash_u32(
+        x.wrapping_mul(374761393)
+            .wrapping_add(y.wrapping_mul(668265263))
+            .wrapping_add(seed),
+    );
     (h & 0x00FFFFFF) as f32 / 16777216.0
 }
 
@@ -180,22 +192,33 @@ fn hash_f32(x: u32, y: u32, seed: u32) -> f32 {
 // --- Bokeh Blur (disc-shaped kernel) ---
 
 pub fn bokeh_blur(state: &mut CanvasState, layer_idx: usize, radius: f32) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
     let result = bokeh_blur_core(&flat, radius, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn bokeh_blur_from_flat(state: &mut CanvasState, layer_idx: usize, radius: f32, original_flat: &RgbaImage) {
+pub fn bokeh_blur_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    radius: f32,
+    original_flat: &RgbaImage,
+) {
     let result = bokeh_blur_core(original_flat, radius, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
 pub fn bokeh_blur_core(flat: &RgbaImage, radius: f32, mask: Option<&GrayImage>) -> RgbaImage {
-    if radius < 0.5 { return flat.clone(); }
+    if radius < 0.5 {
+        return flat.clone();
+    }
     let w = flat.width() as usize;
     let h = flat.height() as usize;
-    if w == 0 || h == 0 { return flat.clone(); }
+    if w == 0 || h == 0 {
+        return flat.clone();
+    }
 
     // Build disc kernel (coordinates + weights).
     let r = radius.ceil() as i32;
@@ -219,35 +242,40 @@ pub fn bokeh_blur_core(flat: &RgbaImage, radius: f32, mask: Option<&GrayImage>) 
     let mask_w = mask.map_or(0, |m| m.width() as usize);
     let mask_h = mask.map_or(0, |m| m.height() as usize);
 
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        for x in 0..w {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            for x in 0..w {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     let src_off = y * stride + pi;
                     row_out[pi..pi + 4].copy_from_slice(&src_raw[src_off..src_off + 4]);
                     continue;
                 }
+                let mut r_sum = 0.0f32;
+                let mut g_sum = 0.0f32;
+                let mut b_sum = 0.0f32;
+                let mut a_sum = 0.0f32;
+                for &(dx, dy, _wt) in &offsets {
+                    let sx = (x as i32 + dx).clamp(0, w as i32 - 1) as usize;
+                    let sy = (y as i32 + dy).clamp(0, h as i32 - 1) as usize;
+                    let si = sy * stride + sx * 4;
+                    r_sum += src_raw[si] as f32;
+                    g_sum += src_raw[si + 1] as f32;
+                    b_sum += src_raw[si + 2] as f32;
+                    a_sum += src_raw[si + 3] as f32;
+                }
+                row_out[pi] = (r_sum * inv_count).round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 1] = (g_sum * inv_count).round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 2] = (b_sum * inv_count).round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 3] = (a_sum * inv_count).round().clamp(0.0, 255.0) as u8;
             }
-            let mut r_sum = 0.0f32;
-            let mut g_sum = 0.0f32;
-            let mut b_sum = 0.0f32;
-            let mut a_sum = 0.0f32;
-            for &(dx, dy, _wt) in &offsets {
-                let sx = (x as i32 + dx).clamp(0, w as i32 - 1) as usize;
-                let sy = (y as i32 + dy).clamp(0, h as i32 - 1) as usize;
-                let si = sy * stride + sx * 4;
-                r_sum += src_raw[si] as f32;
-                g_sum += src_raw[si + 1] as f32;
-                b_sum += src_raw[si + 2] as f32;
-                a_sum += src_raw[si + 3] as f32;
-            }
-            row_out[pi]     = (r_sum * inv_count).round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 1] = (g_sum * inv_count).round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 2] = (b_sum * inv_count).round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 3] = (a_sum * inv_count).round().clamp(0.0, 255.0) as u8;
-        }
-    });
+        });
 
     RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap()
 }
@@ -255,22 +283,44 @@ pub fn bokeh_blur_core(flat: &RgbaImage, radius: f32, mask: Option<&GrayImage>) 
 // --- Motion Blur (directional) ---
 
 pub fn motion_blur(state: &mut CanvasState, layer_idx: usize, angle_deg: f32, distance: f32) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
     let result = motion_blur_core(&flat, angle_deg, distance, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn motion_blur_from_flat(state: &mut CanvasState, layer_idx: usize, angle_deg: f32, distance: f32, original_flat: &RgbaImage) {
-    let result = motion_blur_core(original_flat, angle_deg, distance, state.selection_mask.as_ref());
+pub fn motion_blur_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    angle_deg: f32,
+    distance: f32,
+    original_flat: &RgbaImage,
+) {
+    let result = motion_blur_core(
+        original_flat,
+        angle_deg,
+        distance,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn motion_blur_core(flat: &RgbaImage, angle_deg: f32, distance: f32, mask: Option<&GrayImage>) -> RgbaImage {
-    if distance < 1.0 { return flat.clone(); }
+pub fn motion_blur_core(
+    flat: &RgbaImage,
+    angle_deg: f32,
+    distance: f32,
+    mask: Option<&GrayImage>,
+) -> RgbaImage {
+    if distance < 1.0 {
+        return flat.clone();
+    }
     let w = flat.width() as usize;
     let h = flat.height() as usize;
-    if w == 0 || h == 0 { return flat.clone(); }
+    if w == 0 || h == 0 {
+        return flat.clone();
+    }
 
     let angle = angle_deg.to_radians();
     let steps = distance.ceil() as i32;
@@ -285,37 +335,42 @@ pub fn motion_blur_core(flat: &RgbaImage, angle_deg: f32, distance: f32, mask: O
     let mask_w = mask.map_or(0, |m| m.width() as usize);
     let mask_h = mask.map_or(0, |m| m.height() as usize);
 
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        for x in 0..w {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            for x in 0..w {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     let src_off = y * stride + pi;
                     row_out[pi..pi + 4].copy_from_slice(&src_raw[src_off..src_off + 4]);
                     continue;
                 }
+                let mut r_sum = 0.0f32;
+                let mut g_sum = 0.0f32;
+                let mut b_sum = 0.0f32;
+                let mut a_sum = 0.0f32;
+                for i in -steps..=steps {
+                    let sx = (x as f32 + i as f32 * dx).round() as i32;
+                    let sy = (y as f32 + i as f32 * dy).round() as i32;
+                    let sx = sx.clamp(0, w as i32 - 1) as usize;
+                    let sy = sy.clamp(0, h as i32 - 1) as usize;
+                    let si = sy * stride + sx * 4;
+                    r_sum += src_raw[si] as f32;
+                    g_sum += src_raw[si + 1] as f32;
+                    b_sum += src_raw[si + 2] as f32;
+                    a_sum += src_raw[si + 3] as f32;
+                }
+                row_out[pi] = (r_sum * inv_steps).round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 1] = (g_sum * inv_steps).round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 2] = (b_sum * inv_steps).round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 3] = (a_sum * inv_steps).round().clamp(0.0, 255.0) as u8;
             }
-            let mut r_sum = 0.0f32;
-            let mut g_sum = 0.0f32;
-            let mut b_sum = 0.0f32;
-            let mut a_sum = 0.0f32;
-            for i in -steps..=steps {
-                let sx = (x as f32 + i as f32 * dx).round() as i32;
-                let sy = (y as f32 + i as f32 * dy).round() as i32;
-                let sx = sx.clamp(0, w as i32 - 1) as usize;
-                let sy = sy.clamp(0, h as i32 - 1) as usize;
-                let si = sy * stride + sx * 4;
-                r_sum += src_raw[si] as f32;
-                g_sum += src_raw[si + 1] as f32;
-                b_sum += src_raw[si + 2] as f32;
-                a_sum += src_raw[si + 3] as f32;
-            }
-            row_out[pi]     = (r_sum * inv_steps).round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 1] = (g_sum * inv_steps).round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 2] = (b_sum * inv_steps).round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 3] = (a_sum * inv_steps).round().clamp(0.0, 255.0) as u8;
-        }
-    });
+        });
 
     RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap()
 }
@@ -323,22 +378,33 @@ pub fn motion_blur_core(flat: &RgbaImage, angle_deg: f32, distance: f32, mask: O
 // --- Box Blur (square kernel, separable for speed) ---
 
 pub fn box_blur(state: &mut CanvasState, layer_idx: usize, radius: f32) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
     let result = box_blur_core(&flat, radius, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn box_blur_from_flat(state: &mut CanvasState, layer_idx: usize, radius: f32, original_flat: &RgbaImage) {
+pub fn box_blur_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    radius: f32,
+    original_flat: &RgbaImage,
+) {
     let result = box_blur_core(original_flat, radius, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
 pub fn box_blur_core(flat: &RgbaImage, radius: f32, mask: Option<&GrayImage>) -> RgbaImage {
-    if radius < 0.5 { return flat.clone(); }
+    if radius < 0.5 {
+        return flat.clone();
+    }
     let w = flat.width() as usize;
     let h = flat.height() as usize;
-    if w == 0 || h == 0 { return flat.clone(); }
+    if w == 0 || h == 0 {
+        return flat.clone();
+    }
 
     let r = radius.ceil() as usize;
     let kernel_size = r * 2 + 1;
@@ -347,55 +413,74 @@ pub fn box_blur_core(flat: &RgbaImage, radius: f32, mask: Option<&GrayImage>) ->
 
     // Separable: horizontal pass
     let mut h_buf = vec![0.0f32; w * h * 4];
-    h_buf.par_chunks_mut(w * 4).enumerate().for_each(|(y, row_out)| {
-        for x in 0..w {
-            let mut sums = [0.0f32; 4];
-            for k in 0..kernel_size {
-                let sx = (x as i32 + k as i32 - r as i32).clamp(0, w as i32 - 1) as usize;
-                let si = y * w * 4 + sx * 4;
-                for c in 0..4 { sums[c] += src_raw[si + c] as f32; }
+    h_buf
+        .par_chunks_mut(w * 4)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            for x in 0..w {
+                let mut sums = [0.0f32; 4];
+                for k in 0..kernel_size {
+                    let sx = (x as i32 + k as i32 - r as i32).clamp(0, w as i32 - 1) as usize;
+                    let si = y * w * 4 + sx * 4;
+                    for c in 0..4 {
+                        sums[c] += src_raw[si + c] as f32;
+                    }
+                }
+                let oi = x * 4;
+                for c in 0..4 {
+                    row_out[oi + c] = sums[c] * inv_k;
+                }
             }
-            let oi = x * 4;
-            for c in 0..4 { row_out[oi + c] = sums[c] * inv_k; }
-        }
-    });
+        });
 
     // Vertical pass
     let mut v_buf = vec![0.0f32; w * h * 4];
-    v_buf.par_chunks_mut(w * 4).enumerate().for_each(|(y, row_out)| {
-        for x in 0..w {
-            let mut sums = [0.0f32; 4];
-            for k in 0..kernel_size {
-                let sy = (y as i32 + k as i32 - r as i32).clamp(0, h as i32 - 1) as usize;
-                let si = sy * w * 4 + x * 4;
-                for c in 0..4 { sums[c] += h_buf[si + c]; }
+    v_buf
+        .par_chunks_mut(w * 4)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            for x in 0..w {
+                let mut sums = [0.0f32; 4];
+                for k in 0..kernel_size {
+                    let sy = (y as i32 + k as i32 - r as i32).clamp(0, h as i32 - 1) as usize;
+                    let si = sy * w * 4 + x * 4;
+                    for c in 0..4 {
+                        sums[c] += h_buf[si + c];
+                    }
+                }
+                let oi = x * 4;
+                for c in 0..4 {
+                    row_out[oi + c] = sums[c] * inv_k;
+                }
             }
-            let oi = x * 4;
-            for c in 0..4 { row_out[oi + c] = sums[c] * inv_k; }
-        }
-    });
+        });
 
     // Apply mask
     let mask_raw = mask.map(|m| m.as_raw().as_slice());
     let mask_w = mask.map_or(0, |m| m.width() as usize);
     let mask_h = mask.map_or(0, |m| m.height() as usize);
     let mut dst_raw = vec![0u8; w * h * 4];
-    dst_raw.par_chunks_mut(w * 4).enumerate().for_each(|(y, row_out)| {
-        for x in 0..w {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(w * 4)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            for x in 0..w {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     let si = y * w * 4 + pi;
                     row_out[pi..pi + 4].copy_from_slice(&src_raw[si..si + 4]);
                     continue;
                 }
+                let vi = y * w * 4 + pi;
+                for c in 0..4 {
+                    row_out[pi + c] = v_buf[vi + c].round().clamp(0.0, 255.0) as u8;
+                }
             }
-            let vi = y * w * 4 + pi;
-            for c in 0..4 {
-                row_out[pi + c] = v_buf[vi + c].round().clamp(0.0, 255.0) as u8;
-            }
-        }
-    });
+        });
 
     RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap()
 }
@@ -404,93 +489,107 @@ pub fn box_blur_core(flat: &RgbaImage, radius: f32, mask: Option<&GrayImage>) ->
 
 pub fn zoom_blur_core(
     flat: &RgbaImage,
-    center_x: f32,      // 0.0–1.0 normalized horizontal position of the zoom origin
-    center_y: f32,      // 0.0–1.0 normalized vertical position of the zoom origin
-    strength: f32,      // 0.0–1.0: fraction of distance to sample back toward center
-    samples: u32,       // quality: 8 (fast) / 16 (normal) / 32 (high)
+    center_x: f32,        // 0.0–1.0 normalized horizontal position of the zoom origin
+    center_y: f32,        // 0.0–1.0 normalized vertical position of the zoom origin
+    strength: f32,        // 0.0–1.0: fraction of distance to sample back toward center
+    samples: u32,         // quality: 8 (fast) / 16 (normal) / 32 (high)
     tint_color: [f32; 4], // RGBA 0–1 tint applied near the zoom origin (if tint_strength > 0)
-    tint_strength: f32, // 0.0 = no tint, 1.0 = full tint at dead-center
+    tint_strength: f32,   // 0.0 = no tint, 1.0 = full tint at dead-center
     mask: Option<&GrayImage>,
 ) -> RgbaImage {
-    if strength < 0.001 { return flat.clone(); }
+    if strength < 0.001 {
+        return flat.clone();
+    }
     let w = flat.width() as usize;
     let h = flat.height() as usize;
-    if w == 0 || h == 0 { return flat.clone(); }
+    if w == 0 || h == 0 {
+        return flat.clone();
+    }
 
     let cx = center_x * w as f32;
     let cy = center_y * h as f32;
-    let s  = strength.clamp(0.0, 0.99);
-    let n  = samples.max(2) as usize;
+    let s = strength.clamp(0.0, 0.99);
+    let n = samples.max(2) as usize;
     let inv_n = 1.0 / n as f32;
 
     // Max distance from center to any corner — used to normalise tint falloff.
-    let max_dist = [(cx, cy), (w as f32 - cx, cy), (cx, h as f32 - cy), (w as f32 - cx, h as f32 - cy)]
-        .iter()
-        .map(|(dx, dy)| (dx * dx + dy * dy).sqrt())
-        .fold(0.0f32, f32::max)
-        .max(1.0);
+    let max_dist = [
+        (cx, cy),
+        (w as f32 - cx, cy),
+        (cx, h as f32 - cy),
+        (w as f32 - cx, h as f32 - cy),
+    ]
+    .iter()
+    .map(|(dx, dy)| (dx * dx + dy * dy).sqrt())
+    .fold(0.0f32, f32::max)
+    .max(1.0);
 
-    let src_raw  = flat.as_raw();
-    let stride   = w * 4;
+    let src_raw = flat.as_raw();
+    let stride = w * 4;
     let mask_raw = mask.map(|m| m.as_raw().as_slice());
-    let mask_w   = mask.map_or(0, |m| m.width() as usize);
-    let mask_h   = mask.map_or(0, |m| m.height() as usize);
+    let mask_w = mask.map_or(0, |m| m.width() as usize);
+    let mask_h = mask.map_or(0, |m| m.height() as usize);
 
     let mut dst_raw = vec![0u8; w * h * 4];
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        for x in 0..w {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            for x in 0..w {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     let src_off = y * stride + pi;
                     row_out[pi..pi + 4].copy_from_slice(&src_raw[src_off..src_off + 4]);
                     continue;
                 }
-            }
-            let px = x as f32;
-            let py = y as f32;
-            let dx = px - cx;
-            let dy = py - cy;
+                let px = x as f32;
+                let py = y as f32;
+                let dx = px - cx;
+                let dy = py - cy;
 
-            // Sample from the pixel position back toward the zoom center.
-            // i=0 → pixel position (t=1.0), i=n-1 → closest to center (t=1-s).
-            let mut r_sum = 0.0f32;
-            let mut g_sum = 0.0f32;
-            let mut b_sum = 0.0f32;
-            let mut a_sum = 0.0f32;
-            for i in 0..n {
-                let t  = 1.0 - s * (i as f32 / (n - 1) as f32);
-                let sx = (cx + dx * t).round() as i32;
-                let sy = (cy + dy * t).round() as i32;
-                let sx = sx.clamp(0, w as i32 - 1) as usize;
-                let sy = sy.clamp(0, h as i32 - 1) as usize;
-                let si = sy * stride + sx * 4;
-                r_sum += src_raw[si    ] as f32;
-                g_sum += src_raw[si + 1] as f32;
-                b_sum += src_raw[si + 2] as f32;
-                a_sum += src_raw[si + 3] as f32;
-            }
-            let mut r = r_sum * inv_n;
-            let mut g = g_sum * inv_n;
-            let mut b = b_sum * inv_n;
-            let mut a = a_sum * inv_n;
+                // Sample from the pixel position back toward the zoom center.
+                // i=0 → pixel position (t=1.0), i=n-1 → closest to center (t=1-s).
+                let mut r_sum = 0.0f32;
+                let mut g_sum = 0.0f32;
+                let mut b_sum = 0.0f32;
+                let mut a_sum = 0.0f32;
+                for i in 0..n {
+                    let t = 1.0 - s * (i as f32 / (n - 1) as f32);
+                    let sx = (cx + dx * t).round() as i32;
+                    let sy = (cy + dy * t).round() as i32;
+                    let sx = sx.clamp(0, w as i32 - 1) as usize;
+                    let sy = sy.clamp(0, h as i32 - 1) as usize;
+                    let si = sy * stride + sx * 4;
+                    r_sum += src_raw[si] as f32;
+                    g_sum += src_raw[si + 1] as f32;
+                    b_sum += src_raw[si + 2] as f32;
+                    a_sum += src_raw[si + 3] as f32;
+                }
+                let mut r = r_sum * inv_n;
+                let mut g = g_sum * inv_n;
+                let mut b = b_sum * inv_n;
+                let mut a = a_sum * inv_n;
 
-            // Optional radial tint — strongest at the zoom origin, fading to zero at corners.
-            if tint_strength > 0.001 {
-                let dist = (dx * dx + dy * dy).sqrt();
-                let t = (1.0 - dist / max_dist).max(0.0) * tint_strength;
-                r = r + (tint_color[0] * 255.0 - r) * t;
-                g = g + (tint_color[1] * 255.0 - g) * t;
-                b = b + (tint_color[2] * 255.0 - b) * t;
-                a = a + (tint_color[3] * 255.0 - a) * t;
-            }
+                // Optional radial tint — strongest at the zoom origin, fading to zero at corners.
+                if tint_strength > 0.001 {
+                    let dist = (dx * dx + dy * dy).sqrt();
+                    let t = (1.0 - dist / max_dist).max(0.0) * tint_strength;
+                    r = r + (tint_color[0] * 255.0 - r) * t;
+                    g = g + (tint_color[1] * 255.0 - g) * t;
+                    b = b + (tint_color[2] * 255.0 - b) * t;
+                    a = a + (tint_color[3] * 255.0 - a) * t;
+                }
 
-            row_out[pi    ] = r.round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 1] = g.round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 2] = b.round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 3] = a.round().clamp(0.0, 255.0) as u8;
-        }
-    });
+                row_out[pi] = r.round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 1] = g.round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 2] = b.round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 3] = a.round().clamp(0.0, 255.0) as u8;
+            }
+        });
 
     RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap()
 }
@@ -502,22 +601,42 @@ pub fn zoom_blur_core(
 // --- Crystallize (Voronoi polygon effect) ---
 
 pub fn crystallize(state: &mut CanvasState, layer_idx: usize, cell_size: f32, seed: u32) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
     let result = crystallize_core(&flat, cell_size, seed, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn crystallize_from_flat(state: &mut CanvasState, layer_idx: usize, cell_size: f32, seed: u32, original_flat: &RgbaImage) {
-    let result = crystallize_core(original_flat, cell_size, seed, state.selection_mask.as_ref());
+pub fn crystallize_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    cell_size: f32,
+    seed: u32,
+    original_flat: &RgbaImage,
+) {
+    let result = crystallize_core(
+        original_flat,
+        cell_size,
+        seed,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn crystallize_core(flat: &RgbaImage, cell_size: f32, seed: u32, mask: Option<&GrayImage>) -> RgbaImage {
+pub fn crystallize_core(
+    flat: &RgbaImage,
+    cell_size: f32,
+    seed: u32,
+    mask: Option<&GrayImage>,
+) -> RgbaImage {
     let cs = cell_size.max(2.0);
     let w = flat.width();
     let h = flat.height();
-    if w == 0 || h == 0 { return flat.clone(); }
+    if w == 0 || h == 0 {
+        return flat.clone();
+    }
 
     let src_raw = flat.as_raw();
     let stride = w as usize * 4;
@@ -563,7 +682,9 @@ pub fn crystallize_core(flat: &RgbaImage, cell_size: f32, seed: u32, mask: Optio
                 for dx in -1..=1 {
                     let nx = gcx + dx;
                     let ny = gcy + dy;
-                    if nx < 0 || ny < 0 || nx >= cells_x || ny >= cells_y { continue; }
+                    if nx < 0 || ny < 0 || nx >= cells_x || ny >= cells_y {
+                        continue;
+                    }
                     let idx = (ny * cells_x + nx) as usize;
                     let (sx, sy) = seed_points[idx];
                     let d = (px - sx) * (px - sx) + (py - sy) * (py - sy);
@@ -600,61 +721,109 @@ pub fn crystallize_core(flat: &RgbaImage, cell_size: f32, seed: u32, mask: Optio
     // Assign pixels to Voronoi cells (parallel by row)
     let seed_pts = &seed_points;
     let avgs = &averages;
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        for x in 0..w as usize {
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h as usize && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            for x in 0..w as usize {
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     continue;
                 }
-            }
 
-            let gcx = (x as f32 / cs) as i32;
-            let gcy = (y as f32 / cs) as i32;
-            let px = x as f32 + 0.5;
-            let py = y as f32 + 0.5;
+                let gcx = (x as f32 / cs) as i32;
+                let gcy = (y as f32 / cs) as i32;
+                let px = x as f32 + 0.5;
+                let py = y as f32 + 0.5;
 
-            let mut best_dist = f32::MAX;
-            let mut best_idx = 0usize;
+                let mut best_dist = f32::MAX;
+                let mut best_idx = 0usize;
 
-            for dy in -1..=1 {
-                for dx in -1..=1 {
-                    let nx = gcx + dx;
-                    let ny = gcy + dy;
-                    if nx < 0 || ny < 0 || nx >= cells_x || ny >= cells_y { continue; }
-                    let idx = (ny * cells_x + nx) as usize;
-                    let (sx, sy) = seed_pts[idx];
-                    let d = (px - sx) * (px - sx) + (py - sy) * (py - sy);
-                    if d < best_dist {
-                        best_dist = d;
-                        best_idx = idx;
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        let nx = gcx + dx;
+                        let ny = gcy + dy;
+                        if nx < 0 || ny < 0 || nx >= cells_x || ny >= cells_y {
+                            continue;
+                        }
+                        let idx = (ny * cells_x + nx) as usize;
+                        let (sx, sy) = seed_pts[idx];
+                        let d = (px - sx) * (px - sx) + (py - sy) * (py - sy);
+                        if d < best_dist {
+                            best_dist = d;
+                            best_idx = idx;
+                        }
                     }
                 }
-            }
 
-            let pi = x * 4;
-            row_out[pi]     = avgs[best_idx][0];
-            row_out[pi + 1] = avgs[best_idx][1];
-            row_out[pi + 2] = avgs[best_idx][2];
-            row_out[pi + 3] = avgs[best_idx][3];
-        }
-    });
+                let pi = x * 4;
+                row_out[pi] = avgs[best_idx][0];
+                row_out[pi + 1] = avgs[best_idx][1];
+                row_out[pi + 2] = avgs[best_idx][2];
+                row_out[pi + 3] = avgs[best_idx][3];
+            }
+        });
 
     RgbaImage::from_raw(w, h, dst_raw).unwrap()
 }
 
 // --- Dents (turbulence-based distortion) ---
 
-pub fn dents(state: &mut CanvasState, layer_idx: usize, scale: f32, amount: f32, seed: u32,
-             octaves: u32, roughness: f32, pinch: bool, wrap: bool) {
-    if layer_idx >= state.layers.len() { return; }
+pub fn dents(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    scale: f32,
+    amount: f32,
+    seed: u32,
+    octaves: u32,
+    roughness: f32,
+    pinch: bool,
+    wrap: bool,
+) {
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
-    let result = dents_core(&flat, scale, amount, seed, octaves, roughness, pinch, wrap, state.selection_mask.as_ref());
+    let result = dents_core(
+        &flat,
+        scale,
+        amount,
+        seed,
+        octaves,
+        roughness,
+        pinch,
+        wrap,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn dents_from_flat(state: &mut CanvasState, layer_idx: usize, scale: f32, amount: f32, seed: u32,
-                       octaves: u32, roughness: f32, pinch: bool, wrap: bool, original_flat: &RgbaImage) {
-    let result = dents_core(original_flat, scale, amount, seed, octaves, roughness, pinch, wrap, state.selection_mask.as_ref());
+pub fn dents_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    scale: f32,
+    amount: f32,
+    seed: u32,
+    octaves: u32,
+    roughness: f32,
+    pinch: bool,
+    wrap: bool,
+    original_flat: &RgbaImage,
+) {
+    let result = dents_core(
+        original_flat,
+        scale,
+        amount,
+        seed,
+        octaves,
+        roughness,
+        pinch,
+        wrap,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
@@ -671,22 +840,50 @@ fn turbulence_2d(x: f32, y: f32, seed: u32, octaves: u32, roughness: f32) -> f32
         amplitude *= roughness;
         frequency *= 2.0;
     }
-    if max_amplitude > 0.0 { total / max_amplitude } else { 0.0 }
+    if max_amplitude > 0.0 {
+        total / max_amplitude
+    } else {
+        0.0
+    }
 }
 
-pub fn dents_core(flat: &RgbaImage, scale: f32, amount: f32, seed: u32,
-              octaves: u32, roughness: f32, pinch: bool, wrap: bool,
-              mask: Option<&GrayImage>) -> RgbaImage {
+pub fn dents_core(
+    flat: &RgbaImage,
+    scale: f32,
+    amount: f32,
+    seed: u32,
+    octaves: u32,
+    roughness: f32,
+    pinch: bool,
+    wrap: bool,
+    mask: Option<&GrayImage>,
+) -> RgbaImage {
     let w = flat.width();
     let h = flat.height();
-    if w == 0 || h == 0 { return flat.clone(); }
+    if w == 0 || h == 0 {
+        return flat.clone();
+    }
 
-    let oct = octaves.max(1).min(8);
+    let oct = octaves.clamp(1, 8);
     let inv_scale = 1.0 / scale.max(0.5);
 
     apply_per_pixel(flat, mask, |x, y, _r, _g, _b, _a| {
-        let nx_raw = turbulence_2d(x as f32 * inv_scale, y as f32 * inv_scale, seed, oct, roughness) * 2.0 - 1.0;
-        let ny_raw = turbulence_2d(x as f32 * inv_scale, y as f32 * inv_scale, seed.wrapping_add(9999), oct, roughness) * 2.0 - 1.0;
+        let nx_raw = turbulence_2d(
+            x as f32 * inv_scale,
+            y as f32 * inv_scale,
+            seed,
+            oct,
+            roughness,
+        ) * 2.0
+            - 1.0;
+        let ny_raw = turbulence_2d(
+            x as f32 * inv_scale,
+            y as f32 * inv_scale,
+            seed.wrapping_add(9999),
+            oct,
+            roughness,
+        ) * 2.0
+            - 1.0;
 
         let (nx, ny) = if pinch {
             // Pinch mode: displacement toward center
@@ -717,13 +914,20 @@ pub fn dents_core(flat: &RgbaImage, scale: f32, amount: f32, seed: u32,
 // --- Pixelate ---
 
 pub fn pixelate(state: &mut CanvasState, layer_idx: usize, block_size: u32) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
     let result = pixelate_core(&flat, block_size, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn pixelate_from_flat(state: &mut CanvasState, layer_idx: usize, block_size: u32, original_flat: &RgbaImage) {
+pub fn pixelate_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    block_size: u32,
+    original_flat: &RgbaImage,
+) {
     let result = pixelate_core(original_flat, block_size, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
@@ -733,7 +937,9 @@ pub fn pixelate_core(flat: &RgbaImage, block_size: u32, mask: Option<&GrayImage>
     // Same as crystallize but with nearest-neighbour (center pixel) instead of average.
     let w = flat.width();
     let h = flat.height();
-    if w == 0 || h == 0 { return flat.clone(); }
+    if w == 0 || h == 0 {
+        return flat.clone();
+    }
 
     let src_raw = flat.as_raw();
     let stride = w as usize * 4;
@@ -742,23 +948,28 @@ pub fn pixelate_core(flat: &RgbaImage, block_size: u32, mask: Option<&GrayImage>
     let mask_w = mask.map_or(0, |m| m.width() as usize);
     let mask_h = mask.map_or(0, |m| m.height() as usize);
 
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        for x in 0..w as usize {
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h as usize && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            for x in 0..w as usize {
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     continue;
                 }
+                // Sample from the center of the block.
+                let bx = (x as u32 / bs) * bs + bs / 2;
+                let by = (y as u32 / bs) * bs + bs / 2;
+                let sx = bx.min(w - 1) as usize;
+                let sy = by.min(h - 1) as usize;
+                let si = sy * stride + sx * 4;
+                let pi = x * 4;
+                row_out[pi..pi + 4].copy_from_slice(&src_raw[si..si + 4]);
             }
-            // Sample from the center of the block.
-            let bx = (x as u32 / bs) * bs + bs / 2;
-            let by = (y as u32 / bs) * bs + bs / 2;
-            let sx = bx.min(w - 1) as usize;
-            let sy = by.min(h - 1) as usize;
-            let si = sy * stride + sx * 4;
-            let pi = x * 4;
-            row_out[pi..pi + 4].copy_from_slice(&src_raw[si..si + 4]);
-        }
-    });
+        });
 
     RgbaImage::from_raw(w, h, dst_raw).unwrap()
 }
@@ -766,13 +977,20 @@ pub fn pixelate_core(flat: &RgbaImage, block_size: u32, mask: Option<&GrayImage>
 // --- Bulge ---
 
 pub fn bulge(state: &mut CanvasState, layer_idx: usize, amount: f32) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
     let result = bulge_core(&flat, amount, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn bulge_from_flat(state: &mut CanvasState, layer_idx: usize, amount: f32, original_flat: &RgbaImage) {
+pub fn bulge_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    amount: f32,
+    original_flat: &RgbaImage,
+) {
     let result = bulge_core(original_flat, amount, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
@@ -814,13 +1032,20 @@ pub fn bulge_core(flat: &RgbaImage, amount: f32, mask: Option<&GrayImage>) -> Rg
 // --- Twist ---
 
 pub fn twist(state: &mut CanvasState, layer_idx: usize, angle_deg: f32) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
     let result = twist_core(&flat, angle_deg, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn twist_from_flat(state: &mut CanvasState, layer_idx: usize, angle_deg: f32, original_flat: &RgbaImage) {
+pub fn twist_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    angle_deg: f32,
+    original_flat: &RgbaImage,
+) {
     let result = twist_core(original_flat, angle_deg, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
@@ -862,17 +1087,54 @@ pub enum NoiseType {
     Perlin,
 }
 
-pub fn add_noise(state: &mut CanvasState, layer_idx: usize, amount: f32, noise_type: NoiseType,
-                 monochrome: bool, seed: u32, scale: f32, octaves: u32) {
-    if layer_idx >= state.layers.len() { return; }
+pub fn add_noise(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    amount: f32,
+    noise_type: NoiseType,
+    monochrome: bool,
+    seed: u32,
+    scale: f32,
+    octaves: u32,
+) {
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
-    let result = add_noise_core(&flat, amount, noise_type, monochrome, seed, scale, octaves, state.selection_mask.as_ref());
+    let result = add_noise_core(
+        &flat,
+        amount,
+        noise_type,
+        monochrome,
+        seed,
+        scale,
+        octaves,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn add_noise_from_flat(state: &mut CanvasState, layer_idx: usize, amount: f32, noise_type: NoiseType,
-                           monochrome: bool, seed: u32, scale: f32, octaves: u32, original_flat: &RgbaImage) {
-    let result = add_noise_core(original_flat, amount, noise_type, monochrome, seed, scale, octaves, state.selection_mask.as_ref());
+pub fn add_noise_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    amount: f32,
+    noise_type: NoiseType,
+    monochrome: bool,
+    seed: u32,
+    scale: f32,
+    octaves: u32,
+    original_flat: &RgbaImage,
+) {
+    let result = add_noise_core(
+        original_flat,
+        amount,
+        noise_type,
+        monochrome,
+        seed,
+        scale,
+        octaves,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
@@ -897,10 +1159,18 @@ fn perlin_noise_2d(x: f32, y: f32, seed: u32) -> f32 {
     nx0 + v * (nx1 - nx0)
 }
 
-pub fn add_noise_core(flat: &RgbaImage, amount: f32, noise_type: NoiseType, monochrome: bool,
-                  seed: u32, scale: f32, octaves: u32, mask: Option<&GrayImage>) -> RgbaImage {
+pub fn add_noise_core(
+    flat: &RgbaImage,
+    amount: f32,
+    noise_type: NoiseType,
+    monochrome: bool,
+    seed: u32,
+    scale: f32,
+    octaves: u32,
+    mask: Option<&GrayImage>,
+) -> RgbaImage {
     let inv_scale = 1.0 / scale.max(0.1);
-    let oct = octaves.max(1).min(8);
+    let oct = octaves.clamp(1, 8);
 
     apply_per_pixel(flat, mask, |x, y, r, g, b, a| {
         let sx = x as f32 * inv_scale;
@@ -920,9 +1190,7 @@ pub fn add_noise_core(flat: &RgbaImage, amount: f32, noise_type: NoiseType, mono
                 let u2 = hash_f32(qx, qy, seed.wrapping_add(7));
                 (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos() * 0.33
             }
-            NoiseType::Perlin => {
-                turbulence_2d(sx, sy, seed, oct, 0.5) * 2.0 - 1.0
-            }
+            NoiseType::Perlin => turbulence_2d(sx, sy, seed, oct, 0.5) * 2.0 - 1.0,
         };
 
         let strength = amount * 255.0 / 100.0;
@@ -939,7 +1207,9 @@ pub fn add_noise_core(flat: &RgbaImage, amount: f32, noise_type: NoiseType, mono
                 }
             };
             let ng = match noise_type {
-                NoiseType::Perlin => (turbulence_2d(sx, sy, seed.wrapping_add(1), oct, 0.5) * 2.0 - 1.0) * strength,
+                NoiseType::Perlin => {
+                    (turbulence_2d(sx, sy, seed.wrapping_add(1), oct, 0.5) * 2.0 - 1.0) * strength
+                }
                 _ => {
                     let qx = (x as f32 * inv_scale).floor() as u32;
                     let qy = (y as f32 * inv_scale).floor() as u32;
@@ -947,7 +1217,9 @@ pub fn add_noise_core(flat: &RgbaImage, amount: f32, noise_type: NoiseType, mono
                 }
             };
             let nb = match noise_type {
-                NoiseType::Perlin => (turbulence_2d(sx, sy, seed.wrapping_add(2), oct, 0.5) * 2.0 - 1.0) * strength,
+                NoiseType::Perlin => {
+                    (turbulence_2d(sx, sy, seed.wrapping_add(2), oct, 0.5) * 2.0 - 1.0) * strength
+                }
                 _ => {
                     let qx = (x as f32 * inv_scale).floor() as u32;
                     let qy = (y as f32 * inv_scale).floor() as u32;
@@ -962,21 +1234,41 @@ pub fn add_noise_core(flat: &RgbaImage, amount: f32, noise_type: NoiseType, mono
 // --- Reduce Noise (bilateral-like filter) ---
 
 pub fn reduce_noise(state: &mut CanvasState, layer_idx: usize, strength: f32, radius: u32) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
     let result = reduce_noise_core(&flat, strength, radius, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn reduce_noise_from_flat(state: &mut CanvasState, layer_idx: usize, strength: f32, radius: u32, original_flat: &RgbaImage) {
-    let result = reduce_noise_core(original_flat, strength, radius, state.selection_mask.as_ref());
+pub fn reduce_noise_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    strength: f32,
+    radius: u32,
+    original_flat: &RgbaImage,
+) {
+    let result = reduce_noise_core(
+        original_flat,
+        strength,
+        radius,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn reduce_noise_core(flat: &RgbaImage, strength: f32, radius: u32, mask: Option<&GrayImage>) -> RgbaImage {
+pub fn reduce_noise_core(
+    flat: &RgbaImage,
+    strength: f32,
+    radius: u32,
+    mask: Option<&GrayImage>,
+) -> RgbaImage {
     let w = flat.width() as usize;
     let h = flat.height() as usize;
-    if w == 0 || h == 0 { return flat.clone(); }
+    if w == 0 || h == 0 {
+        return flat.clone();
+    }
 
     let r = radius.max(1) as i32;
     let sigma_s = r as f32;
@@ -989,64 +1281,70 @@ pub fn reduce_noise_core(flat: &RgbaImage, strength: f32, radius: u32, mask: Opt
     let mask_w = mask.map_or(0, |m| m.width() as usize);
     let mask_h = mask.map_or(0, |m| m.height() as usize);
 
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        for x in 0..w {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            for x in 0..w {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     let si = y * stride + pi;
                     row_out[pi..pi + 4].copy_from_slice(&src_raw[si..si + 4]);
                     continue;
                 }
-            }
 
-            let center_si = y * stride + pi;
-            let cr = src_raw[center_si] as f32;
-            let cg = src_raw[center_si + 1] as f32;
-            let cb = src_raw[center_si + 2] as f32;
+                let center_si = y * stride + pi;
+                let cr = src_raw[center_si] as f32;
+                let cg = src_raw[center_si + 1] as f32;
+                let cb = src_raw[center_si + 2] as f32;
 
-            let mut sum_r = 0.0f32;
-            let mut sum_g = 0.0f32;
-            let mut sum_b = 0.0f32;
-            let mut sum_a = 0.0f32;
-            let mut weight_sum = 0.0f32;
+                let mut sum_r = 0.0f32;
+                let mut sum_g = 0.0f32;
+                let mut sum_b = 0.0f32;
+                let mut sum_a = 0.0f32;
+                let mut weight_sum = 0.0f32;
 
-            for dy in -r..=r {
-                let sy = (y as i32 + dy).clamp(0, h as i32 - 1) as usize;
-                for dx in -r..=r {
-                    let sx = (x as i32 + dx).clamp(0, w as i32 - 1) as usize;
-                    let si = sy * stride + sx * 4;
-                    let pr = src_raw[si] as f32;
-                    let pg = src_raw[si + 1] as f32;
-                    let pb = src_raw[si + 2] as f32;
-                    let pa = src_raw[si + 3] as f32;
+                for dy in -r..=r {
+                    let sy = (y as i32 + dy).clamp(0, h as i32 - 1) as usize;
+                    for dx in -r..=r {
+                        let sx = (x as i32 + dx).clamp(0, w as i32 - 1) as usize;
+                        let si = sy * stride + sx * 4;
+                        let pr = src_raw[si] as f32;
+                        let pg = src_raw[si + 1] as f32;
+                        let pb = src_raw[si + 2] as f32;
+                        let pa = src_raw[si + 3] as f32;
 
-                    let spatial = (dx * dx + dy * dy) as f32 / (2.0 * sigma_s * sigma_s);
-                    let diff_r = cr - pr;
-                    let diff_g = cg - pg;
-                    let diff_b = cb - pb;
-                    let range = (diff_r * diff_r + diff_g * diff_g + diff_b * diff_b) / (2.0 * sigma_r * sigma_r + 0.001);
-                    let weight = (-spatial - range).exp();
+                        let spatial = (dx * dx + dy * dy) as f32 / (2.0 * sigma_s * sigma_s);
+                        let diff_r = cr - pr;
+                        let diff_g = cg - pg;
+                        let diff_b = cb - pb;
+                        let range = (diff_r * diff_r + diff_g * diff_g + diff_b * diff_b)
+                            / (2.0 * sigma_r * sigma_r + 0.001);
+                        let weight = (-spatial - range).exp();
 
-                    sum_r += pr * weight;
-                    sum_g += pg * weight;
-                    sum_b += pb * weight;
-                    sum_a += pa * weight;
-                    weight_sum += weight;
+                        sum_r += pr * weight;
+                        sum_g += pg * weight;
+                        sum_b += pb * weight;
+                        sum_a += pa * weight;
+                        weight_sum += weight;
+                    }
+                }
+
+                if weight_sum > 0.0 {
+                    let inv = 1.0 / weight_sum;
+                    row_out[pi] = (sum_r * inv).round().clamp(0.0, 255.0) as u8;
+                    row_out[pi + 1] = (sum_g * inv).round().clamp(0.0, 255.0) as u8;
+                    row_out[pi + 2] = (sum_b * inv).round().clamp(0.0, 255.0) as u8;
+                    row_out[pi + 3] = (sum_a * inv).round().clamp(0.0, 255.0) as u8;
+                } else {
+                    row_out[pi..pi + 4].copy_from_slice(&src_raw[center_si..center_si + 4]);
                 }
             }
-
-            if weight_sum > 0.0 {
-                let inv = 1.0 / weight_sum;
-                row_out[pi]     = (sum_r * inv).round().clamp(0.0, 255.0) as u8;
-                row_out[pi + 1] = (sum_g * inv).round().clamp(0.0, 255.0) as u8;
-                row_out[pi + 2] = (sum_b * inv).round().clamp(0.0, 255.0) as u8;
-                row_out[pi + 3] = (sum_a * inv).round().clamp(0.0, 255.0) as u8;
-            } else {
-                row_out[pi..pi + 4].copy_from_slice(&src_raw[center_si..center_si + 4]);
-            }
-        }
-    });
+        });
 
     RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap()
 }
@@ -1054,13 +1352,20 @@ pub fn reduce_noise_core(flat: &RgbaImage, strength: f32, radius: u32, mask: Opt
 // --- Median filter ---
 
 pub fn median_filter(state: &mut CanvasState, layer_idx: usize, radius: u32) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
     let result = median_core(&flat, radius, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn median_filter_from_flat(state: &mut CanvasState, layer_idx: usize, radius: u32, original_flat: &RgbaImage) {
+pub fn median_filter_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    radius: u32,
+    original_flat: &RgbaImage,
+) {
     let result = median_core(original_flat, radius, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
@@ -1073,7 +1378,9 @@ pub fn median_filter_gpu(
     radius: u32,
     gpu: &crate::gpu::GpuRenderer,
 ) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     if state.selection_mask.is_some() || radius > 7 {
         median_filter(state, layer_idx, radius);
         return;
@@ -1111,7 +1418,9 @@ pub fn median_filter_from_flat_gpu(
 pub fn median_core(flat: &RgbaImage, radius: u32, mask: Option<&GrayImage>) -> RgbaImage {
     let w = flat.width() as usize;
     let h = flat.height() as usize;
-    if w == 0 || h == 0 { return flat.clone(); }
+    if w == 0 || h == 0 {
+        return flat.clone();
+    }
 
     let r = radius.max(1) as i32;
     let src_raw = flat.as_raw();
@@ -1121,33 +1430,42 @@ pub fn median_core(flat: &RgbaImage, radius: u32, mask: Option<&GrayImage>) -> R
     let mask_w = mask.map_or(0, |m| m.width() as usize);
     let mask_h = mask.map_or(0, |m| m.height() as usize);
 
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        let mut channels: [Vec<u8>; 4] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
-        for x in 0..w {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            let mut channels: [Vec<u8>; 4] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+            for x in 0..w {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     let si = y * stride + pi;
                     row_out[pi..pi + 4].copy_from_slice(&src_raw[si..si + 4]);
                     continue;
                 }
-            }
 
-            for c in &mut channels { c.clear(); }
-            for dy in -r..=r {
-                let sy = (y as i32 + dy).clamp(0, h as i32 - 1) as usize;
-                for dx in -r..=r {
-                    let sx = (x as i32 + dx).clamp(0, w as i32 - 1) as usize;
-                    let si = sy * stride + sx * 4;
-                    for c in 0..4 { channels[c].push(src_raw[si + c]); }
+                for c in &mut channels {
+                    c.clear();
+                }
+                for dy in -r..=r {
+                    let sy = (y as i32 + dy).clamp(0, h as i32 - 1) as usize;
+                    for dx in -r..=r {
+                        let sx = (x as i32 + dx).clamp(0, w as i32 - 1) as usize;
+                        let si = sy * stride + sx * 4;
+                        for c in 0..4 {
+                            channels[c].push(src_raw[si + c]);
+                        }
+                    }
+                }
+                for c in 0..4 {
+                    channels[c].sort_unstable();
+                    row_out[pi + c] = channels[c][channels[c].len() / 2];
                 }
             }
-            for c in 0..4 {
-                channels[c].sort_unstable();
-                row_out[pi + c] = channels[c][channels[c].len() / 2];
-            }
-        }
-    });
+        });
 
     RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap()
 }
@@ -1159,18 +1477,36 @@ pub fn median_core(flat: &RgbaImage, radius: u32, mask: Option<&GrayImage>) -> R
 // --- Glow ---
 
 pub fn glow(state: &mut CanvasState, layer_idx: usize, radius: f32, intensity: f32) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
     let result = glow_core(&flat, radius, intensity, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn glow_from_flat(state: &mut CanvasState, layer_idx: usize, radius: f32, intensity: f32, original_flat: &RgbaImage) {
-    let result = glow_core(original_flat, radius, intensity, state.selection_mask.as_ref());
+pub fn glow_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    radius: f32,
+    intensity: f32,
+    original_flat: &RgbaImage,
+) {
+    let result = glow_core(
+        original_flat,
+        radius,
+        intensity,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn glow_core(flat: &RgbaImage, radius: f32, intensity: f32, mask: Option<&GrayImage>) -> RgbaImage {
+pub fn glow_core(
+    flat: &RgbaImage,
+    radius: f32,
+    intensity: f32,
+    mask: Option<&GrayImage>,
+) -> RgbaImage {
     // Glow = original + blurred * intensity (screen blend)
     let blurred = crate::ops::filters::parallel_gaussian_blur_pub(flat, radius);
     let w = flat.width() as usize;
@@ -1183,27 +1519,32 @@ pub fn glow_core(flat: &RgbaImage, radius: f32, intensity: f32, mask: Option<&Gr
     let mask_w = mask.map_or(0, |m| m.width() as usize);
     let mask_h = mask.map_or(0, |m| m.height() as usize);
 
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        for x in 0..w {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            for x in 0..w {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     let si = y * stride + pi;
                     row_out[pi..pi + 4].copy_from_slice(&src_raw[si..si + 4]);
                     continue;
                 }
+                let si = y * stride + pi;
+                for c in 0..3 {
+                    let s = src_raw[si + c] as f32 / 255.0;
+                    let b = blur_raw[si + c] as f32 / 255.0;
+                    // Screen blend: 1 - (1 - s) * (1 - b * intensity)
+                    let result = 1.0 - (1.0 - s) * (1.0 - b * intensity);
+                    row_out[pi + c] = (result * 255.0).round().clamp(0.0, 255.0) as u8;
+                }
+                row_out[pi + 3] = src_raw[si + 3]; // preserve alpha
             }
-            let si = y * stride + pi;
-            for c in 0..3 {
-                let s = src_raw[si + c] as f32 / 255.0;
-                let b = blur_raw[si + c] as f32 / 255.0;
-                // Screen blend: 1 - (1 - s) * (1 - b * intensity)
-                let result = 1.0 - (1.0 - s) * (1.0 - b * intensity);
-                row_out[pi + c] = (result * 255.0).round().clamp(0.0, 255.0) as u8;
-            }
-            row_out[pi + 3] = src_raw[si + 3]; // preserve alpha
-        }
-    });
+        });
 
     RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap()
 }
@@ -1211,18 +1552,31 @@ pub fn glow_core(flat: &RgbaImage, radius: f32, intensity: f32, mask: Option<&Gr
 // --- Sharpen (unsharp mask) ---
 
 pub fn sharpen(state: &mut CanvasState, layer_idx: usize, amount: f32, radius: f32) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
     let result = sharpen_core(&flat, amount, radius, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn sharpen_from_flat(state: &mut CanvasState, layer_idx: usize, amount: f32, radius: f32, original_flat: &RgbaImage) {
+pub fn sharpen_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    amount: f32,
+    radius: f32,
+    original_flat: &RgbaImage,
+) {
     let result = sharpen_core(original_flat, amount, radius, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn sharpen_core(flat: &RgbaImage, amount: f32, radius: f32, mask: Option<&GrayImage>) -> RgbaImage {
+pub fn sharpen_core(
+    flat: &RgbaImage,
+    amount: f32,
+    radius: f32,
+    mask: Option<&GrayImage>,
+) -> RgbaImage {
     // Unsharp mask: result = original + amount * (original - blurred)
     let blurred = crate::ops::filters::parallel_gaussian_blur_pub(flat, radius);
     let w = flat.width() as usize;
@@ -1235,26 +1589,31 @@ pub fn sharpen_core(flat: &RgbaImage, amount: f32, radius: f32, mask: Option<&Gr
     let mask_w = mask.map_or(0, |m| m.width() as usize);
     let mask_h = mask.map_or(0, |m| m.height() as usize);
 
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        for x in 0..w {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            for x in 0..w {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     let si = y * stride + pi;
                     row_out[pi..pi + 4].copy_from_slice(&src_raw[si..si + 4]);
                     continue;
                 }
+                let si = y * stride + pi;
+                for c in 0..3 {
+                    let s = src_raw[si + c] as f32;
+                    let b = blur_raw[si + c] as f32;
+                    let v = s + amount * (s - b);
+                    row_out[pi + c] = v.round().clamp(0.0, 255.0) as u8;
+                }
+                row_out[pi + 3] = src_raw[si + 3];
             }
-            let si = y * stride + pi;
-            for c in 0..3 {
-                let s = src_raw[si + c] as f32;
-                let b = blur_raw[si + c] as f32;
-                let v = s + amount * (s - b);
-                row_out[pi + c] = v.round().clamp(0.0, 255.0) as u8;
-            }
-            row_out[pi + 3] = src_raw[si + 3];
-        }
-    });
+        });
 
     RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap()
 }
@@ -1262,18 +1621,36 @@ pub fn sharpen_core(flat: &RgbaImage, amount: f32, radius: f32, mask: Option<&Gr
 // --- Vignette ---
 
 pub fn vignette(state: &mut CanvasState, layer_idx: usize, amount: f32, softness: f32) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
     let result = vignette_core(&flat, amount, softness, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn vignette_from_flat(state: &mut CanvasState, layer_idx: usize, amount: f32, softness: f32, original_flat: &RgbaImage) {
-    let result = vignette_core(original_flat, amount, softness, state.selection_mask.as_ref());
+pub fn vignette_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    amount: f32,
+    softness: f32,
+    original_flat: &RgbaImage,
+) {
+    let result = vignette_core(
+        original_flat,
+        amount,
+        softness,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn vignette_core(flat: &RgbaImage, amount: f32, softness: f32, mask: Option<&GrayImage>) -> RgbaImage {
+pub fn vignette_core(
+    flat: &RgbaImage,
+    amount: f32,
+    softness: f32,
+    mask: Option<&GrayImage>,
+) -> RgbaImage {
     let w = flat.width() as f32;
     let h = flat.height() as f32;
     let cx = w / 2.0;
@@ -1301,19 +1678,52 @@ pub enum HalftoneShape {
     Line,
 }
 
-pub fn halftone(state: &mut CanvasState, layer_idx: usize, dot_size: f32, angle_deg: f32, shape: HalftoneShape) {
-    if layer_idx >= state.layers.len() { return; }
+pub fn halftone(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    dot_size: f32,
+    angle_deg: f32,
+    shape: HalftoneShape,
+) {
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
-    let result = halftone_core(&flat, dot_size, angle_deg, shape, state.selection_mask.as_ref());
+    let result = halftone_core(
+        &flat,
+        dot_size,
+        angle_deg,
+        shape,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn halftone_from_flat(state: &mut CanvasState, layer_idx: usize, dot_size: f32, angle_deg: f32, shape: HalftoneShape, original_flat: &RgbaImage) {
-    let result = halftone_core(original_flat, dot_size, angle_deg, shape, state.selection_mask.as_ref());
+pub fn halftone_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    dot_size: f32,
+    angle_deg: f32,
+    shape: HalftoneShape,
+    original_flat: &RgbaImage,
+) {
+    let result = halftone_core(
+        original_flat,
+        dot_size,
+        angle_deg,
+        shape,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn halftone_core(flat: &RgbaImage, dot_size: f32, angle_deg: f32, shape: HalftoneShape, mask: Option<&GrayImage>) -> RgbaImage {
+pub fn halftone_core(
+    flat: &RgbaImage,
+    dot_size: f32,
+    angle_deg: f32,
+    shape: HalftoneShape,
+    mask: Option<&GrayImage>,
+) -> RgbaImage {
     let ds = dot_size.max(2.0);
     let angle = angle_deg.to_radians();
     let cos_a = angle.cos();
@@ -1333,19 +1743,10 @@ pub fn halftone_core(flat: &RgbaImage, dot_size: f32, angle_deg: f32, shape: Hal
         let cy = cell_y - 0.5;
 
         let threshold = match shape {
-            HalftoneShape::Circle => {
-                let dist = (cx * cx + cy * cy).sqrt() * 2.0;
-                dist
-            }
-            HalftoneShape::Square => {
-                cx.abs().max(cy.abs()) * 2.0
-            }
-            HalftoneShape::Diamond => {
-                cx.abs() + cy.abs()
-            }
-            HalftoneShape::Line => {
-                cy.abs() * 2.0
-            }
+            HalftoneShape::Circle => (cx * cx + cy * cy).sqrt() * 2.0,
+            HalftoneShape::Square => cx.abs().max(cy.abs()) * 2.0,
+            HalftoneShape::Diamond => cx.abs() + cy.abs(),
+            HalftoneShape::Line => cy.abs() * 2.0,
         };
 
         let val = if threshold < lum { 255.0 } else { 0.0 };
@@ -1365,27 +1766,65 @@ pub enum GridStyle {
     Checkerboard,
 }
 
-pub fn render_grid(state: &mut CanvasState, layer_idx: usize,
-    cell_w: u32, cell_h: u32, line_width: u32,
-    color: [u8; 4], style: GridStyle, opacity: f32,
+pub fn render_grid(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    cell_w: u32,
+    cell_h: u32,
+    line_width: u32,
+    color: [u8; 4],
+    style: GridStyle,
+    opacity: f32,
 ) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
-    let result = grid_core(&flat, cell_w, cell_h, line_width, color, style, opacity, state.selection_mask.as_ref());
+    let result = grid_core(
+        &flat,
+        cell_w,
+        cell_h,
+        line_width,
+        color,
+        style,
+        opacity,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn render_grid_from_flat(state: &mut CanvasState, layer_idx: usize,
-    cell_w: u32, cell_h: u32, line_width: u32,
-    color: [u8; 4], style: GridStyle, opacity: f32,
+pub fn render_grid_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    cell_w: u32,
+    cell_h: u32,
+    line_width: u32,
+    color: [u8; 4],
+    style: GridStyle,
+    opacity: f32,
     original_flat: &RgbaImage,
 ) {
-    let result = grid_core(original_flat, cell_w, cell_h, line_width, color, style, opacity, state.selection_mask.as_ref());
+    let result = grid_core(
+        original_flat,
+        cell_w,
+        cell_h,
+        line_width,
+        color,
+        style,
+        opacity,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn grid_core(flat: &RgbaImage, cell_w: u32, cell_h: u32, line_width: u32,
-    color: [u8; 4], style: GridStyle, opacity: f32,
+pub fn grid_core(
+    flat: &RgbaImage,
+    cell_w: u32,
+    cell_h: u32,
+    line_width: u32,
+    color: [u8; 4],
+    style: GridStyle,
+    opacity: f32,
     mask: Option<&GrayImage>,
 ) -> RgbaImage {
     let cw = cell_w.max(2);
@@ -1394,13 +1833,11 @@ pub fn grid_core(flat: &RgbaImage, cell_w: u32, cell_h: u32, line_width: u32,
 
     apply_per_pixel(flat, mask, |x, y, r, g, b, a| {
         let draw = match style {
-            GridStyle::Lines => {
-                (x % cw) < lw || (y % ch) < lw
-            }
+            GridStyle::Lines => (x % cw) < lw || (y % ch) < lw,
             GridStyle::Checkerboard => {
                 let cell_x = x / cw;
                 let cell_y = y / ch;
-                (cell_x + cell_y) % 2 == 0
+                (cell_x + cell_y).is_multiple_of(2)
             }
         };
 
@@ -1410,7 +1847,12 @@ pub fn grid_core(flat: &RgbaImage, cell_w: u32, cell_h: u32, line_width: u32,
             let gg = color[1] as f32;
             let gb = color[2] as f32;
             let ga = color[3] as f32;
-            (r * (1.0 - t) + gr * t, g * (1.0 - t) + gg * t, b * (1.0 - t) + gb * t, a * (1.0 - t) + ga * t)
+            (
+                r * (1.0 - t) + gr * t,
+                g * (1.0 - t) + gg * t,
+                b * (1.0 - t) + gb * t,
+                a * (1.0 - t) + ga * t,
+            )
         } else {
             (r, g, b, a)
         }
@@ -1419,25 +1861,61 @@ pub fn grid_core(flat: &RgbaImage, cell_w: u32, cell_h: u32, line_width: u32,
 
 // --- Drop Shadow ---
 
-pub fn drop_shadow(state: &mut CanvasState, layer_idx: usize,
-    offset_x: i32, offset_y: i32, blur_radius: f32, color: [u8; 4], opacity: f32,
+pub fn drop_shadow(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    offset_x: i32,
+    offset_y: i32,
+    blur_radius: f32,
+    color: [u8; 4],
+    opacity: f32,
 ) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
-    let result = shadow_core(&flat, offset_x, offset_y, blur_radius, color, opacity, state.selection_mask.as_ref());
+    let result = shadow_core(
+        &flat,
+        offset_x,
+        offset_y,
+        blur_radius,
+        color,
+        opacity,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn drop_shadow_from_flat(state: &mut CanvasState, layer_idx: usize,
-    offset_x: i32, offset_y: i32, blur_radius: f32, color: [u8; 4], opacity: f32,
+pub fn drop_shadow_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    offset_x: i32,
+    offset_y: i32,
+    blur_radius: f32,
+    color: [u8; 4],
+    opacity: f32,
     original_flat: &RgbaImage,
 ) {
-    let result = shadow_core(original_flat, offset_x, offset_y, blur_radius, color, opacity, state.selection_mask.as_ref());
+    let result = shadow_core(
+        original_flat,
+        offset_x,
+        offset_y,
+        blur_radius,
+        color,
+        opacity,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn shadow_core(flat: &RgbaImage, offset_x: i32, offset_y: i32, blur_radius: f32,
-    color: [u8; 4], opacity: f32, mask: Option<&GrayImage>,
+pub fn shadow_core(
+    flat: &RgbaImage,
+    offset_x: i32,
+    offset_y: i32,
+    blur_radius: f32,
+    color: [u8; 4],
+    opacity: f32,
+    mask: Option<&GrayImage>,
 ) -> RgbaImage {
     let w = flat.width();
     let h = flat.height();
@@ -1477,31 +1955,36 @@ pub fn shadow_core(flat: &RgbaImage, offset_x: i32, offset_y: i32, blur_radius: 
     let blur_raw = blurred_alpha_rgba.as_raw();
     let mut dst_raw = vec![0u8; (w * h * 4) as usize];
 
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        for x in 0..w as usize {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw_sel {
-                if x < mask_w && y < mask_h as usize && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            for x in 0..w as usize {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw_sel
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     let si = y * stride + pi;
                     row_out[pi..pi + 4].copy_from_slice(&src_raw[si..si + 4]);
                     continue;
                 }
-            }
-            let si = y * stride + pi;
-            let shadow_a = (blur_raw[y * stride + pi] as f32 / 255.0) * opacity;
-            let src_a = src_raw[si + 3] as f32 / 255.0;
+                let si = y * stride + pi;
+                let shadow_a = (blur_raw[y * stride + pi] as f32 / 255.0) * opacity;
+                let src_a = src_raw[si + 3] as f32 / 255.0;
 
-            // Shadow first, then source on top (premultiplied-style compositing).
-            for c in 0..3 {
-                let shadow_c = color[c] as f32 * shadow_a;
-                let src_c = src_raw[si + c] as f32 * src_a;
-                let out_c = src_c + shadow_c * (1.0 - src_a);
-                row_out[pi + c] = out_c.round().clamp(0.0, 255.0) as u8;
+                // Shadow first, then source on top (premultiplied-style compositing).
+                for c in 0..3 {
+                    let shadow_c = color[c] as f32 * shadow_a;
+                    let src_c = src_raw[si + c] as f32 * src_a;
+                    let out_c = src_c + shadow_c * (1.0 - src_a);
+                    row_out[pi + c] = out_c.round().clamp(0.0, 255.0) as u8;
+                }
+                let out_a = src_a + shadow_a * (1.0 - src_a);
+                row_out[pi + 3] = (out_a * 255.0).round().clamp(0.0, 255.0) as u8;
             }
-            let out_a = src_a + shadow_a * (1.0 - src_a);
-            row_out[pi + 3] = (out_a * 255.0).round().clamp(0.0, 255.0) as u8;
-        }
-    });
+        });
 
     RgbaImage::from_raw(w, h, dst_raw).unwrap()
 }
@@ -1515,29 +1998,51 @@ pub enum OutlineMode {
     Center,
 }
 
-pub fn outline(state: &mut CanvasState, layer_idx: usize,
-    width: u32, color: [u8; 4], mode: OutlineMode,
+pub fn outline(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    width: u32,
+    color: [u8; 4],
+    mode: OutlineMode,
 ) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
     let result = outline_core(&flat, width, color, mode, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn outline_from_flat(state: &mut CanvasState, layer_idx: usize,
-    width: u32, color: [u8; 4], mode: OutlineMode,
+pub fn outline_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    width: u32,
+    color: [u8; 4],
+    mode: OutlineMode,
     original_flat: &RgbaImage,
 ) {
-    let result = outline_core(original_flat, width, color, mode, state.selection_mask.as_ref());
+    let result = outline_core(
+        original_flat,
+        width,
+        color,
+        mode,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn outline_core(flat: &RgbaImage, width: u32, color: [u8; 4], mode: OutlineMode,
+pub fn outline_core(
+    flat: &RgbaImage,
+    width: u32,
+    color: [u8; 4],
+    mode: OutlineMode,
     mask: Option<&GrayImage>,
 ) -> RgbaImage {
     let w = flat.width() as usize;
     let h = flat.height() as usize;
-    if w == 0 || h == 0 { return flat.clone(); }
+    if w == 0 || h == 0 {
+        return flat.clone();
+    }
 
     let ow = width.max(1) as i32;
     let src_raw = flat.as_raw();
@@ -1546,65 +2051,78 @@ pub fn outline_core(flat: &RgbaImage, width: u32, color: [u8; 4], mode: OutlineM
     // Build dilated and eroded alpha masks for edge detection.
     let alpha: Vec<u8> = (0..w * h).map(|i| src_raw[i * 4 + 3]).collect();
 
-    let dilated: Vec<u8> = (0..w * h).into_par_iter().map(|idx| {
-        let x = idx % w;
-        let y = idx / w;
-        let mut max_a = 0u8;
-        for dy in -ow..=ow {
-            for dx in -ow..=ow {
-                if dx * dx + dy * dy <= ow * ow {
-                    let sx = (x as i32 + dx).clamp(0, w as i32 - 1) as usize;
-                    let sy = (y as i32 + dy).clamp(0, h as i32 - 1) as usize;
-                    max_a = max_a.max(alpha[sy * w + sx]);
+    let dilated: Vec<u8> = (0..w * h)
+        .into_par_iter()
+        .map(|idx| {
+            let x = idx % w;
+            let y = idx / w;
+            let mut max_a = 0u8;
+            for dy in -ow..=ow {
+                for dx in -ow..=ow {
+                    if dx * dx + dy * dy <= ow * ow {
+                        let sx = (x as i32 + dx).clamp(0, w as i32 - 1) as usize;
+                        let sy = (y as i32 + dy).clamp(0, h as i32 - 1) as usize;
+                        max_a = max_a.max(alpha[sy * w + sx]);
+                    }
                 }
             }
-        }
-        max_a
-    }).collect();
+            max_a
+        })
+        .collect();
 
-    let eroded: Vec<u8> = (0..w * h).into_par_iter().map(|idx| {
-        let x = idx % w;
-        let y = idx / w;
-        let mut min_a = 255u8;
-        for dy in -ow..=ow {
-            for dx in -ow..=ow {
-                if dx * dx + dy * dy <= ow * ow {
-                    let sx = (x as i32 + dx).clamp(0, w as i32 - 1) as usize;
-                    let sy = (y as i32 + dy).clamp(0, h as i32 - 1) as usize;
-                    min_a = min_a.min(alpha[sy * w + sx]);
+    let eroded: Vec<u8> = (0..w * h)
+        .into_par_iter()
+        .map(|idx| {
+            let x = idx % w;
+            let y = idx / w;
+            let mut min_a = 255u8;
+            for dy in -ow..=ow {
+                for dx in -ow..=ow {
+                    if dx * dx + dy * dy <= ow * ow {
+                        let sx = (x as i32 + dx).clamp(0, w as i32 - 1) as usize;
+                        let sy = (y as i32 + dy).clamp(0, h as i32 - 1) as usize;
+                        min_a = min_a.min(alpha[sy * w + sx]);
+                    }
                 }
             }
-        }
-        min_a
-    }).collect();
+            min_a
+        })
+        .collect();
 
     let mask_raw = mask.map(|m| m.as_raw().as_slice());
     let mask_w = mask.map_or(0, |m| m.width() as usize);
     let mask_h = mask.map_or(0, |m| m.height() as usize);
     let mut dst_raw = src_raw.to_vec();
 
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        for x in 0..w {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 { continue; }
-            }
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            for x in 0..w {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
+                    continue;
+                }
 
-            let idx = y * w + x;
-            let is_edge = match mode {
-                OutlineMode::Outside => dilated[idx] > 0 && alpha[idx] == 0,
-                OutlineMode::Inside => alpha[idx] > 0 && eroded[idx] == 0,
-                OutlineMode::Center => dilated[idx] > 0 && eroded[idx] == 0,
-            };
+                let idx = y * w + x;
+                let is_edge = match mode {
+                    OutlineMode::Outside => dilated[idx] > 0 && alpha[idx] == 0,
+                    OutlineMode::Inside => alpha[idx] > 0 && eroded[idx] == 0,
+                    OutlineMode::Center => dilated[idx] > 0 && eroded[idx] == 0,
+                };
 
-            if is_edge {
-                row_out[pi]     = color[0];
-                row_out[pi + 1] = color[1];
-                row_out[pi + 2] = color[2];
-                row_out[pi + 3] = color[3];
+                if is_edge {
+                    row_out[pi] = color[0];
+                    row_out[pi + 1] = color[1];
+                    row_out[pi + 2] = color[2];
+                    row_out[pi + 3] = color[3];
+                }
             }
-        }
-    });
+        });
 
     RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap()
 }
@@ -1615,29 +2133,62 @@ pub fn outline_core(flat: &RgbaImage, width: u32, color: [u8; 4], mode: OutlineM
 
 // --- Pixel Drag ---
 
-pub fn pixel_drag(state: &mut CanvasState, layer_idx: usize,
-    seed: u32, amount: f32, distance: u32, direction: f32,
+pub fn pixel_drag(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    seed: u32,
+    amount: f32,
+    distance: u32,
+    direction: f32,
 ) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
-    let result = pixel_drag_core(&flat, seed, amount, distance, direction, state.selection_mask.as_ref());
+    let result = pixel_drag_core(
+        &flat,
+        seed,
+        amount,
+        distance,
+        direction,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn pixel_drag_from_flat(state: &mut CanvasState, layer_idx: usize,
-    seed: u32, amount: f32, distance: u32, direction: f32,
+pub fn pixel_drag_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    seed: u32,
+    amount: f32,
+    distance: u32,
+    direction: f32,
     original_flat: &RgbaImage,
 ) {
-    let result = pixel_drag_core(original_flat, seed, amount, distance, direction, state.selection_mask.as_ref());
+    let result = pixel_drag_core(
+        original_flat,
+        seed,
+        amount,
+        distance,
+        direction,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn pixel_drag_core(flat: &RgbaImage, seed: u32, amount: f32, distance: u32, direction: f32,
+pub fn pixel_drag_core(
+    flat: &RgbaImage,
+    seed: u32,
+    amount: f32,
+    distance: u32,
+    direction: f32,
     mask: Option<&GrayImage>,
 ) -> RgbaImage {
     let w = flat.width() as usize;
     let h = flat.height() as usize;
-    if w == 0 || h == 0 { return flat.clone(); }
+    if w == 0 || h == 0 {
+        return flat.clone();
+    }
 
     let src_raw = flat.as_raw();
     let stride = w * 4;
@@ -1651,55 +2202,90 @@ pub fn pixel_drag_core(flat: &RgbaImage, seed: u32, amount: f32, distance: u32, 
     let dist = distance.max(1) as f32;
 
     // Generate drag bands per row
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        let row_hash = hash_f32(y as u32, 0, seed);
-        if row_hash > amount / 100.0 {
-            return; // This row is not affected.
-        }
-        let drag_dist = (hash_f32(y as u32, 1, seed) * dist) as i32;
-
-        for x in 0..w {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 { continue; }
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            let row_hash = hash_f32(y as u32, 0, seed);
+            if row_hash > amount / 100.0 {
+                return; // This row is not affected.
             }
-            let sx = (x as f32 - drag_dist as f32 * dx_dir).round() as i32;
-            let sy = (y as f32 - drag_dist as f32 * dy_dir).round() as i32;
-            let sx = sx.clamp(0, w as i32 - 1) as usize;
-            let sy = sy.clamp(0, h as i32 - 1) as usize;
-            let si = sy * stride + sx * 4;
-            row_out[pi..pi + 4].copy_from_slice(&src_raw[si..si + 4]);
-        }
-    });
+            let drag_dist = (hash_f32(y as u32, 1, seed) * dist) as i32;
+
+            for x in 0..w {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
+                    continue;
+                }
+                let sx = (x as f32 - drag_dist as f32 * dx_dir).round() as i32;
+                let sy = (y as f32 - drag_dist as f32 * dy_dir).round() as i32;
+                let sx = sx.clamp(0, w as i32 - 1) as usize;
+                let sy = sy.clamp(0, h as i32 - 1) as usize;
+                let si = sy * stride + sx * 4;
+                row_out[pi..pi + 4].copy_from_slice(&src_raw[si..si + 4]);
+            }
+        });
 
     RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap()
 }
 
 // --- RGB Displace ---
 
-pub fn rgb_displace(state: &mut CanvasState, layer_idx: usize,
-    r_offset: (i32, i32), g_offset: (i32, i32), b_offset: (i32, i32),
+pub fn rgb_displace(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    r_offset: (i32, i32),
+    g_offset: (i32, i32),
+    b_offset: (i32, i32),
 ) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
-    let result = rgb_displace_core(&flat, r_offset, g_offset, b_offset, state.selection_mask.as_ref());
+    let result = rgb_displace_core(
+        &flat,
+        r_offset,
+        g_offset,
+        b_offset,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn rgb_displace_from_flat(state: &mut CanvasState, layer_idx: usize,
-    r_offset: (i32, i32), g_offset: (i32, i32), b_offset: (i32, i32),
+pub fn rgb_displace_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    r_offset: (i32, i32),
+    g_offset: (i32, i32),
+    b_offset: (i32, i32),
     original_flat: &RgbaImage,
 ) {
-    let result = rgb_displace_core(original_flat, r_offset, g_offset, b_offset, state.selection_mask.as_ref());
+    let result = rgb_displace_core(
+        original_flat,
+        r_offset,
+        g_offset,
+        b_offset,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn rgb_displace_core(flat: &RgbaImage, r_off: (i32, i32), g_off: (i32, i32), b_off: (i32, i32),
+pub fn rgb_displace_core(
+    flat: &RgbaImage,
+    r_off: (i32, i32),
+    g_off: (i32, i32),
+    b_off: (i32, i32),
     mask: Option<&GrayImage>,
 ) -> RgbaImage {
     let w = flat.width() as usize;
     let h = flat.height() as usize;
-    if w == 0 || h == 0 { return flat.clone(); }
+    if w == 0 || h == 0 {
+        return flat.clone();
+    }
 
     let src_raw = flat.as_raw();
     let stride = w * 4;
@@ -1708,33 +2294,38 @@ pub fn rgb_displace_core(flat: &RgbaImage, r_off: (i32, i32), g_off: (i32, i32),
     let mask_w = mask.map_or(0, |m| m.width() as usize);
     let mask_h = mask.map_or(0, |m| m.height() as usize);
 
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        for x in 0..w {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            for x in 0..w {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     let si = y * stride + pi;
                     row_out[pi..pi + 4].copy_from_slice(&src_raw[si..si + 4]);
                     continue;
                 }
+
+                // Sample each channel from offset position.
+                let rx = (x as i32 + r_off.0).clamp(0, w as i32 - 1) as usize;
+                let ry = (y as i32 + r_off.1).clamp(0, h as i32 - 1) as usize;
+                let gx = (x as i32 + g_off.0).clamp(0, w as i32 - 1) as usize;
+                let gy = (y as i32 + g_off.1).clamp(0, h as i32 - 1) as usize;
+                let bx = (x as i32 + b_off.0).clamp(0, w as i32 - 1) as usize;
+                let by = (y as i32 + b_off.1).clamp(0, h as i32 - 1) as usize;
+
+                row_out[pi] = src_raw[ry * stride + rx * 4];
+                row_out[pi + 1] = src_raw[gy * stride + gx * 4 + 1];
+                row_out[pi + 2] = src_raw[by * stride + bx * 4 + 2];
+                // Alpha from center pixel.
+                let si = y * stride + pi;
+                row_out[pi + 3] = src_raw[si + 3];
             }
-
-            // Sample each channel from offset position.
-            let rx = (x as i32 + r_off.0).clamp(0, w as i32 - 1) as usize;
-            let ry = (y as i32 + r_off.1).clamp(0, h as i32 - 1) as usize;
-            let gx = (x as i32 + g_off.0).clamp(0, w as i32 - 1) as usize;
-            let gy = (y as i32 + g_off.1).clamp(0, h as i32 - 1) as usize;
-            let bx = (x as i32 + b_off.0).clamp(0, w as i32 - 1) as usize;
-            let by = (y as i32 + b_off.1).clamp(0, h as i32 - 1) as usize;
-
-            row_out[pi]     = src_raw[ry * stride + rx * 4];
-            row_out[pi + 1] = src_raw[gy * stride + gx * 4 + 1];
-            row_out[pi + 2] = src_raw[by * stride + bx * 4 + 2];
-            // Alpha from center pixel.
-            let si = y * stride + pi;
-            row_out[pi + 3] = src_raw[si + 3];
-        }
-    });
+        });
 
     RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap()
 }
@@ -1746,22 +2337,47 @@ pub fn rgb_displace_core(flat: &RgbaImage, r_off: (i32, i32), g_off: (i32, i32),
 // --- Ink ---
 
 pub fn ink(state: &mut CanvasState, layer_idx: usize, edge_strength: f32, threshold: f32) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
-    let result = ink_core(&flat, edge_strength, threshold, state.selection_mask.as_ref());
+    let result = ink_core(
+        &flat,
+        edge_strength,
+        threshold,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn ink_from_flat(state: &mut CanvasState, layer_idx: usize, edge_strength: f32, threshold: f32, original_flat: &RgbaImage) {
-    let result = ink_core(original_flat, edge_strength, threshold, state.selection_mask.as_ref());
+pub fn ink_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    edge_strength: f32,
+    threshold: f32,
+    original_flat: &RgbaImage,
+) {
+    let result = ink_core(
+        original_flat,
+        edge_strength,
+        threshold,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn ink_core(flat: &RgbaImage, edge_strength: f32, threshold: f32, mask: Option<&GrayImage>) -> RgbaImage {
+pub fn ink_core(
+    flat: &RgbaImage,
+    edge_strength: f32,
+    threshold: f32,
+    mask: Option<&GrayImage>,
+) -> RgbaImage {
     // Sobel edge detection â†’ thresholded black/white ink effect.
     let w = flat.width() as usize;
     let h = flat.height() as usize;
-    if w == 0 || h == 0 { return flat.clone(); }
+    if w == 0 || h == 0 {
+        return flat.clone();
+    }
 
     let src_raw = flat.as_raw();
     let stride = w * 4;
@@ -1770,41 +2386,52 @@ pub fn ink_core(flat: &RgbaImage, edge_strength: f32, threshold: f32, mask: Opti
     let mask_w = mask.map_or(0, |m| m.width() as usize);
     let mask_h = mask.map_or(0, |m| m.height() as usize);
 
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        for x in 0..w {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            for x in 0..w {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     let si = y * stride + pi;
                     row_out[pi..pi + 4].copy_from_slice(&src_raw[si..si + 4]);
                     continue;
                 }
+
+                // Compute luminance of surrounding pixels for Sobel.
+                let lum = |px: i32, py: i32| -> f32 {
+                    let cx = px.clamp(0, w as i32 - 1) as usize;
+                    let cy = py.clamp(0, h as i32 - 1) as usize;
+                    let si = cy * stride + cx * 4;
+                    0.2126 * src_raw[si] as f32
+                        + 0.7152 * src_raw[si + 1] as f32
+                        + 0.0722 * src_raw[si + 2] as f32
+                };
+
+                let ix = x as i32;
+                let iy = y as i32;
+                let gx = -lum(ix - 1, iy - 1) - 2.0 * lum(ix - 1, iy) - lum(ix - 1, iy + 1)
+                    + lum(ix + 1, iy - 1)
+                    + 2.0 * lum(ix + 1, iy)
+                    + lum(ix + 1, iy + 1);
+                let gy = -lum(ix - 1, iy - 1) - 2.0 * lum(ix, iy - 1) - lum(ix + 1, iy - 1)
+                    + lum(ix - 1, iy + 1)
+                    + 2.0 * lum(ix, iy + 1)
+                    + lum(ix + 1, iy + 1);
+                let edge = (gx * gx + gy * gy).sqrt() * edge_strength / 100.0;
+                let val = if edge > threshold { 0u8 } else { 255u8 };
+
+                let si = y * stride + pi;
+                row_out[pi] = val;
+                row_out[pi + 1] = val;
+                row_out[pi + 2] = val;
+                row_out[pi + 3] = src_raw[si + 3];
             }
-
-            // Compute luminance of surrounding pixels for Sobel.
-            let lum = |px: i32, py: i32| -> f32 {
-                let cx = px.clamp(0, w as i32 - 1) as usize;
-                let cy = py.clamp(0, h as i32 - 1) as usize;
-                let si = cy * stride + cx * 4;
-                0.2126 * src_raw[si] as f32 + 0.7152 * src_raw[si + 1] as f32 + 0.0722 * src_raw[si + 2] as f32
-            };
-
-            let ix = x as i32;
-            let iy = y as i32;
-            let gx = -lum(ix-1,iy-1) - 2.0*lum(ix-1,iy) - lum(ix-1,iy+1)
-                     + lum(ix+1,iy-1) + 2.0*lum(ix+1,iy) + lum(ix+1,iy+1);
-            let gy = -lum(ix-1,iy-1) - 2.0*lum(ix,iy-1) - lum(ix+1,iy-1)
-                     + lum(ix-1,iy+1) + 2.0*lum(ix,iy+1) + lum(ix+1,iy+1);
-            let edge = (gx * gx + gy * gy).sqrt() * edge_strength / 100.0;
-            let val = if edge > threshold { 0u8 } else { 255u8 };
-
-            let si = y * stride + pi;
-            row_out[pi]     = val;
-            row_out[pi + 1] = val;
-            row_out[pi + 2] = val;
-            row_out[pi + 3] = src_raw[si + 3];
-        }
-    });
+        });
 
     RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap()
 }
@@ -1812,24 +2439,39 @@ pub fn ink_core(flat: &RgbaImage, edge_strength: f32, threshold: f32, mask: Opti
 // --- Oil Painting ---
 
 pub fn oil_painting(state: &mut CanvasState, layer_idx: usize, radius: u32, levels: u32) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
     let result = oil_painting_core(&flat, radius, levels, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn oil_painting_from_flat(state: &mut CanvasState, layer_idx: usize, radius: u32, levels: u32, original_flat: &RgbaImage) {
+pub fn oil_painting_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    radius: u32,
+    levels: u32,
+    original_flat: &RgbaImage,
+) {
     let result = oil_painting_core(original_flat, radius, levels, state.selection_mask.as_ref());
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn oil_painting_core(flat: &RgbaImage, radius: u32, levels: u32, mask: Option<&GrayImage>) -> RgbaImage {
+pub fn oil_painting_core(
+    flat: &RgbaImage,
+    radius: u32,
+    levels: u32,
+    mask: Option<&GrayImage>,
+) -> RgbaImage {
     let w = flat.width() as usize;
     let h = flat.height() as usize;
-    if w == 0 || h == 0 { return flat.clone(); }
+    if w == 0 || h == 0 {
+        return flat.clone();
+    }
 
-    let r = radius.max(1).min(10) as i32;
-    let num_levels = levels.max(2).min(64) as usize;
+    let r = radius.clamp(1, 10) as i32;
+    let num_levels = levels.clamp(2, 64) as usize;
     let src_raw = flat.as_raw();
     let stride = w * 4;
     let mut dst_raw = vec![0u8; w * h * 4];
@@ -1837,66 +2479,71 @@ pub fn oil_painting_core(flat: &RgbaImage, radius: u32, levels: u32, mask: Optio
     let mask_w = mask.map_or(0, |m| m.width() as usize);
     let mask_h = mask.map_or(0, |m| m.height() as usize);
 
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        let mut intensity_count = vec![0u32; num_levels];
-        let mut sum_r = vec![0u32; num_levels];
-        let mut sum_g = vec![0u32; num_levels];
-        let mut sum_b = vec![0u32; num_levels];
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            let mut intensity_count = vec![0u32; num_levels];
+            let mut sum_r = vec![0u32; num_levels];
+            let mut sum_g = vec![0u32; num_levels];
+            let mut sum_b = vec![0u32; num_levels];
 
-        for x in 0..w {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 {
+            for x in 0..w {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     let si = y * stride + pi;
                     row_out[pi..pi + 4].copy_from_slice(&src_raw[si..si + 4]);
                     continue;
                 }
-            }
 
-            // Reset bins.
-            for i in 0..num_levels {
-                intensity_count[i] = 0;
-                sum_r[i] = 0;
-                sum_g[i] = 0;
-                sum_b[i] = 0;
-            }
-
-            for dy in -r..=r {
-                let sy = (y as i32 + dy).clamp(0, h as i32 - 1) as usize;
-                for dx in -r..=r {
-                    let sx = (x as i32 + dx).clamp(0, w as i32 - 1) as usize;
-                    let si = sy * stride + sx * 4;
-                    let pr = src_raw[si] as u32;
-                    let pg = src_raw[si + 1] as u32;
-                    let pb = src_raw[si + 2] as u32;
-                    let intensity = ((pr + pg + pb) / 3 * num_levels as u32 / 256) as usize;
-                    let intensity = intensity.min(num_levels - 1);
-                    intensity_count[intensity] += 1;
-                    sum_r[intensity] += pr;
-                    sum_g[intensity] += pg;
-                    sum_b[intensity] += pb;
+                // Reset bins.
+                for i in 0..num_levels {
+                    intensity_count[i] = 0;
+                    sum_r[i] = 0;
+                    sum_g[i] = 0;
+                    sum_b[i] = 0;
                 }
-            }
 
-            // Find the most common intensity bin.
-            let mut max_count = 0u32;
-            let mut max_idx = 0usize;
-            for i in 0..num_levels {
-                if intensity_count[i] > max_count {
-                    max_count = intensity_count[i];
-                    max_idx = i;
+                for dy in -r..=r {
+                    let sy = (y as i32 + dy).clamp(0, h as i32 - 1) as usize;
+                    for dx in -r..=r {
+                        let sx = (x as i32 + dx).clamp(0, w as i32 - 1) as usize;
+                        let si = sy * stride + sx * 4;
+                        let pr = src_raw[si] as u32;
+                        let pg = src_raw[si + 1] as u32;
+                        let pb = src_raw[si + 2] as u32;
+                        let intensity = ((pr + pg + pb) / 3 * num_levels as u32 / 256) as usize;
+                        let intensity = intensity.min(num_levels - 1);
+                        intensity_count[intensity] += 1;
+                        sum_r[intensity] += pr;
+                        sum_g[intensity] += pg;
+                        sum_b[intensity] += pb;
+                    }
                 }
-            }
 
-            if max_count > 0 {
-                row_out[pi]     = (sum_r[max_idx] / max_count) as u8;
-                row_out[pi + 1] = (sum_g[max_idx] / max_count) as u8;
-                row_out[pi + 2] = (sum_b[max_idx] / max_count) as u8;
+                // Find the most common intensity bin.
+                let mut max_count = 0u32;
+                let mut max_idx = 0usize;
+                for (i, &count) in intensity_count.iter().enumerate() {
+                    if count > max_count {
+                        max_count = count;
+                        max_idx = i;
+                    }
+                }
+
+                if max_count > 0 {
+                    row_out[pi] = (sum_r[max_idx] / max_count) as u8;
+                    row_out[pi + 1] = (sum_g[max_idx] / max_count) as u8;
+                    row_out[pi + 2] = (sum_b[max_idx] / max_count) as u8;
+                }
+                let si = y * stride + pi;
+                row_out[pi + 3] = src_raw[si + 3];
             }
-            let si = y * stride + pi;
-            row_out[pi + 3] = src_raw[si + 3];
-        }
-    });
+        });
 
     RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap()
 }
@@ -1911,27 +2558,57 @@ pub enum ColorFilterMode {
     SoftLight,
 }
 
-pub fn color_filter(state: &mut CanvasState, layer_idx: usize,
-    filter_color: [u8; 4], intensity: f32, mode: ColorFilterMode,
+pub fn color_filter(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    filter_color: [u8; 4],
+    intensity: f32,
+    mode: ColorFilterMode,
 ) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
-    let result = color_filter_core(&flat, filter_color, intensity, mode, state.selection_mask.as_ref());
+    let result = color_filter_core(
+        &flat,
+        filter_color,
+        intensity,
+        mode,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn color_filter_from_flat(state: &mut CanvasState, layer_idx: usize,
-    filter_color: [u8; 4], intensity: f32, mode: ColorFilterMode,
+pub fn color_filter_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    filter_color: [u8; 4],
+    intensity: f32,
+    mode: ColorFilterMode,
     original_flat: &RgbaImage,
 ) {
-    let result = color_filter_core(original_flat, filter_color, intensity, mode, state.selection_mask.as_ref());
+    let result = color_filter_core(
+        original_flat,
+        filter_color,
+        intensity,
+        mode,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn color_filter_core(flat: &RgbaImage, filter_color: [u8; 4], intensity: f32, mode: ColorFilterMode,
+pub fn color_filter_core(
+    flat: &RgbaImage,
+    filter_color: [u8; 4],
+    intensity: f32,
+    mode: ColorFilterMode,
     mask: Option<&GrayImage>,
 ) -> RgbaImage {
-    let fc = [filter_color[0] as f32 / 255.0, filter_color[1] as f32 / 255.0, filter_color[2] as f32 / 255.0];
+    let fc = [
+        filter_color[0] as f32 / 255.0,
+        filter_color[1] as f32 / 255.0,
+        filter_color[2] as f32 / 255.0,
+    ];
 
     apply_per_pixel(flat, mask, |_x, _y, r, g, b, a| {
         let rs = r / 255.0;
@@ -1942,11 +2619,18 @@ pub fn color_filter_core(flat: &RgbaImage, filter_color: [u8; 4], intensity: f32
                 ColorFilterMode::Multiply => s * f,
                 ColorFilterMode::Screen => 1.0 - (1.0 - s) * (1.0 - f),
                 ColorFilterMode::Overlay => {
-                    if s < 0.5 { 2.0 * s * f } else { 1.0 - 2.0 * (1.0 - s) * (1.0 - f) }
+                    if s < 0.5 {
+                        2.0 * s * f
+                    } else {
+                        1.0 - 2.0 * (1.0 - s) * (1.0 - f)
+                    }
                 }
                 ColorFilterMode::SoftLight => {
-                    if f < 0.5 { s - (1.0 - 2.0 * f) * s * (1.0 - s) }
-                    else { s + (2.0 * f - 1.0) * (s.sqrt() - s) }
+                    if f < 0.5 {
+                        s - (1.0 - 2.0 * f) * s * (1.0 - s)
+                    } else {
+                        s + (2.0 * f - 1.0) * (s.sqrt() - s)
+                    }
                 }
             }
         };
@@ -1962,35 +2646,80 @@ pub fn color_filter_core(flat: &RgbaImage, filter_color: [u8; 4], intensity: f32
 // RENDER â€” Contours (topographic map lines)
 // ============================================================================
 
-pub fn contours(state: &mut CanvasState, layer_idx: usize,
-    scale: f32, frequency: f32, line_width: f32, line_color: [u8; 4],
-    seed: u32, octaves: u32, blend: f32,
+pub fn contours(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    scale: f32,
+    frequency: f32,
+    line_width: f32,
+    line_color: [u8; 4],
+    seed: u32,
+    octaves: u32,
+    blend: f32,
 ) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let flat = state.layers[layer_idx].pixels.to_rgba_image();
-    let result = contours_core(&flat, scale, frequency, line_width, line_color, seed, octaves, blend, state.selection_mask.as_ref());
+    let result = contours_core(
+        &flat,
+        scale,
+        frequency,
+        line_width,
+        line_color,
+        seed,
+        octaves,
+        blend,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn contours_from_flat(state: &mut CanvasState, layer_idx: usize,
-    scale: f32, frequency: f32, line_width: f32, line_color: [u8; 4],
-    seed: u32, octaves: u32, blend: f32,
+pub fn contours_from_flat(
+    state: &mut CanvasState,
+    layer_idx: usize,
+    scale: f32,
+    frequency: f32,
+    line_width: f32,
+    line_color: [u8; 4],
+    seed: u32,
+    octaves: u32,
+    blend: f32,
     original_flat: &RgbaImage,
 ) {
-    let result = contours_core(original_flat, scale, frequency, line_width, line_color, seed, octaves, blend, state.selection_mask.as_ref());
+    let result = contours_core(
+        original_flat,
+        scale,
+        frequency,
+        line_width,
+        line_color,
+        seed,
+        octaves,
+        blend,
+        state.selection_mask.as_ref(),
+    );
     commit_to_layer(state, layer_idx, &result);
 }
 
-pub fn contours_core(flat: &RgbaImage, scale: f32, frequency: f32, line_width: f32,
-    line_color: [u8; 4], seed: u32, octaves: u32, blend: f32,
+pub fn contours_core(
+    flat: &RgbaImage,
+    scale: f32,
+    frequency: f32,
+    line_width: f32,
+    line_color: [u8; 4],
+    seed: u32,
+    octaves: u32,
+    blend: f32,
     mask: Option<&GrayImage>,
 ) -> RgbaImage {
     let w = flat.width() as usize;
     let h = flat.height() as usize;
-    if w == 0 || h == 0 { return flat.clone(); }
+    if w == 0 || h == 0 {
+        return flat.clone();
+    }
 
     let inv_scale = 1.0 / scale.max(0.5);
-    let oct = octaves.max(1).min(8);
+    let oct = octaves.clamp(1, 8);
     let half_lw = (line_width * 0.5).max(0.3);
     let lr = line_color[0] as f32;
     let lg = line_color[1] as f32;

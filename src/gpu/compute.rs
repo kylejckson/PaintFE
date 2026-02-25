@@ -14,7 +14,11 @@ use super::context::GpuContext;
 fn create_rw_texture(device: &wgpu::Device, w: u32, h: u32, label: &str) -> wgpu::Texture {
     device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
-        size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -26,10 +30,21 @@ fn create_rw_texture(device: &wgpu::Device, w: u32, h: u32, label: &str) -> wgpu
     })
 }
 
-fn upload_rgba(device: &wgpu::Device, queue: &wgpu::Queue, data: &[u8], w: u32, h: u32, label: &str) -> wgpu::Texture {
+fn upload_rgba(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    data: &[u8],
+    w: u32,
+    h: u32,
+    label: &str,
+) -> wgpu::Texture {
     let tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
-        size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -39,12 +54,22 @@ fn upload_rgba(device: &wgpu::Device, queue: &wgpu::Queue, data: &[u8], w: u32, 
     });
     queue.write_texture(
         wgpu::ImageCopyTexture {
-            texture: &tex, mip_level: 0,
-            origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All,
+            texture: &tex,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
         },
         data,
-        wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(4 * w), rows_per_image: Some(h) },
-        wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        wgpu::ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * w),
+            rows_per_image: Some(h),
+        },
+        wgpu::Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        },
     );
     tex
 }
@@ -117,9 +142,18 @@ fn dispatch_simple_filter(
         label: Some("filter_bg"),
         layout: bgl,
         entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&src_view) },
-            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&dst_view) },
-            wgpu::BindGroupEntry { binding: 2, resource: params_buf.as_entire_binding() },
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&src_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&dst_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: params_buf.as_entire_binding(),
+            },
         ],
     });
 
@@ -133,7 +167,7 @@ fn dispatch_simple_filter(
         });
         pass.set_pipeline(pipeline);
         pass.set_bind_group(0, &bg, &[]);
-        pass.dispatch_workgroups((w + 15) / 16, (h + 15) / 16, 1);
+        pass.dispatch_workgroups(w.div_ceil(16), h.div_ceil(16), 1);
     }
     queue.submit(std::iter::once(encoder.finish()));
 
@@ -165,52 +199,51 @@ impl GpuBlurPipeline {
             source: wgpu::ShaderSource::Wgsl(super::shaders::GAUSSIAN_BLUR_SHADER.into()),
         });
 
-        let bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("blur_bgl"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("blur_bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::StorageTexture {
-                            access: wgpu::StorageTextureAccess::WriteOnly,
-                            format: wgpu::TextureFormat::Rgba8Unorm,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                        },
-                        count: None,
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        view_dimension: wgpu::TextureViewDimension::D2,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                ],
-            });
+                    count: None,
+                },
+            ],
+        });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("blur_pipeline_layout"),
@@ -226,7 +259,10 @@ impl GpuBlurPipeline {
             compilation_options: Default::default(),
         });
 
-        Self { pipeline, bind_group_layout }
+        Self {
+            pipeline,
+            bind_group_layout,
+        }
     }
 
     /// Two-pass separable Gaussian blur on a GPU texture.
@@ -252,7 +288,11 @@ impl GpuBlurPipeline {
             let end = center + radius as usize + 1;
             let mut truncated: Vec<f32> = kernel[start..end].to_vec();
             let sum: f32 = truncated.iter().sum();
-            if sum > 0.0 { for v in &mut truncated { *v /= sum; } }
+            if sum > 0.0 {
+                for v in &mut truncated {
+                    *v /= sum;
+                }
+            }
             truncated
         } else {
             kernel
@@ -274,7 +314,12 @@ impl GpuBlurPipeline {
         // ---- Pass 1: Horizontal blur (input → temp) ----
         // Dispatch: one workgroup of 256 threads per tile-row, one row per Y.
         {
-            let params = BlurParams { radius, direction: 0, width, height };
+            let params = BlurParams {
+                radius,
+                direction: 0,
+                width,
+                height,
+            };
             let params_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("blur_params_h"),
                 contents: bytemuck::bytes_of(&params),
@@ -294,10 +339,22 @@ impl GpuBlurPipeline {
                 label: Some("blur_bg_h"),
                 layout: &self.bind_group_layout,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&input_view) },
-                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&temp_view) },
-                    wgpu::BindGroupEntry { binding: 2, resource: params_buf.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 3, resource: kernel_buffer.as_entire_binding() },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&input_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&temp_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: params_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: kernel_buffer.as_entire_binding(),
+                    },
                 ],
             });
 
@@ -308,12 +365,17 @@ impl GpuBlurPipeline {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bg, &[]);
             // X workgroups: ceil(width / 256), Y: one per row
-            pass.dispatch_workgroups((width + 255) / 256, height, 1);
+            pass.dispatch_workgroups(width.div_ceil(256), height, 1);
         }
 
         // ---- Pass 2: Vertical blur (temp → output) ----
         {
-            let params = BlurParams { radius, direction: 1, width, height };
+            let params = BlurParams {
+                radius,
+                direction: 1,
+                width,
+                height,
+            };
             let params_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("blur_params_v"),
                 contents: bytemuck::bytes_of(&params),
@@ -333,10 +395,22 @@ impl GpuBlurPipeline {
                 label: Some("blur_bg_v"),
                 layout: &self.bind_group_layout,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&temp_view) },
-                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&output_view) },
-                    wgpu::BindGroupEntry { binding: 2, resource: params_buf.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 3, resource: kernel_buffer.as_entire_binding() },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&temp_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&output_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: params_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: kernel_buffer.as_entire_binding(),
+                    },
                 ],
             });
 
@@ -347,7 +421,7 @@ impl GpuBlurPipeline {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bg, &[]);
             // Vertical: X workgroups = ceil(height/256), Y = width (one column per Y)
-            pass.dispatch_workgroups((height + 255) / 256, width, 1);
+            pass.dispatch_workgroups(height.div_ceil(256), width, 1);
         }
 
         queue.submit(std::iter::once(encoder.finish()));
@@ -363,26 +437,37 @@ impl GpuBlurPipeline {
         height: u32,
         sigma: f32,
     ) -> Vec<u8> {
-        let src_tex = upload_rgba(&ctx.device, &ctx.queue, input_data, width, height, "blur_src");
+        let src_tex = upload_rgba(
+            &ctx.device,
+            &ctx.queue,
+            input_data,
+            width,
+            height,
+            "blur_src",
+        );
         let output_tex = self.blur(ctx, &src_tex, width, height, sigma);
         super::compositor::Compositor::readback_texture(ctx, &output_tex, width, height, &mut None)
     }
 
     fn build_kernel(sigma: f32) -> Vec<f32> {
         let radius = (sigma * 3.0).ceil() as usize;
-        if radius == 0 { return vec![1.0]; }
+        if radius == 0 {
+            return vec![1.0];
+        }
         let len = radius * 2 + 1;
         let mut kernel = vec![0.0f32; len];
         let s2 = 2.0 * sigma * sigma;
         let mut sum = 0.0f32;
-        for i in 0..len {
+        for (i, item) in kernel.iter_mut().enumerate() {
             let x = i as f32 - radius as f32;
             let v = (-x * x / s2).exp();
-            kernel[i] = v;
+            *item = v;
             sum += v;
         }
         let inv = 1.0 / sum;
-        for v in &mut kernel { *v *= inv; }
+        for v in &mut kernel {
+            *v *= inv;
+        }
         kernel
     }
 }
@@ -427,9 +512,31 @@ impl GpuBrightnessContrastPipeline {
         Self { pipeline, bgl }
     }
 
-    pub fn apply(&self, ctx: &GpuContext, data: &[u8], w: u32, h: u32, brightness: f32, contrast: f32) -> Vec<u8> {
-        let params = BcParams { width: w, height: h, brightness, contrast };
-        dispatch_simple_filter(ctx, &self.pipeline, &self.bgl, data, w, h, bytemuck::bytes_of(&params), "cs_brightness_contrast")
+    pub fn apply(
+        &self,
+        ctx: &GpuContext,
+        data: &[u8],
+        w: u32,
+        h: u32,
+        brightness: f32,
+        contrast: f32,
+    ) -> Vec<u8> {
+        let params = BcParams {
+            width: w,
+            height: h,
+            brightness,
+            contrast,
+        };
+        dispatch_simple_filter(
+            ctx,
+            &self.pipeline,
+            &self.bgl,
+            data,
+            w,
+            h,
+            bytemuck::bytes_of(&params),
+            "cs_brightness_contrast",
+        )
     }
 }
 
@@ -442,9 +549,9 @@ impl GpuBrightnessContrastPipeline {
 struct HslParams {
     width: u32,
     height: u32,
-    hue_shift: f32,     // normalised: hue_shift_degrees / 360.0
-    sat_factor: f32,    // 1.0 + saturation / 100.0
-    light_offset: f32,  // lightness * 255.0 / 100.0 / 255.0 = lightness / 100.0
+    hue_shift: f32,    // normalised: hue_shift_degrees / 360.0
+    sat_factor: f32,   // 1.0 + saturation / 100.0
+    light_offset: f32, // lightness * 255.0 / 100.0 / 255.0 = lightness / 100.0
     _pad0: f32,
     _pad1: f32,
     _pad2: f32,
@@ -478,7 +585,16 @@ impl GpuHslPipeline {
     }
 
     /// `hue_shift`: degrees (-180..180), `saturation`: -100..100, `lightness`: -100..100
-    pub fn apply(&self, ctx: &GpuContext, data: &[u8], w: u32, h: u32, hue_shift: f32, saturation: f32, lightness: f32) -> Vec<u8> {
+    pub fn apply(
+        &self,
+        ctx: &GpuContext,
+        data: &[u8],
+        w: u32,
+        h: u32,
+        hue_shift: f32,
+        saturation: f32,
+        lightness: f32,
+    ) -> Vec<u8> {
         let params = HslParams {
             width: w,
             height: h,
@@ -489,7 +605,16 @@ impl GpuHslPipeline {
             _pad1: 0.0,
             _pad2: 0.0,
         };
-        dispatch_simple_filter(ctx, &self.pipeline, &self.bgl, data, w, h, bytemuck::bytes_of(&params), "cs_hsl_adjust")
+        dispatch_simple_filter(
+            ctx,
+            &self.pipeline,
+            &self.bgl,
+            data,
+            w,
+            h,
+            bytemuck::bytes_of(&params),
+            "cs_hsl_adjust",
+        )
     }
 }
 
@@ -534,8 +659,22 @@ impl GpuInvertPipeline {
     }
 
     pub fn apply(&self, ctx: &GpuContext, data: &[u8], w: u32, h: u32) -> Vec<u8> {
-        let params = InvParams { width: w, height: h, _pad0: 0, _pad1: 0 };
-        dispatch_simple_filter(ctx, &self.pipeline, &self.bgl, data, w, h, bytemuck::bytes_of(&params), "cs_invert")
+        let params = InvParams {
+            width: w,
+            height: h,
+            _pad0: 0,
+            _pad1: 0,
+        };
+        dispatch_simple_filter(
+            ctx,
+            &self.pipeline,
+            &self.bgl,
+            data,
+            w,
+            h,
+            bytemuck::bytes_of(&params),
+            "cs_invert",
+        )
     }
 }
 
@@ -581,10 +720,33 @@ impl GpuMedianPipeline {
 
     /// GPU median filter.  `radius` is clamped to 7 max (window 15×15).
     /// Returns None if radius > 7 (caller should fall back to CPU).
-    pub fn apply(&self, ctx: &GpuContext, data: &[u8], w: u32, h: u32, radius: u32) -> Option<Vec<u8>> {
-        if radius > 7 { return None; }
-        let params = MedianParams { width: w, height: h, radius, _pad0: 0 };
-        Some(dispatch_simple_filter(ctx, &self.pipeline, &self.bgl, data, w, h, bytemuck::bytes_of(&params), "cs_median"))
+    pub fn apply(
+        &self,
+        ctx: &GpuContext,
+        data: &[u8],
+        w: u32,
+        h: u32,
+        radius: u32,
+    ) -> Option<Vec<u8>> {
+        if radius > 7 {
+            return None;
+        }
+        let params = MedianParams {
+            width: w,
+            height: h,
+            radius,
+            _pad0: 0,
+        };
+        Some(dispatch_simple_filter(
+            ctx,
+            &self.pipeline,
+            &self.bgl,
+            data,
+            w,
+            h,
+            bytemuck::bytes_of(&params),
+            "cs_median",
+        ))
     }
 }
 
@@ -682,7 +844,16 @@ impl GpuGradientPipeline {
             compilation_options: Default::default(),
         });
 
-        Self { pipeline, bgl, cached_output_tex: None, cached_staging_buf: None, cached_params_buf: None, cached_lut_buf: None, cached_w: 0, cached_h: 0 }
+        Self {
+            pipeline,
+            bgl,
+            cached_output_tex: None,
+            cached_staging_buf: None,
+            cached_params_buf: None,
+            cached_lut_buf: None,
+            cached_w: 0,
+            cached_h: 0,
+        }
     }
 
     /// Ensure cached output texture and staging buffer match the requested size.
@@ -710,7 +881,7 @@ impl GpuGradientPipeline {
         &mut self,
         ctx: &GpuContext,
         params: &GradientGpuParams,
-        lut_rgba: &[u8],  // 256 * 4 = 1024 bytes
+        lut_rgba: &[u8], // 256 * 4 = 1024 bytes
         out: &mut Vec<u8>,
     ) {
         let device = &ctx.device;
@@ -723,9 +894,9 @@ impl GpuGradientPipeline {
 
         // Pack the LUT into u32 array (little-endian RGBA)
         let mut lut_packed = [0u32; 256];
-        for i in 0..256 {
+        for (i, item) in lut_packed.iter_mut().enumerate() {
             let off = i * 4;
-            lut_packed[i] = (lut_rgba[off] as u32)
+            *item = (lut_rgba[off] as u32)
                 | ((lut_rgba[off + 1] as u32) << 8)
                 | ((lut_rgba[off + 2] as u32) << 16)
                 | ((lut_rgba[off + 3] as u32) << 24);
@@ -761,9 +932,18 @@ impl GpuGradientPipeline {
             label: Some("gradient_bg"),
             layout: &self.bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&dst_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: params_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: lut_buf.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&dst_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: params_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: lut_buf.as_entire_binding(),
+                },
             ],
         });
 
@@ -779,7 +959,7 @@ impl GpuGradientPipeline {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bg, &[]);
-            pass.dispatch_workgroups((w + 15) / 16, (h + 15) / 16, 1);
+            pass.dispatch_workgroups(w.div_ceil(16), h.div_ceil(16), 1);
         }
 
         // Copy output texture → cached staging buffer
@@ -798,7 +978,11 @@ impl GpuGradientPipeline {
                     rows_per_image: Some(h),
                 },
             },
-            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
         );
 
         queue.submit(std::iter::once(encoder.finish()));
@@ -812,8 +996,14 @@ impl GpuGradientPipeline {
         device.poll(wgpu::Maintain::Wait);
         match rx.recv() {
             Ok(Ok(())) => {}
-            Ok(Err(e)) => { eprintln!("[GPU] GpuGradientPipeline readback map error: {:?}", e); return; }
-            Err(e)     => { eprintln!("[GPU] GpuGradientPipeline readback channel error: {:?}", e); return; }
+            Ok(Err(e)) => {
+                eprintln!("[GPU] GpuGradientPipeline readback map error: {:?}", e);
+                return;
+            }
+            Err(e) => {
+                eprintln!("[GPU] GpuGradientPipeline readback channel error: {:?}", e);
+                return;
+            }
         }
 
         let mapped = slice.get_mapped_range();
@@ -953,7 +1143,11 @@ impl GpuLiquifyPipeline {
             // Source texture (will be written via queue.write_texture)
             self.cached_source_tex = Some(device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("liquify_source"),
-                size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+                size: wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
@@ -1020,19 +1214,33 @@ impl GpuLiquifyPipeline {
 
         let src_tex = match self.cached_source_tex.as_ref() {
             Some(t) => t,
-            None => { eprintln!("[GPU] GpuLiquifyPipeline: cached_source_tex not initialised — skipping"); return; }
+            None => {
+                eprintln!("[GPU] GpuLiquifyPipeline: cached_source_tex not initialised — skipping");
+                return;
+            }
         };
         let dst_tex = match self.cached_output_tex.as_ref() {
             Some(t) => t,
-            None => { eprintln!("[GPU] GpuLiquifyPipeline: cached_output_tex not initialised — skipping"); return; }
+            None => {
+                eprintln!("[GPU] GpuLiquifyPipeline: cached_output_tex not initialised — skipping");
+                return;
+            }
         };
         let staging = match self.cached_staging_buf.as_ref() {
             Some(b) => b,
-            None => { eprintln!("[GPU] GpuLiquifyPipeline: cached_staging_buf not initialised — skipping"); return; }
+            None => {
+                eprintln!(
+                    "[GPU] GpuLiquifyPipeline: cached_staging_buf not initialised — skipping"
+                );
+                return;
+            }
         };
         let disp_buf = match self.cached_disp_buf.as_ref() {
             Some(b) => b,
-            None => { eprintln!("[GPU] GpuLiquifyPipeline: cached_disp_buf not initialised — skipping"); return; }
+            None => {
+                eprintln!("[GPU] GpuLiquifyPipeline: cached_disp_buf not initialised — skipping");
+                return;
+            }
         };
 
         // Upload source image (only when dirty — stays constant during a stroke)
@@ -1050,7 +1258,11 @@ impl GpuLiquifyPipeline {
                     bytes_per_row: Some(4 * w),
                     rows_per_image: Some(h),
                 },
-                wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
             );
             self.source_dirty = false;
         }
@@ -1059,7 +1271,10 @@ impl GpuLiquifyPipeline {
         queue.write_buffer(disp_buf, 0, bytemuck::cast_slice(displacement_data));
 
         // Params uniform
-        let params = LiquifyGpuParams { width: w, height: h };
+        let params = LiquifyGpuParams {
+            width: w,
+            height: h,
+        };
         let params_bytes = bytemuck::bytes_of(&params);
         let params_buf = self.cached_params_buf.get_or_insert_with(|| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1078,10 +1293,22 @@ impl GpuLiquifyPipeline {
             label: Some("liquify_bg"),
             layout: &self.bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&src_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&dst_view) },
-                wgpu::BindGroupEntry { binding: 2, resource: disp_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: params_buf.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&src_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&dst_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: disp_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: params_buf.as_entire_binding(),
+                },
             ],
         });
 
@@ -1097,7 +1324,7 @@ impl GpuLiquifyPipeline {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bg, &[]);
-            pass.dispatch_workgroups((w + 15) / 16, (h + 15) / 16, 1);
+            pass.dispatch_workgroups(w.div_ceil(16), h.div_ceil(16), 1);
         }
 
         // Copy output texture → staging buffer
@@ -1116,7 +1343,11 @@ impl GpuLiquifyPipeline {
                     rows_per_image: Some(h),
                 },
             },
-            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
         );
 
         queue.submit(std::iter::once(encoder.finish()));
@@ -1130,8 +1361,14 @@ impl GpuLiquifyPipeline {
         device.poll(wgpu::Maintain::Wait);
         match rx.recv() {
             Ok(Ok(())) => {}
-            Ok(Err(e)) => { eprintln!("[GPU] GpuLiquifyPipeline readback map error: {:?}", e); return; }
-            Err(e)     => { eprintln!("[GPU] GpuLiquifyPipeline readback channel error: {:?}", e); return; }
+            Ok(Err(e)) => {
+                eprintln!("[GPU] GpuLiquifyPipeline readback map error: {:?}", e);
+                return;
+            }
+            Err(e) => {
+                eprintln!("[GPU] GpuLiquifyPipeline readback channel error: {:?}", e);
+                return;
+            }
         }
 
         let mapped = slice.get_mapped_range();
@@ -1299,20 +1536,40 @@ impl GpuMeshWarpDisplacementPipeline {
 
         let pts_buf = match self.cached_points_buf.as_ref() {
             Some(b) => b,
-            None => { eprintln!("[GPU] GpuMeshWarpDisplacementPipeline: cached_points_buf not initialised — skipping"); return; }
+            None => {
+                eprintln!(
+                    "[GPU] GpuMeshWarpDisplacementPipeline: cached_points_buf not initialised — skipping"
+                );
+                return;
+            }
         };
         let disp_buf = match self.cached_disp_out_buf.as_ref() {
             Some(b) => b,
-            None => { eprintln!("[GPU] GpuMeshWarpDisplacementPipeline: cached_disp_out_buf not initialised — skipping"); return; }
+            None => {
+                eprintln!(
+                    "[GPU] GpuMeshWarpDisplacementPipeline: cached_disp_out_buf not initialised — skipping"
+                );
+                return;
+            }
         };
         let staging = match self.cached_staging_buf.as_ref() {
             Some(b) => b,
-            None => { eprintln!("[GPU] GpuMeshWarpDisplacementPipeline: cached_staging_buf not initialised — skipping"); return; }
+            None => {
+                eprintln!(
+                    "[GPU] GpuMeshWarpDisplacementPipeline: cached_staging_buf not initialised — skipping"
+                );
+                return;
+            }
         };
 
         queue.write_buffer(pts_buf, 0, bytemuck::cast_slice(deformed_points));
 
-        let params = MeshWarpGpuParams { width: w, height: h, grid_cols, grid_rows };
+        let params = MeshWarpGpuParams {
+            width: w,
+            height: h,
+            grid_cols,
+            grid_rows,
+        };
         let params_bytes = bytemuck::bytes_of(&params);
         let params_buf = self.cached_params_buf.get_or_insert_with(|| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1327,9 +1584,18 @@ impl GpuMeshWarpDisplacementPipeline {
             label: Some("mw_disp_bg"),
             layout: &self.bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: pts_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: disp_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: params_buf.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: pts_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: disp_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: params_buf.as_entire_binding(),
+                },
             ],
         });
 
@@ -1345,7 +1611,7 @@ impl GpuMeshWarpDisplacementPipeline {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bg, &[]);
-            pass.dispatch_workgroups((w + 15) / 16, (h + 15) / 16, 1);
+            pass.dispatch_workgroups(w.div_ceil(16), h.div_ceil(16), 1);
         }
         encoder.copy_buffer_to_buffer(disp_buf, 0, staging, 0, disp_byte_size);
         queue.submit(std::iter::once(encoder.finish()));
@@ -1358,8 +1624,20 @@ impl GpuMeshWarpDisplacementPipeline {
         device.poll(wgpu::Maintain::Wait);
         match rx.recv() {
             Ok(Ok(())) => {}
-            Ok(Err(e)) => { eprintln!("[GPU] GpuMeshWarpDisplacementPipeline readback map error: {:?}", e); return; }
-            Err(e)     => { eprintln!("[GPU] GpuMeshWarpDisplacementPipeline readback channel error: {:?}", e); return; }
+            Ok(Err(e)) => {
+                eprintln!(
+                    "[GPU] GpuMeshWarpDisplacementPipeline readback map error: {:?}",
+                    e
+                );
+                return;
+            }
+            Err(e) => {
+                eprintln!(
+                    "[GPU] GpuMeshWarpDisplacementPipeline readback channel error: {:?}",
+                    e
+                );
+                return;
+            }
         }
 
         let mapped = slice.get_mapped_range();

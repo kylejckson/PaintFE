@@ -1,4 +1,4 @@
-use ab_glyph::{point, Font, FontArc, ScaleFont, GlyphId};
+use ab_glyph::{Font, FontArc, GlyphId, ScaleFont, point};
 use std::collections::HashMap;
 
 /// Cache for rasterized glyph pixel data. Key: (GlyphId, font_size_bits).
@@ -148,7 +148,15 @@ pub fn rasterize_text(
     }
 
     if all_glyphs.is_empty() && !underline && !strikethrough {
-        return RasterizedText { buf: Vec::new(), buf_w: 0, buf_h: 0, off_x: 0, off_y: 0, line_advances, line_height };
+        return RasterizedText {
+            buf: Vec::new(),
+            buf_w: 0,
+            buf_h: 0,
+            off_x: 0,
+            off_y: 0,
+            line_advances,
+            line_height,
+        };
     }
 
     // Compute bounding box of all glyphs using fast glyph_bounds (no outlining needed)
@@ -184,7 +192,15 @@ pub fn rasterize_text(
 
     // If we only have empty lines (no glyphs, no decorations with width), bail
     if min_x >= max_x || min_y >= max_y {
-        return RasterizedText { buf: Vec::new(), buf_w: 0, buf_h: 0, off_x: 0, off_y: 0, line_advances, line_height };
+        return RasterizedText {
+            buf: Vec::new(),
+            buf_w: 0,
+            buf_h: 0,
+            off_x: 0,
+            off_y: 0,
+            line_advances,
+            line_height,
+        };
     }
 
     // Add padding
@@ -209,7 +225,15 @@ pub fn rasterize_text(
     let buf_h = (y1 - y0).max(0) as u32;
 
     if buf_w == 0 || buf_h == 0 {
-        return RasterizedText { buf: Vec::new(), buf_w: 0, buf_h: 0, off_x: 0, off_y: 0, line_advances, line_height };
+        return RasterizedText {
+            buf: Vec::new(),
+            buf_w: 0,
+            buf_h: 0,
+            off_x: 0,
+            off_y: 0,
+            line_advances,
+            line_height,
+        };
     }
 
     // Reuse coverage buffer (single channel)
@@ -226,7 +250,7 @@ pub fn rasterize_text(
         let cache_key = (glyph_id, font_size_key);
 
         // Populate cache if this glyph hasn't been rasterized yet
-        if !glyph_cache.contains_key(&cache_key) {
+        glyph_cache.entry(cache_key).or_insert_with(|| {
             let base_glyph = glyph_id.with_scale_and_position(font_size, point(0.0, 0.0));
             let mut px_list = Vec::new();
             let (bx, by) = if let Some(outlined) = font.outline_glyph(base_glyph) {
@@ -238,8 +262,8 @@ pub fn rasterize_text(
             } else {
                 (0.0, 0.0)
             };
-            glyph_cache.insert(cache_key, (px_list, bx, by));
-        }
+            (px_list, bx, by)
+        });
 
         // Replay cached glyph pixels at actual position
         if let Some((pixels, base_bx, base_by)) = glyph_cache.get(&cache_key) {
@@ -260,7 +284,13 @@ pub fn rasterize_text(
                 let iy = cy.round() as i32 - y0;
                 if ix >= 0 && iy >= 0 && (ix as u32) < buf_w && (iy as u32) < buf_h {
                     let idx = iy as usize * buf_w as usize + ix as usize;
-                    let v = if anti_alias { cov } else { if cov > 0.5 { 1.0 } else { 0.0 } };
+                    let v = if anti_alias {
+                        cov
+                    } else if cov > 0.5 {
+                        1.0
+                    } else {
+                        0.0
+                    };
                     coverage_buf[idx] = coverage_buf[idx].max(v);
                     if bold && ix + 1 < buf_w as i32 {
                         coverage_buf[idx + 1] = coverage_buf[idx + 1].max(v);
@@ -272,27 +302,48 @@ pub fn rasterize_text(
 
     // Draw decorations per line
     for (line_idx, &line_w) in line_widths.iter().enumerate() {
-        if line_w < 0.1 { continue; }
+        if line_w < 0.1 {
+            continue;
+        }
         let y_off = line_idx as f32 * line_height;
         let thickness = (font_size * 0.06).max(1.0);
 
         if underline {
             let line_y = origin_y + y_off + ascent + font_size * 0.1;
-            draw_decoration_line(coverage_buf, buf_w, buf_h, x0, y0,
-                origin_x, line_y, line_w, thickness, alignment);
+            draw_decoration_line(
+                coverage_buf,
+                buf_w,
+                buf_h,
+                x0,
+                y0,
+                origin_x,
+                line_y,
+                line_w,
+                thickness,
+                alignment,
+            );
         }
 
         if strikethrough {
             let line_y = origin_y + y_off + ascent * 0.6;
-            draw_decoration_line(coverage_buf, buf_w, buf_h, x0, y0,
-                origin_x, line_y, line_w, thickness, alignment);
+            draw_decoration_line(
+                coverage_buf,
+                buf_w,
+                buf_h,
+                x0,
+                y0,
+                origin_x,
+                line_y,
+                line_w,
+                thickness,
+                alignment,
+            );
         }
     }
 
     // Convert coverage to RGBA
     let mut buf = vec![0u8; buf_w as usize * buf_h as usize * 4];
-    for i in 0..needed {
-        let cov = coverage_buf[i];
+    for (i, &cov) in coverage_buf.iter().enumerate().take(needed) {
         if cov > 0.001 {
             let idx = i * 4;
             let a = (color[3] as f32 * cov).round().min(255.0) as u8;
@@ -303,7 +354,15 @@ pub fn rasterize_text(
         }
     }
 
-    RasterizedText { buf, buf_w, buf_h, off_x: x0, off_y: y0, line_advances, line_height }
+    RasterizedText {
+        buf,
+        buf_w,
+        buf_h,
+        off_x: x0,
+        off_y: y0,
+        line_advances,
+        line_height,
+    }
 }
 
 fn draw_decoration_line(
@@ -318,11 +377,12 @@ fn draw_decoration_line(
     thickness: f32,
     alignment: TextAlignment,
 ) {
-    let line_start_x = origin_x + match alignment {
-        TextAlignment::Left => 0.0,
-        TextAlignment::Center => -total_width * 0.5,
-        TextAlignment::Right => -total_width,
-    };
+    let line_start_x = origin_x
+        + match alignment {
+            TextAlignment::Left => 0.0,
+            TextAlignment::Center => -total_width * 0.5,
+            TextAlignment::Right => -total_width,
+        };
 
     let half_t = thickness * 0.5;
     let ly0 = ((line_y - half_t).floor() as i32 - y0).max(0);
@@ -352,10 +412,22 @@ pub fn enumerate_system_fonts() -> Vec<String> {
         }
         Err(_) => {
             #[cfg(target_os = "linux")]
-            { vec!["Liberation Sans".to_string(), "DejaVu Sans".to_string(), "Liberation Mono".to_string()] }
+            {
+                vec![
+                    "Liberation Sans".to_string(),
+                    "DejaVu Sans".to_string(),
+                    "Liberation Mono".to_string(),
+                ]
+            }
             #[cfg(not(target_os = "linux"))]
-            { vec!["Arial".to_string(), "Times New Roman".to_string(), "Courier New".to_string()] }
-        },
+            {
+                vec![
+                    "Arial".to_string(),
+                    "Times New Roman".to_string(),
+                    "Courier New".to_string(),
+                ]
+            }
+        }
     }
 }
 
@@ -383,12 +455,17 @@ pub fn enumerate_font_weights(family: &str) -> Vec<(String, u16)> {
             let props = font.properties();
             let weight_val = props.weight.0 as u16;
             let style = props.style;
-            let is_italic = style == font_kit::properties::Style::Italic || style == font_kit::properties::Style::Oblique;
+            let is_italic = style == font_kit::properties::Style::Italic
+                || style == font_kit::properties::Style::Oblique;
 
             // Skip italic variants — they're handled by the italic toggle
-            if is_italic { continue; }
+            if is_italic {
+                continue;
+            }
 
-            if seen_weights.contains(&weight_val) { continue; }
+            if seen_weights.contains(&weight_val) {
+                continue;
+            }
             seen_weights.insert(weight_val);
 
             let weight_name = match weight_val {
@@ -419,8 +496,8 @@ pub fn enumerate_font_weights(family: &str) -> Vec<(String, u16)> {
 /// `weight` is a CSS-style weight value (100=Thin, 400=Regular, 700=Bold, etc.)
 /// Returns None if the font cannot be found.
 pub fn load_system_font(family: &str, weight: u16, italic: bool) -> Option<FontArc> {
-    use font_kit::properties::{Properties, Style, Weight};
     use font_kit::family_name::FamilyName;
+    use font_kit::properties::{Properties, Style, Weight};
     use font_kit::source::SystemSource;
 
     let mut props = Properties::new();

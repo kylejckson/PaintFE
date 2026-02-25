@@ -1,17 +1,17 @@
-use rfd::FileDialog;
-use image::{RgbaImage, Rgba, ImageError, DynamicImage};
+use crate::components::dialogs::TiffCompression;
+use image::codecs::bmp::BmpEncoder;
 use image::codecs::jpeg::JpegEncoder;
 use image::codecs::png::PngEncoder;
-use image::codecs::bmp::BmpEncoder;
 use image::codecs::tga::TgaEncoder;
-use std::path::{Path, PathBuf};
+use image::{DynamicImage, ImageError, Rgba, RgbaImage};
+use rfd::FileDialog;
 use std::fs::File;
-use std::io::{BufWriter, BufReader};
-use crate::components::dialogs::TiffCompression;
+use std::io::{BufReader, BufWriter};
+use std::path::{Path, PathBuf};
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-use crate::canvas::{CanvasState, Layer, BlendMode, TiledImage, CHUNK_SIZE};
+use crate::canvas::{BlendMode, CHUNK_SIZE, CanvasState, Layer, TiledImage};
 use crate::components::dialogs::SaveFormat;
 
 /// Minimum frame delay in milliseconds for animated images.
@@ -19,10 +19,8 @@ const MIN_FRAME_DELAY_MS: u16 = 10;
 
 /// Common RAW camera file extensions (lowercase).
 pub const RAW_EXTENSIONS: &[&str] = &[
-    "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2",
-    "dng", "orf", "rw2", "pef", "raf", "raw", "rwl",
-    "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef",
-    "mos", "kdc", "dcr", "erf",
+    "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef", "raf", "raw",
+    "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos", "kdc", "dcr", "erf",
 ];
 
 /// Check if a file extension is a known RAW format.
@@ -34,10 +32,11 @@ pub fn is_raw_extension(ext: &str) -> bool {
 /// Uses rawloader for decoding and imagepipe for demosaicing + colour processing.
 pub fn decode_raw_image(path: &Path) -> Result<RgbaImage, String> {
     // Use imagepipe to handle the full decode + demosaicing + color pipeline
-    let mut pipeline = imagepipe::Pipeline::new_from_file(path)
-        .map_err(|e| format!("RAW decode error: {}", e))?;
+    let mut pipeline =
+        imagepipe::Pipeline::new_from_file(path).map_err(|e| format!("RAW decode error: {}", e))?;
 
-    let srgb = pipeline.output_8bit(None)
+    let srgb = pipeline
+        .output_8bit(None)
         .map_err(|e| format!("RAW processing error: {}", e))?;
 
     let width = srgb.width;
@@ -46,7 +45,11 @@ pub fn decode_raw_image(path: &Path) -> Result<RgbaImage, String> {
     // srgb.data is Vec<u8> in RGB (3 bytes per pixel) — convert to RGBA
     let pixel_count = width * height;
     if srgb.data.len() < pixel_count * 3 {
-        return Err(format!("RAW buffer too short: expected {} bytes, got {}", pixel_count * 3, srgb.data.len()));
+        return Err(format!(
+            "RAW buffer too short: expected {} bytes, got {}",
+            pixel_count * 3,
+            srgb.data.len()
+        ));
     }
     let mut rgba = Vec::with_capacity(pixel_count * 4);
     for i in 0..pixel_count {
@@ -157,24 +160,32 @@ pub fn save_pfe(state: &CanvasState, path: &Path) -> Result<(), PfeError> {
 /// This copies pixel data from TiledImage chunks — safe to call on the main
 /// thread, then move the result to a background thread for serialization.
 pub fn build_pfe_v1(state: &CanvasState) -> ProjectFileV1 {
-    let layers: Vec<LayerDataV1> = state.layers.iter().map(|layer| {
-        let chunks: Vec<ChunkData> = layer.pixels.chunk_keys().map(|(cx, cy)| {
-            let chunk_img = layer.pixels.get_chunk(cx, cy).unwrap();
-            ChunkData {
-                cx,
-                cy,
-                pixels: chunk_img.as_raw().clone(),
-            }
-        }).collect();
+    let layers: Vec<LayerDataV1> = state
+        .layers
+        .iter()
+        .map(|layer| {
+            let chunks: Vec<ChunkData> = layer
+                .pixels
+                .chunk_keys()
+                .map(|(cx, cy)| {
+                    let chunk_img = layer.pixels.get_chunk(cx, cy).unwrap();
+                    ChunkData {
+                        cx,
+                        cy,
+                        pixels: chunk_img.as_raw().clone(),
+                    }
+                })
+                .collect();
 
-        LayerDataV1 {
-            name: layer.name.clone(),
-            visible: layer.visible,
-            opacity: layer.opacity,
-            blend_mode: layer.blend_mode.to_u8(),
-            chunks,
-        }
-    }).collect();
+            LayerDataV1 {
+                name: layer.name.clone(),
+                visible: layer.visible,
+                opacity: layer.opacity,
+                blend_mode: layer.blend_mode.to_u8(),
+                chunks,
+            }
+        })
+        .collect();
 
     ProjectFileV1 {
         magic: PFE_MAGIC_V1.to_string(),
@@ -204,13 +215,15 @@ pub fn load_pfe(path: &Path) -> Result<CanvasState, PfeError> {
 
     // bincode encodes a String as: 8-byte length prefix + UTF-8 data.
     // Our magic strings are 4 chars, so bytes 8..12 hold the magic.
-    let magic = std::str::from_utf8(&raw[8..12])
-        .unwrap_or("");
+    let magic = std::str::from_utf8(&raw[8..12]).unwrap_or("");
 
     match magic {
         "PFE1" => load_pfe_v1(&raw),
         "PFE0" => load_pfe_v0(&raw),
-        _ => Err(PfeError::InvalidFormat(format!("Unknown magic '{}'", magic))),
+        _ => Err(PfeError::InvalidFormat(format!(
+            "Unknown magic '{}'",
+            magic
+        ))),
     }
 }
 
@@ -230,8 +243,7 @@ const MAX_LAYERS: usize = 256;
 /// `~/.local/share/PaintFE/autosave/`  (Linux)  
 /// `~/Library/Application Support/PaintFE/autosave/`  (macOS)
 pub fn autosave_dir() -> Option<std::path::PathBuf> {
-    crate::assets::AppSettings::settings_path()
-        .and_then(|p| p.parent().map(|d| d.join("autosave")))
+    crate::assets::AppSettings::settings_path().and_then(|p| p.parent().map(|d| d.join("autosave")))
 }
 
 // ============================================================================
@@ -243,7 +255,8 @@ pub fn autosave_dir() -> Option<std::path::PathBuf> {
 /// - RAW camera files (CR2, NEF, ARW, DNG, etc.) — decoded to 8-bit sRGB RGBA
 /// - All standard raster formats supported by the `image` crate (PNG, JPEG, WEBP, BMP, …)
 pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
-    let ext = path.extension()
+    let ext = path
+        .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
@@ -326,7 +339,9 @@ fn load_pfe_v1(raw: &[u8]) -> Result<CanvasState, PfeError> {
     let project: ProjectFileV1 = bincode::deserialize(raw)?;
 
     if project.width == 0 || project.height == 0 {
-        return Err(PfeError::InvalidFormat("Canvas dimensions cannot be zero".into()));
+        return Err(PfeError::InvalidFormat(
+            "Canvas dimensions cannot be zero".into(),
+        ));
     }
     if project.width > MAX_CANVAS_DIM || project.height > MAX_CANVAS_DIM {
         return Err(PfeError::InvalidFormat(format!(
@@ -337,7 +352,8 @@ fn load_pfe_v1(raw: &[u8]) -> Result<CanvasState, PfeError> {
     if project.layers.len() > MAX_LAYERS {
         return Err(PfeError::InvalidFormat(format!(
             "Project contains {} layers, which exceeds the maximum of {}",
-            project.layers.len(), MAX_LAYERS
+            project.layers.len(),
+            MAX_LAYERS
         )));
     }
 
@@ -350,13 +366,20 @@ fn load_pfe_v1(raw: &[u8]) -> Result<CanvasState, PfeError> {
             if cd.pixels.len() != expected_chunk_bytes {
                 return Err(PfeError::InvalidFormat(format!(
                     "Chunk ({},{}) in layer '{}' has {} bytes, expected {}",
-                    cd.cx, cd.cy, ld.name, cd.pixels.len(), expected_chunk_bytes,
+                    cd.cx,
+                    cd.cy,
+                    ld.name,
+                    cd.pixels.len(),
+                    expected_chunk_bytes,
                 )));
             }
-            let chunk_img = RgbaImage::from_raw(CHUNK_SIZE, CHUNK_SIZE, cd.pixels)
-                .ok_or_else(|| PfeError::InvalidFormat(
-                    format!("Failed to reconstruct chunk ({},{}) for layer '{}'", cd.cx, cd.cy, ld.name)
-                ))?;
+            let chunk_img =
+                RgbaImage::from_raw(CHUNK_SIZE, CHUNK_SIZE, cd.pixels).ok_or_else(|| {
+                    PfeError::InvalidFormat(format!(
+                        "Failed to reconstruct chunk ({},{}) for layer '{}'",
+                        cd.cx, cd.cy, ld.name
+                    ))
+                })?;
             tiled.set_chunk(cd.cx, cd.cy, chunk_img);
         }
 
@@ -425,7 +448,9 @@ fn load_pfe_v0(raw: &[u8]) -> Result<CanvasState, PfeError> {
     let project: ProjectFileV0 = bincode::deserialize(raw)?;
 
     if project.width == 0 || project.height == 0 {
-        return Err(PfeError::InvalidFormat("Canvas dimensions cannot be zero".into()));
+        return Err(PfeError::InvalidFormat(
+            "Canvas dimensions cannot be zero".into(),
+        ));
     }
     if project.width > MAX_CANVAS_DIM || project.height > MAX_CANVAS_DIM {
         return Err(PfeError::InvalidFormat(format!(
@@ -436,7 +461,8 @@ fn load_pfe_v0(raw: &[u8]) -> Result<CanvasState, PfeError> {
     if project.layers.len() > MAX_LAYERS {
         return Err(PfeError::InvalidFormat(format!(
             "Project contains {} layers, which exceeds the maximum of {}",
-            project.layers.len(), MAX_LAYERS
+            project.layers.len(),
+            MAX_LAYERS
         )));
     }
 
@@ -447,15 +473,21 @@ fn load_pfe_v0(raw: &[u8]) -> Result<CanvasState, PfeError> {
         if layer_data.pixels.len() != expected_pixel_count {
             return Err(PfeError::InvalidFormat(format!(
                 "Layer '{}' has {} bytes, expected {} ({}x{}x4)",
-                layer_data.name, layer_data.pixels.len(), expected_pixel_count,
-                project.width, project.height,
+                layer_data.name,
+                layer_data.pixels.len(),
+                expected_pixel_count,
+                project.width,
+                project.height,
             )));
         }
 
         let flat = RgbaImage::from_raw(project.width, project.height, layer_data.pixels)
-            .ok_or_else(|| PfeError::InvalidFormat(
-                format!("Failed to reconstruct pixels for layer '{}'", layer_data.name)
-            ))?;
+            .ok_or_else(|| {
+                PfeError::InvalidFormat(format!(
+                    "Failed to reconstruct pixels for layer '{}'",
+                    layer_data.name
+                ))
+            })?;
 
         layers.push(Layer {
             name: layer_data.name,
@@ -584,7 +616,10 @@ pub fn encode_and_write(
                 let new_w = ((image.width() as f32 * scale) as u32).max(1);
                 let new_h = ((image.height() as f32 * scale) as u32).max(1);
                 let resized = image::imageops::resize(
-                    image, new_w, new_h, image::imageops::FilterType::Lanczos3,
+                    image,
+                    new_w,
+                    new_h,
+                    image::imageops::FilterType::Lanczos3,
                 );
                 DynamicImage::ImageRgba8(resized)
             } else {
@@ -594,29 +629,38 @@ pub fn encode_and_write(
         }
         SaveFormat::Tiff => {
             let err_map = |e: tiff::TiffError| {
-                ImageError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("TIFF encode error: {}", e),
-                ))
+                ImageError::IoError(std::io::Error::other(format!("TIFF encode error: {}", e)))
             };
             let mut tiff_enc = tiff::encoder::TiffEncoder::new(&mut writer).map_err(err_map)?;
             match tiff_compression {
                 TiffCompression::None => {
-                    tiff_enc.write_image::<tiff::encoder::colortype::RGBA8>(
-                        image.width(), image.height(), image.as_raw(),
-                    ).map_err(err_map)?;
+                    tiff_enc
+                        .write_image::<tiff::encoder::colortype::RGBA8>(
+                            image.width(),
+                            image.height(),
+                            image.as_raw(),
+                        )
+                        .map_err(err_map)?;
                 }
                 TiffCompression::Lzw => {
-                    tiff_enc.write_image_with_compression::<tiff::encoder::colortype::RGBA8, _>(
-                        image.width(), image.height(),
-                        tiff::encoder::compression::Lzw, image.as_raw(),
-                    ).map_err(err_map)?;
+                    tiff_enc
+                        .write_image_with_compression::<tiff::encoder::colortype::RGBA8, _>(
+                            image.width(),
+                            image.height(),
+                            tiff::encoder::compression::Lzw,
+                            image.as_raw(),
+                        )
+                        .map_err(err_map)?;
                 }
                 TiffCompression::Deflate => {
-                    tiff_enc.write_image_with_compression::<tiff::encoder::colortype::RGBA8, _>(
-                        image.width(), image.height(),
-                        tiff::encoder::compression::Deflate::default(), image.as_raw(),
-                    ).map_err(err_map)?;
+                    tiff_enc
+                        .write_image_with_compression::<tiff::encoder::colortype::RGBA8, _>(
+                            image.width(),
+                            image.height(),
+                            tiff::encoder::compression::Deflate::default(),
+                            image.as_raw(),
+                        )
+                        .map_err(err_map)?;
                 }
             }
         }
@@ -625,9 +669,8 @@ pub fn encode_and_write(
         }
         SaveFormat::Gif => {
             // Static GIF: quantize to 256 colors and save single frame
-            encode_static_gif(image, path).map_err(|e| {
-                ImageError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e))
-            })?;
+            encode_static_gif(image, path)
+                .map_err(|e| ImageError::IoError(std::io::Error::other(e)))?;
         }
     }
 
@@ -685,13 +728,30 @@ impl FileHandler {
     /// Show native file dialog to pick a file path (without loading it)
     pub fn pick_file_path(&self) -> Option<PathBuf> {
         FileDialog::new()
-            .add_filter("All Supported", &["pfe", "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
-                "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef", "raf", "raw", "rwl",
-                "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos", "kdc", "dcr", "erf"])
+            .add_filter(
+                "All Supported",
+                &[
+                    "pfe", "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
+                    "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef",
+                    "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos",
+                    "kdc", "dcr", "erf",
+                ],
+            )
             .add_filter("PaintFE Project", &["pfe"])
-            .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif"])
-            .add_filter("RAW Files", &["cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef", "raf", "raw", "rwl",
-                "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos", "kdc", "dcr", "erf"])
+            .add_filter(
+                "Images",
+                &[
+                    "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
+                ],
+            )
+            .add_filter(
+                "RAW Files",
+                &[
+                    "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef",
+                    "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos",
+                    "kdc", "dcr", "erf",
+                ],
+            )
             .add_filter("All Files", &["*"])
             .pick_file()
     }
@@ -700,13 +760,30 @@ impl FileHandler {
     /// Returns the loaded image and its path on success
     pub fn open_image(&mut self) -> Option<(RgbaImage, PathBuf)> {
         let path = FileDialog::new()
-            .add_filter("All Supported", &["pfe", "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
-                "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef", "raf", "raw", "rwl",
-                "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos", "kdc", "dcr", "erf"])
+            .add_filter(
+                "All Supported",
+                &[
+                    "pfe", "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
+                    "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef",
+                    "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos",
+                    "kdc", "dcr", "erf",
+                ],
+            )
             .add_filter("PaintFE Project", &["pfe"])
-            .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif"])
-            .add_filter("RAW Files", &["cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef", "raf", "raw", "rwl",
-                "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos", "kdc", "dcr", "erf"])
+            .add_filter(
+                "Images",
+                &[
+                    "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
+                ],
+            )
+            .add_filter(
+                "RAW Files",
+                &[
+                    "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef",
+                    "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos",
+                    "kdc", "dcr", "erf",
+                ],
+            )
             .add_filter("All Files", &["*"])
             .pick_file()?;
 
@@ -714,7 +791,7 @@ impl FileHandler {
             Ok(img) => {
                 let rgba = img.to_rgba8();
                 self.current_path = Some(path.clone());
-                
+
                 // Detect format from extension
                 if let Some(ext) = path.extension() {
                     self.last_format = match ext.to_string_lossy().to_lowercase().as_str() {
@@ -729,7 +806,7 @@ impl FileHandler {
                         _ => SaveFormat::Png,
                     };
                 }
-                
+
                 Some((rgba, path))
             }
             Err(e) => {
@@ -802,7 +879,10 @@ impl FileHandler {
                     let new_w = ((image.width() as f32 * scale) as u32).max(1);
                     let new_h = ((image.height() as f32 * scale) as u32).max(1);
                     let resized = image::imageops::resize(
-                        image, new_w, new_h, image::imageops::FilterType::Lanczos3,
+                        image,
+                        new_w,
+                        new_h,
+                        image::imageops::FilterType::Lanczos3,
                     );
                     DynamicImage::ImageRgba8(resized)
                 } else {
@@ -812,29 +892,38 @@ impl FileHandler {
             }
             SaveFormat::Tiff => {
                 let err_map = |e: tiff::TiffError| {
-                    ImageError::IoError(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("TIFF encode error: {}", e),
-                    ))
+                    ImageError::IoError(std::io::Error::other(format!("TIFF encode error: {}", e)))
                 };
                 let mut tiff_enc = tiff::encoder::TiffEncoder::new(&mut writer).map_err(err_map)?;
                 match tiff_compression {
                     TiffCompression::None => {
-                        tiff_enc.write_image::<tiff::encoder::colortype::RGBA8>(
-                            image.width(), image.height(), image.as_raw(),
-                        ).map_err(err_map)?;
+                        tiff_enc
+                            .write_image::<tiff::encoder::colortype::RGBA8>(
+                                image.width(),
+                                image.height(),
+                                image.as_raw(),
+                            )
+                            .map_err(err_map)?;
                     }
                     TiffCompression::Lzw => {
-                        tiff_enc.write_image_with_compression::<tiff::encoder::colortype::RGBA8, _>(
-                            image.width(), image.height(),
-                            tiff::encoder::compression::Lzw, image.as_raw(),
-                        ).map_err(err_map)?;
+                        tiff_enc
+                            .write_image_with_compression::<tiff::encoder::colortype::RGBA8, _>(
+                                image.width(),
+                                image.height(),
+                                tiff::encoder::compression::Lzw,
+                                image.as_raw(),
+                            )
+                            .map_err(err_map)?;
                     }
                     TiffCompression::Deflate => {
-                        tiff_enc.write_image_with_compression::<tiff::encoder::colortype::RGBA8, _>(
-                            image.width(), image.height(),
-                            tiff::encoder::compression::Deflate::default(), image.as_raw(),
-                        ).map_err(err_map)?;
+                        tiff_enc
+                            .write_image_with_compression::<tiff::encoder::colortype::RGBA8, _>(
+                                image.width(),
+                                image.height(),
+                                tiff::encoder::compression::Deflate::default(),
+                                image.as_raw(),
+                            )
+                            .map_err(err_map)?;
                     }
                 }
             }
@@ -844,9 +933,8 @@ impl FileHandler {
             }
             SaveFormat::Gif => {
                 // Static GIF: quantize to 256 colors and save single frame
-                encode_static_gif(image, path).map_err(|e| {
-                    ImageError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e))
-                })?;
+                encode_static_gif(image, path)
+                    .map_err(|e| ImageError::IoError(std::io::Error::other(e)))?;
             }
         }
 
@@ -863,7 +951,13 @@ impl FileHandler {
     /// Returns Err if no current path is set
     pub fn quick_save(&mut self, image: &RgbaImage) -> Result<(), ImageError> {
         if let Some(path) = &self.current_path.clone() {
-            self.save_image(image, path, self.last_format, self.last_quality, self.last_tiff_compression)
+            self.save_image(
+                image,
+                path,
+                self.last_format,
+                self.last_quality,
+                self.last_tiff_compression,
+            )
         } else {
             Err(ImageError::IoError(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -871,12 +965,12 @@ impl FileHandler {
             )))
         }
     }
-    
+
     /// Open an image file and return the data needed to create a Project.
     /// Returns (image, path, file_handler_with_state) on success.
     pub fn open_image_for_project(&mut self) -> Option<(RgbaImage, PathBuf, FileHandler)> {
         let (image, path) = self.open_image()?;
-        
+
         // Clone the file handler state for the project
         let project_handler = FileHandler {
             current_path: Some(path.clone()),
@@ -888,7 +982,7 @@ impl FileHandler {
             last_gif_colors: self.last_gif_colors,
             last_gif_dither: self.last_gif_dither,
         };
-        
+
         Some((image, path, project_handler))
     }
 }
@@ -911,7 +1005,8 @@ pub fn decode_gif_frames(path: &Path) -> Result<Vec<(RgbaImage, u16)>, String> {
     let file = File::open(path).map_err(|e| format!("Failed to open GIF: {}", e))?;
     let mut decoder = gif::DecodeOptions::new();
     decoder.set_color_output(gif::ColorOutput::RGBA);
-    let mut decoder = decoder.read_info(BufReader::new(file))
+    let mut decoder = decoder
+        .read_info(BufReader::new(file))
         .map_err(|e| format!("Failed to read GIF info: {}", e))?;
 
     let width = decoder.width() as u32;
@@ -923,7 +1018,10 @@ pub fn decode_gif_frames(path: &Path) -> Result<Vec<(RgbaImage, u16)>, String> {
     // Previous canvas state for RestoreToPrevious disposal
     let mut prev_canvas = canvas.clone();
 
-    while let Some(frame) = decoder.read_next_frame().map_err(|e| format!("GIF frame decode error: {}", e))? {
+    while let Some(frame) = decoder
+        .read_next_frame()
+        .map_err(|e| format!("GIF frame decode error: {}", e))?
+    {
         let frame_x = frame.left as u32;
         let frame_y = frame.top as u32;
         let frame_w = frame.width as u32;
@@ -997,7 +1095,9 @@ pub fn decode_apng_frames(path: &Path) -> Result<Vec<(RgbaImage, u16)>, String> 
     let mut decoder = png::Decoder::new(BufReader::new(file));
     // Expand indexed/paletted, grayscale <8-bit, and tRNS chunks to full RGB(A)
     decoder.set_transformations(png::Transformations::EXPAND);
-    let mut reader = decoder.read_info().map_err(|e| format!("Failed to read PNG info: {}", e))?;
+    let mut reader = decoder
+        .read_info()
+        .map_err(|e| format!("Failed to read PNG info: {}", e))?;
     let info = reader.info();
 
     let width = info.width;
@@ -1010,8 +1110,16 @@ pub fn decode_apng_frames(path: &Path) -> Result<Vec<(RgbaImage, u16)>, String> 
     if anim_ctrl.is_none() {
         // Not animated — just decode as single frame
         let mut buf = vec![0u8; reader.output_buffer_size()];
-        let out_info = reader.next_frame(&mut buf).map_err(|e| format!("PNG decode error: {}", e))?;
-        let rgba = convert_png_buffer_to_rgba(&buf[..out_info.buffer_size()], width, height, out_info.color_type, out_info.bit_depth)?;
+        let out_info = reader
+            .next_frame(&mut buf)
+            .map_err(|e| format!("PNG decode error: {}", e))?;
+        let rgba = convert_png_buffer_to_rgba(
+            &buf[..out_info.buffer_size()],
+            width,
+            height,
+            out_info.color_type,
+            out_info.bit_depth,
+        )?;
         return Ok(vec![(rgba, 100)]); // 100ms default
     }
 
@@ -1026,19 +1134,32 @@ pub fn decode_apng_frames(path: &Path) -> Result<Vec<(RgbaImage, u16)>, String> 
                 let frame_data = &buf[..out_info.buffer_size()];
 
                 // Get frame control info
-                let (delay_ms, f_x, f_y, f_w, f_h) = if let Some(fc) = reader.info().frame_control() {
+                let (delay_ms, f_x, f_y, f_w, f_h) = if let Some(fc) = reader.info().frame_control()
+                {
                     let delay = if fc.delay_den == 0 {
                         (fc.delay_num as u32 * 10).min(65535) as u16
                     } else {
                         ((fc.delay_num as f64 / fc.delay_den as f64) * 1000.0).min(65535.0) as u16
                     };
-                    (delay.max(MIN_FRAME_DELAY_MS), fc.x_offset, fc.y_offset, fc.width, fc.height)
+                    (
+                        delay.max(MIN_FRAME_DELAY_MS),
+                        fc.x_offset,
+                        fc.y_offset,
+                        fc.width,
+                        fc.height,
+                    )
                 } else {
                     (100u16, 0, 0, width, height)
                 };
 
                 // Convert frame data to RGBA (use out_info color type after EXPAND transformation)
-                let frame_rgba = convert_png_buffer_to_rgba(frame_data, f_w, f_h, out_info.color_type, out_info.bit_depth)?;
+                let frame_rgba = convert_png_buffer_to_rgba(
+                    frame_data,
+                    f_w,
+                    f_h,
+                    out_info.color_type,
+                    out_info.bit_depth,
+                )?;
 
                 // Composite frame onto canvas
                 for fy in 0..f_h {
@@ -1077,10 +1198,8 @@ fn convert_png_buffer_to_rgba(
 ) -> Result<RgbaImage, String> {
     let pixels = width as usize * height as usize;
     match color_type {
-        png::ColorType::Rgba => {
-            RgbaImage::from_raw(width, height, buf.to_vec())
-                .ok_or_else(|| "Failed to create RGBA image from PNG buffer".to_string())
-        }
+        png::ColorType::Rgba => RgbaImage::from_raw(width, height, buf.to_vec())
+            .ok_or_else(|| "Failed to create RGBA image from PNG buffer".to_string()),
         png::ColorType::Rgb => {
             if buf.len() < pixels * 3 {
                 return Err("RGB buffer too small".to_string());
@@ -1108,8 +1227,9 @@ fn convert_png_buffer_to_rgba(
                 rgba.push(g);
                 rgba.push(a);
             }
-            RgbaImage::from_raw(width, height, rgba)
-                .ok_or_else(|| "Failed to create RGBA image from GrayscaleAlpha PNG buffer".to_string())
+            RgbaImage::from_raw(width, height, rgba).ok_or_else(|| {
+                "Failed to create RGBA image from GrayscaleAlpha PNG buffer".to_string()
+            })
         }
         png::ColorType::Grayscale => {
             if buf.len() < pixels {
@@ -1142,7 +1262,12 @@ fn convert_png_buffer_to_rgba(
                 RgbaImage::from_raw(width, height, rgba)
                     .ok_or_else(|| "Failed to handle indexed PNG as RGB".to_string())
             } else {
-                Err(format!("Indexed PNG buffer too small: {} bytes for {}x{}", buf.len(), width, height))
+                Err(format!(
+                    "Indexed PNG buffer too small: {} bytes for {}x{}",
+                    buf.len(),
+                    width,
+                    height
+                ))
             }
         }
     }
@@ -1150,28 +1275,45 @@ fn convert_png_buffer_to_rgba(
 
 /// Quick-peek a file to detect if it's animated and get frame count.
 pub fn detect_animation(path: &Path) -> AnimationInfo {
-    let ext = path.extension()
+    let ext = path
+        .extension()
         .map(|e| e.to_string_lossy().to_lowercase())
         .unwrap_or_default();
 
     match ext.as_str() {
         "gif" => detect_gif_animation(path),
         "png" => detect_png_animation(path),
-        _ => AnimationInfo { is_animated: false, frame_count: 1, avg_delay_ms: 100 },
+        _ => AnimationInfo {
+            is_animated: false,
+            frame_count: 1,
+            avg_delay_ms: 100,
+        },
     }
 }
 
 fn detect_gif_animation(path: &Path) -> AnimationInfo {
     let file = match File::open(path) {
         Ok(f) => f,
-        Err(_) => return AnimationInfo { is_animated: false, frame_count: 1, avg_delay_ms: 100 },
+        Err(_) => {
+            return AnimationInfo {
+                is_animated: false,
+                frame_count: 1,
+                avg_delay_ms: 100,
+            };
+        }
     };
 
     let mut decoder = gif::DecodeOptions::new();
     decoder.set_color_output(gif::ColorOutput::RGBA);
     let mut decoder = match decoder.read_info(BufReader::new(file)) {
         Ok(d) => d,
-        Err(_) => return AnimationInfo { is_animated: false, frame_count: 1, avg_delay_ms: 100 },
+        Err(_) => {
+            return AnimationInfo {
+                is_animated: false,
+                frame_count: 1,
+                avg_delay_ms: 100,
+            };
+        }
     };
 
     let mut frame_count = 0u32;
@@ -1182,7 +1324,7 @@ fn detect_gif_animation(path: &Path) -> AnimationInfo {
         total_delay += frame.delay as u32 * 10; // centiseconds to ms
         // Only need to count for detection, but we iterate all frames
         // to get accurate count. For very large GIFs, could stop early.
-        if frame_count > 1 && frame_count > 100 {
+        if frame_count > 100 {
             // For huge GIFs, extrapolate
             break;
         }
@@ -1204,13 +1346,25 @@ fn detect_gif_animation(path: &Path) -> AnimationInfo {
 fn detect_png_animation(path: &Path) -> AnimationInfo {
     let file = match File::open(path) {
         Ok(f) => f,
-        Err(_) => return AnimationInfo { is_animated: false, frame_count: 1, avg_delay_ms: 100 },
+        Err(_) => {
+            return AnimationInfo {
+                is_animated: false,
+                frame_count: 1,
+                avg_delay_ms: 100,
+            };
+        }
     };
 
     let decoder = png::Decoder::new(BufReader::new(file));
     let reader = match decoder.read_info() {
         Ok(r) => r,
-        Err(_) => return AnimationInfo { is_animated: false, frame_count: 1, avg_delay_ms: 100 },
+        Err(_) => {
+            return AnimationInfo {
+                is_animated: false,
+                frame_count: 1,
+                avg_delay_ms: 100,
+            };
+        }
     };
 
     if let Some(anim) = reader.info().animation_control() {
@@ -1220,7 +1374,11 @@ fn detect_png_animation(path: &Path) -> AnimationInfo {
             avg_delay_ms: 100, // Default; APNG delay is per-frame
         }
     } else {
-        AnimationInfo { is_animated: false, frame_count: 1, avg_delay_ms: 100 }
+        AnimationInfo {
+            is_animated: false,
+            frame_count: 1,
+            avg_delay_ms: 100,
+        }
     }
 }
 
@@ -1242,11 +1400,14 @@ fn encode_static_gif(image: &RgbaImage, path: &Path) -> Result<(), String> {
     let mut encoder = gif::Encoder::new(BufWriter::new(file), w, h, &palette)
         .map_err(|e| format!("GIF encoder init error: {}", e))?;
 
-    let mut frame = gif::Frame::default();
-    frame.width = w;
-    frame.height = h;
-    frame.buffer = std::borrow::Cow::Borrowed(&indexed);
-    encoder.write_frame(&frame)
+    let frame = gif::Frame {
+        width: w,
+        height: h,
+        buffer: std::borrow::Cow::Borrowed(&indexed),
+        ..Default::default()
+    };
+    encoder
+        .write_frame(&frame)
         .map_err(|e| format!("GIF write error: {}", e))?;
 
     Ok(())
@@ -1277,26 +1438,30 @@ pub fn encode_animated_gif(
     let file = File::create(path).map_err(|e| format!("Failed to create GIF file: {}", e))?;
 
     // Build a global palette from the first frame (or could use per-frame palettes)
-    let colors = (max_colors as usize).min(256).max(2);
+    let colors = (max_colors as usize).clamp(2, 256);
     let (global_palette, _) = quantize_rgba(&frames[0], colors);
 
     let mut encoder = gif::Encoder::new(BufWriter::new(file), w, h, &global_palette)
         .map_err(|e| format!("GIF encoder init error: {}", e))?;
 
-    encoder.set_repeat(gif::Repeat::Infinite)
+    encoder
+        .set_repeat(gif::Repeat::Infinite)
         .map_err(|e| format!("GIF set repeat error: {}", e))?;
 
     for frame_img in frames {
-        let mut frame = gif::Frame::default();
-        frame.width = w;
-        frame.height = h;
-        frame.delay = delay_cs;
         // Use per-frame local palette for better color accuracy
         let (local_palette, local_indexed) = quantize_rgba(frame_img, colors);
-        frame.palette = Some(local_palette);
-        frame.buffer = std::borrow::Cow::Owned(local_indexed);
+        let frame = gif::Frame {
+            width: w,
+            height: h,
+            delay: delay_cs,
+            palette: Some(local_palette),
+            buffer: std::borrow::Cow::Owned(local_indexed),
+            ..Default::default()
+        };
 
-        encoder.write_frame(&frame)
+        encoder
+            .write_frame(&frame)
             .map_err(|e| format!("GIF frame write error: {}", e))?;
     }
 
@@ -1306,18 +1471,14 @@ pub fn encode_animated_gif(
 /// Encode multiple frames as an animated PNG (APNG).
 /// `frames`: RGBA images for each frame (all must be same dimensions).
 /// `fps`: target playback speed.
-pub fn encode_animated_png(
-    frames: &[RgbaImage],
-    fps: f32,
-    path: &Path,
-) -> Result<(), String> {
+pub fn encode_animated_png(frames: &[RgbaImage], fps: f32, path: &Path) -> Result<(), String> {
     if frames.is_empty() {
         return Err("No frames to encode".to_string());
     }
 
     let width = frames[0].width();
     let height = frames[0].height();
-    let delay_ms = (1000.0 / fps).round().min(65535.0).max(1.0) as u16;
+    let delay_ms = (1000.0 / fps).round().clamp(1.0, 65535.0) as u16;
     let delay_num = delay_ms;
     let delay_den = 1000u16;
 
@@ -1327,22 +1488,28 @@ pub fn encode_animated_png(
     let mut encoder = png::Encoder::new(writer, width, height);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
-    encoder.set_animated(frames.len() as u32, 0) // 0 = infinite loop
+    encoder
+        .set_animated(frames.len() as u32, 0) // 0 = infinite loop
         .map_err(|e| format!("APNG set_animated error: {}", e))?;
 
-    let mut writer = encoder.write_header()
+    let mut writer = encoder
+        .write_header()
         .map_err(|e| format!("APNG header write error: {}", e))?;
 
     for frame_img in frames {
-        writer.set_frame_delay(delay_num, delay_den)
+        writer
+            .set_frame_delay(delay_num, delay_den)
             .map_err(|e| format!("APNG set frame delay error: {}", e))?;
-        writer.set_dispose_op(png::DisposeOp::Background)
+        writer
+            .set_dispose_op(png::DisposeOp::Background)
             .map_err(|e| format!("APNG set dispose op error: {}", e))?;
-        writer.write_image_data(frame_img.as_raw())
+        writer
+            .write_image_data(frame_img.as_raw())
             .map_err(|e| format!("APNG frame write error: {}", e))?;
     }
 
-    writer.finish()
+    writer
+        .finish()
         .map_err(|e| format!("APNG finish error: {}", e))?;
 
     Ok(())
@@ -1352,7 +1519,8 @@ pub fn encode_animated_png(
 /// Returns (flat_palette_rgb: Vec<u8>, indices: Vec<u8>).
 /// The palette is in [R,G,B, R,G,B, ...] format as required by the gif crate.
 fn quantize_rgba(image: &RgbaImage, max_colors: usize) -> (Vec<u8>, Vec<u8>) {
-    let pixels: Vec<u8> = image.pixels()
+    let pixels: Vec<u8> = image
+        .pixels()
         .flat_map(|p| [p[0], p[1], p[2], p[3]])
         .collect();
 

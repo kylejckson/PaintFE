@@ -2,8 +2,8 @@
 // PRINT — save composite to temp PNG and open with OS default viewer
 // ============================================================================
 
-use std::path::PathBuf;
 use image::RgbaImage;
+use std::path::Path;
 
 /// "Print" by saving the composite to a temp file and opening it with the OS.
 pub fn print_image(composite: &RgbaImage) -> Result<(), String> {
@@ -17,7 +17,7 @@ pub fn print_image(composite: &RgbaImage) -> Result<(), String> {
 }
 
 #[cfg(target_os = "windows")]
-fn open_with_os(path: &PathBuf) -> Result<(), String> {
+fn open_with_os(path: &Path) -> Result<(), String> {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
     use winapi::um::shellapi::ShellExecuteW;
@@ -25,7 +25,10 @@ fn open_with_os(path: &PathBuf) -> Result<(), String> {
 
     // Convert strings to Windows wide (UTF-16) null-terminated
     fn to_wide(s: &str) -> Vec<u16> {
-        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+        OsStr::new(s)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
     }
 
     let verb = to_wide("print");
@@ -36,8 +39,8 @@ fn open_with_os(path: &PathBuf) -> Result<(), String> {
             std::ptr::null_mut(), // hwnd
             verb.as_ptr(),
             file.as_ptr(),
-            std::ptr::null(),     // parameters
-            std::ptr::null(),     // directory
+            std::ptr::null(), // parameters
+            std::ptr::null(), // directory
             SW_SHOWNORMAL,
         )
     };
@@ -46,12 +49,15 @@ fn open_with_os(path: &PathBuf) -> Result<(), String> {
     if result as usize > 32 {
         Ok(())
     } else {
-        Err(format!("ShellExecuteW print failed (code {})", result as usize))
+        Err(format!(
+            "ShellExecuteW print failed (code {})",
+            result as usize
+        ))
     }
 }
 
 #[cfg(target_os = "macos")]
-fn open_with_os(path: &PathBuf) -> Result<(), String> {
+fn open_with_os(path: &Path) -> Result<(), String> {
     std::process::Command::new("open")
         .arg(path)
         .spawn()
@@ -60,7 +66,7 @@ fn open_with_os(path: &PathBuf) -> Result<(), String> {
 }
 
 #[cfg(target_os = "linux")]
-fn open_with_os(path: &PathBuf) -> Result<(), String> {
+fn open_with_os(path: &Path) -> Result<(), String> {
     std::process::Command::new("xdg-open")
         .arg(path)
         .spawn()

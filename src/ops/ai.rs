@@ -82,16 +82,46 @@ impl std::fmt::Display for OnnxError {
 // we actually need.
 
 /// Opaque handles (never dereferenced in Rust — used as `*mut` pointers only)
-#[repr(C)] struct OrtEnv { _private: [u8; 0] }
-#[repr(C)] struct OrtSession { _private: [u8; 0] }
-#[repr(C)] struct OrtSessionOptions { _private: [u8; 0] }
-#[repr(C)] struct OrtValue { _private: [u8; 0] }
-#[repr(C)] struct OrtMemoryInfo { _private: [u8; 0] }
-#[repr(C)] struct OrtStatus { _private: [u8; 0] }
-#[repr(C)] struct OrtRunOptions { _private: [u8; 0] }
-#[repr(C)] struct OrtAllocator { _private: [u8; 0] }
-#[repr(C)] struct OrtTensorTypeAndShapeInfo { _private: [u8; 0] }
-#[repr(C)] struct OrtTypeInfo { _private: [u8; 0] }
+#[repr(C)]
+struct OrtEnv {
+    _private: [u8; 0],
+}
+#[repr(C)]
+struct OrtSession {
+    _private: [u8; 0],
+}
+#[repr(C)]
+struct OrtSessionOptions {
+    _private: [u8; 0],
+}
+#[repr(C)]
+struct OrtValue {
+    _private: [u8; 0],
+}
+#[repr(C)]
+struct OrtMemoryInfo {
+    _private: [u8; 0],
+}
+#[repr(C)]
+struct OrtStatus {
+    _private: [u8; 0],
+}
+#[repr(C)]
+struct OrtRunOptions {
+    _private: [u8; 0],
+}
+#[repr(C)]
+struct OrtAllocator {
+    _private: [u8; 0],
+}
+#[repr(C)]
+struct OrtTensorTypeAndShapeInfo {
+    _private: [u8; 0],
+}
+#[repr(C)]
+struct OrtTypeInfo {
+    _private: [u8; 0],
+}
 
 /// ORT API version we target (compatible with ONNX Runtime 1.14+)
 const ORT_API_VERSION: u32 = 18;
@@ -162,9 +192,8 @@ type CreateEnvFn = unsafe extern "C" fn(
     out: *mut *mut OrtEnv,
 ) -> *mut OrtStatus;
 
-type CreateSessionOptionsFn = unsafe extern "C" fn(
-    out: *mut *mut OrtSessionOptions,
-) -> *mut OrtStatus;
+type CreateSessionOptionsFn =
+    unsafe extern "C" fn(out: *mut *mut OrtSessionOptions) -> *mut OrtStatus;
 
 type CreateSessionFn = unsafe extern "C" fn(
     env: *const OrtEnv,
@@ -200,20 +229,16 @@ type RunFn = unsafe extern "C" fn(
     outputs: *mut *mut OrtValue,
 ) -> *mut OrtStatus;
 
-type GetTensorMutableDataFn = unsafe extern "C" fn(
-    value: *mut OrtValue,
-    out: *mut *mut std::ffi::c_void,
-) -> *mut OrtStatus;
+type GetTensorMutableDataFn =
+    unsafe extern "C" fn(value: *mut OrtValue, out: *mut *mut std::ffi::c_void) -> *mut OrtStatus;
 
 type GetTensorTypeAndShapeFn = unsafe extern "C" fn(
     value: *const OrtValue,
     out: *mut *mut OrtTensorTypeAndShapeInfo,
 ) -> *mut OrtStatus;
 
-type GetDimensionsCountFn = unsafe extern "C" fn(
-    info: *const OrtTensorTypeAndShapeInfo,
-    out: *mut usize,
-) -> *mut OrtStatus;
+type GetDimensionsCountFn =
+    unsafe extern "C" fn(info: *const OrtTensorTypeAndShapeInfo, out: *mut usize) -> *mut OrtStatus;
 
 type GetDimensionsFn = unsafe extern "C" fn(
     info: *const OrtTensorTypeAndShapeInfo,
@@ -238,15 +263,11 @@ type SetSessionGraphOptimizationLevelFn = unsafe extern "C" fn(
     graph_optimization_level: u32,
 ) -> *mut OrtStatus;
 
-type SessionGetInputCountFn = unsafe extern "C" fn(
-    session: *const OrtSession,
-    out: *mut usize,
-) -> *mut OrtStatus;
+type SessionGetInputCountFn =
+    unsafe extern "C" fn(session: *const OrtSession, out: *mut usize) -> *mut OrtStatus;
 
-type SessionGetOutputCountFn = unsafe extern "C" fn(
-    session: *const OrtSession,
-    out: *mut usize,
-) -> *mut OrtStatus;
+type SessionGetOutputCountFn =
+    unsafe extern "C" fn(session: *const OrtSession, out: *mut usize) -> *mut OrtStatus;
 
 type SessionGetInputNameFn = unsafe extern "C" fn(
     session: *const OrtSession,
@@ -262,9 +283,8 @@ type SessionGetOutputNameFn = unsafe extern "C" fn(
     out: *mut *mut std::ffi::c_char,
 ) -> *mut OrtStatus;
 
-type GetAllocatorWithDefaultOptionsFn = unsafe extern "C" fn(
-    out: *mut *mut OrtAllocator,
-) -> *mut OrtStatus;
+type GetAllocatorWithDefaultOptionsFn =
+    unsafe extern "C" fn(out: *mut *mut OrtAllocator) -> *mut OrtStatus;
 
 type AllocatorFreeFn = unsafe extern "C" fn(
     allocator: *mut OrtAllocator,
@@ -352,35 +372,93 @@ impl OrtApi {
     // 98: ReleaseTypeInfo        99: ReleaseTensorTypeAndShapeInfo
     // 100: ReleaseSessionOptions 101: ReleaseCustomOpDomain
 
-    fn create_env(&self) -> CreateEnvFn { unsafe { self.get_fn(3) } }
-    fn create_session_options(&self) -> CreateSessionOptionsFn { unsafe { self.get_fn(10) } }
-    fn create_session(&self) -> CreateSessionFn { unsafe { self.get_fn(7) } }
-    fn run(&self) -> RunFn { unsafe { self.get_fn(9) } }
-    fn create_tensor_with_data(&self) -> CreateTensorWithDataAsOrtValueFn { unsafe { self.get_fn(49) } }
-    fn create_cpu_memory_info(&self) -> CreateCpuMemoryInfoFn { unsafe { self.get_fn(69) } }
-    fn get_tensor_mutable_data(&self) -> GetTensorMutableDataFn { unsafe { self.get_fn(51) } }
-    fn get_tensor_type_and_shape(&self) -> GetTensorTypeAndShapeFn { unsafe { self.get_fn(65) } }
-    fn get_dimensions_count(&self) -> GetDimensionsCountFn { unsafe { self.get_fn(61) } }
-    fn get_dimensions(&self) -> GetDimensionsFn { unsafe { self.get_fn(62) } }
-    fn release_env(&self) -> ReleaseEnvFn { unsafe { self.get_fn(92) } }
-    fn release_session(&self) -> ReleaseSessionFn { unsafe { self.get_fn(95) } }
-    fn release_session_options(&self) -> ReleaseSessionOptionsFn { unsafe { self.get_fn(100) } }
-    fn release_value(&self) -> ReleaseValueFn { unsafe { self.get_fn(96) } }
-    fn release_memory_info(&self) -> ReleaseMemoryInfoFn { unsafe { self.get_fn(94) } }
-    fn release_tensor_type_and_shape_info(&self) -> ReleaseTensorTypeAndShapeInfoFn { unsafe { self.get_fn(99) } }
-    fn release_status(&self) -> ReleaseStatusFn { unsafe { self.get_fn(93) } }
-    fn get_error_message(&self) -> GetErrorMessageFn { unsafe { self.get_fn(2) } }
-    fn set_intra_op_num_threads(&self) -> SetIntraOpNumThreadsFn { unsafe { self.get_fn(24) } }
-    fn set_session_graph_optimization_level(&self) -> SetSessionGraphOptimizationLevelFn { unsafe { self.get_fn(23) } }
-    fn session_get_input_count(&self) -> SessionGetInputCountFn { unsafe { self.get_fn(30) } }
-    fn session_get_output_count(&self) -> SessionGetOutputCountFn { unsafe { self.get_fn(31) } }
-    fn session_get_input_name(&self) -> SessionGetInputNameFn { unsafe { self.get_fn(36) } }
-    fn session_get_output_name(&self) -> SessionGetOutputNameFn { unsafe { self.get_fn(37) } }
-    fn get_allocator_with_default_options(&self) -> GetAllocatorWithDefaultOptionsFn { unsafe { self.get_fn(78) } }
-    fn allocator_free(&self) -> AllocatorFreeFn { unsafe { self.get_fn(76) } }
-    fn session_get_input_type_info(&self) -> SessionGetInputTypeInfoFn { unsafe { self.get_fn(33) } }
-    fn cast_type_info_to_tensor_info(&self) -> CastTypeInfoToTensorInfoFn { unsafe { self.get_fn(55) } }
-    fn release_type_info(&self) -> ReleaseTypeInfoFn { unsafe { self.get_fn(98) } }
+    fn create_env(&self) -> CreateEnvFn {
+        unsafe { self.get_fn(3) }
+    }
+    fn create_session_options(&self) -> CreateSessionOptionsFn {
+        unsafe { self.get_fn(10) }
+    }
+    fn create_session(&self) -> CreateSessionFn {
+        unsafe { self.get_fn(7) }
+    }
+    fn run(&self) -> RunFn {
+        unsafe { self.get_fn(9) }
+    }
+    fn create_tensor_with_data(&self) -> CreateTensorWithDataAsOrtValueFn {
+        unsafe { self.get_fn(49) }
+    }
+    fn create_cpu_memory_info(&self) -> CreateCpuMemoryInfoFn {
+        unsafe { self.get_fn(69) }
+    }
+    fn get_tensor_mutable_data(&self) -> GetTensorMutableDataFn {
+        unsafe { self.get_fn(51) }
+    }
+    fn get_tensor_type_and_shape(&self) -> GetTensorTypeAndShapeFn {
+        unsafe { self.get_fn(65) }
+    }
+    fn get_dimensions_count(&self) -> GetDimensionsCountFn {
+        unsafe { self.get_fn(61) }
+    }
+    fn get_dimensions(&self) -> GetDimensionsFn {
+        unsafe { self.get_fn(62) }
+    }
+    fn release_env(&self) -> ReleaseEnvFn {
+        unsafe { self.get_fn(92) }
+    }
+    fn release_session(&self) -> ReleaseSessionFn {
+        unsafe { self.get_fn(95) }
+    }
+    fn release_session_options(&self) -> ReleaseSessionOptionsFn {
+        unsafe { self.get_fn(100) }
+    }
+    fn release_value(&self) -> ReleaseValueFn {
+        unsafe { self.get_fn(96) }
+    }
+    fn release_memory_info(&self) -> ReleaseMemoryInfoFn {
+        unsafe { self.get_fn(94) }
+    }
+    fn release_tensor_type_and_shape_info(&self) -> ReleaseTensorTypeAndShapeInfoFn {
+        unsafe { self.get_fn(99) }
+    }
+    fn release_status(&self) -> ReleaseStatusFn {
+        unsafe { self.get_fn(93) }
+    }
+    fn get_error_message(&self) -> GetErrorMessageFn {
+        unsafe { self.get_fn(2) }
+    }
+    fn set_intra_op_num_threads(&self) -> SetIntraOpNumThreadsFn {
+        unsafe { self.get_fn(24) }
+    }
+    fn set_session_graph_optimization_level(&self) -> SetSessionGraphOptimizationLevelFn {
+        unsafe { self.get_fn(23) }
+    }
+    fn session_get_input_count(&self) -> SessionGetInputCountFn {
+        unsafe { self.get_fn(30) }
+    }
+    fn session_get_output_count(&self) -> SessionGetOutputCountFn {
+        unsafe { self.get_fn(31) }
+    }
+    fn session_get_input_name(&self) -> SessionGetInputNameFn {
+        unsafe { self.get_fn(36) }
+    }
+    fn session_get_output_name(&self) -> SessionGetOutputNameFn {
+        unsafe { self.get_fn(37) }
+    }
+    fn get_allocator_with_default_options(&self) -> GetAllocatorWithDefaultOptionsFn {
+        unsafe { self.get_fn(78) }
+    }
+    fn allocator_free(&self) -> AllocatorFreeFn {
+        unsafe { self.get_fn(76) }
+    }
+    fn session_get_input_type_info(&self) -> SessionGetInputTypeInfoFn {
+        unsafe { self.get_fn(33) }
+    }
+    fn cast_type_info_to_tensor_info(&self) -> CastTypeInfoToTensorInfoFn {
+        unsafe { self.get_fn(55) }
+    }
+    fn release_type_info(&self) -> ReleaseTypeInfoFn {
+        unsafe { self.get_fn(98) }
+    }
 }
 
 /// Extract error message from an OrtStatus pointer. Returns None if status is null (success).
@@ -392,7 +470,9 @@ unsafe fn status_to_result(api: &OrtApi, status: *mut OrtStatus) -> Result<(), S
         let msg = if msg_ptr.is_null() {
             "Unknown error".to_string()
         } else {
-            std::ffi::CStr::from_ptr(msg_ptr).to_string_lossy().into_owned()
+            std::ffi::CStr::from_ptr(msg_ptr)
+                .to_string_lossy()
+                .into_owned()
         };
         (api.release_status())(status);
         Err(msg)
@@ -419,7 +499,7 @@ pub fn validate_onnx_path(path: &str, for_dll: bool) -> Result<(), OnnxError> {
     // Must be absolute — prevents loading from relative/CWD-based paths
     if !p.is_absolute() {
         return Err(OnnxError::DllLoadFailed(
-            "ONNX path must be an absolute path (e.g. C:\\...\\onnxruntime.dll)".to_string()
+            "ONNX path must be an absolute path (e.g. C:\\...\\onnxruntime.dll)".to_string(),
         ));
     }
 
@@ -427,26 +507,30 @@ pub fn validate_onnx_path(path: &str, for_dll: bool) -> Result<(), OnnxError> {
     for component in p.components() {
         if component == Component::ParentDir {
             return Err(OnnxError::DllLoadFailed(
-                "ONNX path must not contain '..' components".to_string()
+                "ONNX path must not contain '..' components".to_string(),
             ));
         }
     }
 
     // Check extension matches expected type
-    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    let ext = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
     if for_dll {
         let valid_dll_exts = ["dll", "so", "dylib"];
         if !valid_dll_exts.contains(&ext.as_str()) {
-            return Err(OnnxError::DllLoadFailed(
-                format!("Expected a .dll/.so/.dylib file, got '.{}'", ext)
-            ));
+            return Err(OnnxError::DllLoadFailed(format!(
+                "Expected a .dll/.so/.dylib file, got '.{}'",
+                ext
+            )));
         }
-    } else {
-        if ext != "onnx" {
-            return Err(OnnxError::ModelLoadFailed(
-                format!("Expected a .onnx model file, got '.{}'", ext)
-            ));
-        }
+    } else if ext != "onnx" {
+        return Err(OnnxError::ModelLoadFailed(format!(
+            "Expected a .onnx model file, got '.{}'",
+            ext
+        )));
     }
 
     Ok(())
@@ -474,12 +558,15 @@ pub fn probe_onnx_runtime(dll_path: &str) -> Result<String, OnnxError> {
             .map_err(|e| OnnxError::DllLoadFailed(format!("{}", e)))?;
 
         let get_api_base: libloading::Symbol<unsafe extern "C" fn() -> *const OrtApiBase> =
-            lib.get(b"OrtGetApiBase")
-                .map_err(|e| OnnxError::DllLoadFailed(format!("Symbol OrtGetApiBase not found: {}", e)))?;
+            lib.get(b"OrtGetApiBase").map_err(|e| {
+                OnnxError::DllLoadFailed(format!("Symbol OrtGetApiBase not found: {}", e))
+            })?;
 
         let api_base = get_api_base();
         if api_base.is_null() {
-            return Err(OnnxError::ApiInitFailed("OrtGetApiBase returned null".to_string()));
+            return Err(OnnxError::ApiInitFailed(
+                "OrtGetApiBase returned null".to_string(),
+            ));
         }
 
         // Get version string
@@ -487,7 +574,9 @@ pub fn probe_onnx_runtime(dll_path: &str) -> Result<String, OnnxError> {
         let version = if version_ptr.is_null() {
             "unknown".to_string()
         } else {
-            std::ffi::CStr::from_ptr(version_ptr).to_string_lossy().into_owned()
+            std::ffi::CStr::from_ptr(version_ptr)
+                .to_string_lossy()
+                .into_owned()
         };
 
         // Enforce minimum version — older builds have incompatible vtable layouts
@@ -565,9 +654,9 @@ impl ModelProfile {
     fn preferred_output_index(&self, output_count: usize) -> usize {
         match self {
             ModelProfile::BiRefNet => output_count.saturating_sub(1), // last
-            ModelProfile::U2Net => 0,    // first (d0)
-            ModelProfile::ISNet => 0,    // first
-            ModelProfile::Unknown => 0,  // default to first
+            ModelProfile::U2Net => 0,                                 // first (d0)
+            ModelProfile::ISNet => 0,                                 // first
+            ModelProfile::Unknown => 0,                               // default to first
         }
     }
 }
@@ -577,7 +666,9 @@ impl ModelProfile {
 /// U²-Net and IS-Net output sigmoid-activated probabilities;
 /// BiRefNet outputs raw logits.
 fn is_probability_space(data: &[f32]) -> bool {
-    if data.is_empty() { return false; }
+    if data.is_empty() {
+        return false;
+    }
     // Sample up to 10000 evenly-spaced values for speed
     let step = (data.len() / 10000).max(1);
     let mut min_val = f32::MAX;
@@ -606,12 +697,17 @@ fn to_probability(v: f32, already_prob: bool) -> f32 {
 /// its predictions are more bimodal (closer to 0 or 1).
 /// Auto-detects whether values are logits or probabilities.
 pub fn mask_confidence_score(data: &[f32]) -> f64 {
-    if data.is_empty() { return 0.0; }
+    if data.is_empty() {
+        return 0.0;
+    }
     let is_prob = is_probability_space(data);
-    let decisive: usize = data.iter().filter(|&&v| {
-        let prob = to_probability(v, is_prob) as f64;
-        prob > 0.9 || prob < 0.1
-    }).count();
+    let decisive: usize = data
+        .iter()
+        .filter(|&&v| {
+            let prob = to_probability(v, is_prob) as f64;
+            !(0.1..=0.9).contains(&prob)
+        })
+        .count();
     decisive as f64 / data.len() as f64
 }
 
@@ -623,6 +719,7 @@ const IMAGENET_STD: [f32; 3] = [0.229, 0.224, 0.225];
 /// 1. Resize to target_size × target_size
 /// 2. Normalize with ImageNet mean/std
 /// 3. Convert to CHW float32 layout
+///
 /// Returns a Vec<f32> in [1, 3, target_size, target_size] layout.
 fn preprocess_image(input: &RgbaImage, target_size: u32) -> Vec<f32> {
     let resized = image::imageops::resize(
@@ -642,7 +739,8 @@ fn preprocess_image(input: &RgbaImage, target_size: u32) -> Vec<f32> {
             // Channel-first layout: [R-plane, G-plane, B-plane]
             tensor[idx] = (pixel[0] as f32 / 255.0 - IMAGENET_MEAN[0]) / IMAGENET_STD[0];
             tensor[npixels + idx] = (pixel[1] as f32 / 255.0 - IMAGENET_MEAN[1]) / IMAGENET_STD[1];
-            tensor[2 * npixels + idx] = (pixel[2] as f32 / 255.0 - IMAGENET_MEAN[2]) / IMAGENET_STD[2];
+            tensor[2 * npixels + idx] =
+                (pixel[2] as f32 / 255.0 - IMAGENET_MEAN[2]) / IMAGENET_STD[2];
         }
     }
 
@@ -658,22 +756,35 @@ fn preprocess_image(input: &RgbaImage, target_size: u32) -> Vec<f32> {
 ///
 /// `mask_probs` must contain foreground probabilities in [0.0, 1.0].
 /// Caller is responsible for converting logits → probabilities first.
-fn postprocess_mask(mask_probs: &[f32], mask_h: u32, mask_w: u32, original: &RgbaImage, settings: &RemoveBgSettings) -> RgbaImage {
+fn postprocess_mask(
+    mask_probs: &[f32],
+    mask_h: u32,
+    mask_w: u32,
+    original: &RgbaImage,
+    settings: &RemoveBgSettings,
+) -> RgbaImage {
     let (orig_w, orig_h) = original.dimensions();
 
     // Apply threshold to probabilities
-    let mask_pixels: Vec<u8> = mask_probs.iter().map(|&prob| {
-        if settings.smooth_edges {
-            // Smooth transition: remap probabilities around threshold
-            // using a steep sigmoid-like curve centered at threshold
-            let steepness = 12.0; // Controls how sharp the transition is
-            let remapped = 1.0 / (1.0 + (-(prob - settings.threshold) * steepness).exp());
-            (remapped * 255.0).clamp(0.0, 255.0) as u8
-        } else {
-            // Hard cutoff at threshold
-            if prob >= settings.threshold { 255u8 } else { 0u8 }
-        }
-    }).collect();
+    let mask_pixels: Vec<u8> = mask_probs
+        .iter()
+        .map(|&prob| {
+            if settings.smooth_edges {
+                // Smooth transition: remap probabilities around threshold
+                // using a steep sigmoid-like curve centered at threshold
+                let steepness = 12.0; // Controls how sharp the transition is
+                let remapped = 1.0 / (1.0 + (-(prob - settings.threshold) * steepness).exp());
+                (remapped * 255.0).clamp(0.0, 255.0) as u8
+            } else {
+                // Hard cutoff at threshold
+                if prob >= settings.threshold {
+                    255u8
+                } else {
+                    0u8
+                }
+            }
+        })
+        .collect();
 
     // Create a grayscale mask image
     let mut mask_img = image::GrayImage::from_raw(mask_w, mask_h, mask_pixels)
@@ -687,13 +798,21 @@ fn postprocess_mask(mask_probs: &[f32], mask_h: u32, mask_w: u32, original: &Rgb
     // Fill interior holes via morphological close (dilate then erode)
     // This fills small gaps/holes inside the foreground region
     if settings.fill_holes > 0 {
-        eprintln!("[AI]   Applying fill holes (radius {})", settings.fill_holes);
+        eprintln!(
+            "[AI]   Applying fill holes (radius {})",
+            settings.fill_holes
+        );
         mask_img = morphological_close(&mask_img, settings.fill_holes as i32);
     }
 
     // Resize mask to original dimensions
     let mut resized_mask = if mask_w != orig_w || mask_h != orig_h {
-        image::imageops::resize(&mask_img, orig_w, orig_h, image::imageops::FilterType::Lanczos3)
+        image::imageops::resize(
+            &mask_img,
+            orig_w,
+            orig_h,
+            image::imageops::FilterType::Lanczos3,
+        )
     } else {
         mask_img
     };
@@ -740,7 +859,8 @@ fn apply_mask_expansion(mask: &image::GrayImage, expansion: i32) -> image::GrayI
                                 let nx = x as i32 + dx;
                                 let ny = y as i32 + dy;
                                 if nx >= 0 && nx < w as i32 && ny >= 0 && ny < h as i32 {
-                                    max_val = max_val.max(current.get_pixel(nx as u32, ny as u32)[0]);
+                                    max_val =
+                                        max_val.max(current.get_pixel(nx as u32, ny as u32)[0]);
                                 }
                             }
                         }
@@ -755,7 +875,8 @@ fn apply_mask_expansion(mask: &image::GrayImage, expansion: i32) -> image::GrayI
                                 let nx = x as i32 + dx;
                                 let ny = y as i32 + dy;
                                 if nx >= 0 && nx < w as i32 && ny >= 0 && ny < h as i32 {
-                                    min_val = min_val.min(current.get_pixel(nx as u32, ny as u32)[0]);
+                                    min_val =
+                                        min_val.min(current.get_pixel(nx as u32, ny as u32)[0]);
                                 }
                             }
                         }
@@ -834,7 +955,12 @@ fn blur_grayscale(img: &image::GrayImage, radius: f32) -> image::GrayImage {
 /// 6. Applies the mask as alpha to the original image (with settings)
 ///
 /// Returns the image with background made transparent.
-pub fn remove_background(dll_path: &str, model_path: &str, input: &RgbaImage, settings: &RemoveBgSettings) -> Result<RgbaImage, OnnxError> {
+pub fn remove_background(
+    dll_path: &str,
+    model_path: &str,
+    input: &RgbaImage,
+    settings: &RemoveBgSettings,
+) -> Result<RgbaImage, OnnxError> {
     eprintln!("[AI] remove_background: starting");
     eprintln!("[AI]   dll_path:   {}", dll_path);
     eprintln!("[AI]   model_path: {}", model_path);
@@ -857,13 +983,15 @@ pub fn remove_background(dll_path: &str, model_path: &str, input: &RgbaImage, se
         let lib = libloading::Library::new(dll_path)
             .map_err(|e| OnnxError::DllLoadFailed(format!("{}", e)))?;
 
-        let get_api_base: libloading::Symbol<unsafe extern "C" fn() -> *const OrtApiBase> =
-            lib.get(b"OrtGetApiBase")
-                .map_err(|e| OnnxError::DllLoadFailed(format!("Symbol not found: {}", e)))?;
+        let get_api_base: libloading::Symbol<unsafe extern "C" fn() -> *const OrtApiBase> = lib
+            .get(b"OrtGetApiBase")
+            .map_err(|e| OnnxError::DllLoadFailed(format!("Symbol not found: {}", e)))?;
 
         let api_base = get_api_base();
         if api_base.is_null() {
-            return Err(OnnxError::ApiInitFailed("OrtGetApiBase returned null".to_string()));
+            return Err(OnnxError::ApiInitFailed(
+                "OrtGetApiBase returned null".to_string(),
+            ));
         }
 
         let api_ptr = ((*api_base).get_api)(ORT_API_VERSION);
@@ -880,33 +1008,43 @@ pub fn remove_background(dll_path: &str, model_path: &str, input: &RgbaImage, se
         eprintln!("[AI] Creating environment...");
         let mut env: *mut OrtEnv = std::ptr::null_mut();
         let log_id = std::ffi::CString::new("PaintFE").unwrap();
-        status_to_result(&api, (api.create_env())(
-            OrtLoggingLevel::Warning,
-            log_id.as_ptr(),
-            &mut env,
-        )).map_err(|e| OnnxError::ApiInitFailed(e))?;
+        status_to_result(
+            &api,
+            (api.create_env())(OrtLoggingLevel::Warning, log_id.as_ptr(), &mut env),
+        )
+        .map_err(OnnxError::ApiInitFailed)?;
         eprintln!("[AI] Environment created");
 
         // -- Create session options --
         eprintln!("[AI] Creating session options...");
         let mut session_options: *mut OrtSessionOptions = std::ptr::null_mut();
         status_to_result(&api, (api.create_session_options())(&mut session_options))
-            .map_err(|e| OnnxError::SessionCreateFailed(e))?;
+            .map_err(OnnxError::SessionCreateFailed)?;
 
         // Use all available cores and enable graph optimizations
         let num_threads = num_cpus().max(1) as i32;
         eprintln!("[AI] Setting intra_op_num_threads={}", num_threads);
-        let _ = status_to_result(&api, (api.set_intra_op_num_threads())(session_options, num_threads));
+        let _ = status_to_result(
+            &api,
+            (api.set_intra_op_num_threads())(session_options, num_threads),
+        );
         // ORT_ENABLE_ALL = 99
-        let _ = status_to_result(&api, (api.set_session_graph_optimization_level())(session_options, 99));
+        let _ = status_to_result(
+            &api,
+            (api.set_session_graph_optimization_level())(session_options, 99),
+        );
         eprintln!("[AI] Session options configured");
 
         // -- Create session (load model) --
         // On Windows, CreateSession expects a UTF-16 path
         eprintln!("[AI] Loading model (this may take a moment)...");
-        let model_wide: Vec<u16> = model_path.encode_utf16().chain(std::iter::once(0)).collect();
+        let model_wide: Vec<u16> = model_path
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
         let mut session: *mut OrtSession = std::ptr::null_mut();
-        let create_status = (api.create_session())(env, model_wide.as_ptr(), session_options, &mut session);
+        let create_status =
+            (api.create_session())(env, model_wide.as_ptr(), session_options, &mut session);
         if let Err(e) = status_to_result(&api, create_status) {
             (api.release_session_options())(session_options);
             (api.release_env())(env);
@@ -916,28 +1054,46 @@ pub fn remove_background(dll_path: &str, model_path: &str, input: &RgbaImage, se
 
         // -- Get allocator --
         let mut allocator: *mut OrtAllocator = std::ptr::null_mut();
-        status_to_result(&api, (api.get_allocator_with_default_options())(&mut allocator))
-            .map_err(|e| OnnxError::SessionCreateFailed(format!("Get allocator: {}", e)))?;
+        status_to_result(
+            &api,
+            (api.get_allocator_with_default_options())(&mut allocator),
+        )
+        .map_err(|e| OnnxError::SessionCreateFailed(format!("Get allocator: {}", e)))?;
 
         // -- Auto-detect model input dimensions --
         eprintln!("[AI] Querying model input shape...");
         let (model_input_h, model_input_w) = {
             let mut type_info: *mut OrtTypeInfo = std::ptr::null_mut();
-            let detected = if status_to_result(&api, (api.session_get_input_type_info())(
-                session as *const _, 0, &mut type_info
-            )).is_ok() && !type_info.is_null() {
+            let detected = if status_to_result(
+                &api,
+                (api.session_get_input_type_info())(session as *const _, 0, &mut type_info),
+            )
+            .is_ok()
+                && !type_info.is_null()
+            {
                 let mut tensor_info: *const OrtTensorTypeAndShapeInfo = std::ptr::null();
-                let size = if status_to_result(&api, (api.cast_type_info_to_tensor_info())(
-                    type_info as *const _, &mut tensor_info
-                )).is_ok() && !tensor_info.is_null() {
+                let size = if status_to_result(
+                    &api,
+                    (api.cast_type_info_to_tensor_info())(type_info as *const _, &mut tensor_info),
+                )
+                .is_ok()
+                    && !tensor_info.is_null()
+                {
                     let mut dim_count: usize = 0;
-                    if status_to_result(&api, (api.get_dimensions_count())(tensor_info, &mut dim_count)).is_ok()
+                    if status_to_result(
+                        &api,
+                        (api.get_dimensions_count())(tensor_info, &mut dim_count),
+                    )
+                    .is_ok()
                         && dim_count >= 3
                     {
                         let mut dims = vec![0i64; dim_count];
-                        if status_to_result(&api, (api.get_dimensions())(
-                            tensor_info, dims.as_mut_ptr(), dim_count
-                        )).is_ok() {
+                        if status_to_result(
+                            &api,
+                            (api.get_dimensions())(tensor_info, dims.as_mut_ptr(), dim_count),
+                        )
+                        .is_ok()
+                        {
                             eprintln!("[AI]   Model input shape: {:?}", dims);
                             // Input is typically [1, 3, H, W] (4D) or [3, H, W] (3D)
                             let (h, w) = if dim_count == 4 {
@@ -950,13 +1106,21 @@ pub fn remove_background(dll_path: &str, model_path: &str, input: &RgbaImage, se
                             } else {
                                 None
                             }
-                        } else { None }
-                    } else { None }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                     // NOTE: tensor_info is owned by type_info — do NOT release separately
-                } else { None };
+                } else {
+                    None
+                };
                 (api.release_type_info())(type_info);
                 size
-            } else { None };
+            } else {
+                None
+            };
 
             match detected {
                 Some((h, w)) => {
@@ -964,8 +1128,10 @@ pub fn remove_background(dll_path: &str, model_path: &str, input: &RgbaImage, se
                     (h, w)
                 }
                 None => {
-                    eprintln!("[AI]   Could not detect model input size, defaulting to {}x{}",
-                        DEFAULT_MODEL_SIZE, DEFAULT_MODEL_SIZE);
+                    eprintln!(
+                        "[AI]   Could not detect model input size, defaulting to {}x{}",
+                        DEFAULT_MODEL_SIZE, DEFAULT_MODEL_SIZE
+                    );
                     (DEFAULT_MODEL_SIZE, DEFAULT_MODEL_SIZE)
                 }
             }
@@ -979,13 +1145,19 @@ pub fn remove_background(dll_path: &str, model_path: &str, input: &RgbaImage, se
 
         // Query the number of outputs
         let mut output_count: usize = 0;
-        status_to_result(&api, (api.session_get_output_count())(session as *const _, &mut output_count))
-            .map_err(|e| OnnxError::SessionCreateFailed(format!("Get output count: {}", e)))?;
+        status_to_result(
+            &api,
+            (api.session_get_output_count())(session as *const _, &mut output_count),
+        )
+        .map_err(|e| OnnxError::SessionCreateFailed(format!("Get output count: {}", e)))?;
         eprintln!("[AI] Model has {} output(s)", output_count);
 
         // Detect model profile from input dimensions + output count
         let model_profile = ModelProfile::detect(model_input_h, model_input_w, output_count);
-        eprintln!("[AI] Detected model profile: {}", model_profile.description());
+        eprintln!(
+            "[AI] Detected model profile: {}",
+            model_profile.description()
+        );
 
         // Collect all output names
         let mut all_output_names = Vec::new();
@@ -996,15 +1168,21 @@ pub fn remove_background(dll_path: &str, model_path: &str, input: &RgbaImage, se
             all_output_name_cstrings.push(std::ffi::CString::new(name.clone()).unwrap());
             all_output_names.push(name);
         }
-        let output_name_ptrs: Vec<*const std::ffi::c_char> = all_output_name_cstrings.iter()
+        let output_name_ptrs: Vec<*const std::ffi::c_char> = all_output_name_cstrings
+            .iter()
             .map(|cs| cs.as_ptr())
             .collect();
 
-        eprintln!("[AI] Input: '{}' ({}x{}), {} output(s)",
-            input_name, model_input_size, model_input_size, output_count);
+        eprintln!(
+            "[AI] Input: '{}' ({}x{}), {} output(s)",
+            input_name, model_input_size, model_input_size, output_count
+        );
 
         // -- Preprocess --
-        eprintln!("[AI] Preprocessing image (resize to {}x{}, normalize)...", model_input_size, model_input_size);
+        eprintln!(
+            "[AI] Preprocessing image (resize to {}x{}, normalize)...",
+            model_input_size, model_input_size
+        );
         let (orig_w, orig_h) = input.dimensions();
         let mut tensor_data = preprocess_image(input, model_input_size);
         let tensor_shape: [i64; 4] = [1, 3, model_input_size as i64, model_input_size as i64];
@@ -1012,27 +1190,38 @@ pub fn remove_background(dll_path: &str, model_path: &str, input: &RgbaImage, se
         // -- Create memory info --
         eprintln!("[AI] Creating memory info and input tensor...");
         let mut memory_info: *mut OrtMemoryInfo = std::ptr::null_mut();
-        status_to_result(&api, (api.create_cpu_memory_info())(
-            OrtAllocatorType::ArenaAllocator,
-            OrtMemType::Default,
-            &mut memory_info,
-        )).map_err(|e| OnnxError::InferenceFailed(format!("Create memory info: {}", e)))?;
+        status_to_result(
+            &api,
+            (api.create_cpu_memory_info())(
+                OrtAllocatorType::ArenaAllocator,
+                OrtMemType::Default,
+                &mut memory_info,
+            ),
+        )
+        .map_err(|e| OnnxError::InferenceFailed(format!("Create memory info: {}", e)))?;
 
         // -- Create input tensor --
         let mut input_tensor: *mut OrtValue = std::ptr::null_mut();
         let data_len = tensor_data.len() * std::mem::size_of::<f32>();
-        status_to_result(&api, (api.create_tensor_with_data())(
-            memory_info,
-            tensor_data.as_mut_ptr() as *mut std::ffi::c_void,
-            data_len,
-            tensor_shape.as_ptr(),
-            4,
-            ONNXTensorElementDataType::Float,
-            &mut input_tensor,
-        )).map_err(|e| OnnxError::InferenceFailed(format!("Create input tensor: {}", e)))?;
+        status_to_result(
+            &api,
+            (api.create_tensor_with_data())(
+                memory_info,
+                tensor_data.as_mut_ptr() as *mut std::ffi::c_void,
+                data_len,
+                tensor_shape.as_ptr(),
+                4,
+                ONNXTensorElementDataType::Float,
+                &mut input_tensor,
+            ),
+        )
+        .map_err(|e| OnnxError::InferenceFailed(format!("Create input tensor: {}", e)))?;
 
         // -- Run inference requesting ALL outputs --
-        eprintln!("[AI] Running inference (requesting {} output(s))...", output_count);
+        eprintln!(
+            "[AI] Running inference (requesting {} output(s))...",
+            output_count
+        );
         let input_name_c = std::ffi::CString::new(input_name.clone()).unwrap();
         let input_names = [input_name_c.as_ptr()];
         let input_tensors = [input_tensor as *const OrtValue];
@@ -1061,7 +1250,10 @@ pub fn remove_background(dll_path: &str, model_path: &str, input: &RgbaImage, se
         }
 
         // -- Auto-select best output by confidence scoring --
-        eprintln!("[AI] Inference completed. Scoring {} output(s) to find best mask...", output_count);
+        eprintln!(
+            "[AI] Inference completed. Scoring {} output(s) to find best mask...",
+            output_count
+        );
 
         // Score all outputs: for each output, compute mask dimensions and confidence.
         // The most refined decoder stage has the most decisive (bimodal) probability distribution.
@@ -1075,10 +1267,17 @@ pub fn remove_background(dll_path: &str, model_path: &str, input: &RgbaImage, se
 
         let mut output_infos: Vec<OutputInfo> = Vec::new();
         for (i, &ot) in output_tensors.iter().enumerate() {
-            if ot.is_null() { continue; }
+            if ot.is_null() {
+                continue;
+            }
 
             let mut ti: *mut OrtTensorTypeAndShapeInfo = std::ptr::null_mut();
-            if status_to_result(&api, (api.get_tensor_type_and_shape())(ot as *const _, &mut ti)).is_err() {
+            if status_to_result(
+                &api,
+                (api.get_tensor_type_and_shape())(ot as *const _, &mut ti),
+            )
+            .is_err()
+            {
                 continue;
             }
 
@@ -1108,8 +1307,15 @@ pub fn remove_background(dll_path: &str, model_path: &str, input: &RgbaImage, se
                 if total > 0 {
                     let slice = std::slice::from_raw_parts(data_ptr as *const f32, total);
                     let score = mask_confidence_score(slice);
-                    eprintln!("[AI]   Output {} '{}': dims {:?} ({}x{}), confidence {:.4}",
-                        i, all_output_names.get(i).unwrap_or(&"?".to_string()), ds, ow, oh, score);
+                    eprintln!(
+                        "[AI]   Output {} '{}': dims {:?} ({}x{}), confidence {:.4}",
+                        i,
+                        all_output_names.get(i).unwrap_or(&"?".to_string()),
+                        ds,
+                        ow,
+                        oh,
+                        score
+                    );
                     output_infos.push(OutputInfo {
                         index: i,
                         dims: ds,
@@ -1126,18 +1332,25 @@ pub fn remove_background(dll_path: &str, model_path: &str, input: &RgbaImage, se
         // 2. If scores are very close (within 1%), prefer the model profile's preferred index
         let preferred_idx = model_profile.preferred_output_index(output_count);
         let best_info = if output_infos.is_empty() {
-            return Err(OnnxError::InvalidOutput("No valid outputs found".to_string()));
+            return Err(OnnxError::InvalidOutput(
+                "No valid outputs found".to_string(),
+            ));
         } else {
-            let max_confidence = output_infos.iter().map(|o| o.confidence).fold(0.0f64, f64::max);
+            let max_confidence = output_infos
+                .iter()
+                .map(|o| o.confidence)
+                .fold(0.0f64, f64::max);
             // Among outputs with confidence within 1% of the best, prefer the model's default
-            let close_to_best: Vec<&OutputInfo> = output_infos.iter()
+            let close_to_best: Vec<&OutputInfo> = output_infos
+                .iter()
                 .filter(|o| o.confidence >= max_confidence - 0.01)
                 .collect();
 
             if let Some(preferred) = close_to_best.iter().find(|o| o.index == preferred_idx) {
                 preferred
             } else {
-                close_to_best.into_iter()
+                close_to_best
+                    .into_iter()
                     .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap())
                     .unwrap()
             }
@@ -1145,23 +1358,36 @@ pub fn remove_background(dll_path: &str, model_path: &str, input: &RgbaImage, se
 
         let best_output_idx = best_info.index;
         let (out_h, out_w) = (best_info.out_h, best_info.out_w);
-        eprintln!("[AI] Selected output {} (confidence {:.4}) — {}x{}",
-            best_output_idx, best_info.confidence, out_w, out_h);
+        eprintln!(
+            "[AI] Selected output {} (confidence {:.4}) — {}x{}",
+            best_output_idx, best_info.confidence, out_w, out_h
+        );
 
         // Get pointer to best output's data
         let output_tensor = output_tensors[best_output_idx];
         let mut out_data_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
-        status_to_result(&api, (api.get_tensor_mutable_data())(output_tensor, &mut out_data_ptr))
-            .map_err(|e| OnnxError::InvalidOutput(format!("Get tensor data: {}", e)))?;
+        status_to_result(
+            &api,
+            (api.get_tensor_mutable_data())(output_tensor, &mut out_data_ptr),
+        )
+        .map_err(|e| OnnxError::InvalidOutput(format!("Get tensor data: {}", e)))?;
 
         let total_elements = (out_h * out_w) as usize;
         let out_slice = std::slice::from_raw_parts(out_data_ptr as *const f32, total_elements);
 
         // -- Detect output type and convert to probabilities --
         let is_prob = is_probability_space(out_slice);
-        eprintln!("[AI] Output value space: {}", if is_prob { "probabilities [0,1]" } else { "logits (applying sigmoid)" });
+        eprintln!(
+            "[AI] Output value space: {}",
+            if is_prob {
+                "probabilities [0,1]"
+            } else {
+                "logits (applying sigmoid)"
+            }
+        );
 
-        let probabilities: Vec<f32> = out_slice.iter()
+        let probabilities: Vec<f32> = out_slice
+            .iter()
             .map(|&v| to_probability(v, is_prob))
             .collect();
 
@@ -1175,12 +1401,24 @@ pub fn remove_background(dll_path: &str, model_path: &str, input: &RgbaImage, se
             sum_prob += p as f64;
         }
         let avg_prob = sum_prob / total_elements as f64;
-        eprintln!("[AI] Mask stats: probability range [{:.4}, {:.4}], avg {:.4}", min_val, max_val, avg_prob);
+        eprintln!(
+            "[AI] Mask stats: probability range [{:.4}, {:.4}], avg {:.4}",
+            min_val, max_val, avg_prob
+        );
 
         // -- Postprocess --
-        eprintln!("[AI] Postprocessing mask (applying to {}x{} image)...", orig_w, orig_h);
-        eprintln!("[AI]   Settings: threshold={:.2}, edge_feather={:.1}, mask_expansion={}, smooth_edges={}, fill_holes={}",
-            settings.threshold, settings.edge_feather, settings.mask_expansion, settings.smooth_edges, settings.fill_holes);
+        eprintln!(
+            "[AI] Postprocessing mask (applying to {}x{} image)...",
+            orig_w, orig_h
+        );
+        eprintln!(
+            "[AI]   Settings: threshold={:.2}, edge_feather={:.1}, mask_expansion={}, smooth_edges={}, fill_holes={}",
+            settings.threshold,
+            settings.edge_feather,
+            settings.mask_expansion,
+            settings.smooth_edges,
+            settings.fill_holes
+        );
         let result = postprocess_mask(&probabilities, out_h, out_w, input, settings);
 
         // -- Cleanup --
@@ -1199,9 +1437,18 @@ pub fn remove_background(dll_path: &str, model_path: &str, input: &RgbaImage, se
         // If the original was smaller and we want to preserve size
         if result.dimensions() != (orig_w, orig_h) {
             eprintln!("[AI] Resizing result to match original dimensions");
-            Ok(image::imageops::resize(&result, orig_w, orig_h, image::imageops::FilterType::Lanczos3))
+            Ok(image::imageops::resize(
+                &result,
+                orig_w,
+                orig_h,
+                image::imageops::FilterType::Lanczos3,
+            ))
         } else {
-            eprintln!("[AI] Done! Result is {}x{}", result.width(), result.height());
+            eprintln!(
+                "[AI] Done! Result is {}x{}",
+                result.width(),
+                result.height()
+            );
             Ok(result)
         }
     }
@@ -1215,13 +1462,18 @@ unsafe fn get_session_input_name(
     allocator: *mut OrtAllocator,
 ) -> Result<String, OnnxError> {
     let mut name_ptr: *mut std::ffi::c_char = std::ptr::null_mut();
-    status_to_result(api, (api.session_get_input_name())(session as *const _, index, allocator, &mut name_ptr))
-        .map_err(|e| OnnxError::SessionCreateFailed(format!("Get input name: {}", e)))?;
+    status_to_result(
+        api,
+        (api.session_get_input_name())(session as *const _, index, allocator, &mut name_ptr),
+    )
+    .map_err(|e| OnnxError::SessionCreateFailed(format!("Get input name: {}", e)))?;
 
     let name = if name_ptr.is_null() {
         "input".to_string()
     } else {
-        let s = std::ffi::CStr::from_ptr(name_ptr).to_string_lossy().into_owned();
+        let s = std::ffi::CStr::from_ptr(name_ptr)
+            .to_string_lossy()
+            .into_owned();
         (api.allocator_free())(allocator, name_ptr as *mut std::ffi::c_void);
         s
     };
@@ -1236,13 +1488,18 @@ unsafe fn get_session_output_name(
     allocator: *mut OrtAllocator,
 ) -> Result<String, OnnxError> {
     let mut name_ptr: *mut std::ffi::c_char = std::ptr::null_mut();
-    status_to_result(api, (api.session_get_output_name())(session as *const _, index, allocator, &mut name_ptr))
-        .map_err(|e| OnnxError::SessionCreateFailed(format!("Get output name: {}", e)))?;
+    status_to_result(
+        api,
+        (api.session_get_output_name())(session as *const _, index, allocator, &mut name_ptr),
+    )
+    .map_err(|e| OnnxError::SessionCreateFailed(format!("Get output name: {}", e)))?;
 
     let name = if name_ptr.is_null() {
         "output".to_string()
     } else {
-        let s = std::ffi::CStr::from_ptr(name_ptr).to_string_lossy().into_owned();
+        let s = std::ffi::CStr::from_ptr(name_ptr)
+            .to_string_lossy()
+            .into_owned();
         (api.allocator_free())(allocator, name_ptr as *mut std::ffi::c_void);
         s
     };

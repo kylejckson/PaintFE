@@ -2,9 +2,9 @@
 // TRANSFORM OPERATIONS — flip, rotate, affine for images and layers
 // ============================================================================
 
-use image::{RgbaImage, Rgba, imageops};
+use crate::canvas::{CanvasState, Layer, TiledImage};
+use image::{Rgba, RgbaImage, imageops};
 use rayon::prelude::*;
-use crate::canvas::{TiledImage, CanvasState, Layer};
 
 /// Interpolation method for resize operations.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -19,9 +19,9 @@ pub enum Interpolation {
 impl Interpolation {
     pub fn label(&self) -> String {
         match self {
-            Interpolation::Nearest  => t!("interpolation.nearest"),
+            Interpolation::Nearest => t!("interpolation.nearest"),
             Interpolation::Bilinear => t!("interpolation.bilinear"),
-            Interpolation::Bicubic  => t!("interpolation.bicubic"),
+            Interpolation::Bicubic => t!("interpolation.bicubic"),
             Interpolation::Lanczos3 => t!("interpolation.lanczos3"),
         }
     }
@@ -35,11 +35,11 @@ impl Interpolation {
         ]
     }
 
-    pub fn to_filter(&self) -> imageops::FilterType {
+    pub fn to_filter(self) -> imageops::FilterType {
         match self {
-            Interpolation::Nearest  => imageops::FilterType::Nearest,
+            Interpolation::Nearest => imageops::FilterType::Nearest,
             Interpolation::Bilinear => imageops::FilterType::Triangle,
-            Interpolation::Bicubic  => imageops::FilterType::CatmullRom,
+            Interpolation::Bicubic => imageops::FilterType::CatmullRom,
             Interpolation::Lanczos3 => imageops::FilterType::Lanczos3,
         }
     }
@@ -67,7 +67,9 @@ pub fn flip_canvas_vertical(state: &mut CanvasState) {
 
 /// Rotate the entire canvas 90° clockwise (swaps W↔H).
 pub fn rotate_canvas_90cw(state: &mut CanvasState) {
-    let new_pixels: Vec<_> = state.layers.par_iter()
+    let new_pixels: Vec<_> = state
+        .layers
+        .par_iter()
         .map(|layer| layer.pixels.rotate_90cw_chunked())
         .collect();
     for (layer, new_px) in state.layers.iter_mut().zip(new_pixels) {
@@ -81,7 +83,9 @@ pub fn rotate_canvas_90cw(state: &mut CanvasState) {
 
 /// Rotate the entire canvas 90° counter-clockwise (swaps W↔H).
 pub fn rotate_canvas_90ccw(state: &mut CanvasState) {
-    let new_pixels: Vec<_> = state.layers.par_iter()
+    let new_pixels: Vec<_> = state
+        .layers
+        .par_iter()
         .map(|layer| layer.pixels.rotate_90ccw_chunked())
         .collect();
     for (layer, new_px) in state.layers.iter_mut().zip(new_pixels) {
@@ -213,13 +217,17 @@ pub fn affine_transform_layer(
     scale: f32,
     offset: (f32, f32),
 ) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let layer = &mut state.layers[layer_idx];
     let w = state.width;
     let h = state.height;
 
     let flat = layer.pixels.to_rgba_image();
-    let result = apply_affine(&flat, w, h, rotation_z, rotation_x, rotation_y, scale, offset);
+    let result = apply_affine(
+        &flat, w, h, rotation_z, rotation_x, rotation_y, scale, offset,
+    );
     layer.pixels = TiledImage::from_rgba_image(&result);
     state.mark_dirty(None);
 }
@@ -236,10 +244,21 @@ pub fn affine_transform_layer_from_flat(
     offset: (f32, f32),
     original_flat: &RgbaImage,
 ) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let w = state.width;
     let h = state.height;
-    let result = apply_affine(original_flat, w, h, rotation_z, rotation_x, rotation_y, scale, offset);
+    let result = apply_affine(
+        original_flat,
+        w,
+        h,
+        rotation_z,
+        rotation_x,
+        rotation_y,
+        scale,
+        offset,
+    );
     let layer = &mut state.layers[layer_idx];
     layer.pixels = TiledImage::from_rgba_image(&result);
     state.mark_dirty(None);
@@ -289,7 +308,7 @@ fn apply_affine(
     let h = [
         [focal * r00, focal * r01, 0.0f32],
         [focal * r10, focal * r11, 0.0f32],
-        [r20,         r21,         focal],
+        [r20, r21, focal],
     ];
     let hi = invert_3x3(h);
 
@@ -306,56 +325,63 @@ fn apply_affine(
     let dst_raw = dst.as_mut();
 
     // Process rows in parallel using rayon.
-    dst_raw.par_chunks_mut(row_bytes).enumerate().for_each(|(dy, row)| {
-        let v = (dy as f32 - cy - offset.1) * inv_scale;
-        let base_sx = h01 * v + h02;
-        let base_sy = h11 * v + h12;
-        let base_sw = h21 * v + h22;
+    dst_raw
+        .par_chunks_mut(row_bytes)
+        .enumerate()
+        .for_each(|(dy, row)| {
+            let v = (dy as f32 - cy - offset.1) * inv_scale;
+            let base_sx = h01 * v + h02;
+            let base_sy = h11 * v + h12;
+            let base_sw = h21 * v + h22;
 
-        for dx in 0..canvas_w as usize {
-            let u = (dx as f32 - cx - offset.0) * inv_scale;
+            for dx in 0..canvas_w as usize {
+                let u = (dx as f32 - cx - offset.0) * inv_scale;
 
-            let w = h20 * u + base_sw;
-            if w.abs() < 1e-8 { continue; }
-            let inv_w = 1.0 / w;
-            let src_x = (h00 * u + base_sx) * inv_w + cx;
-            let src_y = (h10 * u + base_sy) * inv_w + cy;
-
-            let x0 = src_x.floor() as i32;
-            let y0 = src_y.floor() as i32;
-
-            if x0 < -1 || y0 < -1 || x0 >= src_w || y0 >= src_h { continue; }
-
-            let fx = src_x - x0 as f32;
-            let fy = src_y - y0 as f32;
-
-            let sample = |sx: i32, sy: i32| -> [f32; 4] {
-                if sx < 0 || sy < 0 || sx >= src_w || sy >= src_h {
-                    [0.0; 4]
-                } else {
-                    let idx = sy as usize * src_stride + sx as usize * 4;
-                    [
-                        src_raw[idx]     as f32,
-                        src_raw[idx + 1] as f32,
-                        src_raw[idx + 2] as f32,
-                        src_raw[idx + 3] as f32,
-                    ]
+                let w = h20 * u + base_sw;
+                if w.abs() < 1e-8 {
+                    continue;
                 }
-            };
+                let inv_w = 1.0 / w;
+                let src_x = (h00 * u + base_sx) * inv_w + cx;
+                let src_y = (h10 * u + base_sy) * inv_w + cy;
 
-            let tl = sample(x0, y0);
-            let tr = sample(x0 + 1, y0);
-            let bl = sample(x0, y0 + 1);
-            let br = sample(x0 + 1, y0 + 1);
+                let x0 = src_x.floor() as i32;
+                let y0 = src_y.floor() as i32;
 
-            let px = dx * 4;
-            for c in 0..4 {
-                let top = tl[c] + (tr[c] - tl[c]) * fx;
-                let bot = bl[c] + (br[c] - bl[c]) * fx;
-                row[px + c] = (top + (bot - top) * fy).round().clamp(0.0, 255.0) as u8;
+                if x0 < -1 || y0 < -1 || x0 >= src_w || y0 >= src_h {
+                    continue;
+                }
+
+                let fx = src_x - x0 as f32;
+                let fy = src_y - y0 as f32;
+
+                let sample = |sx: i32, sy: i32| -> [f32; 4] {
+                    if sx < 0 || sy < 0 || sx >= src_w || sy >= src_h {
+                        [0.0; 4]
+                    } else {
+                        let idx = sy as usize * src_stride + sx as usize * 4;
+                        [
+                            src_raw[idx] as f32,
+                            src_raw[idx + 1] as f32,
+                            src_raw[idx + 2] as f32,
+                            src_raw[idx + 3] as f32,
+                        ]
+                    }
+                };
+
+                let tl = sample(x0, y0);
+                let tr = sample(x0 + 1, y0);
+                let bl = sample(x0, y0 + 1);
+                let br = sample(x0 + 1, y0 + 1);
+
+                let px = dx * 4;
+                for c in 0..4 {
+                    let top = tl[c] + (tr[c] - tl[c]) * fx;
+                    let bot = bl[c] + (br[c] - bl[c]) * fx;
+                    row[px + c] = (top + (bot - top) * fy).round().clamp(0.0, 255.0) as u8;
+                }
             }
-        }
-    });
+        });
     dst
 }
 
@@ -365,17 +391,27 @@ fn invert_3x3(m: [[f32; 3]; 3]) -> [[f32; 3]; 3] {
     let (d, e, f) = (m[1][0], m[1][1], m[1][2]);
     let (g, h, i) = (m[2][0], m[2][1], m[2][2]);
 
-    let det = a * (e * i - f * h)
-            - b * (d * i - f * g)
-            + c * (d * h - e * g);
+    let det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
     if det.abs() < 1e-12 {
         return [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
     }
     let inv = 1.0 / det;
     [
-        [(e*i - f*h) * inv, (c*h - b*i) * inv, (b*f - c*e) * inv],
-        [(f*g - d*i) * inv, (a*i - c*g) * inv, (c*d - a*f) * inv],
-        [(d*h - e*g) * inv, (b*g - a*h) * inv, (a*e - b*d) * inv],
+        [
+            (e * i - f * h) * inv,
+            (c * h - b * i) * inv,
+            (b * f - c * e) * inv,
+        ],
+        [
+            (f * g - d * i) * inv,
+            (a * i - c * g) * inv,
+            (c * d - a * f) * inv,
+        ],
+        [
+            (d * h - e * g) * inv,
+            (b * g - a * h) * inv,
+            (a * e - b * d) * inv,
+        ],
     ]
 }
 
@@ -513,7 +549,9 @@ impl DisplacementField {
                 let dx = px as f32 - center_x;
                 let dy = py as f32 - center_y;
                 let dist_sq = dx * dx + dy * dy;
-                if dist_sq > r * r { continue; }
+                if dist_sq > r * r {
+                    continue;
+                }
                 let dist = dist_sq.sqrt().max(0.001);
                 // Smooth centre-peaked falloff: max force at centre, zero at edge.
                 // (1-t)^2 with t=dist/r gives 1.0 at centre, 0.0 at edge, no discontinuity.
@@ -553,7 +591,12 @@ impl DisplacementField {
                 }
                 let dist = dist_sq.sqrt().max(0.001);
                 let weight = (-dist_sq / sigma_sq_2).exp() * strength;
-                self.add(px as u32, py as u32, -dx / dist * weight * 2.0, -dy / dist * weight * 2.0);
+                self.add(
+                    px as u32,
+                    py as u32,
+                    -dx / dist * weight * 2.0,
+                    -dy / dist * weight * 2.0,
+                );
             }
         }
 
@@ -682,10 +725,7 @@ pub fn warp_displacement_region(
 }
 
 /// Warp an entire source image using a displacement field (full resolution).
-pub fn warp_displacement_full(
-    src: &RgbaImage,
-    displacement: &DisplacementField,
-) -> RgbaImage {
+pub fn warp_displacement_full(src: &RgbaImage, displacement: &DisplacementField) -> RgbaImage {
     let w = displacement.width;
     let h = displacement.height;
     let mut dst = RgbaImage::new(w, h);
@@ -695,49 +735,52 @@ pub fn warp_displacement_full(
     let src_raw = src.as_raw();
     let src_stride = src_w as usize * 4;
 
-    dst.as_mut().par_chunks_mut(row_bytes).enumerate().for_each(|(y, row)| {
-        for x in 0..w {
-            let (ddx, ddy) = displacement.get(x, y as u32);
-            let sx = x as f32 - ddx;
-            let sy = y as f32 - ddy;
+    dst.as_mut()
+        .par_chunks_mut(row_bytes)
+        .enumerate()
+        .for_each(|(y, row)| {
+            for x in 0..w {
+                let (ddx, ddy) = displacement.get(x, y as u32);
+                let sx = x as f32 - ddx;
+                let sy = y as f32 - ddy;
 
-            let x0 = sx.floor() as i32;
-            let y0 = sy.floor() as i32;
+                let x0 = sx.floor() as i32;
+                let y0 = sy.floor() as i32;
 
-            if x0 < -1 || y0 < -1 || x0 >= src_w || y0 >= src_h {
-                continue;
-            }
-
-            let fx = sx - x0 as f32;
-            let fy = sy - y0 as f32;
-
-            let sample = |sx: i32, sy: i32| -> [f32; 4] {
-                if sx < 0 || sy < 0 || sx >= src_w || sy >= src_h {
-                    [0.0; 4]
-                } else {
-                    let idx = sy as usize * src_stride + sx as usize * 4;
-                    [
-                        src_raw[idx] as f32,
-                        src_raw[idx + 1] as f32,
-                        src_raw[idx + 2] as f32,
-                        src_raw[idx + 3] as f32,
-                    ]
+                if x0 < -1 || y0 < -1 || x0 >= src_w || y0 >= src_h {
+                    continue;
                 }
-            };
 
-            let tl = sample(x0, y0);
-            let tr = sample(x0 + 1, y0);
-            let bl = sample(x0, y0 + 1);
-            let br = sample(x0 + 1, y0 + 1);
+                let fx = sx - x0 as f32;
+                let fy = sy - y0 as f32;
 
-            let px = x as usize * 4;
-            for c in 0..4 {
-                let top = tl[c] + (tr[c] - tl[c]) * fx;
-                let bot = bl[c] + (br[c] - bl[c]) * fx;
-                row[px + c] = (top + (bot - top) * fy).round().clamp(0.0, 255.0) as u8;
+                let sample = |sx: i32, sy: i32| -> [f32; 4] {
+                    if sx < 0 || sy < 0 || sx >= src_w || sy >= src_h {
+                        [0.0; 4]
+                    } else {
+                        let idx = sy as usize * src_stride + sx as usize * 4;
+                        [
+                            src_raw[idx] as f32,
+                            src_raw[idx + 1] as f32,
+                            src_raw[idx + 2] as f32,
+                            src_raw[idx + 3] as f32,
+                        ]
+                    }
+                };
+
+                let tl = sample(x0, y0);
+                let tr = sample(x0 + 1, y0);
+                let bl = sample(x0, y0 + 1);
+                let br = sample(x0 + 1, y0 + 1);
+
+                let px = x as usize * 4;
+                for c in 0..4 {
+                    let top = tl[c] + (tr[c] - tl[c]) * fx;
+                    let bot = bl[c] + (br[c] - bl[c]) * fx;
+                    row[px + c] = (top + (bot - top) * fy).round().clamp(0.0, 255.0) as u8;
+                }
             }
-        }
-    });
+        });
     dst
 }
 
@@ -769,125 +812,137 @@ pub fn warp_mesh(
 
     let pts_per_row = grid_cols + 1;
 
-    dst.as_mut().par_chunks_mut(row_bytes).enumerate().for_each(|(y, row)| {
-        let py = y as f32 + 0.5;
-        for x in 0..out_w as usize {
-            let px = x as f32 + 0.5;
+    dst.as_mut()
+        .par_chunks_mut(row_bytes)
+        .enumerate()
+        .for_each(|(y, row)| {
+            let py = y as f32 + 0.5;
+            for x in 0..out_w as usize {
+                let px = x as f32 + 0.5;
 
-            // Find which cell this pixel belongs to in the DEFORMED grid
-            let mut best_cell = None;
-            let mut best_u = 0.0f32;
-            let mut best_v = 0.0f32;
+                // Find which cell this pixel belongs to in the DEFORMED grid
+                let mut best_cell = None;
+                let mut best_u = 0.0f32;
+                let mut best_v = 0.0f32;
 
-            for cr in 0..grid_rows {
-                for cc in 0..grid_cols {
-                    let i00 = cr * pts_per_row + cc;
-                    let i10 = cr * pts_per_row + cc + 1;
-                    let i01 = (cr + 1) * pts_per_row + cc;
-                    let i11 = (cr + 1) * pts_per_row + cc + 1;
+                for cr in 0..grid_rows {
+                    for cc in 0..grid_cols {
+                        let i00 = cr * pts_per_row + cc;
+                        let i10 = cr * pts_per_row + cc + 1;
+                        let i01 = (cr + 1) * pts_per_row + cc;
+                        let i11 = (cr + 1) * pts_per_row + cc + 1;
 
-                    // Use DEFORMED grid for cell containment test
-                    let p00 = deformed_points[i00];
-                    let p10 = deformed_points[i10];
-                    let p01 = deformed_points[i01];
-                    let p11 = deformed_points[i11];
+                        // Use DEFORMED grid for cell containment test
+                        let p00 = deformed_points[i00];
+                        let p10 = deformed_points[i10];
+                        let p01 = deformed_points[i01];
+                        let p11 = deformed_points[i11];
 
-                    // Quick AABB test
-                    let min_x = p00[0].min(p10[0]).min(p01[0]).min(p11[0]);
-                    let max_x = p00[0].max(p10[0]).max(p01[0]).max(p11[0]);
-                    let min_y = p00[1].min(p10[1]).min(p01[1]).min(p11[1]);
-                    let max_y = p00[1].max(p10[1]).max(p01[1]).max(p11[1]);
+                        // Quick AABB test
+                        let min_x = p00[0].min(p10[0]).min(p01[0]).min(p11[0]);
+                        let max_x = p00[0].max(p10[0]).max(p01[0]).max(p11[0]);
+                        let min_y = p00[1].min(p10[1]).min(p01[1]).min(p11[1]);
+                        let max_y = p00[1].max(p10[1]).max(p01[1]).max(p11[1]);
 
-                    if px < min_x - 1.0 || px > max_x + 1.0 || py < min_y - 1.0 || py > max_y + 1.0 {
-                        continue;
-                    }
+                        if px < min_x - 1.0
+                            || px > max_x + 1.0
+                            || py < min_y - 1.0
+                            || py > max_y + 1.0
+                        {
+                            continue;
+                        }
 
-                    // Compute (u, v) in this deformed cell using inverse bilinear
-                    if let Some((u, v)) = inverse_bilinear(px, py, p00, p10, p01, p11) {
-                        if u >= -0.001 && u <= 1.001 && v >= -0.001 && v <= 1.001 {
+                        // Compute (u, v) in this deformed cell using inverse bilinear
+                        if let Some((u, v)) = inverse_bilinear(px, py, p00, p10, p01, p11)
+                            && (-0.001..=1.001).contains(&u)
+                            && (-0.001..=1.001).contains(&v)
+                        {
                             best_cell = Some((cc, cr));
                             best_u = u.clamp(0.0, 1.0);
                             best_v = v.clamp(0.0, 1.0);
                             break;
                         }
                     }
-                }
-                if best_cell.is_some() {
-                    break;
-                }
-            }
-
-            if let Some((cc, cr)) = best_cell {
-                // Map back to ORIGINAL grid to find source sample position
-                let i00 = cr * pts_per_row + cc;
-                let i10 = cr * pts_per_row + cc + 1;
-                let i01 = (cr + 1) * pts_per_row + cc;
-                let i11 = (cr + 1) * pts_per_row + cc + 1;
-
-                let o00 = original_points[i00];
-                let o10 = original_points[i10];
-                let o01 = original_points[i01];
-                let o11 = original_points[i11];
-
-                let u = best_u;
-                let v = best_v;
-
-                let src_x = (1.0 - u) * (1.0 - v) * o00[0]
-                           + u * (1.0 - v) * o10[0]
-                           + (1.0 - u) * v * o01[0]
-                           + u * v * o11[0];
-                let src_y = (1.0 - u) * (1.0 - v) * o00[1]
-                           + u * (1.0 - v) * o10[1]
-                           + (1.0 - u) * v * o01[1]
-                           + u * v * o11[1];
-
-                // Bilinear sample from source
-                let x0 = src_x.floor() as i32;
-                let y0 = src_y.floor() as i32;
-
-                if x0 < -1 || y0 < -1 || x0 >= src_w || y0 >= src_h {
-                    continue;
-                }
-
-                let fx = src_x - x0 as f32;
-                let fy = src_y - y0 as f32;
-
-                let sample = |sx: i32, sy: i32| -> [f32; 4] {
-                    if sx < 0 || sy < 0 || sx >= src_w || sy >= src_h {
-                        [0.0; 4]
-                    } else {
-                        let idx = sy as usize * src_stride + sx as usize * 4;
-                        [
-                            src_raw[idx] as f32,
-                            src_raw[idx + 1] as f32,
-                            src_raw[idx + 2] as f32,
-                            src_raw[idx + 3] as f32,
-                        ]
+                    if best_cell.is_some() {
+                        break;
                     }
-                };
+                }
 
-                let tl = sample(x0, y0);
-                let tr = sample(x0 + 1, y0);
-                let bl = sample(x0, y0 + 1);
-                let br = sample(x0 + 1, y0 + 1);
+                if let Some((cc, cr)) = best_cell {
+                    // Map back to ORIGINAL grid to find source sample position
+                    let i00 = cr * pts_per_row + cc;
+                    let i10 = cr * pts_per_row + cc + 1;
+                    let i01 = (cr + 1) * pts_per_row + cc;
+                    let i11 = (cr + 1) * pts_per_row + cc + 1;
 
-                let col = x * 4;
-                for c in 0..4 {
-                    let top = tl[c] + (tr[c] - tl[c]) * fx;
-                    let bot = bl[c] + (br[c] - bl[c]) * fx;
-                    row[col + c] = (top + (bot - top) * fy).round().clamp(0.0, 255.0) as u8;
+                    let o00 = original_points[i00];
+                    let o10 = original_points[i10];
+                    let o01 = original_points[i01];
+                    let o11 = original_points[i11];
+
+                    let u = best_u;
+                    let v = best_v;
+
+                    let src_x = (1.0 - u) * (1.0 - v) * o00[0]
+                        + u * (1.0 - v) * o10[0]
+                        + (1.0 - u) * v * o01[0]
+                        + u * v * o11[0];
+                    let src_y = (1.0 - u) * (1.0 - v) * o00[1]
+                        + u * (1.0 - v) * o10[1]
+                        + (1.0 - u) * v * o01[1]
+                        + u * v * o11[1];
+
+                    // Bilinear sample from source
+                    let x0 = src_x.floor() as i32;
+                    let y0 = src_y.floor() as i32;
+
+                    if x0 < -1 || y0 < -1 || x0 >= src_w || y0 >= src_h {
+                        continue;
+                    }
+
+                    let fx = src_x - x0 as f32;
+                    let fy = src_y - y0 as f32;
+
+                    let sample = |sx: i32, sy: i32| -> [f32; 4] {
+                        if sx < 0 || sy < 0 || sx >= src_w || sy >= src_h {
+                            [0.0; 4]
+                        } else {
+                            let idx = sy as usize * src_stride + sx as usize * 4;
+                            [
+                                src_raw[idx] as f32,
+                                src_raw[idx + 1] as f32,
+                                src_raw[idx + 2] as f32,
+                                src_raw[idx + 3] as f32,
+                            ]
+                        }
+                    };
+
+                    let tl = sample(x0, y0);
+                    let tr = sample(x0 + 1, y0);
+                    let bl = sample(x0, y0 + 1);
+                    let br = sample(x0 + 1, y0 + 1);
+
+                    let col = x * 4;
+                    for c in 0..4 {
+                        let top = tl[c] + (tr[c] - tl[c]) * fx;
+                        let bot = bl[c] + (br[c] - bl[c]) * fx;
+                        row[col + c] = (top + (bot - top) * fy).round().clamp(0.0, 255.0) as u8;
+                    }
                 }
             }
-        }
-    });
+        });
     dst
 }
 
 /// Inverse bilinear interpolation: given a point (px, py) and four corners
 /// of a bilinear quad, find (u, v) such that bilinear(u,v) ≈ (px, py).
 fn inverse_bilinear(
-    px: f32, py: f32,
-    p00: [f32; 2], p10: [f32; 2], p01: [f32; 2], p11: [f32; 2],
+    px: f32,
+    py: f32,
+    p00: [f32; 2],
+    p10: [f32; 2],
+    p01: [f32; 2],
+    p11: [f32; 2],
 ) -> Option<(f32, f32)> {
     // Use iterative Newton's method (2-3 iterations suffice for smooth quads)
     let mut u = 0.5f32;
@@ -896,13 +951,13 @@ fn inverse_bilinear(
     for _ in 0..6 {
         // Evaluate bilinear at (u, v)
         let qx = (1.0 - u) * (1.0 - v) * p00[0]
-                + u * (1.0 - v) * p10[0]
-                + (1.0 - u) * v * p01[0]
-                + u * v * p11[0];
+            + u * (1.0 - v) * p10[0]
+            + (1.0 - u) * v * p01[0]
+            + u * v * p11[0];
         let qy = (1.0 - u) * (1.0 - v) * p00[1]
-                + u * (1.0 - v) * p10[1]
-                + (1.0 - u) * v * p01[1]
-                + u * v * p11[1];
+            + u * (1.0 - v) * p10[1]
+            + (1.0 - u) * v * p01[1]
+            + u * v * p11[1];
 
         let ex = px - qx;
         let ey = py - qy;
@@ -944,10 +999,10 @@ fn catmull_rom_weights(t: f32) -> [f32; 4] {
     let t2 = t * t;
     let t3 = t2 * t;
     [
-        -0.5 * t3 + t2 - 0.5 * t,          // w_{i-1}
-         1.5 * t3 - 2.5 * t2 + 1.0,         // w_i
-        -1.5 * t3 + 2.0 * t2 + 0.5 * t,     // w_{i+1}
-         0.5 * t3 - 0.5 * t2,               // w_{i+2}
+        -0.5 * t3 + t2 - 0.5 * t,       // w_{i-1}
+        1.5 * t3 - 2.5 * t2 + 1.0,      // w_i
+        -1.5 * t3 + 2.0 * t2 + 0.5 * t, // w_{i+1}
+        0.5 * t3 - 0.5 * t2,            // w_{i+2}
     ]
 }
 
@@ -1019,20 +1074,27 @@ fn catmull_rom_surface(
 
     // Blend 4 row values in v-direction
     [
-        wv[0] * row_vals[0][0] + wv[1] * row_vals[1][0] + wv[2] * row_vals[2][0] + wv[3] * row_vals[3][0],
-        wv[0] * row_vals[0][1] + wv[1] * row_vals[1][1] + wv[2] * row_vals[2][1] + wv[3] * row_vals[3][1],
+        wv[0] * row_vals[0][0]
+            + wv[1] * row_vals[1][0]
+            + wv[2] * row_vals[2][0]
+            + wv[3] * row_vals[3][0],
+        wv[0] * row_vals[0][1]
+            + wv[1] * row_vals[1][1]
+            + wv[2] * row_vals[2][1]
+            + wv[3] * row_vals[3][1],
     ]
 }
 
 /// Evaluate a 1D Catmull-Rom curve along a row of control points at parameter t_global ∈ [0, n].
 /// Used for drawing smooth overlay curves.
-pub fn catmull_rom_curve_point(
-    points: &[[f32; 2]],
-    t_global: f32,
-) -> [f32; 2] {
+pub fn catmull_rom_curve_point(points: &[[f32; 2]], t_global: f32) -> [f32; 2] {
     let n = points.len();
-    if n == 0 { return [0.0, 0.0]; }
-    if n == 1 { return points[0]; }
+    if n == 0 {
+        return [0.0, 0.0];
+    }
+    if n == 1 {
+        return points[0];
+    }
     let max_t = (n - 1) as f32 - 0.0001;
     let t = t_global.clamp(0.0, max_t);
     let i = (t as usize).min(n - 2);
@@ -1056,22 +1118,28 @@ pub fn generate_displacement_from_mesh(
     let mut field = DisplacementField::new(out_w, out_h);
     let row_floats = out_w as usize * 2;
 
-    field.data.par_chunks_mut(row_floats).enumerate().for_each(|(y, row)| {
-        for x in 0..out_w as usize {
-            // Global parametric coords for this pixel
-            let u_global = (x as f32 + 0.5) / out_w as f32 * grid_cols as f32;
-            let v_global = (y as f32 + 0.5) / out_h as f32 * grid_rows as f32;
+    field
+        .data
+        .par_chunks_mut(row_floats)
+        .enumerate()
+        .for_each(|(y, row)| {
+            for x in 0..out_w as usize {
+                // Global parametric coords for this pixel
+                let u_global = (x as f32 + 0.5) / out_w as f32 * grid_cols as f32;
+                let v_global = (y as f32 + 0.5) / out_h as f32 * grid_rows as f32;
 
-            // Evaluate spline on both original and deformed grids
-            let orig = catmull_rom_surface(original_points, grid_cols, grid_rows, u_global, v_global);
-            let def = catmull_rom_surface(deformed_points, grid_cols, grid_rows, u_global, v_global);
+                // Evaluate spline on both original and deformed grids
+                let orig =
+                    catmull_rom_surface(original_points, grid_cols, grid_rows, u_global, v_global);
+                let def =
+                    catmull_rom_surface(deformed_points, grid_cols, grid_rows, u_global, v_global);
 
-            // Displacement = deformed - original position
-            let col = x * 2;
-            row[col]     = def[0] - orig[0];
-            row[col + 1] = def[1] - orig[1];
-        }
-    });
+                // Displacement = deformed - original position
+                let col = x * 2;
+                row[col] = def[0] - orig[0];
+                row[col + 1] = def[1] - orig[1];
+            }
+        });
 
     field
 }
@@ -1091,19 +1159,23 @@ pub fn generate_displacement_from_mesh_fast(
 ) {
     let row_floats = out_w as usize * 2;
 
-    out_data.par_chunks_mut(row_floats).enumerate().for_each(|(y, row)| {
-        for x in 0..out_w as usize {
-            let u_global = (x as f32 + 0.5) / out_w as f32 * grid_cols as f32;
-            let v_global = (y as f32 + 0.5) / out_h as f32 * grid_rows as f32;
+    out_data
+        .par_chunks_mut(row_floats)
+        .enumerate()
+        .for_each(|(y, row)| {
+            for x in 0..out_w as usize {
+                let u_global = (x as f32 + 0.5) / out_w as f32 * grid_cols as f32;
+                let v_global = (y as f32 + 0.5) / out_h as f32 * grid_rows as f32;
 
-            // Only evaluate deformed grid — original is identity
-            let def = catmull_rom_surface(deformed_points, grid_cols, grid_rows, u_global, v_global);
+                // Only evaluate deformed grid — original is identity
+                let def =
+                    catmull_rom_surface(deformed_points, grid_cols, grid_rows, u_global, v_global);
 
-            let col = x * 2;
-            row[col]     = def[0] - (x as f32 + 0.5);
-            row[col + 1] = def[1] - (y as f32 + 0.5);
-        }
-    });
+                let col = x * 2;
+                row[col] = def[0] - (x as f32 + 0.5);
+                row[col + 1] = def[1] - (y as f32 + 0.5);
+            }
+        });
 }
 
 /// Warp a source image using Catmull-Rom mesh + displacement field (full resolution).
@@ -1118,7 +1190,12 @@ pub fn warp_mesh_catmull_rom(
     out_h: u32,
 ) -> RgbaImage {
     let displacement = generate_displacement_from_mesh(
-        original_points, deformed_points, grid_cols, grid_rows, out_w, out_h,
+        original_points,
+        deformed_points,
+        grid_cols,
+        grid_rows,
+        out_w,
+        out_h,
     );
     warp_displacement_full(src, &displacement)
 }

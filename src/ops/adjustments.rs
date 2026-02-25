@@ -7,9 +7,9 @@
 // Operations are parallelized via rayon for multi-core performance.
 // ============================================================================
 
+use crate::canvas::{CanvasState, TiledImage};
 use image::RgbaImage;
 use rayon::prelude::*;
-use crate::canvas::{CanvasState, TiledImage};
 
 // ============================================================================
 // HELPER: selection-aware per-pixel transform
@@ -18,19 +18,19 @@ use crate::canvas::{CanvasState, TiledImage};
 /// Apply a per-pixel transform function to the active layer.
 /// If a selection mask exists, only selected pixels are affected.
 /// `transform` receives (r, g, b, a) as f32 and returns (r, g, b, a) as f32.
-fn apply_pixel_transform<F>(
-    state: &mut CanvasState,
-    layer_idx: usize,
-    transform: F,
-)
+fn apply_pixel_transform<F>(state: &mut CanvasState, layer_idx: usize, transform: F)
 where
     F: Fn(f32, f32, f32, f32) -> (f32, f32, f32, f32) + Sync,
 {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let layer = &mut state.layers[layer_idx];
     let w = layer.pixels.width() as usize;
     let h = layer.pixels.height() as usize;
-    if w == 0 || h == 0 { return; }
+    if w == 0 || h == 0 {
+        return;
+    }
 
     let flat = layer.pixels.to_rgba_image();
     let src_raw = flat.as_raw();
@@ -38,31 +38,42 @@ where
     let stride = w * 4;
 
     let mask_raw = state.selection_mask.as_ref().map(|m| m.as_raw().as_slice());
-    let mask_w = state.selection_mask.as_ref().map_or(0, |m| m.width() as usize);
-    let mask_h = state.selection_mask.as_ref().map_or(0, |m| m.height() as usize);
+    let mask_w = state
+        .selection_mask
+        .as_ref()
+        .map_or(0, |m| m.width() as usize);
+    let mask_h = state
+        .selection_mask
+        .as_ref()
+        .map_or(0, |m| m.height() as usize);
 
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        let row_in = &src_raw[y * stride..(y + 1) * stride];
-        for x in 0..w {
-            let pi = x * 4;
-            // Check selection mask
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            let row_in = &src_raw[y * stride..(y + 1) * stride];
+            for x in 0..w {
+                let pi = x * 4;
+                // Check selection mask
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     row_out[pi..pi + 4].copy_from_slice(&row_in[pi..pi + 4]);
                     continue;
                 }
+                let r = row_in[pi] as f32;
+                let g = row_in[pi + 1] as f32;
+                let b = row_in[pi + 2] as f32;
+                let a = row_in[pi + 3] as f32;
+                let (nr, ng, nb, na) = transform(r, g, b, a);
+                row_out[pi] = nr.round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 1] = ng.round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 2] = nb.round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 3] = na.round().clamp(0.0, 255.0) as u8;
             }
-            let r = row_in[pi] as f32;
-            let g = row_in[pi + 1] as f32;
-            let b = row_in[pi + 2] as f32;
-            let a = row_in[pi + 3] as f32;
-            let (nr, ng, nb, na) = transform(r, g, b, a);
-            row_out[pi]     = nr.round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 1] = ng.round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 2] = nb.round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 3] = na.round().clamp(0.0, 255.0) as u8;
-        }
-    });
+        });
 
     let out = RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap();
     let layer = &mut state.layers[layer_idx];
@@ -77,44 +88,58 @@ pub fn apply_pixel_transform_from_flat<F>(
     layer_idx: usize,
     original_flat: &RgbaImage,
     transform: F,
-)
-where
+) where
     F: Fn(f32, f32, f32, f32) -> (f32, f32, f32, f32) + Sync,
 {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let w = original_flat.width() as usize;
     let h = original_flat.height() as usize;
-    if w == 0 || h == 0 { return; }
+    if w == 0 || h == 0 {
+        return;
+    }
 
     let src_raw = original_flat.as_raw();
     let mut dst_raw = vec![0u8; w * h * 4];
     let stride = w * 4;
 
     let mask_raw = state.selection_mask.as_ref().map(|m| m.as_raw().as_slice());
-    let mask_w = state.selection_mask.as_ref().map_or(0, |m| m.width() as usize);
-    let mask_h = state.selection_mask.as_ref().map_or(0, |m| m.height() as usize);
+    let mask_w = state
+        .selection_mask
+        .as_ref()
+        .map_or(0, |m| m.width() as usize);
+    let mask_h = state
+        .selection_mask
+        .as_ref()
+        .map_or(0, |m| m.height() as usize);
 
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        let row_in = &src_raw[y * stride..(y + 1) * stride];
-        for x in 0..w {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            let row_in = &src_raw[y * stride..(y + 1) * stride];
+            for x in 0..w {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     row_out[pi..pi + 4].copy_from_slice(&row_in[pi..pi + 4]);
                     continue;
                 }
+                let r = row_in[pi] as f32;
+                let g = row_in[pi + 1] as f32;
+                let b = row_in[pi + 2] as f32;
+                let a = row_in[pi + 3] as f32;
+                let (nr, ng, nb, na) = transform(r, g, b, a);
+                row_out[pi] = nr.round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 1] = ng.round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 2] = nb.round().clamp(0.0, 255.0) as u8;
+                row_out[pi + 3] = na.round().clamp(0.0, 255.0) as u8;
             }
-            let r = row_in[pi] as f32;
-            let g = row_in[pi + 1] as f32;
-            let b = row_in[pi + 2] as f32;
-            let a = row_in[pi + 3] as f32;
-            let (nr, ng, nb, na) = transform(r, g, b, a);
-            row_out[pi]     = nr.round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 1] = ng.round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 2] = nb.round().clamp(0.0, 255.0) as u8;
-            row_out[pi + 3] = na.round().clamp(0.0, 255.0) as u8;
-        }
-    });
+        });
 
     let out = RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap();
     let layer = &mut state.layers[layer_idx];
@@ -135,9 +160,7 @@ pub fn invert_colors(state: &mut CanvasState, layer_idx: usize) {
 
 /// Invert the alpha channel. RGB is preserved.
 pub fn invert_alpha(state: &mut CanvasState, layer_idx: usize) {
-    apply_pixel_transform(state, layer_idx, |r, g, b, a| {
-        (r, g, b, 255.0 - a)
-    });
+    apply_pixel_transform(state, layer_idx, |r, g, b, a| (r, g, b, 255.0 - a));
 }
 
 /// Apply a sepia tone effect.
@@ -153,36 +176,56 @@ pub fn sepia(state: &mut CanvasState, layer_idx: usize) {
 /// Auto Levels: stretches the tonal range of each channel independently
 /// so min → 0 and max → 255, improving contrast.
 pub fn auto_levels(state: &mut CanvasState, layer_idx: usize) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     let layer = &state.layers[layer_idx];
     let flat = layer.pixels.to_rgba_image();
     let src_raw = flat.as_raw();
     let w = flat.width() as usize;
     let h = flat.height() as usize;
-    if w == 0 || h == 0 { return; }
+    if w == 0 || h == 0 {
+        return;
+    }
 
     let mask_raw = state.selection_mask.as_ref().map(|m| m.as_raw().as_slice());
-    let mask_w = state.selection_mask.as_ref().map_or(0, |m| m.width() as usize);
-    let mask_h = state.selection_mask.as_ref().map_or(0, |m| m.height() as usize);
+    let mask_w = state
+        .selection_mask
+        .as_ref()
+        .map_or(0, |m| m.width() as usize);
+    let mask_h = state
+        .selection_mask
+        .as_ref()
+        .map_or(0, |m| m.height() as usize);
 
     // Compute per-channel min/max (only for selected pixels)
-    let mut min_r = 255u8; let mut max_r = 0u8;
-    let mut min_g = 255u8; let mut max_g = 0u8;
-    let mut min_b = 255u8; let mut max_b = 0u8;
+    let mut min_r = 255u8;
+    let mut max_r = 0u8;
+    let mut min_g = 255u8;
+    let mut max_g = 0u8;
+    let mut min_b = 255u8;
+    let mut max_b = 0u8;
 
     for y in 0..h {
         for x in 0..w {
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 {
-                    continue;
-                }
+            if let Some(mr) = mask_raw
+                && x < mask_w
+                && y < mask_h
+                && mr[y * mask_w + x] == 0
+            {
+                continue;
             }
             let pi = (y * w + x) * 4;
             let a = src_raw[pi + 3];
-            if a == 0 { continue; } // skip fully transparent
-            min_r = min_r.min(src_raw[pi]);     max_r = max_r.max(src_raw[pi]);
-            min_g = min_g.min(src_raw[pi + 1]); max_g = max_g.max(src_raw[pi + 1]);
-            min_b = min_b.min(src_raw[pi + 2]); max_b = max_b.max(src_raw[pi + 2]);
+            if a == 0 {
+                continue;
+            } // skip fully transparent
+            min_r = min_r.min(src_raw[pi]);
+            max_r = max_r.max(src_raw[pi]);
+            min_g = min_g.min(src_raw[pi + 1]);
+            max_g = max_g.max(src_raw[pi + 1]);
+            min_b = min_b.min(src_raw[pi + 2]);
+            max_b = max_b.max(src_raw[pi + 2]);
         }
     }
 
@@ -195,22 +238,27 @@ pub fn auto_levels(state: &mut CanvasState, layer_idx: usize) {
     let mut dst_raw = vec![0u8; w * h * 4];
     let stride = w * 4;
 
-    dst_raw.par_chunks_mut(stride).enumerate().for_each(|(y, row_out)| {
-        let row_in = &src_raw[y * stride..(y + 1) * stride];
-        for x in 0..w {
-            let pi = x * 4;
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 {
+    dst_raw
+        .par_chunks_mut(stride)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            let row_in = &src_raw[y * stride..(y + 1) * stride];
+            for x in 0..w {
+                let pi = x * 4;
+                if let Some(mr) = mask_raw
+                    && x < mask_w
+                    && y < mask_h
+                    && mr[y * mask_w + x] == 0
+                {
                     row_out[pi..pi + 4].copy_from_slice(&row_in[pi..pi + 4]);
                     continue;
                 }
+                row_out[pi] = lut_r[row_in[pi] as usize];
+                row_out[pi + 1] = lut_g[row_in[pi + 1] as usize];
+                row_out[pi + 2] = lut_b[row_in[pi + 2] as usize];
+                row_out[pi + 3] = row_in[pi + 3];
             }
-            row_out[pi]     = lut_r[row_in[pi] as usize];
-            row_out[pi + 1] = lut_g[row_in[pi + 1] as usize];
-            row_out[pi + 2] = lut_b[row_in[pi + 2] as usize];
-            row_out[pi + 3] = row_in[pi + 3];
-        }
-    });
+        });
 
     let out = RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap();
     let layer = &mut state.layers[layer_idx];
@@ -222,14 +270,20 @@ fn build_stretch_lut(min: u8, max: u8) -> [u8; 256] {
     let mut lut = [0u8; 256];
     if max <= min {
         // No range to stretch — identity
-        for i in 0..256 { lut[i] = i as u8; }
+        for (i, item) in lut.iter_mut().enumerate() {
+            *item = i as u8;
+        }
     } else {
         let range = (max - min) as f32;
-        for i in 0..256 {
-            let v = if (i as u8) <= min { 0.0 }
-                    else if (i as u8) >= max { 255.0 }
-                    else { (i as f32 - min as f32) / range * 255.0 };
-            lut[i] = v.round().clamp(0.0, 255.0) as u8;
+        for (i, item) in lut.iter_mut().enumerate() {
+            let v = if (i as u8) <= min {
+                0.0
+            } else if (i as u8) >= max {
+                255.0
+            } else {
+                (i as f32 - min as f32) / range * 255.0
+            };
+            *item = v.round().clamp(0.0, 255.0) as u8;
         }
     }
     lut
@@ -292,7 +346,12 @@ pub fn hue_saturation_lightness(
         let nh = if nh < 0.0 { nh + 1.0 } else { nh };
         let ns = (s * sat_factor).clamp(0.0, 1.0);
         let (nr, ng, nb) = hsl_to_rgb(nh, ns, l);
-        (nr * 255.0 + light_offset, ng * 255.0 + light_offset, nb * 255.0 + light_offset, a)
+        (
+            nr * 255.0 + light_offset,
+            ng * 255.0 + light_offset,
+            nb * 255.0 + light_offset,
+            a,
+        )
     });
 }
 
@@ -312,18 +371,19 @@ pub fn hue_saturation_lightness_from_flat(
         let nh = if nh < 0.0 { nh + 1.0 } else { nh };
         let ns = (s * sat_factor).clamp(0.0, 1.0);
         let (nr, ng, nb) = hsl_to_rgb(nh, ns, l);
-        (nr * 255.0 + light_offset, ng * 255.0 + light_offset, nb * 255.0 + light_offset, a)
+        (
+            nr * 255.0 + light_offset,
+            ng * 255.0 + light_offset,
+            nb * 255.0 + light_offset,
+            a,
+        )
     });
 }
 
 /// Exposure adjustment (simulated).
 /// `exposure`: -5.0..5.0 (EV stops, where 0 = no change)
 /// Applies a simple gain: pixel * 2^exposure
-pub fn exposure_adjust(
-    state: &mut CanvasState,
-    layer_idx: usize,
-    exposure: f32,
-) {
+pub fn exposure_adjust(state: &mut CanvasState, layer_idx: usize, exposure: f32) {
     let gain = 2.0f32.powf(exposure);
     apply_pixel_transform(state, layer_idx, move |r, g, b, a| {
         (r * gain, g * gain, b * gain, a)
@@ -372,7 +432,14 @@ pub fn highlights_shadows_from_flat(
     });
 }
 
-fn apply_hs_pixel(r: f32, g: f32, b: f32, a: f32, shadow_amt: f32, highlight_amt: f32) -> (f32, f32, f32, f32) {
+fn apply_hs_pixel(
+    r: f32,
+    g: f32,
+    b: f32,
+    a: f32,
+    shadow_amt: f32,
+    highlight_amt: f32,
+) -> (f32, f32, f32, f32) {
     let lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0; // 0..1
     // Shadow weight: strong for dark pixels, falls off for bright
     let sw = (1.0 - lum).powi(2);
@@ -399,7 +466,12 @@ pub fn levels_adjust(
 ) {
     let lut = build_levels_lut(input_black, input_white, gamma, output_black, output_white);
     apply_pixel_transform(state, layer_idx, move |r, g, b, a| {
-        (lut[r as usize] as f32, lut[g as usize] as f32, lut[b as usize] as f32, a)
+        (
+            lut[r as usize] as f32,
+            lut[g as usize] as f32,
+            lut[b as usize] as f32,
+            a,
+        )
     });
 }
 
@@ -415,17 +487,28 @@ pub fn levels_from_flat(
 ) {
     let lut = build_levels_lut(input_black, input_white, gamma, output_black, output_white);
     apply_pixel_transform_from_flat(state, layer_idx, original_flat, move |r, g, b, a| {
-        (lut[r as usize] as f32, lut[g as usize] as f32, lut[b as usize] as f32, a)
+        (
+            lut[r as usize] as f32,
+            lut[g as usize] as f32,
+            lut[b as usize] as f32,
+            a,
+        )
     });
 }
 
-fn build_levels_lut(in_black: f32, in_white: f32, gamma: f32, out_black: f32, out_white: f32) -> [u8; 256] {
+fn build_levels_lut(
+    in_black: f32,
+    in_white: f32,
+    gamma: f32,
+    out_black: f32,
+    out_white: f32,
+) -> [u8; 256] {
     let mut lut = [0u8; 256];
     let in_range = (in_white - in_black).max(1.0);
     let out_range = out_white - out_black;
     let inv_gamma = 1.0 / gamma.max(0.01);
 
-    for i in 0..256 {
+    for (i, item) in lut.iter_mut().enumerate() {
         let v = i as f32;
         // Remap input range
         let normalized = ((v - in_black) / in_range).clamp(0.0, 1.0);
@@ -433,7 +516,7 @@ fn build_levels_lut(in_black: f32, in_white: f32, gamma: f32, out_black: f32, ou
         let gamma_corrected = normalized.powf(inv_gamma);
         // Map to output range
         let output = out_black + gamma_corrected * out_range;
-        lut[i] = output.round().clamp(0.0, 255.0) as u8;
+        *item = output.round().clamp(0.0, 255.0) as u8;
     }
     lut
 }
@@ -465,18 +548,13 @@ pub fn levels_from_flat_per_channel(
 /// Temperature/Tint adjustment.
 /// `temperature`: -100..100 (negative = cooler/blue, positive = warmer/yellow)
 /// `tint`: -100..100 (negative = green, positive = magenta)
-pub fn temperature_tint(
-    state: &mut CanvasState,
-    layer_idx: usize,
-    temperature: f32,
-    tint: f32,
-) {
+pub fn temperature_tint(state: &mut CanvasState, layer_idx: usize, temperature: f32, tint: f32) {
     let temp_shift = temperature * 1.5;
     let tint_shift = tint * 1.0;
     apply_pixel_transform(state, layer_idx, move |r, g, b, a| {
-        let nr = r + temp_shift;       // warm adds red
+        let nr = r + temp_shift; // warm adds red
         let ng = g - tint_shift * 0.5; // tint: green vs magenta
-        let nb = b - temp_shift;       // warm removes blue
+        let nb = b - temp_shift; // warm removes blue
         (nr, ng, nb, a)
     });
 }
@@ -509,7 +587,12 @@ pub fn curves_adjust_multi(
 ) {
     let luts = build_multi_channel_luts(channel_points);
     apply_pixel_transform(state, layer_idx, move |r, g, b, a| {
-        (luts[0][r as usize] as f32, luts[1][g as usize] as f32, luts[2][b as usize] as f32, luts[3][a as usize] as f32)
+        (
+            luts[0][r as usize] as f32,
+            luts[1][g as usize] as f32,
+            luts[2][b as usize] as f32,
+            luts[3][a as usize] as f32,
+        )
     });
 }
 
@@ -521,7 +604,12 @@ pub fn curves_from_flat_multi(
 ) {
     let luts = build_multi_channel_luts(channel_points);
     apply_pixel_transform_from_flat(state, layer_idx, original_flat, move |r, g, b, a| {
-        (luts[0][r as usize] as f32, luts[1][g as usize] as f32, luts[2][b as usize] as f32, luts[3][a as usize] as f32)
+        (
+            luts[0][r as usize] as f32,
+            luts[1][g as usize] as f32,
+            luts[2][b as usize] as f32,
+            luts[3][a as usize] as f32,
+        )
     });
 }
 
@@ -530,15 +618,37 @@ pub fn curves_from_flat_multi(
 fn build_multi_channel_luts(channel_points: &[(&[(f32, f32)], bool); 5]) -> [[u8; 256]; 4] {
     // Identity LUTs
     let mut identity = [0u8; 256];
-    for i in 0..256 { identity[i] = i as u8; }
+    for (i, item) in identity.iter_mut().enumerate() {
+        *item = i as u8;
+    }
 
     // RGB master curve (index 0)
-    let rgb_lut = if channel_points[0].1 { build_curves_lut(channel_points[0].0) } else { identity };
+    let rgb_lut = if channel_points[0].1 {
+        build_curves_lut(channel_points[0].0)
+    } else {
+        identity
+    };
     // Per-channel curves
-    let r_lut = if channel_points[1].1 { build_curves_lut(channel_points[1].0) } else { identity };
-    let g_lut = if channel_points[2].1 { build_curves_lut(channel_points[2].0) } else { identity };
-    let b_lut = if channel_points[3].1 { build_curves_lut(channel_points[3].0) } else { identity };
-    let a_lut = if channel_points[4].1 { build_curves_lut(channel_points[4].0) } else { identity };
+    let r_lut = if channel_points[1].1 {
+        build_curves_lut(channel_points[1].0)
+    } else {
+        identity
+    };
+    let g_lut = if channel_points[2].1 {
+        build_curves_lut(channel_points[2].0)
+    } else {
+        identity
+    };
+    let b_lut = if channel_points[3].1 {
+        build_curves_lut(channel_points[3].0)
+    } else {
+        identity
+    };
+    let a_lut = if channel_points[4].1 {
+        build_curves_lut(channel_points[4].0)
+    } else {
+        identity
+    };
 
     // Compose: per-channel applied after RGB master
     let mut final_r = [0u8; 256];
@@ -565,7 +675,9 @@ fn build_curves_lut(points: &[(f32, f32)]) -> [u8; 256] {
     let mut lut = [0u8; 256];
     if points.len() < 2 {
         // Identity
-        for i in 0..256 { lut[i] = i as u8; }
+        for (i, item) in lut.iter_mut().enumerate() {
+            *item = i as u8;
+        }
         return lut;
     }
 
@@ -608,21 +720,23 @@ fn build_curves_lut(points: &[(f32, f32)]) -> [u8; 256] {
     }
 
     // Evaluate spline for each input value
-    for i in 0..256 {
+    for (i, item) in lut.iter_mut().enumerate() {
         let x = i as f32;
         // Find segment
         let seg = {
             let mut s = 0;
-            for j in 0..n - 1 {
-                if x >= points[j].0 { s = j; }
+            for (j, pt) in points.iter().enumerate().take(n - 1) {
+                if x >= pt.0 {
+                    s = j;
+                }
             }
             s
         };
 
         if x <= points[0].0 {
-            lut[i] = points[0].1.round().clamp(0.0, 255.0) as u8;
+            *item = points[0].1.round().clamp(0.0, 255.0) as u8;
         } else if x >= points[n - 1].0 {
-            lut[i] = points[n - 1].1.round().clamp(0.0, 255.0) as u8;
+            *item = points[n - 1].1.round().clamp(0.0, 255.0) as u8;
         } else {
             let x0 = points[seg].0;
             let x1 = points[seg + 1].0;
@@ -630,7 +744,7 @@ fn build_curves_lut(points: &[(f32, f32)]) -> [u8; 256] {
             let y1 = points[seg + 1].1;
             let h = x1 - x0;
             if h.abs() < 1e-6 {
-                lut[i] = y0.round().clamp(0.0, 255.0) as u8;
+                *item = y0.round().clamp(0.0, 255.0) as u8;
             } else {
                 let t = (x - x0) / h;
                 let t2 = t * t;
@@ -641,7 +755,7 @@ fn build_curves_lut(points: &[(f32, f32)]) -> [u8; 256] {
                 let h01 = -2.0 * t3 + 3.0 * t2;
                 let h11 = t3 - t2;
                 let val = h00 * y0 + h10 * h * m[seg] + h01 * y1 + h11 * h * m[seg + 1];
-                lut[i] = val.round().clamp(0.0, 255.0) as u8;
+                *item = val.round().clamp(0.0, 255.0) as u8;
             }
         }
     }
@@ -680,11 +794,15 @@ pub fn crop_to_selection(state: &mut CanvasState) {
         }
     }
 
-    if min_x > max_x || min_y > max_y { return; } // empty selection
+    if min_x > max_x || min_y > max_y {
+        return;
+    } // empty selection
 
     let new_w = max_x - min_x + 1;
     let new_h = max_y - min_y + 1;
-    if new_w == 0 || new_h == 0 { return; }
+    if new_w == 0 || new_h == 0 {
+        return;
+    }
 
     // Crop each layer
     for layer in &mut state.layers {
@@ -709,7 +827,9 @@ pub fn crop_to_selection(state: &mut CanvasState) {
 pub fn move_layer_to_top(state: &mut CanvasState) {
     let idx = state.active_layer_index;
     let last = state.layers.len() - 1;
-    if idx >= last { return; }
+    if idx >= last {
+        return;
+    }
     let layer = state.layers.remove(idx);
     state.layers.push(layer);
     state.active_layer_index = last;
@@ -719,7 +839,9 @@ pub fn move_layer_to_top(state: &mut CanvasState) {
 /// Move the active layer to the bottom of the stack.
 pub fn move_layer_to_bottom(state: &mut CanvasState) {
     let idx = state.active_layer_index;
-    if idx == 0 { return; }
+    if idx == 0 {
+        return;
+    }
     let layer = state.layers.remove(idx);
     state.layers.insert(0, layer);
     state.active_layer_index = 0;
@@ -729,7 +851,9 @@ pub fn move_layer_to_bottom(state: &mut CanvasState) {
 /// Move the active layer up one position.
 pub fn move_layer_up(state: &mut CanvasState) {
     let idx = state.active_layer_index;
-    if idx >= state.layers.len() - 1 { return; }
+    if idx >= state.layers.len() - 1 {
+        return;
+    }
     state.layers.swap(idx, idx + 1);
     state.active_layer_index = idx + 1;
     state.mark_dirty(None);
@@ -738,7 +862,9 @@ pub fn move_layer_up(state: &mut CanvasState) {
 /// Move the active layer down one position.
 pub fn move_layer_down(state: &mut CanvasState) {
     let idx = state.active_layer_index;
-    if idx == 0 { return; }
+    if idx == 0 {
+        return;
+    }
     state.layers.swap(idx, idx - 1);
     state.active_layer_index = idx - 1;
     state.mark_dirty(None);
@@ -749,9 +875,7 @@ pub fn move_layer_down(state: &mut CanvasState) {
 pub fn import_layer_from_image(state: &mut CanvasState, img: &RgbaImage, name: &str) {
     let cw = state.width;
     let ch = state.height;
-    let mut layer = crate::canvas::Layer::new(
-        name.to_string(), cw, ch, image::Rgba([0, 0, 0, 0]),
-    );
+    let mut layer = crate::canvas::Layer::new(name.to_string(), cw, ch, image::Rgba([0, 0, 0, 0]));
 
     // Copy pixels from source (cropped to canvas size, centered)
     let iw = img.width();
@@ -762,10 +886,14 @@ pub fn import_layer_from_image(state: &mut CanvasState, img: &RgbaImage, name: &
 
     for sy in 0..ih {
         let dy = oy + sy as i32;
-        if dy < 0 || dy >= ch as i32 { continue; }
+        if dy < 0 || dy >= ch as i32 {
+            continue;
+        }
         for sx in 0..iw {
             let dx = ox + sx as i32;
-            if dx < 0 || dx >= cw as i32 { continue; }
+            if dx < 0 || dx >= cw as i32 {
+                continue;
+            }
             let pixel = *img.get_pixel(sx, sy);
             if pixel[3] > 0 {
                 layer.pixels.put_pixel(dx as u32, dy as u32, pixel);
@@ -786,13 +914,18 @@ pub fn import_layer_from_image(state: &mut CanvasState, img: &RgbaImage, name: &
 /// Compute per-channel histograms (R, G, B, Luminance).
 /// Each histogram has 256 bins with counts.
 /// Only counts pixels that are selected (if mask exists).
-pub fn compute_histogram(state: &CanvasState, layer_idx: usize) -> ([u32; 256], [u32; 256], [u32; 256], [u32; 256]) {
+pub fn compute_histogram(
+    state: &CanvasState,
+    layer_idx: usize,
+) -> ([u32; 256], [u32; 256], [u32; 256], [u32; 256]) {
     let mut hist_r = [0u32; 256];
     let mut hist_g = [0u32; 256];
     let mut hist_b = [0u32; 256];
     let mut hist_l = [0u32; 256];
 
-    if layer_idx >= state.layers.len() { return (hist_r, hist_g, hist_b, hist_l); }
+    if layer_idx >= state.layers.len() {
+        return (hist_r, hist_g, hist_b, hist_l);
+    }
     let layer = &state.layers[layer_idx];
     let flat = layer.pixels.to_rgba_image();
     let src_raw = flat.as_raw();
@@ -800,20 +933,32 @@ pub fn compute_histogram(state: &CanvasState, layer_idx: usize) -> ([u32; 256], 
     let h = flat.height() as usize;
 
     let mask_raw = state.selection_mask.as_ref().map(|m| m.as_raw().as_slice());
-    let mask_w = state.selection_mask.as_ref().map_or(0, |m| m.width() as usize);
-    let mask_h = state.selection_mask.as_ref().map_or(0, |m| m.height() as usize);
+    let mask_w = state
+        .selection_mask
+        .as_ref()
+        .map_or(0, |m| m.width() as usize);
+    let mask_h = state
+        .selection_mask
+        .as_ref()
+        .map_or(0, |m| m.height() as usize);
 
     for y in 0..h {
         for x in 0..w {
-            if let Some(mr) = mask_raw {
-                if x < mask_w && y < mask_h && mr[y * mask_w + x] == 0 { continue; }
+            if let Some(mr) = mask_raw
+                && x < mask_w
+                && y < mask_h
+                && mr[y * mask_w + x] == 0
+            {
+                continue;
             }
             let pi = (y * w + x) * 4;
             let r = src_raw[pi];
             let g = src_raw[pi + 1];
             let b = src_raw[pi + 2];
             let a = src_raw[pi + 3];
-            if a == 0 { continue; }
+            if a == 0 {
+                continue;
+            }
             let lum = (0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32).round() as usize;
             hist_r[r as usize] += 1;
             hist_g[g as usize] += 1;
@@ -840,11 +985,17 @@ pub fn rgb_to_hsl(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     }
 
     let d = max - min;
-    let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+    let s = if l > 0.5 {
+        d / (2.0 - max - min)
+    } else {
+        d / (max + min)
+    };
 
     let h = if (max - r).abs() < 1e-6 {
         let mut h = (g - b) / d;
-        if h < 0.0 { h += 6.0; }
+        if h < 0.0 {
+            h += 6.0;
+        }
         h / 6.0
     } else if (max - g).abs() < 1e-6 {
         ((b - r) / d + 2.0) / 6.0
@@ -861,7 +1012,11 @@ pub fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
         return (l, l, l);
     }
 
-    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    let q = if l < 0.5 {
+        l * (1.0 + s)
+    } else {
+        l + s - l * s
+    };
     let p = 2.0 * l - q;
 
     let r = hue_to_rgb(p, q, h + 1.0 / 3.0);
@@ -872,11 +1027,21 @@ pub fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
 }
 
 pub fn hue_to_rgb(p: f32, q: f32, mut t: f32) -> f32 {
-    if t < 0.0 { t += 1.0; }
-    if t > 1.0 { t -= 1.0; }
-    if t < 1.0 / 6.0 { return p + (q - p) * 6.0 * t; }
-    if t < 1.0 / 2.0 { return q; }
-    if t < 2.0 / 3.0 { return p + (q - p) * (2.0 / 3.0 - t) * 6.0; }
+    if t < 0.0 {
+        t += 1.0;
+    }
+    if t > 1.0 {
+        t -= 1.0;
+    }
+    if t < 1.0 / 6.0 {
+        return p + (q - p) * 6.0 * t;
+    }
+    if t < 1.0 / 2.0 {
+        return q;
+    }
+    if t < 2.0 / 3.0 {
+        return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+    }
     p
 }
 
@@ -892,7 +1057,9 @@ pub fn brightness_contrast_gpu(
     contrast: f32,
     gpu: &crate::gpu::GpuRenderer,
 ) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     if state.selection_mask.is_some() {
         // CPU fallback for selection-masked adjustment
         brightness_contrast(state, layer_idx, brightness, contrast);
@@ -916,13 +1083,16 @@ pub fn brightness_contrast_from_flat_gpu(
     original_flat: &RgbaImage,
     gpu: &crate::gpu::GpuRenderer,
 ) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     if state.selection_mask.is_some() {
         brightness_contrast_from_flat(state, layer_idx, brightness, contrast, original_flat);
         return;
     }
     let (w, h) = (original_flat.width(), original_flat.height());
-    let result_data = gpu.brightness_contrast_rgba(original_flat.as_raw(), w, h, brightness, contrast);
+    let result_data =
+        gpu.brightness_contrast_rgba(original_flat.as_raw(), w, h, brightness, contrast);
     let result = RgbaImage::from_raw(w, h, result_data).unwrap();
     let layer = &mut state.layers[layer_idx];
     layer.pixels = TiledImage::from_rgba_image(&result);
@@ -938,7 +1108,9 @@ pub fn hue_saturation_lightness_gpu(
     lightness: f32,
     gpu: &crate::gpu::GpuRenderer,
 ) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     if state.selection_mask.is_some() {
         hue_saturation_lightness(state, layer_idx, hue_shift, saturation, lightness);
         return;
@@ -962,13 +1134,29 @@ pub fn hue_saturation_lightness_from_flat_gpu(
     original_flat: &RgbaImage,
     gpu: &crate::gpu::GpuRenderer,
 ) {
-    if layer_idx >= state.layers.len() { return; }
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     if state.selection_mask.is_some() {
-        hue_saturation_lightness_from_flat(state, layer_idx, hue_shift, saturation, lightness, original_flat);
+        hue_saturation_lightness_from_flat(
+            state,
+            layer_idx,
+            hue_shift,
+            saturation,
+            lightness,
+            original_flat,
+        );
         return;
     }
     let (w, h) = (original_flat.width(), original_flat.height());
-    let result_data = gpu.hsl_rgba(original_flat.as_raw(), w, h, hue_shift, saturation, lightness);
+    let result_data = gpu.hsl_rgba(
+        original_flat.as_raw(),
+        w,
+        h,
+        hue_shift,
+        saturation,
+        lightness,
+    );
     let result = RgbaImage::from_raw(w, h, result_data).unwrap();
     let layer = &mut state.layers[layer_idx];
     layer.pixels = TiledImage::from_rgba_image(&result);
@@ -976,12 +1164,10 @@ pub fn hue_saturation_lightness_from_flat_gpu(
 }
 
 /// GPU-accelerated color inversion.
-pub fn invert_colors_gpu(
-    state: &mut CanvasState,
-    layer_idx: usize,
-    gpu: &crate::gpu::GpuRenderer,
-) {
-    if layer_idx >= state.layers.len() { return; }
+pub fn invert_colors_gpu(state: &mut CanvasState, layer_idx: usize, gpu: &crate::gpu::GpuRenderer) {
+    if layer_idx >= state.layers.len() {
+        return;
+    }
     if state.selection_mask.is_some() {
         invert_colors(state, layer_idx);
         return;
@@ -1082,7 +1268,15 @@ pub fn color_balance_from_flat(
 }
 
 #[inline]
-fn color_balance_pixel(r: f32, g: f32, b: f32, a: f32, shadows: [f32; 3], midtones: [f32; 3], highlights: [f32; 3]) -> (f32, f32, f32, f32) {
+fn color_balance_pixel(
+    r: f32,
+    g: f32,
+    b: f32,
+    a: f32,
+    shadows: [f32; 3],
+    midtones: [f32; 3],
+    highlights: [f32; 3],
+) -> (f32, f32, f32, f32) {
     let lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
     let sw = (1.0 - lum * 2.0).max(0.0).powi(2);
     let hw = (lum * 2.0 - 1.0).max(0.0).powi(2);
@@ -1222,7 +1416,9 @@ pub fn feather_selection(state: &mut CanvasState, radius: f32) {
                 let x1 = (x + r).min(w as usize - 1);
                 let count = x1 - x0 + 1;
                 let mut sum = 0u32;
-                for xi in x0..=x1 { sum += data[row_start + xi] as u32; }
+                for xi in x0..=x1 {
+                    sum += data[row_start + xi] as u32;
+                }
                 tmp[row_start + x] = (sum / count as u32) as u8;
             }
         }
@@ -1234,7 +1430,9 @@ pub fn feather_selection(state: &mut CanvasState, radius: f32) {
                 let y1 = (y + r).min(h as usize - 1);
                 let count = y1 - y0 + 1;
                 let mut sum = 0u32;
-                for yi in y0..=y1 { sum += tmp[yi * w as usize + x] as u32; }
+                for yi in y0..=y1 {
+                    sum += tmp[yi * w as usize + x] as u32;
+                }
                 out[y * w as usize + x] = (sum / count as u32) as u8;
             }
         }
@@ -1259,7 +1457,9 @@ pub fn expand_selection(state: &mut CanvasState, radius: i32) {
 
     for y in 0..h as usize {
         for x in 0..w as usize {
-            if data[y * w as usize + x] > 127 { continue; } // already selected
+            if data[y * w as usize + x] > 127 {
+                continue;
+            } // already selected
             let x0 = x.saturating_sub(r);
             let x1 = (x + r).min(w as usize - 1);
             let y0 = y.saturating_sub(r);
@@ -1269,12 +1469,17 @@ pub fn expand_selection(state: &mut CanvasState, radius: i32) {
                 for xx in x0..=x1 {
                     let dx = xx as i32 - x as i32;
                     let dy = yy as i32 - y as i32;
-                    if dx*dx + dy*dy <= (r as i32) * (r as i32) {
-                        if data[yy * w as usize + xx] > 127 { found = true; break 'outer; }
+                    if dx * dx + dy * dy <= (r as i32) * (r as i32)
+                        && data[yy * w as usize + xx] > 127
+                    {
+                        found = true;
+                        break 'outer;
                     }
                 }
             }
-            if found { out[y * w as usize + x] = 255; }
+            if found {
+                out[y * w as usize + x] = 255;
+            }
         }
     }
 
@@ -1296,7 +1501,9 @@ pub fn contract_selection(state: &mut CanvasState, radius: i32) {
 
     for y in 0..h as usize {
         for x in 0..w as usize {
-            if data[y * w as usize + x] == 0 { continue; } // not selected
+            if data[y * w as usize + x] == 0 {
+                continue;
+            } // not selected
             let x0 = x.saturating_sub(r);
             let x1 = (x + r).min(w as usize - 1);
             let y0 = y.saturating_sub(r);
@@ -1306,12 +1513,17 @@ pub fn contract_selection(state: &mut CanvasState, radius: i32) {
                 for xx in x0..=x1 {
                     let dx = xx as i32 - x as i32;
                     let dy = yy as i32 - y as i32;
-                    if dx*dx + dy*dy <= (r as i32) * (r as i32) {
-                        if data[yy * w as usize + xx] == 0 { all_selected = false; break 'outer2; }
+                    if dx * dx + dy * dy <= (r as i32) * (r as i32)
+                        && data[yy * w as usize + xx] == 0
+                    {
+                        all_selected = false;
+                        break 'outer2;
                     }
                 }
             }
-            if !all_selected { out[y * w as usize + x] = 0; }
+            if !all_selected {
+                out[y * w as usize + x] = 0;
+            }
         }
     }
 
@@ -1333,7 +1545,13 @@ pub struct HueBandAdjust {
 }
 
 impl Default for HueBandAdjust {
-    fn default() -> Self { Self { hue: 0.0, saturation: 0.0, lightness: 0.0 } }
+    fn default() -> Self {
+        Self {
+            hue: 0.0,
+            saturation: 0.0,
+            lightness: 0.0,
+        }
+    }
 }
 
 /// Hue centers for the 6 color bands: Reds, Yellows, Greens, Cyans, Blues, Magentas
@@ -1343,10 +1561,16 @@ const BAND_CENTERS: [f32; 6] = [0.0, 60.0, 120.0, 180.0, 240.0, 300.0];
 /// Full weight within ±30°, smooth falloff to 0 at ±45°.
 fn band_weight(pixel_hue_deg: f32, band_center_deg: f32) -> f32 {
     let mut dist = (pixel_hue_deg - band_center_deg).abs() % 360.0;
-    if dist > 180.0 { dist = 360.0 - dist; }
-    if dist <= 30.0 { 1.0 }
-    else if dist < 45.0 { 1.0 - (dist - 30.0) / 15.0 }
-    else { 0.0 }
+    if dist > 180.0 {
+        dist = 360.0 - dist;
+    }
+    if dist <= 30.0 {
+        1.0
+    } else if dist < 45.0 {
+        1.0 - (dist - 30.0) / 15.0
+    } else {
+        0.0
+    }
 }
 
 /// Hue/Sat/Lightness with per-band control (6 bands: R/Y/G/C/B/M) plus global adjustments.
@@ -1410,7 +1634,9 @@ pub fn select_color_range(
     use image::{GrayImage, Luma};
 
     let idx = state.active_layer_index;
-    if idx >= state.layers.len() { return; }
+    if idx >= state.layers.len() {
+        return;
+    }
 
     let w = state.width;
     let h = state.height;
@@ -1426,18 +1652,26 @@ pub fn select_color_range(
         for x in 0..w {
             let px = layer.pixels.get_pixel(x, y);
             // Skip fully transparent pixels
-            if px[3] == 0 { continue; }
+            if px[3] == 0 {
+                continue;
+            }
             let r = px[0] as f32 / 255.0;
             let g = px[1] as f32 / 255.0;
             let b = px[2] as f32 / 255.0;
             let (h_frac, s, _l) = rgb_to_hsl(r, g, b);
             // Saturation gate
-            if s < sat_min { continue; }
+            if s < sat_min {
+                continue;
+            }
             // Angular distance on the hue wheel
             let mut diff = (h_frac - hue_center).abs();
-            if diff > 0.5 { diff = 1.0 - diff; }
+            if diff > 0.5 {
+                diff = 1.0 - diff;
+            }
             // Within tolerance?
-            if diff > hue_tol { continue; }
+            if diff > hue_tol {
+                continue;
+            }
             // Soft edge via fuzziness
             let weight = 1.0 - (diff / hue_tol).powf(1.0 / fuzz.max(0.01));
             let alpha = (weight * 255.0).clamp(0.0, 255.0) as u8;
@@ -1450,7 +1684,10 @@ pub fn select_color_range(
     let final_mask = match mode {
         SelectionMode::Replace => new_mask,
         SelectionMode::Add => {
-            let mut base = state.selection_mask.clone().unwrap_or_else(|| GrayImage::new(w, h));
+            let mut base = state
+                .selection_mask
+                .clone()
+                .unwrap_or_else(|| GrayImage::new(w, h));
             for y in 0..h {
                 for x in 0..w {
                     let a = new_mask.get_pixel(x, y).0[0];
@@ -1461,7 +1698,10 @@ pub fn select_color_range(
             base
         }
         SelectionMode::Subtract => {
-            let mut base = state.selection_mask.clone().unwrap_or_else(|| GrayImage::new(w, h));
+            let mut base = state
+                .selection_mask
+                .clone()
+                .unwrap_or_else(|| GrayImage::new(w, h));
             for y in 0..h {
                 for x in 0..w {
                     let a = new_mask.get_pixel(x, y).0[0];
@@ -1472,7 +1712,10 @@ pub fn select_color_range(
             base
         }
         SelectionMode::Intersect => {
-            let base = state.selection_mask.clone().unwrap_or_else(|| GrayImage::new(w, h));
+            let base = state
+                .selection_mask
+                .clone()
+                .unwrap_or_else(|| GrayImage::new(w, h));
             let mut intersect = GrayImage::new(w, h);
             for y in 0..h {
                 for x in 0..w {

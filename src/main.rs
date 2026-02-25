@@ -5,20 +5,24 @@
 //   route through the correct handles (necessary when SUBSYSTEM:WINDOWS is set).
 #![windows_subsystem = "windows"]
 #![allow(dead_code)] // API surface kept for future features, scripting, and GPU pipelines
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::type_complexity)]
+#![allow(clippy::large_enum_variant)]
+#![allow(clippy::unnecessary_unwrap)]
 
 #[macro_use]
 mod i18n;
 mod app;
+mod assets;
 mod canvas;
 mod cli;
-mod io;
 mod components;
-mod project;
-mod assets;
-mod theme;
-mod ops;
 mod gpu;
+mod io;
 pub mod logger;
+mod ops;
+mod project;
+mod theme;
 
 use app::PaintFEApp;
 use eframe::egui;
@@ -44,27 +48,41 @@ fn main() -> Result<(), eframe::Error> {
             ) -> isize;
         }
         const ATTACH_PARENT_PROCESS: u32 = 0xFFFF_FFFF;
-        const GENERIC_READ: u32  = 0x8000_0000;
+        const GENERIC_READ: u32 = 0x8000_0000;
         const GENERIC_WRITE: u32 = 0x4000_0000;
         const FILE_SHARE_READ_WRITE: u32 = 0x0000_0003;
         const OPEN_EXISTING: u32 = 3;
-        const STD_INPUT_HANDLE: u32  = 0xFFFF_FFF6_u32; // -10
+        const STD_INPUT_HANDLE: u32 = 0xFFFF_FFF6_u32; // -10
         const STD_OUTPUT_HANDLE: u32 = 0xFFFF_FFF5_u32; // -11
-        const STD_ERROR_HANDLE: u32  = 0xFFFF_FFF4_u32; // -12
+        const STD_ERROR_HANDLE: u32 = 0xFFFF_FFF4_u32; // -12
         const INVALID_HANDLE_VALUE: isize = -1;
         unsafe {
             AttachConsole(ATTACH_PARENT_PROCESS);
             // Reopen CONOUT$ / CONIN$ so the process's std handles are valid.
             let conout: Vec<u16> = "CONOUT$\0".encode_utf16().collect();
-            let conin:  Vec<u16> = "CONIN$\0".encode_utf16().collect();
-            let hout = CreateFileW(conout.as_ptr(), GENERIC_WRITE, FILE_SHARE_READ_WRITE,
-                                   std::ptr::null(), OPEN_EXISTING, 0, 0);
+            let conin: Vec<u16> = "CONIN$\0".encode_utf16().collect();
+            let hout = CreateFileW(
+                conout.as_ptr(),
+                GENERIC_WRITE,
+                FILE_SHARE_READ_WRITE,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                0,
+                0,
+            );
             if hout != INVALID_HANDLE_VALUE {
                 SetStdHandle(STD_OUTPUT_HANDLE, hout);
                 SetStdHandle(STD_ERROR_HANDLE, hout);
             }
-            let hin = CreateFileW(conin.as_ptr(), GENERIC_READ, FILE_SHARE_READ_WRITE,
-                                  std::ptr::null(), OPEN_EXISTING, 0, 0);
+            let hin = CreateFileW(
+                conin.as_ptr(),
+                GENERIC_READ,
+                FILE_SHARE_READ_WRITE,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                0,
+                0,
+            );
             if hin != INVALID_HANDLE_VALUE {
                 SetStdHandle(STD_INPUT_HANDLE, hin);
             }
@@ -78,7 +96,11 @@ fn main() -> Result<(), eframe::Error> {
         i18n::init();
         let args = cli::CliArgs::parse();
         let code = cli::run(args);
-        std::process::exit(if code == std::process::ExitCode::SUCCESS { 0 } else { 1 });
+        std::process::exit(if code == std::process::ExitCode::SUCCESS {
+            0
+        } else {
+            1
+        });
     }
 
     // -- GUI mode -----------------------------------------------------

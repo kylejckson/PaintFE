@@ -2,10 +2,12 @@
 // PaintFE Script Editor Panel — Floating code editor with syntax highlighting
 // ============================================================================
 
-use std::sync::{Arc, atomic::AtomicBool};
-use std::collections::HashSet;
-use egui::{self, Color32, Rounding, Stroke, Margin, RichText, Layout, Align, Vec2, TextFormat, FontId};
 use egui::text::LayoutJob;
+use egui::{
+    self, Align, Color32, FontId, Layout, Margin, RichText, Rounding, Stroke, TextFormat, Vec2,
+};
+use std::collections::HashSet;
+use std::sync::{Arc, atomic::AtomicBool};
 
 /// Maximum panel height to prevent infinite growth. The actual height is
 /// clamped to this or the available remaining height in the parent window.
@@ -23,9 +25,9 @@ pub struct ConsoleLine {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConsoleLineKind {
-    Output,   // print() output
-    Error,    // error messages
-    Info,     // timing info, pixel counts
+    Output, // print() output
+    Error,  // error messages
+    Info,   // timing info, pixel counts
 }
 
 #[derive(Clone, Debug)]
@@ -46,20 +48,23 @@ pub struct CustomScriptEffect {
 /// Load custom script effects from disk
 pub fn load_custom_effects() -> Vec<CustomScriptEffect> {
     let dir = custom_effects_directory();
-    if !dir.exists() { return Vec::new(); }
+    if !dir.exists() {
+        return Vec::new();
+    }
 
     let mut effects = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map(|e| e == "rhai").unwrap_or(false) {
-                if let Ok(code) = std::fs::read_to_string(&path) {
-                    let name = path.file_stem()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string();
-                    effects.push(CustomScriptEffect { name, code });
-                }
+            if path.extension().map(|e| e == "rhai").unwrap_or(false)
+                && let Ok(code) = std::fs::read_to_string(&path)
+            {
+                let name = path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                effects.push(CustomScriptEffect { name, code });
             }
         }
     }
@@ -115,7 +120,9 @@ pub struct ScriptEditorPanel {
 impl Default for ScriptEditorPanel {
     fn default() -> Self {
         Self {
-            code: String::from("// Write your script here\n// Example: Invert all pixels\nmap_channels(|r, g, b, a| {\n    [255 - r, 255 - g, 255 - b, a]\n});\n"),
+            code: String::from(
+                "// Write your script here\n// Example: Invert all pixels\nmap_channels(|r, g, b, a| {\n    [255 - r, 255 - g, 255 - b, a]\n});\n",
+            ),
             console_output: Vec::new(),
             is_running: false,
             cancel_flag: Arc::new(AtomicBool::new(false)),
@@ -151,7 +158,12 @@ impl ScriptEditorPanel {
         ui.horizontal(|ui| {
             // Neon icon
             ui.label(RichText::new("◆").color(accent).size(14.0));
-            ui.label(RichText::new(crate::t!("script.title")).size(14.0).color(text_color).strong());
+            ui.label(
+                RichText::new(crate::t!("script.title"))
+                    .size(14.0)
+                    .color(text_color)
+                    .strong(),
+            );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui.small_button("×").clicked() {
                     self.close_requested = true;
@@ -176,24 +188,25 @@ impl ScriptEditorPanel {
                     Color32::from_rgba_unmultiplied(200, 100, 0, glow_alpha)
                 };
                 let spinner_text = format!("⟳ {}{}", crate::t!("script.progress.running"), dots);
-                let stop_btn = ui.button(
-                    RichText::new(spinner_text).color(running_color).strong()
-                );
+                let stop_btn = ui.button(RichText::new(spinner_text).color(running_color).strong());
                 if stop_btn.clicked() {
                     self.stop_requested = true;
-                    self.cancel_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                    self.cancel_flag
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
                 }
                 // Keep repainting for animation
                 ui.ctx().request_repaint();
             } else {
                 // -- Run button — theme-aware green --
                 let run_color = if is_dark {
-                    Color32::from_rgb(80, 220, 120)   // soft neon green for dark
+                    Color32::from_rgb(80, 220, 120) // soft neon green for dark
                 } else {
-                    Color32::from_rgb(20, 140, 60)    // readable dark green for light
+                    Color32::from_rgb(20, 140, 60) // readable dark green for light
                 };
                 let run_btn = ui.button(
-                    RichText::new(format!("▶ {}", crate::t!("script.run"))).color(run_color).strong()
+                    RichText::new(format!("▶ {}", crate::t!("script.run")))
+                        .color(run_color)
+                        .strong(),
                 );
                 if run_btn.clicked() {
                     self.run_requested = true;
@@ -205,19 +218,33 @@ impl ScriptEditorPanel {
             // Live preview toggle
             let preview_icon = if self.live_preview { "👁" } else { "○" };
             let preview_color = if self.live_preview { accent } else { muted };
-            if ui.button(RichText::new(format!("{} Live", preview_icon)).color(preview_color).size(11.0)).on_hover_text("Preview changes on canvas during sleep() calls").clicked() {
+            if ui
+                .button(
+                    RichText::new(format!("{} Live", preview_icon))
+                        .color(preview_color)
+                        .size(11.0),
+                )
+                .on_hover_text("Preview changes on canvas during sleep() calls")
+                .clicked()
+            {
                 self.live_preview = !self.live_preview;
             }
 
             ui.separator();
 
             // Save button
-            if ui.button(RichText::new(crate::t!("script.save")).color(text_color)).clicked() {
+            if ui
+                .button(RichText::new(crate::t!("script.save")).color(text_color))
+                .clicked()
+            {
                 self.save_current_script();
             }
 
             // Load button
-            if ui.button(RichText::new(crate::t!("script.load")).color(text_color)).clicked() {
+            if ui
+                .button(RichText::new(crate::t!("script.load")).color(text_color))
+                .clicked()
+            {
                 self.load_script_dialog();
             }
 
@@ -227,7 +254,8 @@ impl ScriptEditorPanel {
             } else {
                 Color32::from_rgb(100, 60, 200)
             };
-            if ui.button(RichText::new("+ Filter").color(filter_color).size(11.0))
+            if ui
+                .button(RichText::new("+ Filter").color(filter_color).size(11.0))
                 .on_hover_text("Add this script as a custom filter effect (Filter > Custom)")
                 .clicked()
             {
@@ -239,7 +267,8 @@ impl ScriptEditorPanel {
 
             // Saved scripts dropdown
             if !self.saved_scripts.is_empty() {
-                let selected_name = self.selected_script_idx
+                let selected_name = self
+                    .selected_script_idx
                     .and_then(|i| self.saved_scripts.get(i))
                     .map(|s| s.name.clone())
                     .unwrap_or_else(|| crate::t!("script.scripts_dropdown"));
@@ -253,7 +282,10 @@ impl ScriptEditorPanel {
                             } else {
                                 script.name.clone()
                             };
-                            if ui.selectable_label(self.selected_script_idx == Some(i), label).clicked() {
+                            if ui
+                                .selectable_label(self.selected_script_idx == Some(i), label)
+                                .clicked()
+                            {
                                 self.selected_script_idx = Some(i);
                                 self.code = script.code.clone();
                             }
@@ -282,25 +314,34 @@ impl ScriptEditorPanel {
                         let resp = ui.add(
                             egui::TextEdit::singleline(name)
                                 .desired_width(160.0)
-                                .font(FontId::proportional(12.0))
+                                .font(FontId::proportional(12.0)),
                         );
                         // Auto-focus
                         if resp.gained_focus() || ui.memory(|m| m.focus().is_none()) {
                             resp.request_focus();
                         }
-                        let enter_pressed = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        let enter_pressed =
+                            resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                         let add_color = if is_dark {
                             Color32::from_rgb(80, 220, 120)
                         } else {
                             Color32::from_rgb(20, 140, 60)
                         };
-                        if ui.button(RichText::new("Add").color(add_color).strong()).clicked() || enter_pressed {
+                        if ui
+                            .button(RichText::new("Add").color(add_color).strong())
+                            .clicked()
+                            || enter_pressed
+                        {
                             let effect_name = self.naming_effect.take().unwrap_or_default();
                             if !effect_name.trim().is_empty() {
-                                self.pending_add_effect = Some((effect_name.trim().to_string(), self.code.clone()));
+                                self.pending_add_effect =
+                                    Some((effect_name.trim().to_string(), self.code.clone()));
                             }
                         }
-                        if ui.button(RichText::new("Cancel").color(muted).size(11.0)).clicked() {
+                        if ui
+                            .button(RichText::new("Cancel").color(muted).size(11.0))
+                            .clicked()
+                        {
                             self.naming_effect = None;
                         }
                     });
@@ -321,9 +362,10 @@ impl ScriptEditorPanel {
         // Glow effect — wider, more transparent line behind
         ui.painter().line_segment(
             [line_start, line_end],
-            Stroke::new(6.0, Color32::from_rgba_premultiplied(
-                accent.r(), accent.g(), accent.b(), 40
-            )),
+            Stroke::new(
+                6.0,
+                Color32::from_rgba_premultiplied(accent.r(), accent.g(), accent.b(), 40),
+            ),
         );
         ui.add_space(4.0);
 
@@ -332,8 +374,16 @@ impl ScriptEditorPanel {
         // available_height() returns remaining space in the parent; cap it to a
         // reasonable maximum so set_max_height below doesn't expand the window.
         let total_h = ui.available_height().min(MAX_PANEL_HEIGHT);
-        let console_h = if self.console_expanded { (total_h * 0.25).max(80.0).min(200.0) } else { 24.0 };
-        let progress_h = if self.progress.is_some() || self.is_running { 24.0 } else { 0.0 };
+        let console_h = if self.console_expanded {
+            (total_h * 0.25).clamp(80.0, 200.0)
+        } else {
+            24.0
+        };
+        let progress_h = if self.progress.is_some() || self.is_running {
+            24.0
+        } else {
+            0.0
+        };
         let code_h = (total_h - console_h - progress_h - 8.0).max(100.0);
 
         // -- Code editor area (recessed well, theme-aware) --
@@ -412,7 +462,8 @@ impl ScriptEditorPanel {
                         let highlighter = &self.highlighter;
                         let dark_mode = is_dark;
                         let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-                            let layout_job = highlighter.highlight(text, wrap_width, error_line, dark_mode);
+                            let layout_job =
+                                highlighter.highlight(text, wrap_width, error_line, dark_mode);
                             ui.fonts(|f| f.layout_job(layout_job))
                         };
 
@@ -434,17 +485,34 @@ impl ScriptEditorPanel {
         let (console_bg, console_border) = if is_dark {
             (Color32::from_rgb(18, 20, 26), Color32::from_rgb(30, 32, 40))
         } else {
-            (Color32::from_rgb(248, 248, 252), Color32::from_rgb(210, 212, 220))
+            (
+                Color32::from_rgb(248, 248, 252),
+                Color32::from_rgb(210, 212, 220),
+            )
         };
 
         // Console header
         ui.horizontal(|ui| {
             let arrow = if self.console_expanded { "▼" } else { "▶" };
-            if ui.button(RichText::new(format!("{} {}", arrow, crate::t!("script.console"))).color(muted).size(11.0)).clicked() {
+            if ui
+                .button(
+                    RichText::new(format!("{} {}", arrow, crate::t!("script.console")))
+                        .color(muted)
+                        .size(11.0),
+                )
+                .clicked()
+            {
                 self.console_expanded = !self.console_expanded;
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.small_button(RichText::new(crate::t!("script.console.clear")).color(muted).size(10.0)).clicked() {
+                if ui
+                    .small_button(
+                        RichText::new(crate::t!("script.console.clear"))
+                            .color(muted)
+                            .size(10.0),
+                    )
+                    .clicked()
+                {
                     self.console_output.clear();
                 }
             });
@@ -453,7 +521,12 @@ impl ScriptEditorPanel {
         if self.console_expanded {
             egui::Frame::none()
                 .fill(console_bg)
-                .rounding(Rounding { nw: 0.0, ne: 0.0, sw: 4.0, se: 4.0 })
+                .rounding(Rounding {
+                    nw: 0.0,
+                    ne: 0.0,
+                    sw: 4.0,
+                    se: 4.0,
+                })
                 .stroke(Stroke::new(1.0, console_border))
                 .inner_margin(Margin::same(6.0))
                 .show(ui, |ui| {
@@ -491,20 +564,28 @@ impl ScriptEditorPanel {
                         };
 
                         if console_lines_ref.is_empty() {
-                            job.append("(no output)", 0.0, TextFormat {
-                                font_id: font.clone(),
-                                color: muted_color,
-                                ..Default::default()
-                            });
+                            job.append(
+                                "(no output)",
+                                0.0,
+                                TextFormat {
+                                    font_id: font.clone(),
+                                    color: muted_color,
+                                    ..Default::default()
+                                },
+                            );
                         } else {
                             let mut first = true;
                             for line in console_lines_ref {
                                 if !first {
-                                    job.append("\n", 0.0, TextFormat {
-                                        font_id: font.clone(),
-                                        color: Color32::TRANSPARENT,
-                                        ..Default::default()
-                                    });
+                                    job.append(
+                                        "\n",
+                                        0.0,
+                                        TextFormat {
+                                            font_id: font.clone(),
+                                            color: Color32::TRANSPARENT,
+                                            ..Default::default()
+                                        },
+                                    );
                                 }
                                 first = false;
 
@@ -553,19 +634,27 @@ impl ScriptEditorPanel {
                                 };
 
                                 // Prefix symbol
-                                job.append(prefix, 0.0, TextFormat {
-                                    font_id: font.clone(),
-                                    color: prefix_color,
-                                    background: bg_color,
-                                    ..Default::default()
-                                });
+                                job.append(
+                                    prefix,
+                                    0.0,
+                                    TextFormat {
+                                        font_id: font.clone(),
+                                        color: prefix_color,
+                                        background: bg_color,
+                                        ..Default::default()
+                                    },
+                                );
                                 // Message text
-                                job.append(&line.text, 0.0, TextFormat {
-                                    font_id: font.clone(),
-                                    color: text_color,
-                                    background: bg_color,
-                                    ..Default::default()
-                                });
+                                job.append(
+                                    &line.text,
+                                    0.0,
+                                    TextFormat {
+                                        font_id: font.clone(),
+                                        color: text_color,
+                                        background: bg_color,
+                                        ..Default::default()
+                                    },
+                                );
                             }
                         }
                         _ui.fonts(|f| f.layout_job(job))
@@ -599,7 +688,11 @@ impl ScriptEditorPanel {
             } else {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.label(RichText::new(crate::t!("script.progress.running")).color(muted).size(11.0));
+                    ui.label(
+                        RichText::new(crate::t!("script.progress.running"))
+                            .color(muted)
+                            .size(11.0),
+                    );
                 });
             }
         }
@@ -616,11 +709,11 @@ impl ScriptEditorPanel {
     // Saves to in-memory list; persistence is handled by the app layer.
     fn save_current_script(&mut self) {
         // If a script is selected, update it
-        if let Some(idx) = self.selected_script_idx {
-            if let Some(script) = self.saved_scripts.get_mut(idx) {
-                script.code = self.code.clone();
-                return;
-            }
+        if let Some(idx) = self.selected_script_idx
+            && let Some(script) = self.saved_scripts.get_mut(idx)
+        {
+            script.code = self.code.clone();
+            return;
         }
         // Otherwise add new
         let name = format!("Script {}", self.saved_scripts.len() + 1);
@@ -637,17 +730,18 @@ impl ScriptEditorPanel {
             .add_filter("Rhai Script", &["rhai"])
             .add_filter("All Files", &["*"])
             .pick_file()
+            && let Ok(contents) = std::fs::read_to_string(&path)
         {
-            if let Ok(contents) = std::fs::read_to_string(&path) {
-                self.code = contents;
-                self.selected_script_idx = None;
-            }
+            self.code = contents;
+            self.selected_script_idx = None;
         }
     }
 
     /// Pinned scripts, for Filter > Scripts menu.
     pub fn pinned_scripts(&self) -> Vec<(usize, String)> {
-        self.saved_scripts.iter().enumerate()
+        self.saved_scripts
+            .iter()
+            .enumerate()
             .filter(|(_, s)| s.pinned)
             .map(|(i, s)| (i, s.name.clone()))
             .collect()
@@ -655,25 +749,28 @@ impl ScriptEditorPanel {
 
     pub fn load_saved_scripts(&mut self) {
         let dir = scripts_directory();
-        if !dir.exists() { return; }
+        if !dir.exists() {
+            return;
+        }
 
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().map(|e| e == "rhai").unwrap_or(false) {
-                    if let Ok(code) = std::fs::read_to_string(&path) {
-                        let name = path.file_stem()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .to_string();
-                        // Avoid duplicates
-                        if !self.saved_scripts.iter().any(|s| s.name == name) {
-                            self.saved_scripts.push(SavedScript {
-                                name,
-                                code,
-                                pinned: false,
-                            });
-                        }
+                if path.extension().map(|e| e == "rhai").unwrap_or(false)
+                    && let Ok(code) = std::fs::read_to_string(&path)
+                {
+                    let name = path
+                        .file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+                    // Avoid duplicates
+                    if !self.saved_scripts.iter().any(|s| s.name == name) {
+                        self.saved_scripts.push(SavedScript {
+                            name,
+                            code,
+                            pinned: false,
+                        });
                     }
                 }
             }
@@ -685,7 +782,12 @@ impl ScriptEditorPanel {
         let _ = std::fs::create_dir_all(&dir);
 
         for script in &self.saved_scripts {
-            let filename = format!("{}.rhai", script.name.replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '-', "_"));
+            let filename = format!(
+                "{}.rhai",
+                script
+                    .name
+                    .replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '-', "_")
+            );
             let path = dir.join(filename);
             let _ = std::fs::write(&path, &script.code);
         }
@@ -711,7 +813,10 @@ fn app_data_directory() -> std::path::PathBuf {
 }
 
 fn sanitize_filename(name: &str) -> String {
-    name.replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '-' && c != ' ', "_")
+    name.replace(
+        |c: char| !c.is_alphanumeric() && c != '_' && c != '-' && c != ' ',
+        "_",
+    )
 }
 
 // ============================================================================
@@ -726,46 +831,104 @@ pub struct SyntaxHighlighter {
 impl SyntaxHighlighter {
     pub fn new() -> Self {
         let keywords: HashSet<&str> = [
-            "let", "const", "if", "else", "for", "while", "loop", "in",
-            "fn", "return", "true", "false", "break", "continue",
-            "switch", "import", "export", "as", "is", "type_of",
+            "let", "const", "if", "else", "for", "while", "loop", "in", "fn", "return", "true",
+            "false", "break", "continue", "switch", "import", "export", "as", "is", "type_of",
             "throw", "try", "catch",
-        ].into_iter().collect();
+        ]
+        .into_iter()
+        .collect();
 
         let builtins: HashSet<&str> = [
             // Canvas
-            "width", "height", "is_selected",
+            "width",
+            "height",
+            "is_selected",
             // Pixel access
-            "get_pixel", "set_pixel", "get_r", "get_g", "get_b", "get_a",
-            "set_r", "set_g", "set_b", "set_a",
+            "get_pixel",
+            "set_pixel",
+            "get_r",
+            "get_g",
+            "get_b",
+            "get_a",
+            "set_r",
+            "set_g",
+            "set_b",
+            "set_a",
             // Bulk iteration
-            "for_each_pixel", "for_region", "map_channels",
+            "for_each_pixel",
+            "for_region",
+            "map_channels",
             // Effects
-            "apply_blur", "apply_box_blur", "apply_motion_blur",
-            "apply_sharpen", "apply_reduce_noise", "apply_median",
-            "apply_invert", "apply_desaturate", "apply_sepia",
-            "apply_brightness_contrast", "apply_hsl", "apply_exposure", "apply_levels",
-            "apply_noise", "apply_pixelate", "apply_crystallize",
-            "apply_bulge", "apply_twist",
-            "apply_glow", "apply_vignette", "apply_halftone",
-            "apply_ink", "apply_oil_painting",
+            "apply_blur",
+            "apply_box_blur",
+            "apply_motion_blur",
+            "apply_sharpen",
+            "apply_reduce_noise",
+            "apply_median",
+            "apply_invert",
+            "apply_desaturate",
+            "apply_sepia",
+            "apply_brightness_contrast",
+            "apply_hsl",
+            "apply_exposure",
+            "apply_levels",
+            "apply_noise",
+            "apply_pixelate",
+            "apply_crystallize",
+            "apply_bulge",
+            "apply_twist",
+            "apply_glow",
+            "apply_vignette",
+            "apply_halftone",
+            "apply_ink",
+            "apply_oil_painting",
             // Utility
-            "print", "print_line", "sleep", "progress",
-            "rand_int", "rand_float",
-            "clamp", "clamp_f", "lerp", "distance",
-            "abs_i", "min_i", "max_i", "min_f", "max_f",
-            "abs", "min", "max",
-            "floor", "ceil", "round", "sqrt", "pow",
-            "sin", "cos", "tan", "atan2", "PI",
-            "rgb_to_hsl", "hsl_to_rgb",
-        ].into_iter().collect();
+            "print",
+            "print_line",
+            "sleep",
+            "progress",
+            "rand_int",
+            "rand_float",
+            "clamp",
+            "clamp_f",
+            "lerp",
+            "distance",
+            "abs_i",
+            "min_i",
+            "max_i",
+            "min_f",
+            "max_f",
+            "abs",
+            "min",
+            "max",
+            "floor",
+            "ceil",
+            "round",
+            "sqrt",
+            "pow",
+            "sin",
+            "cos",
+            "tan",
+            "atan2",
+            "PI",
+            "rgb_to_hsl",
+            "hsl_to_rgb",
+        ]
+        .into_iter()
+        .collect();
 
         Self { keywords, builtins }
     }
 
     /// Produce a LayoutJob with syntax-highlighted spans for the given code.
     /// If `error_line` is Some(n), line n (1-based) gets a red background tint.
-    pub fn highlight(&self, code: &str, wrap_width: f32, error_line: Option<usize>, is_dark: bool) -> LayoutJob {
+    pub fn highlight(
+        &self,
+        code: &str,
+        wrap_width: f32,
+        error_line: Option<usize>,
+        is_dark: bool,
+    ) -> LayoutJob {
         let mut job = LayoutJob::default();
         job.wrap.max_width = wrap_width;
 
@@ -803,7 +966,13 @@ impl SyntaxHighlighter {
                     i += 1;
                 }
                 let on_error = is_in_error_range(error_byte_range, start, i);
-                self.push_span(&mut job, &code[start..i], TokenKind::Comment, on_error, is_dark);
+                self.push_span(
+                    &mut job,
+                    &code[start..i],
+                    TokenKind::Comment,
+                    on_error,
+                    is_dark,
+                );
                 continue;
             }
 
@@ -814,9 +983,19 @@ impl SyntaxHighlighter {
                 while i + 1 < len && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
                     i += 1;
                 }
-                if i + 1 < len { i += 2; } else { i = len; }
+                if i + 1 < len {
+                    i += 2;
+                } else {
+                    i = len;
+                }
                 let on_error = is_in_error_range(error_byte_range, start, i);
-                self.push_span(&mut job, &code[start..i], TokenKind::Comment, on_error, is_dark);
+                self.push_span(
+                    &mut job,
+                    &code[start..i],
+                    TokenKind::Comment,
+                    on_error,
+                    is_dark,
+                );
                 continue;
             }
 
@@ -825,12 +1004,22 @@ impl SyntaxHighlighter {
                 let start = i;
                 i += 1;
                 while i < len && bytes[i] != b'"' {
-                    if bytes[i] == b'\\' && i + 1 < len { i += 1; }
+                    if bytes[i] == b'\\' && i + 1 < len {
+                        i += 1;
+                    }
                     i += 1;
                 }
-                if i < len { i += 1; }
+                if i < len {
+                    i += 1;
+                }
                 let on_error = is_in_error_range(error_byte_range, start, i);
-                self.push_span(&mut job, &code[start..i], TokenKind::StringLit, on_error, is_dark);
+                self.push_span(
+                    &mut job,
+                    &code[start..i],
+                    TokenKind::StringLit,
+                    on_error,
+                    is_dark,
+                );
                 continue;
             }
 
@@ -839,27 +1028,49 @@ impl SyntaxHighlighter {
                 let start = i;
                 i += 1;
                 while i < len && bytes[i] != b'\'' {
-                    if bytes[i] == b'\\' && i + 1 < len { i += 1; }
+                    if bytes[i] == b'\\' && i + 1 < len {
+                        i += 1;
+                    }
                     i += 1;
                 }
-                if i < len { i += 1; }
+                if i < len {
+                    i += 1;
+                }
                 let on_error = is_in_error_range(error_byte_range, start, i);
-                self.push_span(&mut job, &code[start..i], TokenKind::StringLit, on_error, is_dark);
+                self.push_span(
+                    &mut job,
+                    &code[start..i],
+                    TokenKind::StringLit,
+                    on_error,
+                    is_dark,
+                );
                 continue;
             }
 
             // Number
-            if ch.is_ascii_digit() || (ch == '.' && i + 1 < len && (bytes[i + 1] as char).is_ascii_digit()) {
+            if ch.is_ascii_digit()
+                || (ch == '.' && i + 1 < len && (bytes[i + 1] as char).is_ascii_digit())
+            {
                 let start = i;
                 // Hex prefix
                 if ch == '0' && i + 1 < len && (bytes[i + 1] == b'x' || bytes[i + 1] == b'X') {
                     i += 2;
-                    while i < len && (bytes[i] as char).is_ascii_hexdigit() { i += 1; }
+                    while i < len && (bytes[i] as char).is_ascii_hexdigit() {
+                        i += 1;
+                    }
                 } else {
-                    while i < len && ((bytes[i] as char).is_ascii_digit() || bytes[i] == b'.') { i += 1; }
+                    while i < len && ((bytes[i] as char).is_ascii_digit() || bytes[i] == b'.') {
+                        i += 1;
+                    }
                 }
                 let on_error = is_in_error_range(error_byte_range, start, i);
-                self.push_span(&mut job, &code[start..i], TokenKind::Number, on_error, is_dark);
+                self.push_span(
+                    &mut job,
+                    &code[start..i],
+                    TokenKind::Number,
+                    on_error,
+                    is_dark,
+                );
                 continue;
             }
 
@@ -891,52 +1102,77 @@ impl SyntaxHighlighter {
                     i += 1;
                 }
                 let on_error = is_in_error_range(error_byte_range, start, i);
-                self.push_span(&mut job, &code[start..i], TokenKind::Operator, on_error, is_dark);
+                self.push_span(
+                    &mut job,
+                    &code[start..i],
+                    TokenKind::Operator,
+                    on_error,
+                    is_dark,
+                );
                 continue;
             }
 
             // Punctuation
             if "(){}[],;.".contains(ch) {
                 let on_error = is_in_error_range(error_byte_range, i, i + 1);
-                self.push_span(&mut job, &code[i..i+1], TokenKind::Punctuation, on_error, is_dark);
+                self.push_span(
+                    &mut job,
+                    &code[i..i + 1],
+                    TokenKind::Punctuation,
+                    on_error,
+                    is_dark,
+                );
                 i += 1;
                 continue;
             }
 
             // Whitespace and other
             let on_error = is_in_error_range(error_byte_range, i, i + 1);
-            self.push_span(&mut job, &code[i..i+1], TokenKind::Default, on_error, is_dark);
+            self.push_span(
+                &mut job,
+                &code[i..i + 1],
+                TokenKind::Default,
+                on_error,
+                is_dark,
+            );
             i += 1;
         }
 
         job
     }
 
-    fn push_span(&self, job: &mut LayoutJob, text: &str, kind: TokenKind, is_error_line: bool, is_dark: bool) {
+    fn push_span(
+        &self,
+        job: &mut LayoutJob,
+        text: &str,
+        kind: TokenKind,
+        is_error_line: bool,
+        is_dark: bool,
+    ) {
         let color = if is_dark {
             match kind {
-                TokenKind::Keyword    => Color32::from_rgb(198, 120, 221), // purple
-                TokenKind::Builtin    => Color32::from_rgb(97, 175, 239),  // blue
-                TokenKind::Number     => Color32::from_rgb(209, 154, 102), // orange
-                TokenKind::StringLit  => Color32::from_rgb(152, 195, 121), // green
-                TokenKind::Comment    => Color32::from_rgb(92, 99, 112),   // grey
-                TokenKind::Operator   => Color32::from_rgb(86, 182, 194),  // cyan
+                TokenKind::Keyword => Color32::from_rgb(198, 120, 221), // purple
+                TokenKind::Builtin => Color32::from_rgb(97, 175, 239),  // blue
+                TokenKind::Number => Color32::from_rgb(209, 154, 102),  // orange
+                TokenKind::StringLit => Color32::from_rgb(152, 195, 121), // green
+                TokenKind::Comment => Color32::from_rgb(92, 99, 112),   // grey
+                TokenKind::Operator => Color32::from_rgb(86, 182, 194), // cyan
                 TokenKind::Punctuation => Color32::from_rgb(171, 178, 191), // light grey
                 TokenKind::Identifier => Color32::from_rgb(229, 192, 123), // yellow
-                TokenKind::Default    => Color32::from_rgb(171, 178, 191), // light grey
+                TokenKind::Default => Color32::from_rgb(171, 178, 191), // light grey
             }
         } else {
             // Light theme — One Light inspired
             match kind {
-                TokenKind::Keyword    => Color32::from_rgb(166, 38, 164),  // magenta
-                TokenKind::Builtin    => Color32::from_rgb(64, 120, 242),  // blue
-                TokenKind::Number     => Color32::from_rgb(152, 104, 1),   // amber
-                TokenKind::StringLit  => Color32::from_rgb(80, 141, 38),   // green
-                TokenKind::Comment    => Color32::from_rgb(140, 148, 160), // grey
-                TokenKind::Operator   => Color32::from_rgb(1, 132, 188),   // teal
-                TokenKind::Punctuation => Color32::from_rgb(56, 58, 66),   // dark grey
-                TokenKind::Identifier => Color32::from_rgb(180, 110, 10),  // golden
-                TokenKind::Default    => Color32::from_rgb(56, 58, 66),    // dark grey
+                TokenKind::Keyword => Color32::from_rgb(166, 38, 164), // magenta
+                TokenKind::Builtin => Color32::from_rgb(64, 120, 242), // blue
+                TokenKind::Number => Color32::from_rgb(152, 104, 1),   // amber
+                TokenKind::StringLit => Color32::from_rgb(80, 141, 38), // green
+                TokenKind::Comment => Color32::from_rgb(140, 148, 160), // grey
+                TokenKind::Operator => Color32::from_rgb(1, 132, 188), // teal
+                TokenKind::Punctuation => Color32::from_rgb(56, 58, 66), // dark grey
+                TokenKind::Identifier => Color32::from_rgb(180, 110, 10), // golden
+                TokenKind::Default => Color32::from_rgb(56, 58, 66),   // dark grey
             }
         };
 
@@ -950,17 +1186,25 @@ impl SyntaxHighlighter {
             Color32::TRANSPARENT
         };
 
-        job.append(text, 0.0, TextFormat {
-            font_id: FontId::monospace(13.0),
-            color,
-            background,
-            ..Default::default()
-        });
+        job.append(
+            text,
+            0.0,
+            TextFormat {
+                font_id: FontId::monospace(13.0),
+                color,
+                background,
+                ..Default::default()
+            },
+        );
     }
 }
 
 /// Check if a byte range [span_start..span_end) overlaps with the error line range.
-fn is_in_error_range(error_range: Option<(usize, usize)>, span_start: usize, span_end: usize) -> bool {
+fn is_in_error_range(
+    error_range: Option<(usize, usize)>,
+    span_start: usize,
+    span_end: usize,
+) -> bool {
     match error_range {
         Some((err_start, err_end)) => span_start < err_end && span_end > err_start,
         None => false,

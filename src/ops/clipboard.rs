@@ -2,13 +2,13 @@
 // CLIPBOARD OPERATIONS — cut, copy, paste with manipulatable paste overlay
 // ============================================================================
 
-use image::{RgbaImage, Rgba, imageops};
-use eframe::egui;
-use egui::{Color32, Pos2, Rect, Vec2, Stroke};
 use crate::canvas::{CanvasState, TiledImage};
 use crate::ops::transform::Interpolation;
-use std::sync::Mutex;
+use eframe::egui;
+use egui::{Color32, Pos2, Rect, Stroke, Vec2};
+use image::{Rgba, RgbaImage, imageops};
 use rayon::prelude::*;
+use std::sync::Mutex;
 
 // ---------------------------------------------------------------------------
 //  Internal clipboard (application-level, supports transparency)
@@ -24,11 +24,17 @@ fn set_clipboard_image(img: RgbaImage) {
 
 /// Retrieve a clone from the app clipboard.
 fn get_clipboard_image() -> Option<RgbaImage> {
-    APP_CLIPBOARD.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    APP_CLIPBOARD
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
 }
 
 pub fn has_clipboard_image() -> bool {
-    APP_CLIPBOARD.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+    APP_CLIPBOARD
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some()
 }
 
 /// Public accessor so app.rs can use the internal clipboard as a fallback.
@@ -41,10 +47,10 @@ pub fn get_clipboard_image_pub() -> Option<RgbaImage> {
 /// Returns `Some((width, height))` without retaining the full pixel data.
 pub fn get_clipboard_image_dimensions() -> Option<(u32, u32)> {
     // A13: Fast path — lock the mutex and read dimensions without cloning.
-    if let Ok(guard) = APP_CLIPBOARD.lock() {
-        if let Some(ref img) = *guard {
-            return Some((img.width(), img.height()));
-        }
+    if let Ok(guard) = APP_CLIPBOARD.lock()
+        && let Some(ref img) = *guard
+    {
+        return Some((img.width(), img.height()));
     }
     // Slow path: check system clipboard.
     if let Some(img) = get_from_system_clipboard() {
@@ -77,16 +83,15 @@ pub fn copy_to_system_clipboard(img: &RgbaImage) {
 ///   3. A file copied in Explorer (CF_HDROP file list) — Windows-specific.
 pub fn get_from_system_clipboard() -> Option<RgbaImage> {
     // 1. Try raw image data via arboard.
-    if let Ok(mut clip) = arboard::Clipboard::new() {
-        if let Ok(img_data) = clip.get_image() {
-            if let Some(img) = RgbaImage::from_raw(
-                img_data.width as u32,
-                img_data.height as u32,
-                img_data.bytes.into_owned(),
-            ) {
-                return Some(img);
-            }
-        }
+    if let Ok(mut clip) = arboard::Clipboard::new()
+        && let Ok(img_data) = clip.get_image()
+        && let Some(img) = RgbaImage::from_raw(
+            img_data.width as u32,
+            img_data.height as u32,
+            img_data.bytes.into_owned(),
+        )
+    {
+        return Some(img);
     }
 
     // 2. On Windows, try the CF_HDROP file list that Explorer puts on the
@@ -99,14 +104,14 @@ pub fn get_from_system_clipboard() -> Option<RgbaImage> {
     }
 
     // 3. Try plain-text clipboard content as a file path.
-    if let Ok(mut clip) = arboard::Clipboard::new() {
-        if let Ok(text) = clip.get_text() {
-            let path = std::path::Path::new(text.trim());
-            if path.is_file() {
-                if let Ok(dyn_img) = image::open(path) {
-                    return Some(dyn_img.to_rgba8());
-                }
-            }
+    if let Ok(mut clip) = arboard::Clipboard::new()
+        && let Ok(text) = clip.get_text()
+    {
+        let path = std::path::Path::new(text.trim());
+        if path.is_file()
+            && let Ok(dyn_img) = image::open(path)
+        {
+            return Some(dyn_img.to_rgba8());
         }
     }
 
@@ -117,9 +122,9 @@ pub fn get_from_system_clipboard() -> Option<RgbaImage> {
 /// open the first image-format file found.
 #[cfg(target_os = "windows")]
 fn read_image_from_clipboard_file_list() -> Option<RgbaImage> {
-    use winapi::um::winuser::{OpenClipboard, CloseClipboard, GetClipboardData, CF_HDROP};
-    use winapi::um::shellapi::{DragQueryFileW, HDROP};
     use std::ptr;
+    use winapi::um::shellapi::{DragQueryFileW, HDROP};
+    use winapi::um::winuser::{CF_HDROP, CloseClipboard, GetClipboardData, OpenClipboard};
 
     unsafe {
         if OpenClipboard(ptr::null_mut()) == 0 {
@@ -139,24 +144,26 @@ fn read_image_from_clipboard_file_list() -> Option<RgbaImage> {
 
         for i in 0..count {
             let len = DragQueryFileW(hdrop, i, ptr::null_mut(), 0);
-            if len == 0 { continue; }
+            if len == 0 {
+                continue;
+            }
             let mut buf: Vec<u16> = vec![0u16; (len + 1) as usize];
             DragQueryFileW(hdrop, i, buf.as_mut_ptr(), len + 1);
             let path_str = String::from_utf16_lossy(&buf[..len as usize]);
             let path = std::path::PathBuf::from(&path_str);
 
-            let ext = path.extension()
+            let ext = path
+                .extension()
                 .map(|e| e.to_string_lossy().to_lowercase())
                 .unwrap_or_default();
-            let is_image = matches!(ext.as_str(),
+            let is_image = matches!(
+                ext.as_str(),
                 "png" | "jpg" | "jpeg" | "bmp" | "gif" | "webp" | "tiff" | "tga"
             );
 
-            if is_image {
-                if let Ok(dyn_img) = image::open(&path) {
-                    result = Some(dyn_img.to_rgba8());
-                    break;
-                }
+            if is_image && let Ok(dyn_img) = image::open(&path) {
+                result = Some(dyn_img.to_rgba8());
+                break;
             }
         }
 
@@ -177,7 +184,9 @@ pub fn copy_selection(state: &CanvasState) -> bool {
         None => return false,
     };
     let idx = state.active_layer_index;
-    if idx >= state.layers.len() { return false; }
+    if idx >= state.layers.len() {
+        return false;
+    }
 
     let layer = &state.layers[idx];
     let (mw, mh) = (mask.width(), mask.height());
@@ -199,7 +208,9 @@ pub fn copy_selection(state: &CanvasState) -> bool {
             }
         }
     }
-    if min_x > max_x { return false; }
+    if min_x > max_x {
+        return false;
+    }
 
     let w = max_x - min_x + 1;
     let h = max_y - min_y + 1;
@@ -223,7 +234,9 @@ pub fn copy_selection(state: &CanvasState) -> bool {
 
 /// Cut = copy + delete selected pixels.
 pub fn cut_selection(state: &mut CanvasState) -> bool {
-    if !copy_selection(state) { return false; }
+    if !copy_selection(state) {
+        return false;
+    }
     state.delete_selected_pixels();
     state.mark_dirty(None);
     true
@@ -235,7 +248,9 @@ pub fn cut_selection(state: &mut CanvasState) -> bool {
 /// Returns None only if the layer is empty / fully transparent.
 pub fn extract_to_overlay(state: &mut CanvasState) -> Option<PasteOverlay> {
     let idx = state.active_layer_index;
-    if idx >= state.layers.len() { return None; }
+    if idx >= state.layers.len() {
+        return None;
+    }
 
     let cw = state.width;
     let ch = state.height;
@@ -261,7 +276,9 @@ pub fn extract_to_overlay(state: &mut CanvasState) -> Option<PasteOverlay> {
                 }
             }
         }
-        if min_x > max_x { return None; }
+        if min_x > max_x {
+            return None;
+        }
 
         let w = max_x - min_x + 1;
         let h = max_y - min_y + 1;
@@ -293,7 +310,9 @@ pub fn extract_to_overlay(state: &mut CanvasState) -> Option<PasteOverlay> {
         let img = layer.pixels.to_rgba_image();
         // Check if there's any content.
         let has_content = img.pixels().any(|p| p[3] > 0);
-        if !has_content { return None; }
+        if !has_content {
+            return None;
+        }
 
         // Blank the layer.
         let blank = TiledImage::new(cw, ch);
@@ -345,7 +364,7 @@ pub struct PasteOverlay {
 
     // --- Preview cache (avoids re-rendering every frame) ---
     /// Cached pre-scaled source image.
-    cached_scaled: Option<(RgbaImage, u32, u32)>,  // (img, scaled_w, scaled_h)
+    cached_scaled: Option<(RgbaImage, u32, u32)>, // (img, scaled_w, scaled_h)
     /// Cached preview TiledImage + the transform state used to produce it.
     cached_preview: Option<(TiledImage, Pos2, f32, f32, f32, Vec2, u32, u32)>,
     // (tiled, center, scale_x, scale_y, rotation, anchor_offset, cw, ch)
@@ -424,7 +443,10 @@ impl PasteOverlay {
 
     /// Half-size of the source image in canvas coords (unscaled).
     fn half_size(&self) -> Vec2 {
-        Vec2::new(self.source.width() as f32 / 2.0, self.source.height() as f32 / 2.0)
+        Vec2::new(
+            self.source.width() as f32 / 2.0,
+            self.source.height() as f32 / 2.0,
+        )
     }
 
     /// The scaled half-size.
@@ -476,10 +498,10 @@ impl PasteOverlay {
     fn edge_midpoints_canvas(&self) -> [Pos2; 4] {
         let hs = self.scaled_half();
         let c = self.center;
-        let top    = Pos2::new(c.x, c.y - hs.y);
+        let top = Pos2::new(c.x, c.y - hs.y);
         let bottom = Pos2::new(c.x, c.y + hs.y);
-        let left   = Pos2::new(c.x - hs.x, c.y);
-        let right  = Pos2::new(c.x + hs.x, c.y);
+        let left = Pos2::new(c.x - hs.x, c.y);
+        let right = Pos2::new(c.x + hs.x, c.y);
         [
             self.rotate_point(top),
             self.rotate_point(bottom),
@@ -540,22 +562,26 @@ impl PasteOverlay {
         // the preview texture to keep things smooth.  The quad's UV mapping
         // stretches the low-res texture to the correct screen size.
         let max_preview_dim: u32 = 1280;
-        let (upload_w, upload_h, is_preview) = if interacting
-            && (scaled_w > max_preview_dim || scaled_h > max_preview_dim)
-        {
-            let ratio = (max_preview_dim as f32 / scaled_w as f32)
-                .min(max_preview_dim as f32 / scaled_h as f32);
-            let pw = (scaled_w as f32 * ratio).round().max(1.0) as u32;
-            let ph = (scaled_h as f32 * ratio).round().max(1.0) as u32;
-            (pw, ph, true)
-        } else {
-            (scaled_w, scaled_h, false)
-        };
+        let (upload_w, upload_h, is_preview) =
+            if interacting && (scaled_w > max_preview_dim || scaled_h > max_preview_dim) {
+                let ratio = (max_preview_dim as f32 / scaled_w as f32)
+                    .min(max_preview_dim as f32 / scaled_h as f32);
+                let pw = (scaled_w as f32 * ratio).round().max(1.0) as u32;
+                let ph = (scaled_h as f32 * ratio).round().max(1.0) as u32;
+                (pw, ph, true)
+            } else {
+                (scaled_w, scaled_h, false)
+            };
 
         let scaled = if upload_w == self.source.width() && upload_h == self.source.height() {
             self.source.clone()
         } else {
-            imageops::resize(&self.source, upload_w, upload_h, imageops::FilterType::Nearest)
+            imageops::resize(
+                &self.source,
+                upload_w,
+                upload_h,
+                imageops::FilterType::Nearest,
+            )
         };
 
         // Convert to egui ColorImage.
@@ -573,17 +599,12 @@ impl PasteOverlay {
         let tex_options = egui::TextureOptions {
             magnification: egui::TextureFilter::Linear,
             minification: egui::TextureFilter::Linear,
-            ..Default::default()
         };
         let image_data = egui::ImageData::Color(std::sync::Arc::new(color_image));
         if let Some(ref mut tex) = self.gpu_texture {
             tex.set(image_data, tex_options);
         } else {
-            let tex = ctx.load_texture(
-                "paste_overlay_gpu",
-                image_data,
-                tex_options,
-            );
+            let tex = ctx.load_texture("paste_overlay_gpu", image_data, tex_options);
             self.gpu_texture = Some(tex);
         }
         self.gpu_texture_scale = Some((self.scale_x, self.scale_y));
@@ -592,12 +613,7 @@ impl PasteOverlay {
 
     /// Draw the paste overlay image using GPU-accelerated textured mesh.
     /// The GPU handles rotation and translation — no per-pixel CPU work needed.
-    pub fn draw_gpu(
-        &self,
-        painter: &egui::Painter,
-        image_rect: Rect,
-        zoom: f32,
-    ) {
+    pub fn draw_gpu(&self, painter: &egui::Painter, image_rect: Rect, zoom: f32) {
         let tex = match &self.gpu_texture {
             Some(t) => t,
             None => return,
@@ -615,10 +631,26 @@ impl PasteOverlay {
         let mut mesh = egui::Mesh::with_texture(tex.id());
 
         // Vertices: TL, TR, BL, BR  with UV corners
-        mesh.vertices.push(egui::epaint::Vertex { pos: s_tl, uv: Pos2::new(0.0, 0.0), color: white });
-        mesh.vertices.push(egui::epaint::Vertex { pos: s_tr, uv: Pos2::new(1.0, 0.0), color: white });
-        mesh.vertices.push(egui::epaint::Vertex { pos: s_bl, uv: Pos2::new(0.0, 1.0), color: white });
-        mesh.vertices.push(egui::epaint::Vertex { pos: s_br, uv: Pos2::new(1.0, 1.0), color: white });
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos: s_tl,
+            uv: Pos2::new(0.0, 0.0),
+            color: white,
+        });
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos: s_tr,
+            uv: Pos2::new(1.0, 0.0),
+            color: white,
+        });
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos: s_bl,
+            uv: Pos2::new(0.0, 1.0),
+            color: white,
+        });
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos: s_br,
+            uv: Pos2::new(1.0, 1.0),
+            color: white,
+        });
 
         // Two triangles: TL-TR-BL and TR-BR-BL
         mesh.indices.extend_from_slice(&[0, 1, 2, 1, 3, 2]);
@@ -646,7 +678,8 @@ impl PasteOverlay {
         let handle_border = Color32::WHITE;
 
         let corners = self.corners_canvas();
-        let screen_corners: Vec<Pos2> = corners.iter()
+        let screen_corners: Vec<Pos2> = corners
+            .iter()
             .map(|c| self.canvas_to_screen(*c, image_rect, zoom))
             .collect();
 
@@ -689,7 +722,8 @@ impl PasteOverlay {
 
         // --- Edge midpoint handles (smaller rounded rectangles) ---
         let midpoints = self.edge_midpoints_canvas();
-        let screen_mids: Vec<Pos2> = midpoints.iter()
+        let screen_mids: Vec<Pos2> = midpoints
+            .iter()
             .map(|c| self.canvas_to_screen(*c, image_rect, zoom))
             .collect();
         let mid_handle_size = 4.0;
@@ -741,20 +775,32 @@ impl PasteOverlay {
         let ch = 9.0;
         // Glow cross.
         painter.line_segment(
-            [Pos2::new(anchor_screen.x - ch, anchor_screen.y), Pos2::new(anchor_screen.x + ch, anchor_screen.y)],
+            [
+                Pos2::new(anchor_screen.x - ch, anchor_screen.y),
+                Pos2::new(anchor_screen.x + ch, anchor_screen.y),
+            ],
             Stroke::new(3.0, accent_glow),
         );
         painter.line_segment(
-            [Pos2::new(anchor_screen.x, anchor_screen.y - ch), Pos2::new(anchor_screen.x, anchor_screen.y + ch)],
+            [
+                Pos2::new(anchor_screen.x, anchor_screen.y - ch),
+                Pos2::new(anchor_screen.x, anchor_screen.y + ch),
+            ],
             Stroke::new(3.0, accent_glow),
         );
         // Solid cross.
         painter.line_segment(
-            [Pos2::new(anchor_screen.x - ch, anchor_screen.y), Pos2::new(anchor_screen.x + ch, anchor_screen.y)],
+            [
+                Pos2::new(anchor_screen.x - ch, anchor_screen.y),
+                Pos2::new(anchor_screen.x + ch, anchor_screen.y),
+            ],
             Stroke::new(1.5, accent),
         );
         painter.line_segment(
-            [Pos2::new(anchor_screen.x, anchor_screen.y - ch), Pos2::new(anchor_screen.x, anchor_screen.y + ch)],
+            [
+                Pos2::new(anchor_screen.x, anchor_screen.y - ch),
+                Pos2::new(anchor_screen.x, anchor_screen.y + ch),
+            ],
             Stroke::new(1.5, accent),
         );
         // Center dot with glow.
@@ -801,7 +847,8 @@ impl PasteOverlay {
 
         // Corner handles.
         let corners = self.corners_canvas();
-        let screen_corners: Vec<Pos2> = corners.iter()
+        let screen_corners: Vec<Pos2> = corners
+            .iter()
             .map(|c| self.canvas_to_screen(*c, image_rect, zoom))
             .collect();
         let corner_handles = [
@@ -817,7 +864,8 @@ impl PasteOverlay {
         }
 
         // Edge midpoint handles.
-        let screen_mids: Vec<Pos2> = midpoints.iter()
+        let screen_mids: Vec<Pos2> = midpoints
+            .iter()
             .map(|c| self.canvas_to_screen(*c, image_rect, zoom))
             .collect();
         let mid_handles = [
@@ -862,12 +910,7 @@ impl PasteOverlay {
     // -----------------------------------------------------------------------
 
     /// Process mouse interaction. Returns true if the overlay consumed the event.
-    pub fn handle_input(
-        &mut self,
-        ui: &egui::Ui,
-        image_rect: Rect,
-        zoom: f32,
-    ) -> bool {
+    pub fn handle_input(&mut self, ui: &egui::Ui, image_rect: Rect, zoom: f32) -> bool {
         let mouse_pos = match ui.input(|i| i.pointer.interact_pos()) {
             Some(p) => p,
             None => return false,
@@ -878,66 +921,63 @@ impl PasteOverlay {
         self.shift_held = ui.input(|i| i.modifiers.shift);
 
         // Start drag.
-        if primary_pressed {
-            if let Some(handle) = self.hit_test(mouse_pos, image_rect, zoom) {
-                self.active_handle = Some(handle);
-                self.drag_start_mouse = Some(mouse_pos);
-                self.drag_start_center = self.center;
-                self.drag_start_scale_x = self.scale_x;
-                self.drag_start_scale_y = self.scale_y;
-                self.drag_start_rotation = self.rotation;
-                self.drag_start_anchor = self.anchor_offset;
-                return true;
-            }
+        if primary_pressed && let Some(handle) = self.hit_test(mouse_pos, image_rect, zoom) {
+            self.active_handle = Some(handle);
+            self.drag_start_mouse = Some(mouse_pos);
+            self.drag_start_center = self.center;
+            self.drag_start_scale_x = self.scale_x;
+            self.drag_start_scale_y = self.scale_y;
+            self.drag_start_rotation = self.rotation;
+            self.drag_start_anchor = self.anchor_offset;
+            return true;
         }
 
         // Continue drag.
-        if primary_down {
-            if let (Some(handle), Some(start)) = (self.active_handle, self.drag_start_mouse) {
-                let delta_screen = Vec2::new(mouse_pos.x - start.x, mouse_pos.y - start.y);
-                let delta_canvas = Vec2::new(delta_screen.x / zoom, delta_screen.y / zoom);
+        if primary_down
+            && let (Some(handle), Some(start)) = (self.active_handle, self.drag_start_mouse)
+        {
+            let delta_screen = Vec2::new(mouse_pos.x - start.x, mouse_pos.y - start.y);
+            let delta_canvas = Vec2::new(delta_screen.x / zoom, delta_screen.y / zoom);
 
-                match handle {
-                    HandleKind::Move => {
-                        self.center = Pos2::new(
-                            self.drag_start_center.x + delta_canvas.x,
-                            self.drag_start_center.y + delta_canvas.y,
-                        );
-                    }
-                    HandleKind::Anchor => {
-                        self.anchor_offset = Vec2::new(
-                            self.drag_start_anchor.x + delta_canvas.x,
-                            self.drag_start_anchor.y + delta_canvas.y,
-                        );
-                    }
-                    HandleKind::Rotate => {
-                        let anchor_screen = self.canvas_to_screen(
-                            Pos2::new(
-                                self.drag_start_center.x + self.anchor_offset.x,
-                                self.drag_start_center.y + self.anchor_offset.y,
-                            ),
-                            image_rect,
-                            zoom,
-                        );
-                        let start_angle = (start.y - anchor_screen.y)
-                            .atan2(start.x - anchor_screen.x);
-                        let current_angle = (mouse_pos.y - anchor_screen.y)
-                            .atan2(mouse_pos.x - anchor_screen.x);
-                        let mut new_rot = self.drag_start_rotation + (current_angle - start_angle);
-                        // Snap to 45° increments when shift held.
-                        if self.shift_held {
-                            let snap = std::f32::consts::FRAC_PI_4; // 45°
-                            new_rot = (new_rot / snap).round() * snap;
-                        }
-                        self.rotation = new_rot;
-                    }
-                    _ => {
-                        // Resize handles.
-                        self.handle_resize(handle, delta_canvas);
-                    }
+            match handle {
+                HandleKind::Move => {
+                    self.center = Pos2::new(
+                        self.drag_start_center.x + delta_canvas.x,
+                        self.drag_start_center.y + delta_canvas.y,
+                    );
                 }
-                return true;
+                HandleKind::Anchor => {
+                    self.anchor_offset = Vec2::new(
+                        self.drag_start_anchor.x + delta_canvas.x,
+                        self.drag_start_anchor.y + delta_canvas.y,
+                    );
+                }
+                HandleKind::Rotate => {
+                    let anchor_screen = self.canvas_to_screen(
+                        Pos2::new(
+                            self.drag_start_center.x + self.anchor_offset.x,
+                            self.drag_start_center.y + self.anchor_offset.y,
+                        ),
+                        image_rect,
+                        zoom,
+                    );
+                    let start_angle = (start.y - anchor_screen.y).atan2(start.x - anchor_screen.x);
+                    let current_angle =
+                        (mouse_pos.y - anchor_screen.y).atan2(mouse_pos.x - anchor_screen.x);
+                    let mut new_rot = self.drag_start_rotation + (current_angle - start_angle);
+                    // Snap to 45° increments when shift held.
+                    if self.shift_held {
+                        let snap = std::f32::consts::FRAC_PI_4; // 45°
+                        new_rot = (new_rot / snap).round() * snap;
+                    }
+                    self.rotation = new_rot;
+                }
+                _ => {
+                    // Resize handles.
+                    self.handle_resize(handle, delta_canvas);
+                }
             }
+            return true;
         }
 
         // End drag.
@@ -954,7 +994,9 @@ impl PasteOverlay {
     fn handle_resize(&mut self, handle: HandleKind, delta_canvas: Vec2) {
         let src_w = self.source.width() as f32;
         let src_h = self.source.height() as f32;
-        if src_w < 1.0 || src_h < 1.0 { return; }
+        if src_w < 1.0 || src_h < 1.0 {
+            return;
+        }
 
         // Un-rotate delta to local axes.
         let cos = (-self.rotation).cos();
@@ -1044,7 +1086,10 @@ impl PasteOverlay {
             // Interpolation selector
             ui.label("Filter:");
             for interp in Interpolation::all() {
-                if ui.selectable_label(self.interpolation == *interp, interp.label()).clicked() {
+                if ui
+                    .selectable_label(self.interpolation == *interp, interp.label())
+                    .clicked()
+                {
                     self.interpolation = *interp;
                 }
             }
@@ -1083,7 +1128,9 @@ impl PasteOverlay {
     /// Commit the paste overlay to the active layer of the canvas.
     pub fn commit(self, state: &mut CanvasState) {
         let idx = state.active_layer_index;
-        if idx >= state.layers.len() { return; }
+        if idx >= state.layers.len() {
+            return;
+        }
 
         let cw = state.width;
         let ch = state.height;
@@ -1127,41 +1174,47 @@ impl PasteOverlay {
         let flat = layer.pixels.to_rgba_image();
 
         let rows: Vec<u32> = (row_start..=row_end).collect();
-        let patches: Vec<(u32, u32, Rgba<u8>)> = rows.par_iter().flat_map(|&dy| {
-            let mut row_patches = Vec::new();
-            let py = dy as f32 + 0.5;
-            let ry = py - anchor.y;
-            for dx in col_start..=col_end {
-                let px = dx as f32 + 0.5;
-                let rx = px - anchor.x;
-                let ur_x = rx * cos + ry * sin + anchor.x;
-                let ur_y = -rx * sin + ry * cos + anchor.y;
+        let patches: Vec<(u32, u32, Rgba<u8>)> = rows
+            .par_iter()
+            .flat_map(|&dy| {
+                let mut row_patches = Vec::new();
+                let py = dy as f32 + 0.5;
+                let ry = py - anchor.y;
+                for dx in col_start..=col_end {
+                    let px = dx as f32 + 0.5;
+                    let rx = px - anchor.x;
+                    let ur_x = rx * cos + ry * sin + anchor.x;
+                    let ur_y = -rx * sin + ry * cos + anchor.y;
 
-                let local_x = ur_x - origin_x;
-                let local_y = ur_y - origin_y;
+                    let local_x = ur_x - origin_x;
+                    let local_y = ur_y - origin_y;
 
-                if local_x < -0.5 || local_y < -0.5
-                    || local_x >= scaled_w as f32 + 0.5
-                    || local_y >= scaled_h as f32 + 0.5
-                {
-                    continue;
+                    if local_x < -0.5
+                        || local_y < -0.5
+                        || local_x >= scaled_w as f32 + 0.5
+                        || local_y >= scaled_h as f32 + 0.5
+                    {
+                        continue;
+                    }
+
+                    let src_px = if use_aa {
+                        sample_bilinear(&scaled, local_x - 0.5, local_y - 0.5, scaled_w, scaled_h)
+                    } else {
+                        let ix = (local_x as u32).min(scaled_w - 1);
+                        let iy = (local_y as u32).min(scaled_h - 1);
+                        *scaled.get_pixel(ix, iy)
+                    };
+                    if src_px[3] == 0 {
+                        continue;
+                    }
+
+                    let dst = *flat.get_pixel(dx, dy);
+                    let blended = alpha_blend(dst, src_px);
+                    row_patches.push((dx, dy, blended));
                 }
-
-                let src_px = if use_aa {
-                    sample_bilinear(&scaled, local_x - 0.5, local_y - 0.5, scaled_w, scaled_h)
-                } else {
-                    let ix = (local_x as u32).min(scaled_w - 1);
-                    let iy = (local_y as u32).min(scaled_h - 1);
-                    *scaled.get_pixel(ix, iy)
-                };
-                if src_px[3] == 0 { continue; }
-
-                let dst = *flat.get_pixel(dx, dy);
-                let blended = alpha_blend(dst, src_px);
-                row_patches.push((dx, dy, blended));
-            }
-            row_patches
-        }).collect();
+                row_patches
+            })
+            .collect();
 
         for (dx, dy, px) in patches {
             layer.pixels.put_pixel(dx, dy, px);
@@ -1174,14 +1227,15 @@ impl PasteOverlay {
     pub fn preview_cache_valid(&self, canvas_w: u32, canvas_h: u32) -> bool {
         match &self.cached_preview {
             Some((_, c, sx, sy, rot, ao, cw, ch)) => {
-                *cw == canvas_w && *ch == canvas_h
-                && (c.x - self.center.x).abs() < 0.001
-                && (c.y - self.center.y).abs() < 0.001
-                && (*sx - self.scale_x).abs() < 0.0001
-                && (*sy - self.scale_y).abs() < 0.0001
-                && (*rot - self.rotation).abs() < 0.0001
-                && (ao.x - self.anchor_offset.x).abs() < 0.001
-                && (ao.y - self.anchor_offset.y).abs() < 0.001
+                *cw == canvas_w
+                    && *ch == canvas_h
+                    && (c.x - self.center.x).abs() < 0.001
+                    && (c.y - self.center.y).abs() < 0.001
+                    && (*sx - self.scale_x).abs() < 0.0001
+                    && (*sy - self.scale_y).abs() < 0.0001
+                    && (*rot - self.rotation).abs() < 0.0001
+                    && (ao.x - self.anchor_offset.x).abs() < 0.001
+                    && (ao.y - self.anchor_offset.y).abs() < 0.001
             }
             None => false,
         }
@@ -1206,7 +1260,12 @@ impl PasteOverlay {
             None => true,
         };
         if need_rescale {
-            let scaled = imageops::resize(&self.source, scaled_w, scaled_h, imageops::FilterType::Nearest);
+            let scaled = imageops::resize(
+                &self.source,
+                scaled_w,
+                scaled_h,
+                imageops::FilterType::Nearest,
+            );
             self.cached_scaled = Some((scaled, scaled_w, scaled_h));
         }
         let scaled = &self.cached_scaled.as_ref().unwrap().0;
@@ -1270,49 +1329,54 @@ impl PasteOverlay {
             // Render rows in parallel directly into a flat pixel buffer.
             let full_w = canvas_w as usize;
             let rows: Vec<u32> = (px_min_y..=px_max_y).collect();
-            let row_strips: Vec<(u32, Vec<u8>)> = rows.par_iter().map(|&dy| {
-                let mut strip = Vec::new();
-                let py = dy as f32 + 0.5;
-                let ry = py - anchor.y;
-                for dx in px_min_x..=px_max_x {
-                    let px = dx as f32 + 0.5;
-                    let rx = px - anchor.x;
-                    let ur_x = rx * cos + ry * sin + anchor.x;
-                    let ur_y = -rx * sin + ry * cos + anchor.y;
+            let row_strips: Vec<(u32, Vec<u8>)> = rows
+                .par_iter()
+                .map(|&dy| {
+                    let mut strip = Vec::new();
+                    let py = dy as f32 + 0.5;
+                    let ry = py - anchor.y;
+                    for dx in px_min_x..=px_max_x {
+                        let px = dx as f32 + 0.5;
+                        let rx = px - anchor.x;
+                        let ur_x = rx * cos + ry * sin + anchor.x;
+                        let ur_y = -rx * sin + ry * cos + anchor.y;
 
-                    let local_x = ur_x - origin_x;
-                    let local_y = ur_y - origin_y;
+                        let local_x = ur_x - origin_x;
+                        let local_y = ur_y - origin_y;
 
-                    if local_x < 0.0 || local_y < 0.0
-                        || local_x >= scaled_w as f32
-                        || local_y >= scaled_h as f32
-                    {
-                        continue;
+                        if local_x < 0.0
+                            || local_y < 0.0
+                            || local_x >= scaled_w as f32
+                            || local_y >= scaled_h as f32
+                        {
+                            continue;
+                        }
+
+                        let src_px = *scaled.get_pixel(
+                            (local_x as u32).min(scaled_w - 1),
+                            (local_y as u32).min(scaled_h - 1),
+                        );
+                        if src_px[3] > 0 {
+                            strip.push(dx as u8);
+                            strip.push((dx >> 8) as u8);
+                            strip.extend_from_slice(&src_px.0);
+                        }
                     }
-
-                    let src_px = *scaled.get_pixel(
-                        (local_x as u32).min(scaled_w - 1),
-                        (local_y as u32).min(scaled_h - 1),
-                    );
-                    if src_px[3] > 0 {
-                        strip.push(dx as u8); strip.push((dx >> 8) as u8);
-                        strip.extend_from_slice(&src_px.0);
-                    }
-                }
-                (dy, strip)
-            }).collect();
+                    (dy, strip)
+                })
+                .collect();
 
             // Assemble into a flat RGBA buffer.
             let mut buf = vec![0u8; canvas_w as usize * canvas_h as usize * 4];
             for (dy, strip) in &row_strips {
                 let mut i = 0;
                 while i + 5 < strip.len() {
-                    let dx = strip[i] as u32 | ((strip[i+1] as u32) << 8);
+                    let dx = strip[i] as u32 | ((strip[i + 1] as u32) << 8);
                     let off = (*dy as usize * full_w + dx as usize) * 4;
-                    buf[off]   = strip[i+2];
-                    buf[off+1] = strip[i+3];
-                    buf[off+2] = strip[i+4];
-                    buf[off+3] = strip[i+5];
+                    buf[off] = strip[i + 2];
+                    buf[off + 1] = strip[i + 3];
+                    buf[off + 2] = strip[i + 4];
+                    buf[off + 3] = strip[i + 5];
                     i += 6;
                 }
             }
@@ -1364,26 +1428,46 @@ fn sample_bilinear(img: &RgbaImage, x: f32, y: f32, w: u32, h: u32) -> Rgba<u8> 
     let w11 = fx * fy;
 
     Rgba([
-        (p00[0] * w00 + p10[0] * w10 + p01[0] * w01 + p11[0] * w11).round().clamp(0.0, 255.0) as u8,
-        (p00[1] * w00 + p10[1] * w10 + p01[1] * w01 + p11[1] * w11).round().clamp(0.0, 255.0) as u8,
-        (p00[2] * w00 + p10[2] * w10 + p01[2] * w01 + p11[2] * w11).round().clamp(0.0, 255.0) as u8,
-        (p00[3] * w00 + p10[3] * w10 + p01[3] * w01 + p11[3] * w11).round().clamp(0.0, 255.0) as u8,
+        (p00[0] * w00 + p10[0] * w10 + p01[0] * w01 + p11[0] * w11)
+            .round()
+            .clamp(0.0, 255.0) as u8,
+        (p00[1] * w00 + p10[1] * w10 + p01[1] * w01 + p11[1] * w11)
+            .round()
+            .clamp(0.0, 255.0) as u8,
+        (p00[2] * w00 + p10[2] * w10 + p01[2] * w01 + p11[2] * w11)
+            .round()
+            .clamp(0.0, 255.0) as u8,
+        (p00[3] * w00 + p10[3] * w10 + p01[3] * w01 + p11[3] * w11)
+            .round()
+            .clamp(0.0, 255.0) as u8,
     ])
 }
 
 /// Simple alpha-composite: src over dst.
 fn alpha_blend(dst: Rgba<u8>, src: Rgba<u8>) -> Rgba<u8> {
-    if src[3] == 0 { return dst; }
-    if src[3] == 255 || dst[3] == 0 { return src; }
+    if src[3] == 0 {
+        return dst;
+    }
+    if src[3] == 255 || dst[3] == 0 {
+        return src;
+    }
     let sa = src[3] as f32 / 255.0;
     let da = dst[3] as f32 / 255.0;
     let out_a = sa + da * (1.0 - sa);
-    if out_a < 0.001 { return Rgba([0, 0, 0, 0]); }
+    if out_a < 0.001 {
+        return Rgba([0, 0, 0, 0]);
+    }
     let inv = 1.0 / out_a;
     Rgba([
-        ((src[0] as f32 * sa + dst[0] as f32 * da * (1.0 - sa)) * inv).round().clamp(0.0, 255.0) as u8,
-        ((src[1] as f32 * sa + dst[1] as f32 * da * (1.0 - sa)) * inv).round().clamp(0.0, 255.0) as u8,
-        ((src[2] as f32 * sa + dst[2] as f32 * da * (1.0 - sa)) * inv).round().clamp(0.0, 255.0) as u8,
+        ((src[0] as f32 * sa + dst[0] as f32 * da * (1.0 - sa)) * inv)
+            .round()
+            .clamp(0.0, 255.0) as u8,
+        ((src[1] as f32 * sa + dst[1] as f32 * da * (1.0 - sa)) * inv)
+            .round()
+            .clamp(0.0, 255.0) as u8,
+        ((src[2] as f32 * sa + dst[2] as f32 * da * (1.0 - sa)) * inv)
+            .round()
+            .clamp(0.0, 255.0) as u8,
         (out_a * 255.0).round().clamp(0.0, 255.0) as u8,
     ])
 }

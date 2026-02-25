@@ -1,13 +1,13 @@
 use eframe::egui;
 use egui::{Color32, ColorImage, TextureHandle, TextureOptions};
-use std::path::PathBuf;
-use std::io::Cursor;
-use image::{RgbaImage, DynamicImage};
+use image::codecs::bmp::BmpEncoder;
 use image::codecs::jpeg::JpegEncoder;
 use image::codecs::png::PngEncoder;
-use image::codecs::bmp::BmpEncoder;
 use image::codecs::tiff::TiffEncoder;
 use image::imageops::FilterType;
+use image::{DynamicImage, RgbaImage};
+use std::io::Cursor;
+use std::path::PathBuf;
 
 // ============================================================================
 // UNITS ENUM
@@ -157,7 +157,9 @@ impl NewFileDialog {
 
     /// Show the dialog and return Some((width, height)) if user clicks Create
     pub fn show(&mut self, ctx: &egui::Context) -> Option<(u32, u32)> {
-        use crate::ops::dialogs::{DialogColors, paint_dialog_header, section_label, accent_separator};
+        use crate::ops::dialogs::{
+            DialogColors, accent_separator, paint_dialog_header, section_label,
+        };
 
         let mut result = None;
         let mut should_close = false;
@@ -165,7 +167,7 @@ impl NewFileDialog {
         if self.open {
             // Keyboard: Enter = Create, Esc = Cancel
             let enter = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
-            let esc   = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+            let esc = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
             if enter {
                 result = Some(self.to_pixels());
                 should_close = true;
@@ -199,14 +201,20 @@ impl NewFileDialog {
                                 .selected_text(self.preset.label())
                                 .show_ui(ui, |ui| {
                                     for preset in SizePreset::all() {
-                                        if ui.selectable_value(&mut self.preset, *preset, preset.label()).clicked() {
-                                            if let Some((w, h, ppi)) = preset.dimensions() {
-                                                self.width = w as f32;
-                                                self.height = h as f32;
-                                                self.ppi = ppi;
-                                                self.unit = SizeUnit::Pixels;
-                                                self.aspect_ratio = self.width / self.height;
-                                            }
+                                        if ui
+                                            .selectable_value(
+                                                &mut self.preset,
+                                                *preset,
+                                                preset.label(),
+                                            )
+                                            .clicked()
+                                            && let Some((w, h, ppi)) = preset.dimensions()
+                                        {
+                                            self.width = w as f32;
+                                            self.height = h as f32;
+                                            self.ppi = ppi;
+                                            self.unit = SizeUnit::Pixels;
+                                            self.aspect_ratio = self.width / self.height;
                                         }
                                     }
                                 });
@@ -225,10 +233,14 @@ impl NewFileDialog {
                             // Width row
                             ui.label(t!("common.width"));
                             let old_width = self.width;
-                            if ui.add(egui::DragValue::new(&mut self.width)
-                                .speed(1.0)
-                                .clamp_range(1.0..=20000.0)
-                            ).changed() {
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut self.width)
+                                        .speed(1.0)
+                                        .clamp_range(1.0..=20000.0),
+                                )
+                                .changed()
+                            {
                                 self.preset = SizePreset::Custom;
                                 if self.lock_aspect_ratio && old_width > 0.0 {
                                     self.height = self.width / self.aspect_ratio;
@@ -242,10 +254,14 @@ impl NewFileDialog {
                             // Height row
                             ui.label(t!("common.height"));
                             let old_height = self.height;
-                            if ui.add(egui::DragValue::new(&mut self.height)
-                                .speed(1.0)
-                                .clamp_range(1.0..=20000.0)
-                            ).changed() {
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut self.height)
+                                        .speed(1.0)
+                                        .clamp_range(1.0..=20000.0),
+                                )
+                                .changed()
+                            {
                                 self.preset = SizePreset::Custom;
                                 if self.lock_aspect_ratio && old_height > 0.0 {
                                     self.width = self.height * self.aspect_ratio;
@@ -258,9 +274,17 @@ impl NewFileDialog {
 
                             // Lock aspect ratio (below Height)
                             ui.label("");
-                            let lock_icon = if self.lock_aspect_ratio { "\u{1F517}" } else { "\u{25CB}" };
-                            let lock_text = format!("{} {}", lock_icon, t!("common.lock_aspect_ratio"));
-                            if ui.selectable_label(self.lock_aspect_ratio, lock_text).clicked() {
+                            let lock_icon = if self.lock_aspect_ratio {
+                                "\u{1F517}"
+                            } else {
+                                "\u{25CB}"
+                            };
+                            let lock_text =
+                                format!("{} {}", lock_icon, t!("common.lock_aspect_ratio"));
+                            if ui
+                                .selectable_label(self.lock_aspect_ratio, lock_text)
+                                .clicked()
+                            {
                                 self.lock_aspect_ratio = !self.lock_aspect_ratio;
                                 if self.lock_aspect_ratio {
                                     self.aspect_ratio = self.width / self.height.max(1.0);
@@ -290,13 +314,34 @@ impl NewFileDialog {
                                 .width(160.0)
                                 .selected_text(unit_label)
                                 .show_ui(ui, |ui| {
-                                    if ui.selectable_value(&mut self.unit, SizeUnit::Pixels, t!("unit.pixels")).clicked() {
+                                    if ui
+                                        .selectable_value(
+                                            &mut self.unit,
+                                            SizeUnit::Pixels,
+                                            t!("unit.pixels"),
+                                        )
+                                        .clicked()
+                                    {
                                         self.convert_unit(old_unit, SizeUnit::Pixels);
                                     }
-                                    if ui.selectable_value(&mut self.unit, SizeUnit::Inches, t!("unit.inches")).clicked() {
+                                    if ui
+                                        .selectable_value(
+                                            &mut self.unit,
+                                            SizeUnit::Inches,
+                                            t!("unit.inches"),
+                                        )
+                                        .clicked()
+                                    {
                                         self.convert_unit(old_unit, SizeUnit::Inches);
                                     }
-                                    if ui.selectable_value(&mut self.unit, SizeUnit::Centimeters, t!("unit.centimeters")).clicked() {
+                                    if ui
+                                        .selectable_value(
+                                            &mut self.unit,
+                                            SizeUnit::Centimeters,
+                                            t!("unit.centimeters"),
+                                        )
+                                        .clicked()
+                                    {
                                         self.convert_unit(old_unit, SizeUnit::Centimeters);
                                     }
                                 });
@@ -305,9 +350,11 @@ impl NewFileDialog {
                             if self.unit != SizeUnit::Pixels {
                                 ui.label(t!("common.resolution"));
                                 ui.horizontal(|ui| {
-                                    ui.add(egui::DragValue::new(&mut self.ppi)
-                                        .speed(1.0)
-                                        .clamp_range(1.0..=1200.0));
+                                    ui.add(
+                                        egui::DragValue::new(&mut self.ppi)
+                                            .speed(1.0)
+                                            .clamp_range(1.0..=1200.0),
+                                    );
                                     ui.label(t!("unit.ppi"));
                                 });
                                 ui.end_row();
@@ -319,11 +366,15 @@ impl NewFileDialog {
                     let (px_w, px_h) = self.to_pixels();
                     ui.horizontal(|ui| {
                         ui.add_space(4.0);
-                        ui.label(egui::RichText::new(
-                            t!("common.final_size")
-                                .replace("{0}", &px_w.to_string())
-                                .replace("{1}", &px_h.to_string())
-                        ).size(11.0).color(colors.text_muted));
+                        ui.label(
+                            egui::RichText::new(
+                                t!("common.final_size")
+                                    .replace("{0}", &px_w.to_string())
+                                    .replace("{1}", &px_h.to_string()),
+                            )
+                            .size(11.0)
+                            .color(colors.text_muted),
+                        );
                     });
 
                     // ── Footer ───────────────────────────────────────────────
@@ -338,8 +389,9 @@ impl NewFileDialog {
                             let create_btn = egui::Button::new(
                                 egui::RichText::new(format!("  {}  ", t!("common.create")))
                                     .color(Color32::WHITE)
-                                    .strong()
-                            ).fill(colors.accent);
+                                    .strong(),
+                            )
+                            .fill(colors.accent);
                             if ui.add(create_btn).clicked() {
                                 result = Some(self.to_pixels());
                                 should_close = true;
@@ -483,22 +535,28 @@ pub struct PreviewResult {
 
 /// Encode an image to a format with quality settings and return size + decoded preview
 /// This is used to show what the saved image will look like
-pub fn generate_preview(image: &RgbaImage, format: SaveFormat, quality: u8) -> Option<PreviewResult> {
+pub fn generate_preview(
+    image: &RgbaImage,
+    format: SaveFormat,
+    quality: u8,
+) -> Option<PreviewResult> {
     let mut buffer = Vec::new();
-    
+
     match format {
         SaveFormat::Png => {
             // PNG is lossless, just get the size
             let mut cursor = Cursor::new(&mut buffer);
             let encoder = PngEncoder::new(&mut cursor);
             #[allow(deprecated)]
-            encoder.encode(
-                image.as_raw(),
-                image.width(),
-                image.height(),
-                image::ColorType::Rgba8,
-            ).ok()?;
-            
+            encoder
+                .encode(
+                    image.as_raw(),
+                    image.width(),
+                    image.height(),
+                    image::ColorType::Rgba8,
+                )
+                .ok()?;
+
             Some(PreviewResult {
                 file_size: buffer.len(),
                 preview_image: image.clone(),
@@ -509,17 +567,19 @@ pub fn generate_preview(image: &RgbaImage, format: SaveFormat, quality: u8) -> O
             let rgb_image = DynamicImage::ImageRgba8(image.clone()).to_rgb8();
             let mut cursor = Cursor::new(&mut buffer);
             let mut encoder = JpegEncoder::new_with_quality(&mut cursor, quality);
-            encoder.encode(
-                rgb_image.as_raw(),
-                rgb_image.width(),
-                rgb_image.height(),
-                image::ColorType::Rgb8,
-            ).ok()?;
-            
+            encoder
+                .encode(
+                    rgb_image.as_raw(),
+                    rgb_image.width(),
+                    rgb_image.height(),
+                    image::ColorType::Rgb8,
+                )
+                .ok()?;
+
             // Decode back to show compression artifacts
             let decoded = image::load_from_memory(&buffer).ok()?;
             let preview = decoded.to_rgba8();
-            
+
             Some(PreviewResult {
                 file_size: buffer.len(),
                 preview_image: preview,
@@ -530,12 +590,14 @@ pub fn generate_preview(image: &RgbaImage, format: SaveFormat, quality: u8) -> O
             // Note: image crate's webp may not support quality directly
             let dyn_img = DynamicImage::ImageRgba8(image.clone());
             let mut cursor = Cursor::new(&mut buffer);
-            dyn_img.write_to(&mut cursor, image::ImageOutputFormat::WebP).ok()?;
-            
+            dyn_img
+                .write_to(&mut cursor, image::ImageOutputFormat::WebP)
+                .ok()?;
+
             // Decode back
             let decoded = image::load_from_memory(&buffer).ok()?;
             let preview = decoded.to_rgba8();
-            
+
             Some(PreviewResult {
                 file_size: buffer.len(),
                 preview_image: preview,
@@ -545,13 +607,15 @@ pub fn generate_preview(image: &RgbaImage, format: SaveFormat, quality: u8) -> O
             // BMP is lossless
             let mut cursor = Cursor::new(&mut buffer);
             let mut encoder = BmpEncoder::new(&mut cursor);
-            encoder.encode(
-                image.as_raw(),
-                image.width(),
-                image.height(),
-                image::ColorType::Rgba8,
-            ).ok()?;
-            
+            encoder
+                .encode(
+                    image.as_raw(),
+                    image.width(),
+                    image.height(),
+                    image::ColorType::Rgba8,
+                )
+                .ok()?;
+
             Some(PreviewResult {
                 file_size: buffer.len(),
                 preview_image: image.clone(),
@@ -561,7 +625,7 @@ pub fn generate_preview(image: &RgbaImage, format: SaveFormat, quality: u8) -> O
             // TGA - estimate size (lossless)
             // TGA with RGBA is roughly width * height * 4 + header
             let estimated_size = (image.width() * image.height() * 4) as usize + 18;
-            
+
             Some(PreviewResult {
                 file_size: estimated_size,
                 preview_image: image.clone(),
@@ -574,15 +638,17 @@ pub fn generate_preview(image: &RgbaImage, format: SaveFormat, quality: u8) -> O
             let mut cursor = Cursor::new(&mut buffer);
             let encoder = PngEncoder::new(&mut cursor);
             #[allow(deprecated)]
-            encoder.encode(
-                image.as_raw(),
-                image.width(),
-                image.height(),
-                image::ColorType::Rgba8,
-            ).ok()?;
+            encoder
+                .encode(
+                    image.as_raw(),
+                    image.width(),
+                    image.height(),
+                    image::ColorType::Rgba8,
+                )
+                .ok()?;
             // ICO overhead: ~22 bytes header + 16 bytes per entry + PNG data
             let estimated_size = buffer.len() + 38;
-            
+
             Some(PreviewResult {
                 file_size: estimated_size,
                 preview_image: image.clone(),
@@ -593,13 +659,15 @@ pub fn generate_preview(image: &RgbaImage, format: SaveFormat, quality: u8) -> O
             let mut buffer = Vec::new();
             let mut cursor = Cursor::new(&mut buffer);
             let encoder = TiffEncoder::new(&mut cursor);
-            encoder.encode(
-                image.as_raw(),
-                image.width(),
-                image.height(),
-                image::ColorType::Rgba8,
-            ).ok()?;
-            
+            encoder
+                .encode(
+                    image.as_raw(),
+                    image.width(),
+                    image.height(),
+                    image::ColorType::Rgba8,
+                )
+                .ok()?;
+
             Some(PreviewResult {
                 file_size: buffer.len(),
                 preview_image: image.clone(),
@@ -609,7 +677,7 @@ pub fn generate_preview(image: &RgbaImage, format: SaveFormat, quality: u8) -> O
             // PFE is a project format — no single-image preview needed
             // Estimate a rough size (header + raw pixels)
             let estimated_size = (image.width() * image.height() * 4) as usize + 64;
-            
+
             Some(PreviewResult {
                 file_size: estimated_size,
                 preview_image: image.clone(),
@@ -619,7 +687,7 @@ pub fn generate_preview(image: &RgbaImage, format: SaveFormat, quality: u8) -> O
             // GIF is lossy (256 colors max) — estimate size
             // Rough estimate: width * height (indexed color) + overhead
             let estimated_size = (image.width() * image.height()) as usize + 800;
-            
+
             Some(PreviewResult {
                 file_size: estimated_size,
                 preview_image: image.clone(),
@@ -631,15 +699,15 @@ pub fn generate_preview(image: &RgbaImage, format: SaveFormat, quality: u8) -> O
 /// Create a thumbnail of an image for preview display
 pub fn create_thumbnail(image: &RgbaImage, max_size: u32) -> RgbaImage {
     let (width, height) = image.dimensions();
-    
+
     if width <= max_size && height <= max_size {
         return image.clone();
     }
-    
+
     let scale = (max_size as f32 / width.max(height) as f32).min(1.0);
     let new_width = ((width as f32 * scale) as u32).max(1);
     let new_height = ((height as f32 * scale) as u32).max(1);
-    
+
     image::imageops::resize(image, new_width, new_height, FilterType::Triangle)
 }
 
@@ -687,30 +755,30 @@ pub struct SaveFileDialog {
     quality: u8,
     tiff_compression: TiffCompression,
     target_directory: Option<PathBuf>,
-    
+
     // Preview state
     source_thumbnail: Option<RgbaImage>,
-    source_dimensions: (u32, u32),      // Full source image dimensions
+    source_dimensions: (u32, u32), // Full source image dimensions
     preview_texture: Option<TextureHandle>,
-    preview_file_size: usize,           // Thumbnail-based file size
-    estimated_full_size: usize,         // Estimated full-resolution file size
+    preview_file_size: usize,   // Thumbnail-based file size
+    estimated_full_size: usize, // Estimated full-resolution file size
     last_preview_format: SaveFormat,
     last_preview_quality: u8,
     needs_preview_update: bool,
-    
+
     // Animation options
-    animated: bool,                      // "Animated" checkbox
-    animation_fps: f32,                  // FPS slider (1–60, default 10)
-    gif_colors: u16,                     // GIF color count (2–256, default 256)
-    gif_dither: bool,                    // GIF dithering toggle
-    layer_count: usize,                  // number of layers/frames available
-    was_animated: bool,                  // whether source was animated on import
-    
+    animated: bool,     // "Animated" checkbox
+    animation_fps: f32, // FPS slider (1–60, default 10)
+    gif_colors: u16,    // GIF color count (2–256, default 256)
+    gif_dither: bool,   // GIF dithering toggle
+    layer_count: usize, // number of layers/frames available
+    was_animated: bool, // whether source was animated on import
+
     // Animation preview playback
-    anim_playing: bool,                  // play/pause state
-    anim_current_frame: usize,           // which frame is displayed (0-based)
-    anim_last_frame_time: f64,           // timestamp of last frame advance
-    frame_thumbnails: Vec<RgbaImage>,    // per-frame thumbnails
+    anim_playing: bool,                         // play/pause state
+    anim_current_frame: usize,                  // which frame is displayed (0-based)
+    anim_last_frame_time: f64,                  // timestamp of last frame advance
+    frame_thumbnails: Vec<RgbaImage>,           // per-frame thumbnails
     frame_textures: Vec<Option<TextureHandle>>, // cached per-frame textures
 }
 
@@ -771,7 +839,7 @@ impl SaveFileDialog {
         self.frame_thumbnails.clear();
         self.frame_textures.clear();
     }
-    
+
     /// Set the source image for preview generation
     /// Creates a thumbnail for efficient preview rendering
     pub fn set_source_image(&mut self, image: &RgbaImage) {
@@ -834,30 +902,27 @@ impl SaveFileDialog {
         self.target_directory = path.parent().map(|p| p.to_path_buf());
         self.needs_preview_update = true;
     }
-    
+
     /// Update preview if settings have changed
     fn update_preview_if_needed(&mut self, ctx: &egui::Context) {
         // Check if we need to regenerate
-        let settings_changed = self.format != self.last_preview_format 
+        let settings_changed = self.format != self.last_preview_format
             || (self.format.supports_quality() && self.quality != self.last_preview_quality);
-        
+
         if !self.needs_preview_update && !settings_changed {
             return;
         }
-        
+
         if let Some(thumbnail) = &self.source_thumbnail {
             let thumb_w = thumbnail.width();
             let thumb_h = thumbnail.height();
             if let Some(preview_result) = generate_preview(thumbnail, self.format, self.quality) {
                 // Update texture
                 let color_image = rgba_to_color_image(&preview_result.preview_image);
-                self.preview_texture = Some(ctx.load_texture(
-                    "save_preview",
-                    color_image,
-                    TextureOptions::LINEAR,
-                ));
+                self.preview_texture =
+                    Some(ctx.load_texture("save_preview", color_image, TextureOptions::LINEAR));
                 self.preview_file_size = preview_result.file_size;
-                
+
                 // Estimate full-resolution file size by scaling from thumbnail ratio
                 let (fw, fh) = self.source_dimensions;
                 let full_pixels = fw as f64 * fh as f64;
@@ -870,12 +935,12 @@ impl SaveFileDialog {
                 }
             }
         }
-        
+
         self.last_preview_format = self.format;
         self.last_preview_quality = self.quality;
         self.needs_preview_update = false;
     }
-    
+
     /// Format file size for display
     fn format_file_size(bytes: usize) -> String {
         if bytes < 1024 {
@@ -889,7 +954,9 @@ impl SaveFileDialog {
 
     /// Show the dialog and return SaveAction if user confirms
     pub fn show(&mut self, ctx: &egui::Context) -> Option<SaveAction> {
-        use crate::ops::dialogs::{DialogColors, paint_dialog_header, section_label, accent_separator};
+        use crate::ops::dialogs::{
+            DialogColors, accent_separator, paint_dialog_header, section_label,
+        };
 
         let mut result = None;
         let mut should_close = false;
@@ -907,7 +974,8 @@ impl SaveFileDialog {
                 let now = ctx.input(|i| i.time);
                 let frame_duration = 1.0 / self.animation_fps as f64;
                 if now - self.anim_last_frame_time >= frame_duration {
-                    self.anim_current_frame = (self.anim_current_frame + 1) % self.frame_thumbnails.len();
+                    self.anim_current_frame =
+                        (self.anim_current_frame + 1) % self.frame_thumbnails.len();
                     self.anim_last_frame_time = now;
                 }
                 ctx.request_repaint();
@@ -915,7 +983,7 @@ impl SaveFileDialog {
 
             // Keyboard: Enter = Save (opens native picker), Esc = Cancel
             let enter = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
-            let esc   = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+            let esc = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
             if esc {
                 should_close = true;
             }
