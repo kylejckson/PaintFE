@@ -126,7 +126,11 @@ impl ShapeFillMode {
         }
     }
     pub fn all() -> &'static [ShapeFillMode] {
-        &[ShapeFillMode::Outline, ShapeFillMode::Filled, ShapeFillMode::Both]
+        &[
+            ShapeFillMode::Outline,
+            ShapeFillMode::Filled,
+            ShapeFillMode::Both,
+        ]
     }
 }
 
@@ -273,7 +277,12 @@ fn sdf_arrow(px: f32, py: f32, hx: f32, hy: f32) -> f32 {
 
     if px < head_x {
         // Shaft region
-        sdf_box(px - (-hx + shaft_w) * 0.5, py, shaft_w * 0.5 + hx * 0.25, shaft_h)
+        sdf_box(
+            px - (-hx + shaft_w) * 0.5,
+            py,
+            shaft_w * 0.5 + hx * 0.25,
+            shaft_h,
+        )
     } else {
         // Arrowhead triangle: tip at (hx, 0), base at (head_x, +-hy)
         let tx = px - head_x;
@@ -310,9 +319,9 @@ fn sdf_heart(px: f32, py: f32, hx: f32, hy: f32) -> f32 {
     // The implicit heart curve occupies roughly:
     //   x ∈ [-1.0, 1.0],  y ∈ [-1.16, 1.05]
     // Shift the heart downward ~30% so the top bumps don't clip.
-    const EXTENT_X: f32 = 1.0;   // half-width of the curve
-    const EXTENT_Y: f32 = 1.20;  // slightly enlarged to give headroom
-    const CENTRE_Y: f32 = 0.20;  // push heart down in normalised space
+    const EXTENT_X: f32 = 1.0; // half-width of the curve
+    const EXTENT_Y: f32 = 1.20; // slightly enlarged to give headroom
+    const CENTRE_Y: f32 = 0.20; // push heart down in normalised space
 
     // Uniform scale: fit the full heart inside whichever axis is tighter
     let scale = (hx / EXTENT_X).min(hy / EXTENT_Y);
@@ -344,8 +353,9 @@ fn sdf_heart(px: f32, py: f32, hx: f32, hy: f32) -> f32 {
         for i in 0..=steps {
             let t = std::f32::consts::PI * i as f32 / steps as f32;
             let bx = t.sin().powi(3);
-            let by = (13.0 * t.cos() - 5.0 * (2.0 * t).cos()
-                      - 2.0 * (3.0 * t).cos() - (4.0 * t).cos()) / 16.0;
+            let by =
+                (13.0 * t.cos() - 5.0 * (2.0 * t).cos() - 2.0 * (3.0 * t).cos() - (4.0 * t).cos())
+                    / 16.0;
             let ddx = nx - bx;
             let ddy = ny - by;
             min_d2 = min_d2.min(ddx * ddx + ddy * ddy);
@@ -378,7 +388,8 @@ fn sdf_trapezoid(px: f32, py: f32, hx: f32, hy: f32) -> f32 {
         let slope_dx = bot_hw - top_hw;
         let slope_dy = 2.0 * hy;
         let slope_len = (slope_dx * slope_dx + slope_dy * slope_dy).sqrt();
-        let dist_to_slant = (px.abs() * slope_dy - (py + hy) * slope_dx - top_hw * slope_dy) / slope_len;
+        let dist_to_slant =
+            (px.abs() * slope_dy - (py + hy) * slope_dx - top_hw * slope_dy) / slope_len;
         dx.max(dy_top).max(dy_bot).max(dist_to_slant)
     } else {
         // Outside
@@ -415,9 +426,9 @@ fn sdf_parallelogram(px: f32, py: f32, hx: f32, hy: f32) -> f32 {
 fn sdf_right_triangle(px: f32, py: f32, hx: f32, hy: f32) -> f32 {
     // Use general polygon SDF for 3 vertices (CCW winding)
     let verts: [(f32, f32); 3] = [
-        (-hx,  hy),  // bottom-left  (right angle)
-        ( hx,  hy),  // bottom-right
-        (-hx, -hy),  // top-left
+        (-hx, hy),  // bottom-left  (right angle)
+        (hx, hy),   // bottom-right
+        (-hx, -hy), // top-left
     ];
     sdf_convex_polygon(&verts, px, py)
 }
@@ -584,81 +595,95 @@ pub fn rasterize_shape(
     let cx = placed.cx;
     let cy = placed.cy;
 
-    buf.par_chunks_mut(row_bytes).enumerate().for_each(|(row, row_buf)| {
-        let py_canvas = (y0 + row as i32) as f32 + 0.5;
-        for col in 0..buf_w as usize {
-            let px_canvas = (x0 + col as i32) as f32 + 0.5;
+    buf.par_chunks_mut(row_bytes)
+        .enumerate()
+        .for_each(|(row, row_buf)| {
+            let py_canvas = (y0 + row as i32) as f32 + 0.5;
+            for col in 0..buf_w as usize {
+                let px_canvas = (x0 + col as i32) as f32 + 0.5;
 
-            // Transform to shape-local coordinates (inverse rotate around center)
-            let dx = px_canvas - cx;
-            let dy = py_canvas - cy;
-            let lx = dx * inv_cos - dy * inv_sin;
-            let ly = dx * inv_sin + dy * inv_cos;
+                // Transform to shape-local coordinates (inverse rotate around center)
+                let dx = px_canvas - cx;
+                let dy = py_canvas - cy;
+                let lx = dx * inv_cos - dy * inv_sin;
+                let ly = dx * inv_sin + dy * inv_cos;
 
-            let d = shape_sdf(kind, lx, ly, hx, hy, corner_radius);
+                let d = shape_sdf(kind, lx, ly, hx, hy, corner_radius);
 
-            let (color, coverage) = match fill_mode {
-                ShapeFillMode::Filled => {
-                    let cov = if aa {
-                        smoothstep(0.5, -0.5, d)
-                    } else {
-                        if d < 0.0 { 1.0 } else { 0.0 }
-                    };
-                    (primary, cov)
-                }
-                ShapeFillMode::Outline => {
-                    let band = d.abs() - outline_half;
-                    let cov = if aa {
-                        smoothstep(0.5, -0.5, band)
-                    } else {
-                        if band < 0.0 { 1.0 } else { 0.0 }
-                    };
-                    (primary, cov)
-                }
-                ShapeFillMode::Both => {
-                    // Fill interior with secondary, outline with primary
-                    let fill_cov = if aa {
-                        smoothstep(0.5, -0.5, d)
-                    } else {
-                        if d < 0.0 { 1.0 } else { 0.0 }
-                    };
-                    let band = d.abs() - outline_half;
-                    let outline_cov = if aa {
-                        smoothstep(0.5, -0.5, band)
-                    } else {
-                        if band < 0.0 { 1.0 } else { 0.0 }
-                    };
-
-                    if outline_cov > 0.001 {
-                        // Outline on top
-                        let oa = outline_cov;
-                        let fa = fill_cov * (1.0 - oa);
-                        let total_a = oa + fa;
-                        if total_a > 0.0 {
-                            let r = (primary[0] as f32 * oa + secondary[0] as f32 * fa) / total_a;
-                            let g = (primary[1] as f32 * oa + secondary[1] as f32 * fa) / total_a;
-                            let b = (primary[2] as f32 * oa + secondary[2] as f32 * fa) / total_a;
-                            let a = (primary[3] as f32 * oa + secondary[3] as f32 * fa) / total_a;
-                            ([r as u8, g as u8, b as u8, a as u8], total_a)
+                let (color, coverage) = match fill_mode {
+                    ShapeFillMode::Filled => {
+                        let cov = if aa {
+                            smoothstep(0.5, -0.5, d)
+                        } else if d < 0.0 {
+                            1.0
                         } else {
-                            ([0, 0, 0, 0], 0.0)
-                        }
-                    } else {
-                        (secondary, fill_cov)
+                            0.0
+                        };
+                        (primary, cov)
                     }
-                }
-            };
+                    ShapeFillMode::Outline => {
+                        let band = d.abs() - outline_half;
+                        let cov = if aa {
+                            smoothstep(0.5, -0.5, band)
+                        } else if band < 0.0 {
+                            1.0
+                        } else {
+                            0.0
+                        };
+                        (primary, cov)
+                    }
+                    ShapeFillMode::Both => {
+                        // Fill interior with secondary, outline with primary
+                        let fill_cov = if aa {
+                            smoothstep(0.5, -0.5, d)
+                        } else if d < 0.0 {
+                            1.0
+                        } else {
+                            0.0
+                        };
+                        let band = d.abs() - outline_half;
+                        let outline_cov = if aa {
+                            smoothstep(0.5, -0.5, band)
+                        } else if band < 0.0 {
+                            1.0
+                        } else {
+                            0.0
+                        };
 
-            if coverage > 0.001 {
-                let idx = col * 4;
-                let a = (color[3] as f32 * coverage).round().min(255.0) as u8;
-                row_buf[idx] = color[0];
-                row_buf[idx + 1] = color[1];
-                row_buf[idx + 2] = color[2];
-                row_buf[idx + 3] = a;
+                        if outline_cov > 0.001 {
+                            // Outline on top
+                            let oa = outline_cov;
+                            let fa = fill_cov * (1.0 - oa);
+                            let total_a = oa + fa;
+                            if total_a > 0.0 {
+                                let r =
+                                    (primary[0] as f32 * oa + secondary[0] as f32 * fa) / total_a;
+                                let g =
+                                    (primary[1] as f32 * oa + secondary[1] as f32 * fa) / total_a;
+                                let b =
+                                    (primary[2] as f32 * oa + secondary[2] as f32 * fa) / total_a;
+                                let a =
+                                    (primary[3] as f32 * oa + secondary[3] as f32 * fa) / total_a;
+                                ([r as u8, g as u8, b as u8, a as u8], total_a)
+                            } else {
+                                ([0, 0, 0, 0], 0.0)
+                            }
+                        } else {
+                            (secondary, fill_cov)
+                        }
+                    }
+                };
+
+                if coverage > 0.001 {
+                    let idx = col * 4;
+                    let a = (color[3] as f32 * coverage).round().min(255.0) as u8;
+                    row_buf[idx] = color[0];
+                    row_buf[idx + 1] = color[1];
+                    row_buf[idx + 2] = color[2];
+                    row_buf[idx + 3] = a;
+                }
             }
-        }
-    });
+        });
 
     (buf, buf_w, buf_h, x0, y0)
 }
@@ -730,59 +755,89 @@ pub fn rasterize_shape_into(
     let cx = placed.cx;
     let cy = placed.cy;
 
-    buf.par_chunks_mut(row_bytes).enumerate().for_each(|(row, row_buf)| {
-        let py_canvas = (y0 + row as i32) as f32 + 0.5;
-        for col in 0..buf_w as usize {
-            let px_canvas = (x0 + col as i32) as f32 + 0.5;
-            let dx = px_canvas - cx;
-            let dy = py_canvas - cy;
-            let lx = dx * inv_cos - dy * inv_sin;
-            let ly = dx * inv_sin + dy * inv_cos;
-            let d = shape_sdf(kind, lx, ly, hx, hy, corner_radius);
+    buf.par_chunks_mut(row_bytes)
+        .enumerate()
+        .for_each(|(row, row_buf)| {
+            let py_canvas = (y0 + row as i32) as f32 + 0.5;
+            for col in 0..buf_w as usize {
+                let px_canvas = (x0 + col as i32) as f32 + 0.5;
+                let dx = px_canvas - cx;
+                let dy = py_canvas - cy;
+                let lx = dx * inv_cos - dy * inv_sin;
+                let ly = dx * inv_sin + dy * inv_cos;
+                let d = shape_sdf(kind, lx, ly, hx, hy, corner_radius);
 
-            let (color, coverage) = match fill_mode {
-                ShapeFillMode::Filled => {
-                    let cov = if aa { smoothstep(0.5, -0.5, d) } else { if d < 0.0 { 1.0 } else { 0.0 } };
-                    (primary, cov)
-                }
-                ShapeFillMode::Outline => {
-                    let band = d.abs() - outline_half;
-                    let cov = if aa { smoothstep(0.5, -0.5, band) } else { if band < 0.0 { 1.0 } else { 0.0 } };
-                    (primary, cov)
-                }
-                ShapeFillMode::Both => {
-                    let fill_cov = if aa { smoothstep(0.5, -0.5, d) } else { if d < 0.0 { 1.0 } else { 0.0 } };
-                    let band = d.abs() - outline_half;
-                    let outline_cov = if aa { smoothstep(0.5, -0.5, band) } else { if band < 0.0 { 1.0 } else { 0.0 } };
-                    if outline_cov > 0.001 {
-                        let oa = outline_cov;
-                        let fa = fill_cov * (1.0 - oa);
-                        let total_a = oa + fa;
-                        if total_a > 0.0 {
-                            let r = (primary[0] as f32 * oa + secondary[0] as f32 * fa) / total_a;
-                            let g = (primary[1] as f32 * oa + secondary[1] as f32 * fa) / total_a;
-                            let b = (primary[2] as f32 * oa + secondary[2] as f32 * fa) / total_a;
-                            let a = (primary[3] as f32 * oa + secondary[3] as f32 * fa) / total_a;
-                            ([r as u8, g as u8, b as u8, a as u8], total_a)
+                let (color, coverage) = match fill_mode {
+                    ShapeFillMode::Filled => {
+                        let cov = if aa {
+                            smoothstep(0.5, -0.5, d)
+                        } else if d < 0.0 {
+                            1.0
                         } else {
-                            ([0, 0, 0, 0], 0.0)
-                        }
-                    } else {
-                        (secondary, fill_cov)
+                            0.0
+                        };
+                        (primary, cov)
                     }
-                }
-            };
+                    ShapeFillMode::Outline => {
+                        let band = d.abs() - outline_half;
+                        let cov = if aa {
+                            smoothstep(0.5, -0.5, band)
+                        } else if band < 0.0 {
+                            1.0
+                        } else {
+                            0.0
+                        };
+                        (primary, cov)
+                    }
+                    ShapeFillMode::Both => {
+                        let fill_cov = if aa {
+                            smoothstep(0.5, -0.5, d)
+                        } else if d < 0.0 {
+                            1.0
+                        } else {
+                            0.0
+                        };
+                        let band = d.abs() - outline_half;
+                        let outline_cov = if aa {
+                            smoothstep(0.5, -0.5, band)
+                        } else if band < 0.0 {
+                            1.0
+                        } else {
+                            0.0
+                        };
+                        if outline_cov > 0.001 {
+                            let oa = outline_cov;
+                            let fa = fill_cov * (1.0 - oa);
+                            let total_a = oa + fa;
+                            if total_a > 0.0 {
+                                let r =
+                                    (primary[0] as f32 * oa + secondary[0] as f32 * fa) / total_a;
+                                let g =
+                                    (primary[1] as f32 * oa + secondary[1] as f32 * fa) / total_a;
+                                let b =
+                                    (primary[2] as f32 * oa + secondary[2] as f32 * fa) / total_a;
+                                let a =
+                                    (primary[3] as f32 * oa + secondary[3] as f32 * fa) / total_a;
+                                ([r as u8, g as u8, b as u8, a as u8], total_a)
+                            } else {
+                                ([0, 0, 0, 0], 0.0)
+                            }
+                        } else {
+                            (secondary, fill_cov)
+                        }
+                    }
+                };
 
-            if coverage > 0.001 {
-                let idx = col * 4;
-                let a = (color[3] as f32 * coverage).round().min(255.0) as u8;
-                row_buf[idx] = color[0];
-                row_buf[idx + 1] = color[1];
-                row_buf[idx + 2] = color[2];
-                row_buf[idx + 3] = a;
+                if coverage > 0.001 {
+                    let idx = col * 4;
+                    let a = (color[3] as f32 * coverage).round().min(255.0) as u8;
+                    row_buf[idx] = color[0];
+                    row_buf[idx + 1] = color[1];
+                    row_buf[idx + 2] = color[2];
+                    row_buf[idx + 3] = a;
+                }
             }
-        }
-    });
+        });
 
     (buf_w, buf_h, x0, y0)
 }

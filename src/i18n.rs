@@ -41,21 +41,66 @@ pub fn init() {
     let mut translations: HashMap<String, HashMap<String, String>> = HashMap::new();
 
     // Parse all embedded translation files
-    translations.insert("en".to_string(), parse_translations(include_str!("../locales/en.txt")));
-    translations.insert("es".to_string(), parse_translations(include_str!("../locales/es.txt")));
-    translations.insert("fr".to_string(), parse_translations(include_str!("../locales/fr.txt")));
-    translations.insert("de".to_string(), parse_translations(include_str!("../locales/de.txt")));
-    translations.insert("pt".to_string(), parse_translations(include_str!("../locales/pt.txt")));
-    translations.insert("it".to_string(), parse_translations(include_str!("../locales/it.txt")));
-    translations.insert("ja".to_string(), parse_translations(include_str!("../locales/ja.txt")));
-    translations.insert("zh-CN".to_string(), parse_translations(include_str!("../locales/zh-CN.txt")));
-    translations.insert("zh-TW".to_string(), parse_translations(include_str!("../locales/zh-TW.txt")));
-    translations.insert("ru".to_string(), parse_translations(include_str!("../locales/ru.txt")));
-    translations.insert("nl".to_string(), parse_translations(include_str!("../locales/nl.txt")));
-    translations.insert("pl".to_string(), parse_translations(include_str!("../locales/pl.txt")));
-    translations.insert("tr".to_string(), parse_translations(include_str!("../locales/tr.txt")));
-    translations.insert("be".to_string(), parse_translations(include_str!("../locales/be.txt")));
-    translations.insert("fe".to_string(), parse_translations(include_str!("../locales/fe.txt")));
+    translations.insert(
+        "en".to_string(),
+        parse_translations(include_str!("../locales/en.txt")),
+    );
+    translations.insert(
+        "es".to_string(),
+        parse_translations(include_str!("../locales/es.txt")),
+    );
+    translations.insert(
+        "fr".to_string(),
+        parse_translations(include_str!("../locales/fr.txt")),
+    );
+    translations.insert(
+        "de".to_string(),
+        parse_translations(include_str!("../locales/de.txt")),
+    );
+    translations.insert(
+        "pt".to_string(),
+        parse_translations(include_str!("../locales/pt.txt")),
+    );
+    translations.insert(
+        "it".to_string(),
+        parse_translations(include_str!("../locales/it.txt")),
+    );
+    translations.insert(
+        "ja".to_string(),
+        parse_translations(include_str!("../locales/ja.txt")),
+    );
+    translations.insert(
+        "zh-CN".to_string(),
+        parse_translations(include_str!("../locales/zh-CN.txt")),
+    );
+    translations.insert(
+        "zh-TW".to_string(),
+        parse_translations(include_str!("../locales/zh-TW.txt")),
+    );
+    translations.insert(
+        "ru".to_string(),
+        parse_translations(include_str!("../locales/ru.txt")),
+    );
+    translations.insert(
+        "nl".to_string(),
+        parse_translations(include_str!("../locales/nl.txt")),
+    );
+    translations.insert(
+        "pl".to_string(),
+        parse_translations(include_str!("../locales/pl.txt")),
+    );
+    translations.insert(
+        "tr".to_string(),
+        parse_translations(include_str!("../locales/tr.txt")),
+    );
+    translations.insert(
+        "be".to_string(),
+        parse_translations(include_str!("../locales/be.txt")),
+    );
+    translations.insert(
+        "fe".to_string(),
+        parse_translations(include_str!("../locales/fe.txt")),
+    );
 
     let state = I18nState {
         current_lang: "en".to_string(),
@@ -66,23 +111,23 @@ pub fn init() {
 
 /// Set the active language. If `code` is not a known language, falls back to "en".
 pub fn set_language(code: &str) {
-    if let Ok(mut guard) = I18N.lock() {
-        if let Some(ref mut state) = *guard {
-            if state.translations.contains_key(code) {
-                state.current_lang = code.to_string();
-            } else {
-                state.current_lang = "en".to_string();
-            }
+    if let Ok(mut guard) = I18N.lock()
+        && let Some(ref mut state) = *guard
+    {
+        if state.translations.contains_key(code) {
+            state.current_lang = code.to_string();
+        } else {
+            state.current_lang = "en".to_string();
         }
     }
 }
 
 /// Get the current language code.
 pub fn current_language() -> String {
-    if let Ok(guard) = I18N.lock() {
-        if let Some(ref state) = *guard {
-            return state.current_lang.clone();
-        }
+    if let Ok(guard) = I18N.lock()
+        && let Some(ref state) = *guard
+    {
+        return state.current_lang.clone();
     }
     "en".to_string()
 }
@@ -90,22 +135,21 @@ pub fn current_language() -> String {
 /// Look up a translation key. Returns the translated string if found,
 /// or falls back to English, or returns the key itself as last resort.
 pub fn translate(key: &str) -> String {
-    if let Ok(guard) = I18N.lock() {
-        if let Some(ref state) = *guard {
-            // Try current language
-            if let Some(map) = state.translations.get(&state.current_lang) {
-                if let Some(val) = map.get(key) {
-                    return val.clone();
-                }
-            }
-            // Fallback to English
-            if state.current_lang != "en" {
-                if let Some(map) = state.translations.get("en") {
-                    if let Some(val) = map.get(key) {
-                        return val.clone();
-                    }
-                }
-            }
+    if let Ok(guard) = I18N.lock()
+        && let Some(ref state) = *guard
+    {
+        // Try current language
+        if let Some(map) = state.translations.get(&state.current_lang)
+            && let Some(val) = map.get(key)
+        {
+            return val.clone();
+        }
+        // Fallback to English
+        if state.current_lang != "en"
+            && let Some(map) = state.translations.get("en")
+            && let Some(val) = map.get(key)
+        {
+            return val.clone();
         }
     }
     // Last resort: return the key itself
@@ -125,10 +169,10 @@ pub fn detect_system_language() -> String {
 
     // Try LANG / LC_ALL environment variables (Linux/macOS, sometimes set on Windows)
     for var in &["LANG", "LC_ALL", "LC_MESSAGES", "LANGUAGE"] {
-        if let Ok(val) = std::env::var(var) {
-            if let Some(lang) = match_system_locale(&val) {
-                return lang;
-            }
+        if let Ok(val) = std::env::var(var)
+            && let Some(lang) = match_system_locale(&val)
+        {
+            return lang;
         }
     }
 
@@ -142,10 +186,7 @@ fn detect_windows_language() -> Option<String> {
 
     // Use GetUserDefaultLocaleName
     unsafe extern "system" {
-        fn GetUserDefaultLocaleName(
-            lp_locale_name: *mut u16,
-            cch_locale_name: i32,
-        ) -> i32;
+        fn GetUserDefaultLocaleName(lp_locale_name: *mut u16, cch_locale_name: i32) -> i32;
     }
 
     let mut buf = [0u16; 85]; // LOCALE_NAME_MAX_LENGTH

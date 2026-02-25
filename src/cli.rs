@@ -18,9 +18,9 @@ use std::time::Instant;
 
 use clap::Parser;
 
-use crate::io::{load_image_sync, encode_and_write, save_pfe};
 use crate::components::dialogs::{SaveFormat, TiffCompression};
-use crate::ops::scripting::{execute_script_sync, apply_canvas_ops};
+use crate::io::{encode_and_write, load_image_sync, save_pfe};
+use crate::ops::scripting::{apply_canvas_ops, execute_script_sync};
 
 // ============================================================================
 // CLI argument definition (clap Derive)
@@ -119,37 +119,33 @@ pub fn run(args: CliArgs) -> ExitCode {
     // Parse format and compression settings
     let save_format = parse_format(args.format.as_deref(), args.output.as_deref());
     let tiff_compression = match args.tiff_compression.to_lowercase().as_str() {
-        "lzw"     => TiffCompression::Lzw,
+        "lzw" => TiffCompression::Lzw,
         "deflate" => TiffCompression::Deflate,
-        _         => TiffCompression::None,
+        _ => TiffCompression::None,
     };
 
     // Load script source if provided
     let script_source: Option<String> = match &args.script {
-        Some(path) => {
-            match std::fs::read_to_string(path) {
-                Ok(src) => Some(src),
-                Err(e) => {
-                    eprintln!(
-                        "error: could not read script '{}': {}",
-                        path.display(), e
-                    );
-                    return ExitCode::FAILURE;
-                }
+        Some(path) => match std::fs::read_to_string(path) {
+            Ok(src) => Some(src),
+            Err(e) => {
+                eprintln!("error: could not read script '{}': {}", path.display(), e);
+                return ExitCode::FAILURE;
             }
-        }
+        },
         None => None,
     };
 
     // Create output directory if specified
-    if let Some(dir) = &args.output_dir {
-        if let Err(e) = std::fs::create_dir_all(dir) {
-            eprintln!(
-                "error: could not create output directory '{}': {}",
-                dir.display(), e
-            );
-            return ExitCode::FAILURE;
-        }
+    if let Some(dir) = &args.output_dir
+        && let Err(e) = std::fs::create_dir_all(dir)
+    {
+        eprintln!(
+            "error: could not create output directory '{}': {}",
+            dir.display(),
+            e
+        );
+        return ExitCode::FAILURE;
     }
 
     let total = inputs.len();
@@ -207,7 +203,11 @@ pub fn run(args: CliArgs) -> ExitCode {
         }
     }
 
-    if any_failure { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+    if any_failure {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
 }
 
 // ============================================================================
@@ -215,27 +215,28 @@ pub fn run(args: CliArgs) -> ExitCode {
 // ============================================================================
 
 fn run_one(
-    input:            &Path,
-    output:           &Path,
-    script:           Option<&str>,
-    format:           SaveFormat,
-    quality:          u8,
+    input: &Path,
+    output: &Path,
+    script: Option<&str>,
+    format: SaveFormat,
+    quality: u8,
     tiff_compression: TiffCompression,
-    flatten:          bool,
-    verbose:          bool,
+    flatten: bool,
+    verbose: bool,
 ) -> Result<(), String> {
     // -- Step 1: Load ----------------------------------------------------
-    let mut state = load_image_sync(input)
-        .map_err(|e| format!("load failed: {}", e))?;
+    let mut state = load_image_sync(input).map_err(|e| format!("load failed: {}", e))?;
 
     // -- Step 2: Apply script (optional) ---------------------------------
     if let Some(src) = script {
         let layer_idx = state.active_layer_index;
-        let flat  = state.layers[layer_idx].pixels
-            .extract_region_rgba(0, 0, state.width, state.height);
-        let w     = state.width;
-        let h     = state.height;
-        let mask  = state.selection_mask.as_ref().map(|m| m.as_raw().clone());
+        let flat =
+            state.layers[layer_idx]
+                .pixels
+                .extract_region_rgba(0, 0, state.width, state.height);
+        let w = state.width;
+        let h = state.height;
+        let mask = state.selection_mask.as_ref().map(|m| m.as_raw().clone());
 
         let (result_pixels, new_w, new_h, console_output, canvas_ops) =
             execute_script_sync(src, flat, w, h, mask)
@@ -250,8 +251,7 @@ fn run_one(
         // Apply result to the active layer
         let result_img = image::RgbaImage::from_raw(new_w, new_h, result_pixels)
             .ok_or_else(|| "script produced invalid pixel dimensions".to_string())?;
-        state.layers[layer_idx].pixels =
-            crate::canvas::TiledImage::from_rgba_image(&result_img);
+        state.layers[layer_idx].pixels = crate::canvas::TiledImage::from_rgba_image(&result_img);
 
         if !canvas_ops.is_empty() {
             // Canvas-wide ops (resize, rotate 90°, …) — replay on all other layers.
@@ -259,7 +259,7 @@ fn run_one(
             apply_canvas_ops(&mut state, layer_idx, &canvas_ops);
         } else {
             // Layer-only ops (flip, rotate 180°) keep same dimensions.
-            state.width  = new_w;
+            state.width = new_w;
             state.height = new_h;
         }
     }
@@ -267,8 +267,7 @@ fn run_one(
     // -- Step 3: Save ----------------------------------------------------
     match format {
         SaveFormat::Pfe => {
-            save_pfe(&state, output)
-                .map_err(|e| format!("PFE save failed: {:?}", e))?;
+            save_pfe(&state, output).map_err(|e| format!("PFE save failed: {:?}", e))?;
         }
         _ => {
             let flat_img = if flatten && state.layers.len() > 1 {
@@ -277,7 +276,8 @@ fn run_one(
             } else {
                 // Use the active layer directly (single-layer or flatten disabled)
                 let layer = &state.layers[state.active_layer_index];
-                let raw = layer.pixels
+                let raw = layer
+                    .pixels
                     .extract_region_rgba(0, 0, state.width, state.height);
                 image::RgbaImage::from_raw(state.width, state.height, raw)
                     .unwrap_or_else(|| image::RgbaImage::new(state.width, state.height))
@@ -339,14 +339,14 @@ fn parse_format(format_arg: Option<&str>, output: Option<&Path>) -> SaveFormat {
     if let Some(f) = format_arg {
         return match f.to_lowercase().as_str() {
             "jpeg" | "jpg" => SaveFormat::Jpeg,
-            "webp"         => SaveFormat::Webp,
-            "bmp"          => SaveFormat::Bmp,
-            "tga"          => SaveFormat::Tga,
-            "ico"          => SaveFormat::Ico,
+            "webp" => SaveFormat::Webp,
+            "bmp" => SaveFormat::Bmp,
+            "tga" => SaveFormat::Tga,
+            "ico" => SaveFormat::Ico,
             "tiff" | "tif" => SaveFormat::Tiff,
-            "gif"          => SaveFormat::Gif,
-            "pfe"          => SaveFormat::Pfe,
-            _              => SaveFormat::Png,
+            "gif" => SaveFormat::Gif,
+            "pfe" => SaveFormat::Pfe,
+            _ => SaveFormat::Png,
         };
     }
 
@@ -359,14 +359,14 @@ fn parse_format(format_arg: Option<&str>, output: Option<&Path>) -> SaveFormat {
             .as_str()
         {
             "jpg" | "jpeg" => SaveFormat::Jpeg,
-            "webp"         => SaveFormat::Webp,
-            "bmp"          => SaveFormat::Bmp,
-            "tga"          => SaveFormat::Tga,
-            "ico"          => SaveFormat::Ico,
+            "webp" => SaveFormat::Webp,
+            "bmp" => SaveFormat::Bmp,
+            "tga" => SaveFormat::Tga,
+            "ico" => SaveFormat::Ico,
             "tiff" | "tif" => SaveFormat::Tiff,
-            "gif"          => SaveFormat::Gif,
-            "pfe"          => SaveFormat::Pfe,
-            _              => SaveFormat::Png,
+            "gif" => SaveFormat::Gif,
+            "pfe" => SaveFormat::Pfe,
+            _ => SaveFormat::Png,
         };
     }
 
@@ -381,17 +381,17 @@ fn parse_format(format_arg: Option<&str>, output: Option<&Path>) -> SaveFormat {
 /// 3. Fallback: same directory as input, same stem, new extension
 ///    (appends `_out` to stem if it would collide with the input path)
 fn build_output_path(
-    input:      &Path,
-    output:     Option<&Path>,
+    input: &Path,
+    output: Option<&Path>,
     output_dir: Option<&Path>,
-    format:     SaveFormat,
+    format: SaveFormat,
 ) -> Option<PathBuf> {
     // Explicit output path
     if let Some(out) = output {
         return Some(out.to_path_buf());
     }
 
-    let ext  = format.extension();
+    let ext = format.extension();
     let stem = input.file_stem()?.to_string_lossy().into_owned();
 
     if let Some(dir) = output_dir {

@@ -19,3 +19,4 @@ PaintFE.code-workspace
 # Local-only notes / submission guides
 NOTES.md
 TODO.md
+*.local.html

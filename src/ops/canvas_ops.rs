@@ -2,9 +2,9 @@
 // CANVAS-LEVEL OPERATIONS — add / delete / duplicate layers
 // ============================================================================
 
-use image::Rgba;
 use crate::canvas::{CanvasState, Layer};
 use crate::components::history::{HistoryManager, LayerOpCommand, LayerOperation};
+use image::Rgba;
 
 /// Use the top layer's luminance (brightness) as an alpha mask for the layer below,
 /// then remove the top layer.
@@ -40,19 +40,21 @@ pub fn merge_down_as_mask(state: &mut CanvasState, layer_idx: usize) {
     //   in between              → proportional blend toward the painted value
     let mask_luma: Vec<u8> = {
         let mask_layer = &state.layers[layer_idx];
-        (0..height).flat_map(|y| {
-            (0..width).map(move |x| {
-                let p = *mask_layer.pixels.get_pixel(x, y);
-                let r = p[0] as f32;
-                let g = p[1] as f32;
-                let b = p[2] as f32;
-                let a = p[3] as f32 / 255.0;
-                // Rec.601 perceptual luminance of the painted colour
-                let luma = 0.299 * r + 0.587 * g + 0.114 * b;
-                // Transparent pixels → white (255); opaque pixels → their luminance
-                (255.0 * (1.0 - a) + luma * a + 0.5) as u8
+        (0..height)
+            .flat_map(|y| {
+                (0..width).map(move |x| {
+                    let p = *mask_layer.pixels.get_pixel(x, y);
+                    let r = p[0] as f32;
+                    let g = p[1] as f32;
+                    let b = p[2] as f32;
+                    let a = p[3] as f32 / 255.0;
+                    // Rec.601 perceptual luminance of the painted colour
+                    let luma = 0.299 * r + 0.587 * g + 0.114 * b;
+                    // Transparent pixels → white (255); opaque pixels → their luminance
+                    (255.0 * (1.0 - a) + luma * a + 0.5) as u8
+                })
             })
-        }).collect()
+            .collect()
     };
 
     // Apply the luminance mask to the bottom layer's alpha channel.
@@ -98,7 +100,9 @@ pub fn add_layer(state: &mut CanvasState, history: &mut HistoryManager) {
 
 /// Delete the active layer (must keep at least one layer).
 pub fn delete_layer(state: &mut CanvasState, history: &mut HistoryManager) {
-    if state.layers.len() <= 1 { return; }
+    if state.layers.len() <= 1 {
+        return;
+    }
     let idx = state.active_layer_index;
     let removed = state.layers.remove(idx);
 
@@ -119,7 +123,9 @@ pub fn delete_layer(state: &mut CanvasState, history: &mut HistoryManager) {
 /// Duplicate the active layer.
 pub fn duplicate_layer(state: &mut CanvasState, history: &mut HistoryManager) {
     let idx = state.active_layer_index;
-    if idx >= state.layers.len() { return; }
+    if idx >= state.layers.len() {
+        return;
+    }
 
     let src = &state.layers[idx];
     let mut dup = Layer::new(

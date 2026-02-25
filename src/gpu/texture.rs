@@ -2,7 +2,6 @@
 // LAYER TEXTURE — GPU-side texture wrapper with partial upload support
 // ============================================================================
 
-
 /// A GPU-side texture representing a single layer's pixel data.
 ///
 /// ### Key optimisation: `update_rect`
@@ -39,7 +38,11 @@ impl LayerTexture {
 
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("LayerTexture"),
-            size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: mip_levels,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -65,7 +68,11 @@ impl LayerTexture {
                 bytes_per_row: Some(4 * width),
                 rows_per_image: Some(height),
             },
-            wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
         );
 
         // Generate mipmaps
@@ -90,7 +97,14 @@ impl LayerTexture {
             ],
         });
 
-        Self { texture, view, bind_group, width, height, mip_levels }
+        Self {
+            texture,
+            view,
+            bind_group,
+            width,
+            height,
+            mip_levels,
+        }
     }
 
     /// **Crucial optimisation**: upload only the modified rectangle.
@@ -198,7 +212,10 @@ impl MipmapPipeline {
             compilation_options: Default::default(),
         });
 
-        Self { pipeline, bind_group_layout }
+        Self {
+            pipeline,
+            bind_group_layout,
+        }
     }
 
     /// Generate mip levels 1..mip_levels from mip level 0 of the given texture.
@@ -235,8 +252,14 @@ impl MipmapPipeline {
                 label: Some("mipmap_bg"),
                 layout: &self.bind_group_layout,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&src_view) },
-                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&dst_view) },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&src_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&dst_view),
+                    },
                 ],
             });
 
@@ -247,11 +270,7 @@ impl MipmapPipeline {
                 });
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(0, &bind_group, &[]);
-                pass.dispatch_workgroups(
-                    (dst_w + 15) / 16,
-                    (dst_h + 15) / 16,
-                    1,
-                );
+                pass.dispatch_workgroups(dst_w.div_ceil(16), dst_h.div_ceil(16), 1);
             }
 
             width = dst_w;

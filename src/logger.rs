@@ -32,10 +32,10 @@ pub fn log_path() -> Option<&'static PathBuf> {
 /// Write a line to the session log.  Silently ignores I/O errors so that
 /// logging never crashes the application.
 pub fn write_line(line: &str) {
-    if let Some(mutex) = LOG_FILE.get() {
-        if let Ok(mut file) = mutex.lock() {
-            let _ = writeln!(file, "{}", line);
-        }
+    if let Some(mutex) = LOG_FILE.get()
+        && let Ok(mut file) = mutex.lock()
+    {
+        let _ = writeln!(file, "{}", line);
     }
 }
 

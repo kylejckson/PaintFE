@@ -40,7 +40,7 @@ impl TexturePool {
     /// If the pool is full for this key, the texture is simply dropped.
     pub fn release(&mut self, texture: wgpu::Texture, width: u32, height: u32, mip_levels: u32) {
         let key: PoolKey = (width, height, mip_levels);
-        let entry = self.pool.entry(key).or_insert_with(Vec::new);
+        let entry = self.pool.entry(key).or_default();
         if entry.len() < self.max_per_key {
             entry.push(texture);
         }
@@ -59,10 +59,13 @@ impl TexturePool {
 
     /// Approximate GPU memory held by pooled textures (bytes).
     pub fn pooled_memory_bytes(&self) -> usize {
-        self.pool.iter().map(|((w, h, _), textures)| {
-            let bytes_per = (*w as usize) * (*h as usize) * 4;
-            bytes_per * textures.len()
-        }).sum()
+        self.pool
+            .iter()
+            .map(|((w, h, _), textures)| {
+                let bytes_per = (*w as usize) * (*h as usize) * 4;
+                bytes_per * textures.len()
+            })
+            .sum()
     }
 }
 

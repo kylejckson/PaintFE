@@ -1,9 +1,9 @@
+use crate::ops::shapes::ShapeKind;
+use crate::theme::{AccentColors, ThemeMode, ThemePreset};
 use eframe::egui;
-use egui::{ColorImage, Color32, Sense, TextureHandle, TextureOptions, Vec2};
+use egui::{Color32, ColorImage, Sense, TextureHandle, TextureOptions, Vec2};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use crate::theme::{ThemeMode, ThemePreset, AccentColors};
-use crate::ops::shapes::ShapeKind;
 
 /// Icon identifiers for the asset system
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -371,7 +371,7 @@ impl Icon {
             Icon::UiBrushDynamics => "\u{1F3B5}",
         }
     }
-    
+
     /// Get the tooltip description for this icon (base text without keybind)
     pub fn tooltip(&self) -> &'static str {
         match self {
@@ -502,10 +502,10 @@ impl Icon {
         if base.is_empty() {
             return String::new();
         }
-        if let Some(action) = self.bindable_action() {
-            if let Some(combo) = kb.get(action) {
-                return format!("{} ({})", base, combo.display());
-            }
+        if let Some(action) = self.bindable_action()
+            && let Some(combo) = kb.get(action)
+        {
+            return format!("{} ({})", base, combo.display());
         }
         base.to_string()
     }
@@ -531,6 +531,7 @@ pub struct BrushTipData {
 }
 
 /// Asset manager for loading and caching textures
+#[derive(Default)]
 pub struct Assets {
     textures: HashMap<Icon, TextureHandle>,
     shape_textures: HashMap<ShapeKind, TextureHandle>,
@@ -557,232 +558,908 @@ pub struct Assets {
     brush_tip_icon_sizes: HashMap<String, [usize; 2]>,
 }
 
-impl Default for Assets {
-    fn default() -> Self {
-        Self {
-            textures: HashMap::new(),
-            shape_textures: HashMap::new(),
-            icon_pixels: HashMap::new(),
-            shape_pixels: HashMap::new(),
-            icon_sizes: HashMap::new(),
-            shape_sizes: HashMap::new(),
-            icons_inverted: false,
-            icons_loaded: false,
-            brush_tip_data: Vec::new(),
-            brush_tip_categories: Vec::new(),
-            brush_tip_textures: HashMap::new(),
-            brush_tip_icon_pixels: HashMap::new(),
-            brush_tip_icon_sizes: HashMap::new(),
-        }
-    }
-}
-
 impl Assets {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Initialize assets - call once during app startup with the egui context
     pub fn init(&mut self, ctx: &egui::Context) {
         // === Tool icons ===
-        self.load_icon(ctx, Icon::Brush, include_bytes!("../assets/icons/tools/brush.png"));
-        self.load_icon(ctx, Icon::Eraser, include_bytes!("../assets/icons/tools/eraser.png"));
-        self.load_icon(ctx, Icon::Pencil, include_bytes!("../assets/icons/tools/pencil.png"));
-        self.load_icon(ctx, Icon::Line, include_bytes!("../assets/icons/tools/line.png"));
-        self.load_icon(ctx, Icon::Fill, include_bytes!("../assets/icons/tools/fill.png"));
-        self.load_icon(ctx, Icon::RectSelect, include_bytes!("../assets/icons/tools/rect_select.png"));
-        self.load_icon(ctx, Icon::EllipseSelect, include_bytes!("../assets/icons/tools/ellipse_select.png"));
-        self.load_icon(ctx, Icon::Lasso, include_bytes!("../assets/icons/tools/lasso.png"));
-        self.load_icon(ctx, Icon::MagicWand, include_bytes!("../assets/icons/tools/magic_wand.png"));
-        self.load_icon(ctx, Icon::MovePixels, include_bytes!("../assets/icons/tools/move_pixels.png"));
-        self.load_icon(ctx, Icon::MoveSelection, include_bytes!("../assets/icons/tools/move_selection.png"));
-        self.load_icon(ctx, Icon::PerspectiveCrop, include_bytes!("../assets/icons/tools/perspective_crop.png"));
-        self.load_icon(ctx, Icon::ColorPicker, include_bytes!("../assets/icons/tools/color_picker.png"));
-        self.load_icon(ctx, Icon::CloneStamp, include_bytes!("../assets/icons/tools/clone_stamp.png"));
-        self.load_icon(ctx, Icon::Zoom, include_bytes!("../assets/icons/tools/zoom.png"));
-        self.load_icon(ctx, Icon::Pan, include_bytes!("../assets/icons/tools/pan.png"));
-        self.load_icon(ctx, Icon::Gradient, include_bytes!("../assets/icons/tools/gradient.png"));
-        self.load_icon(ctx, Icon::Text, include_bytes!("../assets/icons/tools/text.png"));
-        self.load_icon(ctx, Icon::ContentAwareBrush, include_bytes!("../assets/icons/tools/content_aware_brush.png"));
-        self.load_icon(ctx, Icon::Liquify, include_bytes!("../assets/icons/tools/liquify.png"));
-        self.load_icon(ctx, Icon::MeshWarp, include_bytes!("../assets/icons/tools/mesh_warp.png"));
-        self.load_icon(ctx, Icon::ColorRemover, include_bytes!("../assets/icons/tools/color_remover.png"));
-        self.load_icon(ctx, Icon::Smudge, include_bytes!("../assets/icons/tools/smudge.png"));
-        self.load_icon(ctx, Icon::Shapes, include_bytes!("../assets/icons/tools/shapes.png"));
+        self.load_icon(
+            ctx,
+            Icon::Brush,
+            include_bytes!("../assets/icons/tools/brush.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Eraser,
+            include_bytes!("../assets/icons/tools/eraser.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Pencil,
+            include_bytes!("../assets/icons/tools/pencil.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Line,
+            include_bytes!("../assets/icons/tools/line.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Fill,
+            include_bytes!("../assets/icons/tools/fill.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::RectSelect,
+            include_bytes!("../assets/icons/tools/rect_select.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::EllipseSelect,
+            include_bytes!("../assets/icons/tools/ellipse_select.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Lasso,
+            include_bytes!("../assets/icons/tools/lasso.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MagicWand,
+            include_bytes!("../assets/icons/tools/magic_wand.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MovePixels,
+            include_bytes!("../assets/icons/tools/move_pixels.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MoveSelection,
+            include_bytes!("../assets/icons/tools/move_selection.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::PerspectiveCrop,
+            include_bytes!("../assets/icons/tools/perspective_crop.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::ColorPicker,
+            include_bytes!("../assets/icons/tools/color_picker.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::CloneStamp,
+            include_bytes!("../assets/icons/tools/clone_stamp.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Zoom,
+            include_bytes!("../assets/icons/tools/zoom.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Pan,
+            include_bytes!("../assets/icons/tools/pan.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Gradient,
+            include_bytes!("../assets/icons/tools/gradient.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Text,
+            include_bytes!("../assets/icons/tools/text.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::ContentAwareBrush,
+            include_bytes!("../assets/icons/tools/content_aware_brush.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Liquify,
+            include_bytes!("../assets/icons/tools/liquify.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MeshWarp,
+            include_bytes!("../assets/icons/tools/mesh_warp.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::ColorRemover,
+            include_bytes!("../assets/icons/tools/color_remover.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Smudge,
+            include_bytes!("../assets/icons/tools/smudge.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Shapes,
+            include_bytes!("../assets/icons/tools/shapes.png"),
+        );
 
         // === UI icons ===
-        self.load_icon(ctx, Icon::Undo, include_bytes!("../assets/icons/ui/undo.png"));
-        self.load_icon(ctx, Icon::Redo, include_bytes!("../assets/icons/ui/redo.png"));
-        self.load_icon(ctx, Icon::ZoomIn, include_bytes!("../assets/icons/ui/zoom_in.png"));
-        self.load_icon(ctx, Icon::ZoomOut, include_bytes!("../assets/icons/ui/zoom_out.png"));
-        self.load_icon(ctx, Icon::ResetZoom, include_bytes!("../assets/icons/ui/reset_zoom.png"));
-        self.load_icon(ctx, Icon::Grid, include_bytes!("../assets/icons/ui/grid.png"));
-        self.load_icon(ctx, Icon::GridOn, include_bytes!("../assets/icons/ui/grid_on.png"));
-        self.load_icon(ctx, Icon::GridOff, include_bytes!("../assets/icons/ui/grid_off.png"));
-        self.load_icon(ctx, Icon::GuidesOn, include_bytes!("../assets/icons/ui/guides_on.png"));
-        self.load_icon(ctx, Icon::GuidesOff, include_bytes!("../assets/icons/ui/guides_off.png"));
-        self.load_icon(ctx, Icon::MirrorOff, include_bytes!("../assets/icons/ui/mirror_off.png"));
-        self.load_icon(ctx, Icon::MirrorH, include_bytes!("../assets/icons/ui/mirror_h.png"));
-        self.load_icon(ctx, Icon::MirrorV, include_bytes!("../assets/icons/ui/mirror_v.png"));
-        self.load_icon(ctx, Icon::MirrorQ, include_bytes!("../assets/icons/ui/mirror_q.png"));
-        self.load_icon(ctx, Icon::Settings, include_bytes!("../assets/icons/ui/settings.png"));
-        self.load_icon(ctx, Icon::Layers, include_bytes!("../assets/icons/ui/layers.png"));
-        self.load_icon(ctx, Icon::Visible, include_bytes!("../assets/icons/ui/visible.png"));
-        self.load_icon(ctx, Icon::Hidden, include_bytes!("../assets/icons/ui/hidden.png"));
+        self.load_icon(
+            ctx,
+            Icon::Undo,
+            include_bytes!("../assets/icons/ui/undo.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Redo,
+            include_bytes!("../assets/icons/ui/redo.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::ZoomIn,
+            include_bytes!("../assets/icons/ui/zoom_in.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::ZoomOut,
+            include_bytes!("../assets/icons/ui/zoom_out.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::ResetZoom,
+            include_bytes!("../assets/icons/ui/reset_zoom.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Grid,
+            include_bytes!("../assets/icons/ui/grid.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::GridOn,
+            include_bytes!("../assets/icons/ui/grid_on.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::GridOff,
+            include_bytes!("../assets/icons/ui/grid_off.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::GuidesOn,
+            include_bytes!("../assets/icons/ui/guides_on.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::GuidesOff,
+            include_bytes!("../assets/icons/ui/guides_off.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MirrorOff,
+            include_bytes!("../assets/icons/ui/mirror_off.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MirrorH,
+            include_bytes!("../assets/icons/ui/mirror_h.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MirrorV,
+            include_bytes!("../assets/icons/ui/mirror_v.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MirrorQ,
+            include_bytes!("../assets/icons/ui/mirror_q.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Settings,
+            include_bytes!("../assets/icons/ui/settings.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Layers,
+            include_bytes!("../assets/icons/ui/layers.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Visible,
+            include_bytes!("../assets/icons/ui/visible.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Hidden,
+            include_bytes!("../assets/icons/ui/hidden.png"),
+        );
         self.load_icon(ctx, Icon::New, include_bytes!("../assets/icons/ui/new.png"));
-        self.load_icon(ctx, Icon::Open, include_bytes!("../assets/icons/ui/open.png"));
-        self.load_icon(ctx, Icon::Save, include_bytes!("../assets/icons/ui/save.png"));
-        self.load_icon(ctx, Icon::Close, include_bytes!("../assets/icons/ui/close.png"));
-        self.load_icon(ctx, Icon::NewLayer, include_bytes!("../assets/icons/ui/new_layer.png"));
-        self.load_icon(ctx, Icon::Delete, include_bytes!("../assets/icons/ui/delete.png"));
-        self.load_icon(ctx, Icon::Duplicate, include_bytes!("../assets/icons/ui/duplicate.png"));
-        self.load_icon(ctx, Icon::Flatten, include_bytes!("../assets/icons/ui/flatten.png"));
-        self.load_icon(ctx, Icon::MergeDown, include_bytes!("../assets/icons/ui/merge_down.png"));
-        self.load_icon(ctx, Icon::MergeDownAsMask, include_bytes!("../assets/icons/ui/merge_down_as_mask.png"));
-        self.load_icon(ctx, Icon::Peek, include_bytes!("../assets/icons/ui/peek.png"));
-        self.load_icon(ctx, Icon::SwapColors, include_bytes!("../assets/icons/ui/swap_colors.png"));
-        self.load_icon(ctx, Icon::CopyHex, include_bytes!("../assets/icons/ui/copy_hex.png"));
-        self.load_icon(ctx, Icon::Commit, include_bytes!("../assets/icons/ui/commit.png"));
-        self.load_icon(ctx, Icon::ResetCancel, include_bytes!("../assets/icons/ui/reset_cancel.png"));
-        self.load_icon(ctx, Icon::Expand, include_bytes!("../assets/icons/ui/expand.png"));
-        self.load_icon(ctx, Icon::Collapse, include_bytes!("../assets/icons/ui/collapse.png"));
-        self.load_icon(ctx, Icon::Info, include_bytes!("../assets/icons/ui/info.png"));
-        self.load_icon(ctx, Icon::Search, include_bytes!("../assets/icons/ui/search.png"));
-        self.load_icon(ctx, Icon::ClearSearch, include_bytes!("../assets/icons/ui/clear_search.png"));
-        self.load_icon(ctx, Icon::MoveUp, include_bytes!("../assets/icons/ui/move_up.png"));
-        self.load_icon(ctx, Icon::MoveDown, include_bytes!("../assets/icons/ui/move_down.png"));
-        self.load_icon(ctx, Icon::MoveTop, include_bytes!("../assets/icons/ui/move_top.png"));
-        self.load_icon(ctx, Icon::MoveBottom, include_bytes!("../assets/icons/ui/move_bottom.png"));
-        self.load_icon(ctx, Icon::ImportLayer, include_bytes!("../assets/icons/ui/import_layer.png"));
-        self.load_icon(ctx, Icon::Rename, include_bytes!("../assets/icons/ui/rename.png"));
-        self.load_icon(ctx, Icon::LayerFlipH, include_bytes!("../assets/icons/ui/layer_flip_h.png"));
-        self.load_icon(ctx, Icon::LayerFlipV, include_bytes!("../assets/icons/ui/layer_flip_v.png"));
-        self.load_icon(ctx, Icon::LayerRotate, include_bytes!("../assets/icons/ui/layer_rotate.png"));
-        self.load_icon(ctx, Icon::LayerProperties, include_bytes!("../assets/icons/ui/layer_properties.png"));
-        self.load_icon(ctx, Icon::LayerAdd, include_bytes!("../assets/icons/ui/layer_add.png"));
-        self.load_icon(ctx, Icon::LayerDelete, include_bytes!("../assets/icons/ui/layer_delete.png"));
-        self.load_icon(ctx, Icon::LayerDuplicate, include_bytes!("../assets/icons/ui/layer_duplicate.png"));
-        self.load_icon(ctx, Icon::CurrentMarker, include_bytes!("../assets/icons/ui/current_marker.png"));
-        self.load_icon(ctx, Icon::ApplyPrimary, include_bytes!("../assets/icons/ui/apply_primary.png"));
-        self.load_icon(ctx, Icon::SoloLayer, include_bytes!("../assets/icons/ui/solo_layer.png"));
-        self.load_icon(ctx, Icon::HideAll, include_bytes!("../assets/icons/ui/hide_all.png"));
-        self.load_icon(ctx, Icon::ShowAll, include_bytes!("../assets/icons/ui/show_all.png"));
+        self.load_icon(
+            ctx,
+            Icon::Open,
+            include_bytes!("../assets/icons/ui/open.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Save,
+            include_bytes!("../assets/icons/ui/save.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Close,
+            include_bytes!("../assets/icons/ui/close.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::NewLayer,
+            include_bytes!("../assets/icons/ui/new_layer.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Delete,
+            include_bytes!("../assets/icons/ui/delete.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Duplicate,
+            include_bytes!("../assets/icons/ui/duplicate.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Flatten,
+            include_bytes!("../assets/icons/ui/flatten.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MergeDown,
+            include_bytes!("../assets/icons/ui/merge_down.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MergeDownAsMask,
+            include_bytes!("../assets/icons/ui/merge_down_as_mask.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Peek,
+            include_bytes!("../assets/icons/ui/peek.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::SwapColors,
+            include_bytes!("../assets/icons/ui/swap_colors.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::CopyHex,
+            include_bytes!("../assets/icons/ui/copy_hex.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Commit,
+            include_bytes!("../assets/icons/ui/commit.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::ResetCancel,
+            include_bytes!("../assets/icons/ui/reset_cancel.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Expand,
+            include_bytes!("../assets/icons/ui/expand.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Collapse,
+            include_bytes!("../assets/icons/ui/collapse.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Info,
+            include_bytes!("../assets/icons/ui/info.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Search,
+            include_bytes!("../assets/icons/ui/search.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::ClearSearch,
+            include_bytes!("../assets/icons/ui/clear_search.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MoveUp,
+            include_bytes!("../assets/icons/ui/move_up.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MoveDown,
+            include_bytes!("../assets/icons/ui/move_down.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MoveTop,
+            include_bytes!("../assets/icons/ui/move_top.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MoveBottom,
+            include_bytes!("../assets/icons/ui/move_bottom.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::ImportLayer,
+            include_bytes!("../assets/icons/ui/import_layer.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::Rename,
+            include_bytes!("../assets/icons/ui/rename.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::LayerFlipH,
+            include_bytes!("../assets/icons/ui/layer_flip_h.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::LayerFlipV,
+            include_bytes!("../assets/icons/ui/layer_flip_v.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::LayerRotate,
+            include_bytes!("../assets/icons/ui/layer_rotate.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::LayerProperties,
+            include_bytes!("../assets/icons/ui/layer_properties.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::LayerAdd,
+            include_bytes!("../assets/icons/ui/layer_add.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::LayerDelete,
+            include_bytes!("../assets/icons/ui/layer_delete.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::LayerDuplicate,
+            include_bytes!("../assets/icons/ui/layer_duplicate.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::CurrentMarker,
+            include_bytes!("../assets/icons/ui/current_marker.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::ApplyPrimary,
+            include_bytes!("../assets/icons/ui/apply_primary.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::SoloLayer,
+            include_bytes!("../assets/icons/ui/solo_layer.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::HideAll,
+            include_bytes!("../assets/icons/ui/hide_all.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::ShowAll,
+            include_bytes!("../assets/icons/ui/show_all.png"),
+        );
 
         // === Settings tab icons ===
-        self.load_icon(ctx, Icon::SettingsGeneral, include_bytes!("../assets/icons/ui/settings_general.png"));
-        self.load_icon(ctx, Icon::SettingsInterface, include_bytes!("../assets/icons/ui/settings_interface.png"));
-        self.load_icon(ctx, Icon::SettingsHardware, include_bytes!("../assets/icons/ui/settings_hardware.png"));
-        self.load_icon(ctx, Icon::SettingsKeybinds, include_bytes!("../assets/icons/ui/settings_keybinds.png"));
-        self.load_icon(ctx, Icon::SettingsAI, include_bytes!("../assets/icons/ui/settings_ai.png"));
+        self.load_icon(
+            ctx,
+            Icon::SettingsGeneral,
+            include_bytes!("../assets/icons/ui/settings_general.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::SettingsInterface,
+            include_bytes!("../assets/icons/ui/settings_interface.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::SettingsHardware,
+            include_bytes!("../assets/icons/ui/settings_hardware.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::SettingsKeybinds,
+            include_bytes!("../assets/icons/ui/settings_keybinds.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::SettingsAI,
+            include_bytes!("../assets/icons/ui/settings_ai.png"),
+        );
 
         // === Menu: File ===
-        self.load_icon(ctx, Icon::MenuFileNew, include_bytes!("../assets/icons/menu/file_new.png"));
-        self.load_icon(ctx, Icon::MenuFileOpen, include_bytes!("../assets/icons/menu/file_open.png"));
-        self.load_icon(ctx, Icon::MenuFileSave, include_bytes!("../assets/icons/menu/file_save.png"));
-        self.load_icon(ctx, Icon::MenuFileSaveAll, include_bytes!("../assets/icons/menu/file_save.png"));
-        self.load_icon(ctx, Icon::MenuFileSaveAs, include_bytes!("../assets/icons/menu/file_save_as.png"));
-        self.load_icon(ctx, Icon::MenuFilePrint, include_bytes!("../assets/icons/menu/file_print.png"));
-        self.load_icon(ctx, Icon::MenuFileQuit, include_bytes!("../assets/icons/menu/file_quit.png"));
+        self.load_icon(
+            ctx,
+            Icon::MenuFileNew,
+            include_bytes!("../assets/icons/menu/file_new.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFileOpen,
+            include_bytes!("../assets/icons/menu/file_open.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFileSave,
+            include_bytes!("../assets/icons/menu/file_save.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFileSaveAll,
+            include_bytes!("../assets/icons/menu/file_save.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFileSaveAs,
+            include_bytes!("../assets/icons/menu/file_save_as.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilePrint,
+            include_bytes!("../assets/icons/menu/file_print.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFileQuit,
+            include_bytes!("../assets/icons/menu/file_quit.png"),
+        );
 
         // === Menu: Edit ===
-        self.load_icon(ctx, Icon::MenuEditUndo, include_bytes!("../assets/icons/menu/edit_undo.png"));
-        self.load_icon(ctx, Icon::MenuEditRedo, include_bytes!("../assets/icons/menu/edit_redo.png"));
-        self.load_icon(ctx, Icon::MenuEditCut, include_bytes!("../assets/icons/menu/edit_cut.png"));
-        self.load_icon(ctx, Icon::MenuEditCopy, include_bytes!("../assets/icons/menu/edit_copy.png"));
-        self.load_icon(ctx, Icon::MenuEditPaste, include_bytes!("../assets/icons/menu/edit_paste.png"));
-        self.load_icon(ctx, Icon::MenuEditPasteLayer, include_bytes!("../assets/icons/menu/edit_paste_layer.png"));
-        self.load_icon(ctx, Icon::MenuEditSelectAll, include_bytes!("../assets/icons/menu/edit_select_all.png"));
-        self.load_icon(ctx, Icon::MenuEditDeselect, include_bytes!("../assets/icons/menu/edit_deselect.png"));
-        self.load_icon(ctx, Icon::MenuEditInvertSel, include_bytes!("../assets/icons/menu/edit_invert_sel.png"));
-        self.load_icon(ctx, Icon::MenuEditColorRange, include_bytes!("../assets/icons/menu/edit_color_range.png"));
-        self.load_icon(ctx, Icon::MenuEditPreferences, include_bytes!("../assets/icons/menu/edit_preferences.png"));
+        self.load_icon(
+            ctx,
+            Icon::MenuEditUndo,
+            include_bytes!("../assets/icons/menu/edit_undo.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuEditRedo,
+            include_bytes!("../assets/icons/menu/edit_redo.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuEditCut,
+            include_bytes!("../assets/icons/menu/edit_cut.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuEditCopy,
+            include_bytes!("../assets/icons/menu/edit_copy.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuEditPaste,
+            include_bytes!("../assets/icons/menu/edit_paste.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuEditPasteLayer,
+            include_bytes!("../assets/icons/menu/edit_paste_layer.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuEditSelectAll,
+            include_bytes!("../assets/icons/menu/edit_select_all.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuEditDeselect,
+            include_bytes!("../assets/icons/menu/edit_deselect.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuEditInvertSel,
+            include_bytes!("../assets/icons/menu/edit_invert_sel.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuEditColorRange,
+            include_bytes!("../assets/icons/menu/edit_color_range.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuEditPreferences,
+            include_bytes!("../assets/icons/menu/edit_preferences.png"),
+        );
 
         // === Menu: Canvas ===
-        self.load_icon(ctx, Icon::MenuCanvasResize, include_bytes!("../assets/icons/menu/canvas_resize.png"));
-        self.load_icon(ctx, Icon::MenuCanvasCrop, include_bytes!("../assets/icons/menu/canvas_crop.png"));
-        self.load_icon(ctx, Icon::MenuCanvasFlipH, include_bytes!("../assets/icons/menu/canvas_flip_h.png"));
-        self.load_icon(ctx, Icon::MenuCanvasFlipV, include_bytes!("../assets/icons/menu/canvas_flip_v.png"));
-        self.load_icon(ctx, Icon::MenuCanvasRotateCw, include_bytes!("../assets/icons/menu/canvas_rotate_cw.png"));
-        self.load_icon(ctx, Icon::MenuCanvasRotateCcw, include_bytes!("../assets/icons/menu/canvas_rotate_ccw.png"));
-        self.load_icon(ctx, Icon::MenuCanvasRotate180, include_bytes!("../assets/icons/menu/canvas_rotate_180.png"));
-        self.load_icon(ctx, Icon::MenuCanvasFlatten, include_bytes!("../assets/icons/menu/canvas_flatten.png"));
+        self.load_icon(
+            ctx,
+            Icon::MenuCanvasResize,
+            include_bytes!("../assets/icons/menu/canvas_resize.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuCanvasCrop,
+            include_bytes!("../assets/icons/menu/canvas_crop.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuCanvasFlipH,
+            include_bytes!("../assets/icons/menu/canvas_flip_h.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuCanvasFlipV,
+            include_bytes!("../assets/icons/menu/canvas_flip_v.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuCanvasRotateCw,
+            include_bytes!("../assets/icons/menu/canvas_rotate_cw.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuCanvasRotateCcw,
+            include_bytes!("../assets/icons/menu/canvas_rotate_ccw.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuCanvasRotate180,
+            include_bytes!("../assets/icons/menu/canvas_rotate_180.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuCanvasFlatten,
+            include_bytes!("../assets/icons/menu/canvas_flatten.png"),
+        );
 
         // === Menu: Color ===
-        self.load_icon(ctx, Icon::MenuColorAutoLevels, include_bytes!("../assets/icons/menu/color_auto_levels.png"));
-        self.load_icon(ctx, Icon::MenuColorDesaturate, include_bytes!("../assets/icons/menu/color_desaturate.png"));
-        self.load_icon(ctx, Icon::MenuColorInvert, include_bytes!("../assets/icons/menu/color_invert.png"));
-        self.load_icon(ctx, Icon::MenuColorInvertAlpha, include_bytes!("../assets/icons/menu/color_invert_alpha.png"));
-        self.load_icon(ctx, Icon::MenuColorSepia, include_bytes!("../assets/icons/menu/color_sepia.png"));
-        self.load_icon(ctx, Icon::MenuColorBrightness, include_bytes!("../assets/icons/menu/color_brightness.png"));
-        self.load_icon(ctx, Icon::MenuColorCurves, include_bytes!("../assets/icons/menu/color_curves.png"));
-        self.load_icon(ctx, Icon::MenuColorExposure, include_bytes!("../assets/icons/menu/color_exposure.png"));
-        self.load_icon(ctx, Icon::MenuColorHighlights, include_bytes!("../assets/icons/menu/color_highlights.png"));
-        self.load_icon(ctx, Icon::MenuColorHsl, include_bytes!("../assets/icons/menu/color_hsl.png"));
-        self.load_icon(ctx, Icon::MenuColorLevels, include_bytes!("../assets/icons/menu/color_levels.png"));
-        self.load_icon(ctx, Icon::MenuColorTemperature, include_bytes!("../assets/icons/menu/color_temperature.png"));
+        self.load_icon(
+            ctx,
+            Icon::MenuColorAutoLevels,
+            include_bytes!("../assets/icons/menu/color_auto_levels.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuColorDesaturate,
+            include_bytes!("../assets/icons/menu/color_desaturate.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuColorInvert,
+            include_bytes!("../assets/icons/menu/color_invert.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuColorInvertAlpha,
+            include_bytes!("../assets/icons/menu/color_invert_alpha.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuColorSepia,
+            include_bytes!("../assets/icons/menu/color_sepia.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuColorBrightness,
+            include_bytes!("../assets/icons/menu/color_brightness.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuColorCurves,
+            include_bytes!("../assets/icons/menu/color_curves.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuColorExposure,
+            include_bytes!("../assets/icons/menu/color_exposure.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuColorHighlights,
+            include_bytes!("../assets/icons/menu/color_highlights.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuColorHsl,
+            include_bytes!("../assets/icons/menu/color_hsl.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuColorLevels,
+            include_bytes!("../assets/icons/menu/color_levels.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuColorTemperature,
+            include_bytes!("../assets/icons/menu/color_temperature.png"),
+        );
 
         // === Menu: Filter ===
-        self.load_icon(ctx, Icon::MenuFilterBlur, include_bytes!("../assets/icons/menu/filter_blur.png"));
-        self.load_icon(ctx, Icon::MenuFilterGaussian, include_bytes!("../assets/icons/menu/filter_gaussian.png"));
-        self.load_icon(ctx, Icon::MenuFilterBokeh, include_bytes!("../assets/icons/menu/filter_bokeh.png"));
-        self.load_icon(ctx, Icon::MenuFilterMotionBlur, include_bytes!("../assets/icons/menu/filter_motion_blur.png"));
-        self.load_icon(ctx, Icon::MenuFilterBoxBlur, include_bytes!("../assets/icons/menu/filter_box_blur.png"));
-        self.load_icon(ctx, Icon::MenuFilterZoomBlur, include_bytes!("../assets/icons/menu/filter_zoom_blur.png"));
-        self.load_icon(ctx, Icon::MenuFilterSharpen, include_bytes!("../assets/icons/menu/filter_sharpen.png"));
-        self.load_icon(ctx, Icon::MenuFilterSharpenItem, include_bytes!("../assets/icons/menu/filter_sharpen_item.png"));
-        self.load_icon(ctx, Icon::MenuFilterReduceNoise, include_bytes!("../assets/icons/menu/filter_reduce_noise.png"));
-        self.load_icon(ctx, Icon::MenuFilterDistort, include_bytes!("../assets/icons/menu/filter_distort.png"));
-        self.load_icon(ctx, Icon::MenuFilterCrystallize, include_bytes!("../assets/icons/menu/filter_crystallize.png"));
-        self.load_icon(ctx, Icon::MenuFilterDents, include_bytes!("../assets/icons/menu/filter_dents.png"));
-        self.load_icon(ctx, Icon::MenuFilterPixelate, include_bytes!("../assets/icons/menu/filter_pixelate.png"));
-        self.load_icon(ctx, Icon::MenuFilterBulge, include_bytes!("../assets/icons/menu/filter_bulge.png"));
-        self.load_icon(ctx, Icon::MenuFilterTwist, include_bytes!("../assets/icons/menu/filter_twist.png"));
-        self.load_icon(ctx, Icon::MenuFilterNoise, include_bytes!("../assets/icons/menu/filter_noise.png"));
-        self.load_icon(ctx, Icon::MenuFilterAddNoise, include_bytes!("../assets/icons/menu/filter_add_noise.png"));
-        self.load_icon(ctx, Icon::MenuFilterMedian, include_bytes!("../assets/icons/menu/filter_median.png"));
-        self.load_icon(ctx, Icon::MenuFilterStylize, include_bytes!("../assets/icons/menu/filter_stylize.png"));
-        self.load_icon(ctx, Icon::MenuFilterGlow, include_bytes!("../assets/icons/menu/filter_glow.png"));
-        self.load_icon(ctx, Icon::MenuFilterVignette, include_bytes!("../assets/icons/menu/filter_vignette.png"));
-        self.load_icon(ctx, Icon::MenuFilterHalftone, include_bytes!("../assets/icons/menu/filter_halftone.png"));
-        self.load_icon(ctx, Icon::MenuFilterInk, include_bytes!("../assets/icons/menu/filter_ink.png"));
-        self.load_icon(ctx, Icon::MenuFilterOilPainting, include_bytes!("../assets/icons/menu/filter_oil_painting.png"));
-        self.load_icon(ctx, Icon::MenuFilterColorFilter, include_bytes!("../assets/icons/menu/filter_color_filter.png"));
-        self.load_icon(ctx, Icon::MenuFilterGlitch, include_bytes!("../assets/icons/menu/filter_glitch.png"));
-        self.load_icon(ctx, Icon::MenuFilterPixelDrag, include_bytes!("../assets/icons/menu/filter_pixel_drag.png"));
-        self.load_icon(ctx, Icon::MenuFilterRgbDisplace, include_bytes!("../assets/icons/menu/filter_rgb_displace.png"));
-        self.load_icon(ctx, Icon::MenuFilterRemoveBg, include_bytes!("../assets/icons/menu/filter_remove_bg.png"));
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterBlur,
+            include_bytes!("../assets/icons/menu/filter_blur.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterGaussian,
+            include_bytes!("../assets/icons/menu/filter_gaussian.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterBokeh,
+            include_bytes!("../assets/icons/menu/filter_bokeh.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterMotionBlur,
+            include_bytes!("../assets/icons/menu/filter_motion_blur.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterBoxBlur,
+            include_bytes!("../assets/icons/menu/filter_box_blur.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterZoomBlur,
+            include_bytes!("../assets/icons/menu/filter_zoom_blur.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterSharpen,
+            include_bytes!("../assets/icons/menu/filter_sharpen.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterSharpenItem,
+            include_bytes!("../assets/icons/menu/filter_sharpen_item.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterReduceNoise,
+            include_bytes!("../assets/icons/menu/filter_reduce_noise.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterDistort,
+            include_bytes!("../assets/icons/menu/filter_distort.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterCrystallize,
+            include_bytes!("../assets/icons/menu/filter_crystallize.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterDents,
+            include_bytes!("../assets/icons/menu/filter_dents.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterPixelate,
+            include_bytes!("../assets/icons/menu/filter_pixelate.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterBulge,
+            include_bytes!("../assets/icons/menu/filter_bulge.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterTwist,
+            include_bytes!("../assets/icons/menu/filter_twist.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterNoise,
+            include_bytes!("../assets/icons/menu/filter_noise.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterAddNoise,
+            include_bytes!("../assets/icons/menu/filter_add_noise.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterMedian,
+            include_bytes!("../assets/icons/menu/filter_median.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterStylize,
+            include_bytes!("../assets/icons/menu/filter_stylize.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterGlow,
+            include_bytes!("../assets/icons/menu/filter_glow.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterVignette,
+            include_bytes!("../assets/icons/menu/filter_vignette.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterHalftone,
+            include_bytes!("../assets/icons/menu/filter_halftone.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterInk,
+            include_bytes!("../assets/icons/menu/filter_ink.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterOilPainting,
+            include_bytes!("../assets/icons/menu/filter_oil_painting.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterColorFilter,
+            include_bytes!("../assets/icons/menu/filter_color_filter.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterGlitch,
+            include_bytes!("../assets/icons/menu/filter_glitch.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterPixelDrag,
+            include_bytes!("../assets/icons/menu/filter_pixel_drag.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterRgbDisplace,
+            include_bytes!("../assets/icons/menu/filter_rgb_displace.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuFilterRemoveBg,
+            include_bytes!("../assets/icons/menu/filter_remove_bg.png"),
+        );
 
         // === Menu: Generate ===
-        self.load_icon(ctx, Icon::MenuGenerateGrid, include_bytes!("../assets/icons/menu/generate_grid.png"));
-        self.load_icon(ctx, Icon::MenuGenerateShadow, include_bytes!("../assets/icons/menu/generate_shadow.png"));
-        self.load_icon(ctx, Icon::MenuGenerateOutline, include_bytes!("../assets/icons/menu/generate_outline.png"));
-        self.load_icon(ctx, Icon::MenuGenerateContours, include_bytes!("../assets/icons/menu/generate_contours.png"));
+        self.load_icon(
+            ctx,
+            Icon::MenuGenerateGrid,
+            include_bytes!("../assets/icons/menu/generate_grid.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuGenerateShadow,
+            include_bytes!("../assets/icons/menu/generate_shadow.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuGenerateOutline,
+            include_bytes!("../assets/icons/menu/generate_outline.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuGenerateContours,
+            include_bytes!("../assets/icons/menu/generate_contours.png"),
+        );
 
         // === Menu: View ===
-        self.load_icon(ctx, Icon::MenuViewZoomIn, include_bytes!("../assets/icons/menu/view_zoom_in.png"));
-        self.load_icon(ctx, Icon::MenuViewZoomOut, include_bytes!("../assets/icons/menu/view_zoom_out.png"));
-        self.load_icon(ctx, Icon::MenuViewFitWindow, include_bytes!("../assets/icons/menu/view_fit_window.png"));
-        self.load_icon(ctx, Icon::MenuViewThemeLight, include_bytes!("../assets/icons/menu/view_theme_light.png"));
-        self.load_icon(ctx, Icon::MenuViewThemeDark, include_bytes!("../assets/icons/menu/view_theme_dark.png"));
+        self.load_icon(
+            ctx,
+            Icon::MenuViewZoomIn,
+            include_bytes!("../assets/icons/menu/view_zoom_in.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuViewZoomOut,
+            include_bytes!("../assets/icons/menu/view_zoom_out.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuViewFitWindow,
+            include_bytes!("../assets/icons/menu/view_fit_window.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuViewThemeLight,
+            include_bytes!("../assets/icons/menu/view_theme_light.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::MenuViewThemeDark,
+            include_bytes!("../assets/icons/menu/view_theme_dark.png"),
+        );
         // UI: Context bar
-        self.load_icon(ctx, Icon::UiBrushDynamics, include_bytes!("../assets/icons/ui/dynamics.png"));
-        
+        self.load_icon(
+            ctx,
+            Icon::UiBrushDynamics,
+            include_bytes!("../assets/icons/ui/dynamics.png"),
+        );
+
         self.icons_loaded = true;
-        
+
         // Load shape picker icons (from new location)
-        self.load_shape_icon(ctx, ShapeKind::Ellipse, include_bytes!("../assets/icons/shapes/ellipse.png"));
-        self.load_shape_icon(ctx, ShapeKind::Rectangle, include_bytes!("../assets/icons/shapes/rectangle.png"));
-        self.load_shape_icon(ctx, ShapeKind::RoundedRect, include_bytes!("../assets/icons/shapes/rounded_rect.png"));
-        self.load_shape_icon(ctx, ShapeKind::Trapezoid, include_bytes!("../assets/icons/shapes/trapezoid.png"));
-        self.load_shape_icon(ctx, ShapeKind::Parallelogram, include_bytes!("../assets/icons/shapes/parallelogram.png"));
-        self.load_shape_icon(ctx, ShapeKind::Triangle, include_bytes!("../assets/icons/shapes/triangle.png"));
-        self.load_shape_icon(ctx, ShapeKind::RightTriangle, include_bytes!("../assets/icons/shapes/right_triangle.png"));
-        self.load_shape_icon(ctx, ShapeKind::Pentagon, include_bytes!("../assets/icons/shapes/pentagon.png"));
-        self.load_shape_icon(ctx, ShapeKind::Hexagon, include_bytes!("../assets/icons/shapes/hexagon.png"));
-        self.load_shape_icon(ctx, ShapeKind::Octagon, include_bytes!("../assets/icons/shapes/octagon.png"));
-        self.load_shape_icon(ctx, ShapeKind::Cross, include_bytes!("../assets/icons/shapes/cross.png"));
-        self.load_shape_icon(ctx, ShapeKind::Check, include_bytes!("../assets/icons/shapes/check.png"));
-        self.load_shape_icon(ctx, ShapeKind::Heart, include_bytes!("../assets/icons/shapes/heart.png"));
+        self.load_shape_icon(
+            ctx,
+            ShapeKind::Ellipse,
+            include_bytes!("../assets/icons/shapes/ellipse.png"),
+        );
+        self.load_shape_icon(
+            ctx,
+            ShapeKind::Rectangle,
+            include_bytes!("../assets/icons/shapes/rectangle.png"),
+        );
+        self.load_shape_icon(
+            ctx,
+            ShapeKind::RoundedRect,
+            include_bytes!("../assets/icons/shapes/rounded_rect.png"),
+        );
+        self.load_shape_icon(
+            ctx,
+            ShapeKind::Trapezoid,
+            include_bytes!("../assets/icons/shapes/trapezoid.png"),
+        );
+        self.load_shape_icon(
+            ctx,
+            ShapeKind::Parallelogram,
+            include_bytes!("../assets/icons/shapes/parallelogram.png"),
+        );
+        self.load_shape_icon(
+            ctx,
+            ShapeKind::Triangle,
+            include_bytes!("../assets/icons/shapes/triangle.png"),
+        );
+        self.load_shape_icon(
+            ctx,
+            ShapeKind::RightTriangle,
+            include_bytes!("../assets/icons/shapes/right_triangle.png"),
+        );
+        self.load_shape_icon(
+            ctx,
+            ShapeKind::Pentagon,
+            include_bytes!("../assets/icons/shapes/pentagon.png"),
+        );
+        self.load_shape_icon(
+            ctx,
+            ShapeKind::Hexagon,
+            include_bytes!("../assets/icons/shapes/hexagon.png"),
+        );
+        self.load_shape_icon(
+            ctx,
+            ShapeKind::Octagon,
+            include_bytes!("../assets/icons/shapes/octagon.png"),
+        );
+        self.load_shape_icon(
+            ctx,
+            ShapeKind::Cross,
+            include_bytes!("../assets/icons/shapes/cross.png"),
+        );
+        self.load_shape_icon(
+            ctx,
+            ShapeKind::Check,
+            include_bytes!("../assets/icons/shapes/check.png"),
+        );
+        self.load_shape_icon(
+            ctx,
+            ShapeKind::Heart,
+            include_bytes!("../assets/icons/shapes/heart.png"),
+        );
 
         // === Brush tip icons (embedded at compile time via build.rs) ===
         self.load_embedded_brush_tips(ctx);
@@ -799,7 +1476,7 @@ impl Assets {
             self.load_brush_tip(ctx, name, category, png_data);
         }
     }
-    
+
     /// Load a single icon from PNG bytes (caches original pixel data for theme inversion)
     fn load_icon(&mut self, ctx: &egui::Context, icon: Icon, png_data: &[u8]) {
         match image::load_from_memory(png_data) {
@@ -819,7 +1496,7 @@ impl Assets {
                 let texture = ctx.load_texture(
                     format!("icon_{:?}", icon),
                     color_image,
-                    TextureOptions::LINEAR
+                    TextureOptions::LINEAR,
                 );
                 self.textures.insert(icon, texture);
             }
@@ -828,7 +1505,7 @@ impl Assets {
             }
         }
     }
-    
+
     /// Load a shape picker icon from PNG bytes (caches original pixel data for theme inversion)
     fn load_shape_icon(&mut self, ctx: &egui::Context, kind: ShapeKind, png_data: &[u8]) {
         match image::load_from_memory(png_data) {
@@ -848,7 +1525,7 @@ impl Assets {
                 let texture = ctx.load_texture(
                     format!("shape_{:?}", kind),
                     color_image,
-                    TextureOptions::LINEAR
+                    TextureOptions::LINEAR,
                 );
                 self.shape_textures.insert(kind, texture);
             }
@@ -941,7 +1618,7 @@ impl Assets {
             }
         }
     }
-    
+
     pub fn get_shape_texture(&self, kind: ShapeKind) -> Option<&TextureHandle> {
         self.shape_textures.get(&kind)
     }
@@ -969,7 +1646,7 @@ impl Assets {
                         let sy = y / 2;
                         let v = mask[sy * gw as usize + sx];
                         let dst = (y * iw + x) * 4;
-                        icon_pixels[dst]     = 0;
+                        icon_pixels[dst] = 0;
                         icon_pixels[dst + 1] = 0;
                         icon_pixels[dst + 2] = 0;
                         icon_pixels[dst + 3] = v;
@@ -977,8 +1654,10 @@ impl Assets {
                 }
 
                 // Cache icon pixels for theme inversion
-                self.brush_tip_icon_pixels.insert(name.to_string(), icon_pixels.clone());
-                self.brush_tip_icon_sizes.insert(name.to_string(), icon_size);
+                self.brush_tip_icon_pixels
+                    .insert(name.to_string(), icon_pixels.clone());
+                self.brush_tip_icon_sizes
+                    .insert(name.to_string(), icon_size);
 
                 let display_pixels = if self.icons_inverted {
                     Self::invert_rgb(&icon_pixels)
@@ -1011,7 +1690,10 @@ impl Assets {
                 };
 
                 // Add to category
-                let cat_idx = self.brush_tip_categories.iter().position(|c| c.name == category);
+                let cat_idx = self
+                    .brush_tip_categories
+                    .iter()
+                    .position(|c| c.name == category);
                 if let Some(idx) = cat_idx {
                     self.brush_tip_categories[idx].tips.push(name.to_string());
                 } else {
@@ -1049,16 +1731,16 @@ impl Assets {
     pub fn brush_tip_categories(&self) -> &[BrushTipCategory] {
         &self.brush_tip_categories
     }
-    
+
     /// Check if a texture is available for the given icon
     pub fn has_texture(&self, icon: Icon) -> bool {
         self.textures.contains_key(&icon)
     }
-    
+
     pub fn get_texture(&self, icon: Icon) -> Option<&TextureHandle> {
         self.textures.get(&icon)
     }
-    
+
     /// Create an icon button that uses texture if available, emoji fallback otherwise
     pub fn icon_button(&self, ui: &mut egui::Ui, icon: Icon, size: Vec2) -> egui::Response {
         let response = if let Some(texture) = self.textures.get(&icon) {
@@ -1070,12 +1752,18 @@ impl Assets {
             // Use text fallback
             ui.add_sized(size, egui::Button::new(icon.emoji()))
         };
-        
+
         response.on_hover_text(icon.tooltip())
     }
-    
+
     /// Create a selectable icon (for tool selection) with custom size
-    pub fn icon_selectable_sized(&self, ui: &mut egui::Ui, icon: Icon, selected: bool, size: Vec2) -> bool {
+    pub fn icon_selectable_sized(
+        &self,
+        ui: &mut egui::Ui,
+        icon: Icon,
+        selected: bool,
+        size: Vec2,
+    ) -> bool {
         let response = if let Some(texture) = self.textures.get(&icon) {
             // Use texture-based selectable
             let sized_texture = egui::load::SizedTexture::from_handle(texture);
@@ -1092,12 +1780,12 @@ impl Assets {
         };
         response.on_hover_text(icon.tooltip()).clicked()
     }
-    
+
     /// Create a selectable icon (for tool selection) with default size
     pub fn icon_selectable(&self, ui: &mut egui::Ui, icon: Icon, selected: bool) -> bool {
         self.icon_selectable_sized(ui, icon, selected, Vec2::new(32.0, 32.0))
     }
-    
+
     /// Create a small icon button (for toolbar)
     pub fn small_icon_button(&self, ui: &mut egui::Ui, icon: Icon) -> egui::Response {
         let response = if let Some(texture) = self.textures.get(&icon) {
@@ -1125,9 +1813,14 @@ impl Assets {
         };
         response.on_hover_text(icon.tooltip())
     }
-    
+
     /// Create an enabled/disabled icon button
-    pub fn icon_button_enabled(&self, ui: &mut egui::Ui, icon: Icon, enabled: bool) -> egui::Response {
+    pub fn icon_button_enabled(
+        &self,
+        ui: &mut egui::Ui,
+        icon: Icon,
+        enabled: bool,
+    ) -> egui::Response {
         let response = if let Some(texture) = self.textures.get(&icon) {
             let sized_texture = egui::load::SizedTexture::from_handle(texture);
             let img = egui::Image::from_texture(sized_texture).fit_to_exact_size(Vec2::splat(24.0));
@@ -1144,7 +1837,13 @@ impl Assets {
 
     /// Paint an icon image into a specific rect, returning a click-sense response.
     /// Used for inline icons in layer rows (eye, peek).
-    pub fn icon_in_rect(&self, ui: &mut egui::Ui, icon: Icon, rect: egui::Rect, tint: Color32) -> egui::Response {
+    pub fn icon_in_rect(
+        &self,
+        ui: &mut egui::Ui,
+        icon: Icon,
+        rect: egui::Rect,
+        tint: Color32,
+    ) -> egui::Response {
         if let Some(texture) = self.textures.get(&icon) {
             let sized_texture = egui::load::SizedTexture::from_handle(texture);
             let img = egui::Image::from_texture(sized_texture)
@@ -1152,15 +1851,27 @@ impl Assets {
                 .tint(tint);
             ui.put(rect, img.sense(Sense::click()))
         } else {
-            ui.put(rect, egui::Label::new(
-                egui::RichText::new(icon.emoji()).size(rect.height() * 0.7).color(tint)
-            ).sense(Sense::click()))
+            ui.put(
+                rect,
+                egui::Label::new(
+                    egui::RichText::new(icon.emoji())
+                        .size(rect.height() * 0.7)
+                        .color(tint),
+                )
+                .sense(Sense::click()),
+            )
         }
     }
 
     /// Create a selectable label with an icon image + text.
     /// Used for settings sidebar tabs.
-    pub fn icon_selectable_label(&self, ui: &mut egui::Ui, icon: Icon, text: &str, selected: bool) -> bool {
+    pub fn icon_selectable_label(
+        &self,
+        ui: &mut egui::Ui,
+        icon: Icon,
+        text: &str,
+        selected: bool,
+    ) -> bool {
         let icon_size = Vec2::splat(16.0);
         if let Some(texture) = self.textures.get(&icon) {
             let sized_texture = egui::load::SizedTexture::from_handle(texture);
@@ -1188,7 +1899,8 @@ impl Assets {
             });
             response.inner.clicked()
         } else {
-            ui.selectable_label(selected, format!("{} {}", icon.emoji(), text)).clicked()
+            ui.selectable_label(selected, format!("{} {}", icon.emoji(), text))
+                .clicked()
         }
     }
 
@@ -1204,18 +1916,34 @@ impl Assets {
     }
 
     /// Create a menu item button with a small icon + text label, with enabled/disabled state
-    pub fn menu_item_enabled(&self, ui: &mut egui::Ui, icon: Icon, text: &str, enabled: bool) -> egui::Response {
+    pub fn menu_item_enabled(
+        &self,
+        ui: &mut egui::Ui,
+        icon: Icon,
+        text: &str,
+        enabled: bool,
+    ) -> egui::Response {
         if let Some(texture) = self.textures.get(&icon) {
             let sized_texture = egui::load::SizedTexture::from_handle(texture);
             let img = egui::Image::from_texture(sized_texture).fit_to_exact_size(Vec2::splat(16.0));
             ui.add_enabled(enabled, egui::Button::image_and_text(img, text))
         } else {
-            ui.add_enabled(enabled, egui::Button::new(format!("{} {}", icon.emoji(), text)))
+            ui.add_enabled(
+                enabled,
+                egui::Button::new(format!("{} {}", icon.emoji(), text)),
+            )
         }
     }
 
     /// Create a menu item button with a small icon + text label + right-aligned shortcut hint
-    pub fn menu_item_shortcut(&self, ui: &mut egui::Ui, icon: Icon, text: &str, kb: &KeyBindings, action: BindableAction) -> egui::Response {
+    pub fn menu_item_shortcut(
+        &self,
+        ui: &mut egui::Ui,
+        icon: Icon,
+        text: &str,
+        kb: &KeyBindings,
+        action: BindableAction,
+    ) -> egui::Response {
         let shortcut = kb.get(action).map(|c| c.display()).unwrap_or_default();
         if shortcut.is_empty() {
             return self.menu_item(ui, icon, text);
@@ -1224,7 +1952,15 @@ impl Assets {
     }
 
     /// Create a menu item button with icon + text + shortcut hint, with enabled/disabled state
-    pub fn menu_item_shortcut_enabled(&self, ui: &mut egui::Ui, icon: Icon, text: &str, enabled: bool, kb: &KeyBindings, action: BindableAction) -> egui::Response {
+    pub fn menu_item_shortcut_enabled(
+        &self,
+        ui: &mut egui::Ui,
+        icon: Icon,
+        text: &str,
+        enabled: bool,
+        kb: &KeyBindings,
+        action: BindableAction,
+    ) -> egui::Response {
         let shortcut = kb.get(action).map(|c| c.display()).unwrap_or_default();
         if shortcut.is_empty() {
             return self.menu_item_enabled(ui, icon, text, enabled);
@@ -1233,7 +1969,14 @@ impl Assets {
     }
 
     /// Render a menu item with icon + label on left, shortcut text right-aligned
-    fn render_menu_item_with_shortcut(&self, ui: &mut egui::Ui, icon: Icon, text: &str, shortcut: &str, enabled: bool) -> egui::Response {
+    fn render_menu_item_with_shortcut(
+        &self,
+        ui: &mut egui::Ui,
+        icon: Icon,
+        text: &str,
+        shortcut: &str,
+        enabled: bool,
+    ) -> egui::Response {
         let icon_size = 16.0_f32;
         let padding = ui.spacing().button_padding;
         let icon_gap = 4.0_f32;
@@ -1241,21 +1984,41 @@ impl Assets {
         let text_font = egui::TextStyle::Button.resolve(ui.style());
         let shortcut_font = egui::FontId::proportional(text_font.size * 0.9);
 
-        let label_color = if enabled { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
+        let label_color = if enabled {
+            ui.visuals().text_color()
+        } else {
+            ui.visuals().weak_text_color()
+        };
         let shortcut_color = ui.visuals().weak_text_color();
-        let text_galley = ui.painter().layout_no_wrap(text.to_string(), text_font.clone(), label_color);
-        let shortcut_galley = ui.painter().layout_no_wrap(shortcut.to_string(), shortcut_font.clone(), shortcut_color);
+        let text_galley =
+            ui.painter()
+                .layout_no_wrap(text.to_string(), text_font.clone(), label_color);
+        let shortcut_galley = ui.painter().layout_no_wrap(
+            shortcut.to_string(),
+            shortcut_font.clone(),
+            shortcut_color,
+        );
 
         let min_shortcut_gap = 24.0_f32;
-        let desired_width = (padding.x + icon_size + icon_gap + text_galley.size().x + min_shortcut_gap + shortcut_galley.size().x + padding.x)
+        let desired_width = (padding.x
+            + icon_size
+            + icon_gap
+            + text_galley.size().x
+            + min_shortcut_gap
+            + shortcut_galley.size().x
+            + padding.x)
             .max(ui.available_width());
-        let row_height = icon_size.max(text_galley.size().y).max(shortcut_galley.size().y) + padding.y * 2.0;
+        let row_height = icon_size
+            .max(text_galley.size().y)
+            .max(shortcut_galley.size().y)
+            + padding.y * 2.0;
 
-        let sense = if enabled { egui::Sense::click() } else { egui::Sense::hover() };
-        let (rect, response) = ui.allocate_exact_size(
-            egui::vec2(desired_width, row_height),
-            sense,
-        );
+        let sense = if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        };
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(desired_width, row_height), sense);
 
         if ui.is_rect_visible(rect) {
             // Hover/active background (only for enabled items)
@@ -1264,7 +2027,11 @@ impl Assets {
                 ui.painter().rect_filled(rect, 0.0, visuals.bg_fill);
             }
 
-            let text_color = if enabled { visuals.text_color() } else { ui.visuals().weak_text_color() };
+            let text_color = if enabled {
+                visuals.text_color()
+            } else {
+                ui.visuals().weak_text_color()
+            };
 
             // Icon
             let icon_rect = egui::Rect::from_min_size(
@@ -1272,7 +2039,11 @@ impl Assets {
                 egui::vec2(icon_size, icon_size),
             );
             if let Some(texture) = self.textures.get(&icon) {
-                let tint = if enabled { text_color } else { Color32::from_gray(128) };
+                let tint = if enabled {
+                    text_color
+                } else {
+                    Color32::from_gray(128)
+                };
                 ui.painter().image(
                     texture.id(),
                     icon_rect,
@@ -1300,7 +2071,14 @@ impl Assets {
     }
 
     /// Create a menu item with icon + text label, shortcut shown below in smaller text
-    pub fn menu_item_shortcut_below(&self, ui: &mut egui::Ui, icon: Icon, text: &str, kb: &KeyBindings, action: BindableAction) -> egui::Response {
+    pub fn menu_item_shortcut_below(
+        &self,
+        ui: &mut egui::Ui,
+        icon: Icon,
+        text: &str,
+        kb: &KeyBindings,
+        action: BindableAction,
+    ) -> egui::Response {
         let shortcut = kb.get(action).map(|c| c.display()).unwrap_or_default();
         if shortcut.is_empty() {
             return self.menu_item(ui, icon, text);
@@ -1309,7 +2087,15 @@ impl Assets {
     }
 
     /// Create a menu item with icon + text label + shortcut below, with enabled/disabled state
-    pub fn menu_item_shortcut_below_enabled(&self, ui: &mut egui::Ui, icon: Icon, text: &str, enabled: bool, kb: &KeyBindings, action: BindableAction) -> egui::Response {
+    pub fn menu_item_shortcut_below_enabled(
+        &self,
+        ui: &mut egui::Ui,
+        icon: Icon,
+        text: &str,
+        enabled: bool,
+        kb: &KeyBindings,
+        action: BindableAction,
+    ) -> egui::Response {
         let shortcut = kb.get(action).map(|c| c.display()).unwrap_or_default();
         if shortcut.is_empty() {
             return self.menu_item_enabled(ui, icon, text, enabled);
@@ -1318,7 +2104,14 @@ impl Assets {
     }
 
     /// Render a menu item with icon + label, shortcut text below label in smaller font
-    fn render_menu_item_with_shortcut_below(&self, ui: &mut egui::Ui, icon: Icon, text: &str, shortcut: &str, enabled: bool) -> egui::Response {
+    fn render_menu_item_with_shortcut_below(
+        &self,
+        ui: &mut egui::Ui,
+        icon: Icon,
+        text: &str,
+        shortcut: &str,
+        enabled: bool,
+    ) -> egui::Response {
         let icon_size = 16.0_f32;
         let padding = ui.spacing().button_padding;
         let icon_gap = 4.0_f32;
@@ -1326,23 +2119,35 @@ impl Assets {
         let text_font = egui::TextStyle::Button.resolve(ui.style());
         let shortcut_font = egui::FontId::proportional(text_font.size * 0.78);
 
-        let label_color = if enabled { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
+        let label_color = if enabled {
+            ui.visuals().text_color()
+        } else {
+            ui.visuals().weak_text_color()
+        };
         let shortcut_color = ui.visuals().weak_text_color();
-        let text_galley = ui.painter().layout_no_wrap(text.to_string(), text_font.clone(), label_color);
-        let shortcut_galley = ui.painter().layout_no_wrap(shortcut.to_string(), shortcut_font.clone(), shortcut_color);
+        let text_galley =
+            ui.painter()
+                .layout_no_wrap(text.to_string(), text_font.clone(), label_color);
+        let shortcut_galley = ui.painter().layout_no_wrap(
+            shortcut.to_string(),
+            shortcut_font.clone(),
+            shortcut_color,
+        );
 
         let text_width = text_galley.size().x.max(shortcut_galley.size().x);
-        let desired_width = (padding.x + icon_size + icon_gap + text_width + padding.x)
-            .max(ui.available_width());
+        let desired_width =
+            (padding.x + icon_size + icon_gap + text_width + padding.x).max(ui.available_width());
         let line_gap = 1.0_f32;
         let row_height = (text_galley.size().y + line_gap + shortcut_galley.size().y)
-            .max(icon_size) + padding.y * 2.0;
+            .max(icon_size)
+            + padding.y * 2.0;
 
-        let sense = if enabled { egui::Sense::click() } else { egui::Sense::hover() };
-        let (rect, response) = ui.allocate_exact_size(
-            egui::vec2(desired_width, row_height),
-            sense,
-        );
+        let sense = if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        };
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(desired_width, row_height), sense);
 
         if ui.is_rect_visible(rect) {
             let visuals = ui.style().interact(&response);
@@ -1350,7 +2155,11 @@ impl Assets {
                 ui.painter().rect_filled(rect, 0.0, visuals.bg_fill);
             }
 
-            let text_color = if enabled { visuals.text_color() } else { ui.visuals().weak_text_color() };
+            let text_color = if enabled {
+                visuals.text_color()
+            } else {
+                ui.visuals().weak_text_color()
+            };
 
             // Icon (vertically centered)
             let icon_rect = egui::Rect::from_min_size(
@@ -1358,7 +2167,11 @@ impl Assets {
                 egui::vec2(icon_size, icon_size),
             );
             if let Some(texture) = self.textures.get(&icon) {
-                let tint = if enabled { text_color } else { Color32::from_gray(128) };
+                let tint = if enabled {
+                    text_color
+                } else {
+                    Color32::from_gray(128)
+                };
                 ui.painter().image(
                     texture.id(),
                     icon_rect,
@@ -1372,7 +2185,8 @@ impl Assets {
             let text_top = rect.center().y - total_text_h / 2.0;
 
             // Label text
-            ui.painter().galley(egui::pos2(text_x, text_top), text_galley);
+            ui.painter()
+                .galley(egui::pos2(text_x, text_top), text_galley);
 
             // Shortcut text below
             ui.painter().galley(
@@ -1401,7 +2215,7 @@ impl ZoomFilterMode {
             ZoomFilterMode::Nearest => t!("zoom_filter_mode.nearest"),
         }
     }
-    
+
     pub fn all() -> &'static [ZoomFilterMode] {
         &[ZoomFilterMode::Linear, ZoomFilterMode::Nearest]
     }
@@ -1425,24 +2239,54 @@ pub struct KeyCombo {
 
 impl KeyCombo {
     pub fn key(k: egui::Key) -> Self {
-        Self { ctrl: false, shift: false, alt: false, key: Some(k), text_char: None }
+        Self {
+            ctrl: false,
+            shift: false,
+            alt: false,
+            key: Some(k),
+            text_char: None,
+        }
     }
     pub fn ctrl_key(k: egui::Key) -> Self {
-        Self { ctrl: true, shift: false, alt: false, key: Some(k), text_char: None }
+        Self {
+            ctrl: true,
+            shift: false,
+            alt: false,
+            key: Some(k),
+            text_char: None,
+        }
     }
     pub fn ctrl_shift_key(k: egui::Key) -> Self {
-        Self { ctrl: true, shift: true, alt: false, key: Some(k), text_char: None }
+        Self {
+            ctrl: true,
+            shift: true,
+            alt: false,
+            key: Some(k),
+            text_char: None,
+        }
     }
     pub fn text(s: &str) -> Self {
-        Self { ctrl: false, shift: false, alt: false, key: None, text_char: Some(s.to_string()) }
+        Self {
+            ctrl: false,
+            shift: false,
+            alt: false,
+            key: None,
+            text_char: Some(s.to_string()),
+        }
     }
 
     /// Human-readable display string
     pub fn display(&self) -> String {
         let mut parts = Vec::new();
-        if self.ctrl { parts.push("Ctrl"); }
-        if self.shift { parts.push("Shift"); }
-        if self.alt { parts.push("Alt"); }
+        if self.ctrl {
+            parts.push("Ctrl");
+        }
+        if self.shift {
+            parts.push("Shift");
+        }
+        if self.alt {
+            parts.push("Alt");
+        }
         if let Some(ref k) = self.key {
             parts.push(key_name(*k));
         } else if let Some(ref t) = self.text_char {
@@ -1454,9 +2298,15 @@ impl KeyCombo {
     /// Serialize to config string
     pub fn to_config_string(&self) -> String {
         let mut parts = Vec::new();
-        if self.ctrl { parts.push("ctrl".to_string()); }
-        if self.shift { parts.push("shift".to_string()); }
-        if self.alt { parts.push("alt".to_string()); }
+        if self.ctrl {
+            parts.push("ctrl".to_string());
+        }
+        if self.shift {
+            parts.push("shift".to_string());
+        }
+        if self.alt {
+            parts.push("alt".to_string());
+        }
         if let Some(ref k) = self.key {
             parts.push(format!("key:{}", key_name(*k)));
         } else if let Some(ref t) = self.text_char {
@@ -1467,7 +2317,13 @@ impl KeyCombo {
 
     /// Deserialize from config string
     pub fn from_config_string(s: &str) -> Option<Self> {
-        let mut combo = Self { ctrl: false, shift: false, alt: false, key: None, text_char: None };
+        let mut combo = Self {
+            ctrl: false,
+            shift: false,
+            alt: false,
+            key: None,
+            text_char: None,
+        };
         for part in s.split('+') {
             let part = part.trim();
             match part {
@@ -1588,17 +2444,38 @@ impl BindableAction {
     /// Category for grouping in UI
     pub fn category(&self) -> String {
         match self {
-            Self::NewFile | Self::OpenFile | Self::Save | Self::SaveAll | Self::SaveAs => t!("keybind_category.file"),
-            Self::Undo | Self::Redo | Self::Copy | Self::Cut | Self::Paste
-            | Self::SelectAll | Self::Deselect
+            Self::NewFile | Self::OpenFile | Self::Save | Self::SaveAll | Self::SaveAs => {
+                t!("keybind_category.file")
+            }
+            Self::Undo
+            | Self::Redo
+            | Self::Copy
+            | Self::Cut
+            | Self::Paste
+            | Self::SelectAll
+            | Self::Deselect
             | Self::FlattenLayers => t!("keybind_category.edit"),
             Self::ResizeImage | Self::ResizeCanvas => t!("keybind_category.canvas"),
-            Self::ViewZoomIn | Self::ViewZoomOut | Self::ViewFitToWindow => t!("keybind_category.view"),
-            Self::ToolBrush | Self::ToolEraser | Self::ToolPencil | Self::ToolLine
-            | Self::ToolGradient | Self::ToolFill | Self::ToolMagicWand
-            | Self::ToolColorPicker | Self::ToolMovePixels | Self::ToolRectSelect
-            | Self::ToolText | Self::ToolZoom | Self::ToolPan | Self::ToolCloneStamp
-            | Self::ToolShapes | Self::ToolLasso | Self::ToolColorRemover
+            Self::ViewZoomIn | Self::ViewZoomOut | Self::ViewFitToWindow => {
+                t!("keybind_category.view")
+            }
+            Self::ToolBrush
+            | Self::ToolEraser
+            | Self::ToolPencil
+            | Self::ToolLine
+            | Self::ToolGradient
+            | Self::ToolFill
+            | Self::ToolMagicWand
+            | Self::ToolColorPicker
+            | Self::ToolMovePixels
+            | Self::ToolRectSelect
+            | Self::ToolText
+            | Self::ToolZoom
+            | Self::ToolPan
+            | Self::ToolCloneStamp
+            | Self::ToolShapes
+            | Self::ToolLasso
+            | Self::ToolColorRemover
             | Self::ToolMeshWarp => t!("keybind_category.tools"),
             Self::BrushSizeDecrease | Self::BrushSizeIncrease => t!("keybind_category.brush"),
         }
@@ -1608,15 +2485,44 @@ impl BindableAction {
     pub fn all() -> &'static [BindableAction] {
         use BindableAction::*;
         &[
-            NewFile, OpenFile, Save, SaveAll, SaveAs,
-            Undo, Redo, Copy, Cut, Paste, SelectAll, Deselect, FlattenLayers,
-            ResizeImage, ResizeCanvas,
-            ViewZoomIn, ViewZoomOut, ViewFitToWindow,
-            ToolBrush, ToolEraser, ToolPencil, ToolLine, ToolGradient, ToolFill,
-            ToolMagicWand, ToolColorPicker, ToolMovePixels, ToolRectSelect,
-            ToolText, ToolZoom, ToolPan, ToolCloneStamp, ToolShapes, ToolLasso,
-            ToolColorRemover, ToolMeshWarp,
-            BrushSizeDecrease, BrushSizeIncrease,
+            NewFile,
+            OpenFile,
+            Save,
+            SaveAll,
+            SaveAs,
+            Undo,
+            Redo,
+            Copy,
+            Cut,
+            Paste,
+            SelectAll,
+            Deselect,
+            FlattenLayers,
+            ResizeImage,
+            ResizeCanvas,
+            ViewZoomIn,
+            ViewZoomOut,
+            ViewFitToWindow,
+            ToolBrush,
+            ToolEraser,
+            ToolPencil,
+            ToolLine,
+            ToolGradient,
+            ToolFill,
+            ToolMagicWand,
+            ToolColorPicker,
+            ToolMovePixels,
+            ToolRectSelect,
+            ToolText,
+            ToolZoom,
+            ToolPan,
+            ToolCloneStamp,
+            ToolShapes,
+            ToolLasso,
+            ToolColorRemover,
+            ToolMeshWarp,
+            BrushSizeDecrease,
+            BrushSizeIncrease,
         ]
     }
 }
@@ -1633,46 +2539,55 @@ impl Default for KeyBindings {
         use egui::Key;
         let mut map = std::collections::HashMap::new();
         // File
-        map.insert(NewFile,           KeyCombo::ctrl_key(Key::N));
-        map.insert(OpenFile,          KeyCombo::ctrl_key(Key::O));
-        map.insert(Save,              KeyCombo::ctrl_key(Key::S));
-        map.insert(SaveAll,           KeyCombo { ctrl: true, shift: false, alt: true, key: Some(Key::S), text_char: None });
-        map.insert(SaveAs,            KeyCombo::ctrl_shift_key(Key::S));
+        map.insert(NewFile, KeyCombo::ctrl_key(Key::N));
+        map.insert(OpenFile, KeyCombo::ctrl_key(Key::O));
+        map.insert(Save, KeyCombo::ctrl_key(Key::S));
+        map.insert(
+            SaveAll,
+            KeyCombo {
+                ctrl: true,
+                shift: false,
+                alt: true,
+                key: Some(Key::S),
+                text_char: None,
+            },
+        );
+        map.insert(SaveAs, KeyCombo::ctrl_shift_key(Key::S));
         // Edit
-        map.insert(Undo,              KeyCombo::ctrl_key(Key::Z));
-        map.insert(Redo,              KeyCombo::ctrl_key(Key::Y));
-        map.insert(Copy,              KeyCombo::ctrl_key(Key::C));
-        map.insert(Cut,               KeyCombo::ctrl_key(Key::X));
-        map.insert(Paste,             KeyCombo::ctrl_key(Key::V));
-        map.insert(SelectAll,         KeyCombo::ctrl_key(Key::A));
-        map.insert(Deselect,          KeyCombo::ctrl_key(Key::D));
-        map.insert(FlattenLayers,     KeyCombo::ctrl_shift_key(Key::F));
+        map.insert(Undo, KeyCombo::ctrl_key(Key::Z));
+        map.insert(Redo, KeyCombo::ctrl_key(Key::Y));
+        map.insert(Copy, KeyCombo::ctrl_key(Key::C));
+        map.insert(Cut, KeyCombo::ctrl_key(Key::X));
+        map.insert(Paste, KeyCombo::ctrl_key(Key::V));
+        map.insert(SelectAll, KeyCombo::ctrl_key(Key::A));
+        map.insert(Deselect, KeyCombo::ctrl_key(Key::D));
+        map.insert(FlattenLayers, KeyCombo::ctrl_shift_key(Key::F));
         // Canvas
-        map.insert(ResizeImage,       KeyCombo::ctrl_key(Key::R));
-        map.insert(ResizeCanvas,      KeyCombo::ctrl_shift_key(Key::R));
+        map.insert(ResizeImage, KeyCombo::ctrl_key(Key::R));
+        map.insert(ResizeCanvas, KeyCombo::ctrl_shift_key(Key::R));
         // View
-        map.insert(ViewZoomIn,        KeyCombo::ctrl_key(Key::PlusEquals));
-        map.insert(ViewZoomOut,       KeyCombo::ctrl_key(Key::Minus));
-        map.insert(ViewFitToWindow,   KeyCombo::ctrl_key(Key::Num0));
+        map.insert(ViewZoomIn, KeyCombo::ctrl_key(Key::PlusEquals));
+        map.insert(ViewZoomOut, KeyCombo::ctrl_key(Key::Minus));
+        map.insert(ViewFitToWindow, KeyCombo::ctrl_key(Key::Num0));
         // Tools
-        map.insert(ToolBrush,         KeyCombo::key(Key::B));
-        map.insert(ToolEraser,        KeyCombo::key(Key::E));
-        map.insert(ToolPencil,        KeyCombo::key(Key::P));
-        map.insert(ToolLine,          KeyCombo::key(Key::L));
-        map.insert(ToolGradient,      KeyCombo::key(Key::G));
-        map.insert(ToolFill,          KeyCombo::key(Key::F));
-        map.insert(ToolMagicWand,     KeyCombo::key(Key::W));
-        map.insert(ToolColorPicker,   KeyCombo::key(Key::I));
-        map.insert(ToolMovePixels,    KeyCombo::key(Key::M));
-        map.insert(ToolRectSelect,    KeyCombo::key(Key::S));
-        map.insert(ToolText,          KeyCombo::key(Key::T));
-        map.insert(ToolZoom,          KeyCombo::key(Key::Z));
-        map.insert(ToolPan,           KeyCombo::key(Key::H));
-        map.insert(ToolCloneStamp,    KeyCombo::key(Key::K));
-        map.insert(ToolShapes,        KeyCombo::key(Key::U));
-        map.insert(ToolLasso,         KeyCombo::key(Key::J));
-        map.insert(ToolColorRemover,  KeyCombo::key(Key::R));
-        map.insert(ToolMeshWarp,      KeyCombo::key(Key::Q));
+        map.insert(ToolBrush, KeyCombo::key(Key::B));
+        map.insert(ToolEraser, KeyCombo::key(Key::E));
+        map.insert(ToolPencil, KeyCombo::key(Key::P));
+        map.insert(ToolLine, KeyCombo::key(Key::L));
+        map.insert(ToolGradient, KeyCombo::key(Key::G));
+        map.insert(ToolFill, KeyCombo::key(Key::F));
+        map.insert(ToolMagicWand, KeyCombo::key(Key::W));
+        map.insert(ToolColorPicker, KeyCombo::key(Key::I));
+        map.insert(ToolMovePixels, KeyCombo::key(Key::M));
+        map.insert(ToolRectSelect, KeyCombo::key(Key::S));
+        map.insert(ToolText, KeyCombo::key(Key::T));
+        map.insert(ToolZoom, KeyCombo::key(Key::Z));
+        map.insert(ToolPan, KeyCombo::key(Key::H));
+        map.insert(ToolCloneStamp, KeyCombo::key(Key::K));
+        map.insert(ToolShapes, KeyCombo::key(Key::U));
+        map.insert(ToolLasso, KeyCombo::key(Key::J));
+        map.insert(ToolColorRemover, KeyCombo::key(Key::R));
+        map.insert(ToolMeshWarp, KeyCombo::key(Key::Q));
         // Brush size
         map.insert(BrushSizeDecrease, KeyCombo::text("["));
         map.insert(BrushSizeIncrease, KeyCombo::text("]"));
@@ -1746,27 +2661,37 @@ impl KeyBindings {
             "BrushSizeIncrease" => Some(BindableAction::BrushSizeIncrease),
             _ => None,
         };
-        if let Some(action) = action {
-            if let Some(combo) = KeyCombo::from_config_string(combo_str) {
-                self.bindings.insert(action, combo);
-            }
+        if let Some(action) = action
+            && let Some(combo) = KeyCombo::from_config_string(combo_str)
+        {
+            self.bindings.insert(action, combo);
         }
     }
 
     /// Check if a keybinding was triggered this frame
     pub fn is_pressed(&self, ctx: &egui::Context, action: BindableAction) -> bool {
-        let Some(combo) = self.bindings.get(&action) else { return false };
-        
+        let Some(combo) = self.bindings.get(&action) else {
+            return false;
+        };
+
         if let Some(ref text_char) = combo.text_char {
             // Text-based binding (like [ or ])
             ctx.input(|i| {
                 // Check modifier match
-                if combo.ctrl != i.modifiers.command { return false; }
-                if combo.shift != i.modifiers.shift { return false; }
-                if combo.alt != i.modifiers.alt { return false; }
+                if combo.ctrl != i.modifiers.command {
+                    return false;
+                }
+                if combo.shift != i.modifiers.shift {
+                    return false;
+                }
+                if combo.alt != i.modifiers.alt {
+                    return false;
+                }
                 for ev in &i.events {
-                    if let egui::Event::Text(t) = ev {
-                        if t == text_char { return true; }
+                    if let egui::Event::Text(t) = ev
+                        && t == text_char
+                    {
+                        return true;
                     }
                 }
                 false
@@ -1806,26 +2731,62 @@ fn key_name(k: egui::Key) -> &'static str {
         egui::Key::PageDown => "PageDown",
         egui::Key::Minus => "-",
         egui::Key::PlusEquals => "+",
-        egui::Key::Num0 => "0", egui::Key::Num1 => "1", egui::Key::Num2 => "2",
-        egui::Key::Num3 => "3", egui::Key::Num4 => "4", egui::Key::Num5 => "5",
-        egui::Key::Num6 => "6", egui::Key::Num7 => "7", egui::Key::Num8 => "8",
+        egui::Key::Num0 => "0",
+        egui::Key::Num1 => "1",
+        egui::Key::Num2 => "2",
+        egui::Key::Num3 => "3",
+        egui::Key::Num4 => "4",
+        egui::Key::Num5 => "5",
+        egui::Key::Num6 => "6",
+        egui::Key::Num7 => "7",
+        egui::Key::Num8 => "8",
         egui::Key::Num9 => "9",
-        egui::Key::A => "A", egui::Key::B => "B", egui::Key::C => "C",
-        egui::Key::D => "D", egui::Key::E => "E", egui::Key::F => "F",
-        egui::Key::G => "G", egui::Key::H => "H", egui::Key::I => "I",
-        egui::Key::J => "J", egui::Key::K => "K", egui::Key::L => "L",
-        egui::Key::M => "M", egui::Key::N => "N", egui::Key::O => "O",
-        egui::Key::P => "P", egui::Key::Q => "Q", egui::Key::R => "R",
-        egui::Key::S => "S", egui::Key::T => "T", egui::Key::U => "U",
-        egui::Key::V => "V", egui::Key::W => "W", egui::Key::X => "X",
-        egui::Key::Y => "Y", egui::Key::Z => "Z",
-        egui::Key::F1 => "F1", egui::Key::F2 => "F2", egui::Key::F3 => "F3",
-        egui::Key::F4 => "F4", egui::Key::F5 => "F5", egui::Key::F6 => "F6",
-        egui::Key::F7 => "F7", egui::Key::F8 => "F8", egui::Key::F9 => "F9",
-        egui::Key::F10 => "F10", egui::Key::F11 => "F11", egui::Key::F12 => "F12",
-        egui::Key::F13 => "F13", egui::Key::F14 => "F14", egui::Key::F15 => "F15",
-        egui::Key::F16 => "F16", egui::Key::F17 => "F17", egui::Key::F18 => "F18",
-        egui::Key::F19 => "F19", egui::Key::F20 => "F20",
+        egui::Key::A => "A",
+        egui::Key::B => "B",
+        egui::Key::C => "C",
+        egui::Key::D => "D",
+        egui::Key::E => "E",
+        egui::Key::F => "F",
+        egui::Key::G => "G",
+        egui::Key::H => "H",
+        egui::Key::I => "I",
+        egui::Key::J => "J",
+        egui::Key::K => "K",
+        egui::Key::L => "L",
+        egui::Key::M => "M",
+        egui::Key::N => "N",
+        egui::Key::O => "O",
+        egui::Key::P => "P",
+        egui::Key::Q => "Q",
+        egui::Key::R => "R",
+        egui::Key::S => "S",
+        egui::Key::T => "T",
+        egui::Key::U => "U",
+        egui::Key::V => "V",
+        egui::Key::W => "W",
+        egui::Key::X => "X",
+        egui::Key::Y => "Y",
+        egui::Key::Z => "Z",
+        egui::Key::F1 => "F1",
+        egui::Key::F2 => "F2",
+        egui::Key::F3 => "F3",
+        egui::Key::F4 => "F4",
+        egui::Key::F5 => "F5",
+        egui::Key::F6 => "F6",
+        egui::Key::F7 => "F7",
+        egui::Key::F8 => "F8",
+        egui::Key::F9 => "F9",
+        egui::Key::F10 => "F10",
+        egui::Key::F11 => "F11",
+        egui::Key::F12 => "F12",
+        egui::Key::F13 => "F13",
+        egui::Key::F14 => "F14",
+        egui::Key::F15 => "F15",
+        egui::Key::F16 => "F16",
+        egui::Key::F17 => "F17",
+        egui::Key::F18 => "F18",
+        egui::Key::F19 => "F19",
+        egui::Key::F20 => "F20",
     }
 }
 
@@ -1849,26 +2810,62 @@ fn parse_key_name(s: &str) -> Option<egui::Key> {
         "PageDown" => Some(egui::Key::PageDown),
         "-" => Some(egui::Key::Minus),
         "+" => Some(egui::Key::PlusEquals),
-        "0" => Some(egui::Key::Num0), "1" => Some(egui::Key::Num1), "2" => Some(egui::Key::Num2),
-        "3" => Some(egui::Key::Num3), "4" => Some(egui::Key::Num4), "5" => Some(egui::Key::Num5),
-        "6" => Some(egui::Key::Num6), "7" => Some(egui::Key::Num7), "8" => Some(egui::Key::Num8),
+        "0" => Some(egui::Key::Num0),
+        "1" => Some(egui::Key::Num1),
+        "2" => Some(egui::Key::Num2),
+        "3" => Some(egui::Key::Num3),
+        "4" => Some(egui::Key::Num4),
+        "5" => Some(egui::Key::Num5),
+        "6" => Some(egui::Key::Num6),
+        "7" => Some(egui::Key::Num7),
+        "8" => Some(egui::Key::Num8),
         "9" => Some(egui::Key::Num9),
-        "A" => Some(egui::Key::A), "B" => Some(egui::Key::B), "C" => Some(egui::Key::C),
-        "D" => Some(egui::Key::D), "E" => Some(egui::Key::E), "F" => Some(egui::Key::F),
-        "G" => Some(egui::Key::G), "H" => Some(egui::Key::H), "I" => Some(egui::Key::I),
-        "J" => Some(egui::Key::J), "K" => Some(egui::Key::K), "L" => Some(egui::Key::L),
-        "M" => Some(egui::Key::M), "N" => Some(egui::Key::N), "O" => Some(egui::Key::O),
-        "P" => Some(egui::Key::P), "Q" => Some(egui::Key::Q), "R" => Some(egui::Key::R),
-        "S" => Some(egui::Key::S), "T" => Some(egui::Key::T), "U" => Some(egui::Key::U),
-        "V" => Some(egui::Key::V), "W" => Some(egui::Key::W), "X" => Some(egui::Key::X),
-        "Y" => Some(egui::Key::Y), "Z" => Some(egui::Key::Z),
-        "F1" => Some(egui::Key::F1), "F2" => Some(egui::Key::F2), "F3" => Some(egui::Key::F3),
-        "F4" => Some(egui::Key::F4), "F5" => Some(egui::Key::F5), "F6" => Some(egui::Key::F6),
-        "F7" => Some(egui::Key::F7), "F8" => Some(egui::Key::F8), "F9" => Some(egui::Key::F9),
-        "F10" => Some(egui::Key::F10), "F11" => Some(egui::Key::F11), "F12" => Some(egui::Key::F12),
-        "F13" => Some(egui::Key::F13), "F14" => Some(egui::Key::F14), "F15" => Some(egui::Key::F15),
-        "F16" => Some(egui::Key::F16), "F17" => Some(egui::Key::F17), "F18" => Some(egui::Key::F18),
-        "F19" => Some(egui::Key::F19), "F20" => Some(egui::Key::F20),
+        "A" => Some(egui::Key::A),
+        "B" => Some(egui::Key::B),
+        "C" => Some(egui::Key::C),
+        "D" => Some(egui::Key::D),
+        "E" => Some(egui::Key::E),
+        "F" => Some(egui::Key::F),
+        "G" => Some(egui::Key::G),
+        "H" => Some(egui::Key::H),
+        "I" => Some(egui::Key::I),
+        "J" => Some(egui::Key::J),
+        "K" => Some(egui::Key::K),
+        "L" => Some(egui::Key::L),
+        "M" => Some(egui::Key::M),
+        "N" => Some(egui::Key::N),
+        "O" => Some(egui::Key::O),
+        "P" => Some(egui::Key::P),
+        "Q" => Some(egui::Key::Q),
+        "R" => Some(egui::Key::R),
+        "S" => Some(egui::Key::S),
+        "T" => Some(egui::Key::T),
+        "U" => Some(egui::Key::U),
+        "V" => Some(egui::Key::V),
+        "W" => Some(egui::Key::W),
+        "X" => Some(egui::Key::X),
+        "Y" => Some(egui::Key::Y),
+        "Z" => Some(egui::Key::Z),
+        "F1" => Some(egui::Key::F1),
+        "F2" => Some(egui::Key::F2),
+        "F3" => Some(egui::Key::F3),
+        "F4" => Some(egui::Key::F4),
+        "F5" => Some(egui::Key::F5),
+        "F6" => Some(egui::Key::F6),
+        "F7" => Some(egui::Key::F7),
+        "F8" => Some(egui::Key::F8),
+        "F9" => Some(egui::Key::F9),
+        "F10" => Some(egui::Key::F10),
+        "F11" => Some(egui::Key::F11),
+        "F12" => Some(egui::Key::F12),
+        "F13" => Some(egui::Key::F13),
+        "F14" => Some(egui::Key::F14),
+        "F15" => Some(egui::Key::F15),
+        "F16" => Some(egui::Key::F16),
+        "F17" => Some(egui::Key::F17),
+        "F18" => Some(egui::Key::F18),
+        "F19" => Some(egui::Key::F19),
+        "F20" => Some(egui::Key::F20),
         _ => None,
     }
 }
@@ -1898,7 +2895,7 @@ pub struct AppSettings {
     pub zoom_filter_mode: ZoomFilterMode,
     /// Checkerboard brightness multiplier (1.0 = default, 0.5 = darker, 1.5 = lighter)
     pub checkerboard_brightness: f32,
-    
+
     // AI / ONNX Runtime settings
     /// Path to onnxruntime.dll / libonnxruntime.so
     pub onnx_runtime_path: String,
@@ -1942,7 +2939,7 @@ impl Default for AppSettings {
             checkerboard_brightness: 1.0,
             onnx_runtime_path: String::new(),
             birefnet_model_path: String::new(),
-            
+
             show_debug_panel: true,
             debug_show_canvas_size: true,
             debug_show_zoom: true,
@@ -1982,15 +2979,17 @@ impl AppSettings {
         {
             // Use %APPDATA% so the settings are stored in the user profile and isolated
             // from other users — avoids the security issue of a world-writable EXE directory.
-            let appdata = std::env::var("APPDATA").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_else(|_| {
-                std::env::current_exe()
-                    .ok()
-                    .and_then(|p| p.parent().map(|d| d.to_string_lossy().into_owned()))
-                    .unwrap_or_default()
-            });
+            let appdata = std::env::var("APPDATA")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .unwrap_or_else(|_| {
+                    std::env::current_exe()
+                        .ok()
+                        .and_then(|p| p.parent().map(|d| d.to_string_lossy().into_owned()))
+                        .unwrap_or_default()
+                });
             let config_dir = PathBuf::from(appdata).join("PaintFE");
             let _ = std::fs::create_dir_all(&config_dir);
-            return Some(config_dir.join("paintfe_settings.cfg"));
+            Some(config_dir.join("paintfe_settings.cfg"))
         }
         #[cfg(target_os = "macos")]
         {
@@ -2004,7 +3003,9 @@ impl AppSettings {
         }
         #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
         {
-            std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("paintfe_settings.cfg")))
+            std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.join("paintfe_settings.cfg")))
         }
     }
 
@@ -2029,7 +3030,9 @@ impl AppSettings {
 
     /// Save settings to disk
     pub fn save(&self) {
-        let Some(path) = Self::settings_path() else { return };
+        let Some(path) = Self::settings_path() else {
+            return;
+        };
         let mode_str = match self.theme_mode {
             ThemeMode::Light => "light",
             ThemeMode::Dark => "dark",
@@ -2106,12 +3109,18 @@ impl AppSettings {
 
     /// Load settings from disk (returns default if file missing or corrupt)
     pub fn load() -> Self {
-        let Some(path) = Self::settings_path() else { return Self::default() };
-        let Ok(content) = std::fs::read_to_string(&path) else { return Self::default() };
+        let Some(path) = Self::settings_path() else {
+            return Self::default();
+        };
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            return Self::default();
+        };
 
         let mut s = Self::default();
         for line in content.lines() {
-            let Some((key, val)) = line.split_once('=') else { continue };
+            let Some((key, val)) = line.split_once('=') else {
+                continue;
+            };
             let key = key.trim();
             let val = val.trim();
             match key {
@@ -2158,22 +3167,34 @@ impl AppSettings {
                     s.auto_save_minutes = val.parse().unwrap_or(0);
                 }
                 "accent_light_normal" => {
-                    if let Some(c) = Self::str_to_color(val) { s.custom_accent.light_normal = c; }
+                    if let Some(c) = Self::str_to_color(val) {
+                        s.custom_accent.light_normal = c;
+                    }
                 }
                 "accent_light_faint" => {
-                    if let Some(c) = Self::str_to_color(val) { s.custom_accent.light_faint = c; }
+                    if let Some(c) = Self::str_to_color(val) {
+                        s.custom_accent.light_faint = c;
+                    }
                 }
                 "accent_light_strong" => {
-                    if let Some(c) = Self::str_to_color(val) { s.custom_accent.light_strong = c; }
+                    if let Some(c) = Self::str_to_color(val) {
+                        s.custom_accent.light_strong = c;
+                    }
                 }
                 "accent_dark_normal" => {
-                    if let Some(c) = Self::str_to_color(val) { s.custom_accent.dark_normal = c; }
+                    if let Some(c) = Self::str_to_color(val) {
+                        s.custom_accent.dark_normal = c;
+                    }
                 }
                 "accent_dark_faint" => {
-                    if let Some(c) = Self::str_to_color(val) { s.custom_accent.dark_faint = c; }
+                    if let Some(c) = Self::str_to_color(val) {
+                        s.custom_accent.dark_faint = c;
+                    }
                 }
                 "accent_dark_strong" => {
-                    if let Some(c) = Self::str_to_color(val) { s.custom_accent.dark_strong = c; }
+                    if let Some(c) = Self::str_to_color(val) {
+                        s.custom_accent.dark_strong = c;
+                    }
                 }
                 "neon_mode" => {
                     s.neon_mode = val == "true";
@@ -2236,9 +3257,13 @@ impl PixelGridMode {
             PixelGridMode::AlwaysOff => t!("pixel_grid_mode.always_off"),
         }
     }
-    
+
     pub fn all() -> &'static [PixelGridMode] {
-        &[PixelGridMode::Auto, PixelGridMode::AlwaysOn, PixelGridMode::AlwaysOff]
+        &[
+            PixelGridMode::Auto,
+            PixelGridMode::AlwaysOn,
+            PixelGridMode::AlwaysOff,
+        ]
     }
 }
 
@@ -2316,7 +3341,13 @@ impl SettingsWindow {
         self.dirty = false;
     }
 
-    pub fn show(&mut self, ctx: &egui::Context, settings: &mut AppSettings, theme: &mut crate::theme::Theme, assets: &Assets) {
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        settings: &mut AppSettings,
+        theme: &mut crate::theme::Theme,
+        assets: &Assets,
+    ) {
         if !self.open {
             return;
         }
@@ -2331,10 +3362,10 @@ impl SettingsWindow {
         if !was_open_last_frame {
             self.sync_from_settings(settings);
         }
-        
+
         let show = self.open;
         let mut should_close = false;
-        
+
         egui::Window::new("settings_window_internal")
             .title_bar(false)
             .resizable(true)
@@ -2382,10 +3413,14 @@ impl SettingsWindow {
                         egui::pos2(rect.max.x - btn_size.x, rect.min.y),
                         btn_size,
                     );
-                    let btn_response = ui.interact(btn_rect, ui.id().with("hdr_close"), Sense::click());
+                    let btn_response =
+                        ui.interact(btn_rect, ui.id().with("hdr_close"), Sense::click());
                     if btn_response.hovered() {
-                        painter.rect_filled(btn_rect, egui::Rounding::ZERO,
-                            Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 55));
+                        painter.rect_filled(
+                            btn_rect,
+                            egui::Rounding::ZERO,
+                            Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 55),
+                        );
                     }
                     painter.text(
                         btn_rect.center(),
@@ -2411,29 +3446,48 @@ impl SettingsWindow {
                         ui.add_space(4.0);
 
                         let tabs: [(SettingsTab, Icon, String); 5] = [
-                            (SettingsTab::General,   Icon::SettingsGeneral,   t!("settings.tab.general")),
-                            (SettingsTab::Interface, Icon::SettingsInterface, t!("settings.tab.interface")),
-                            (SettingsTab::Hardware,  Icon::SettingsHardware,  t!("settings.tab.hardware")),
-                            (SettingsTab::Keybinds,  Icon::SettingsKeybinds,  t!("settings.tab.keybinds")),
-                            (SettingsTab::AI,        Icon::SettingsAI,        t!("settings.tab.ai")),
+                            (
+                                SettingsTab::General,
+                                Icon::SettingsGeneral,
+                                t!("settings.tab.general"),
+                            ),
+                            (
+                                SettingsTab::Interface,
+                                Icon::SettingsInterface,
+                                t!("settings.tab.interface"),
+                            ),
+                            (
+                                SettingsTab::Hardware,
+                                Icon::SettingsHardware,
+                                t!("settings.tab.hardware"),
+                            ),
+                            (
+                                SettingsTab::Keybinds,
+                                Icon::SettingsKeybinds,
+                                t!("settings.tab.keybinds"),
+                            ),
+                            (SettingsTab::AI, Icon::SettingsAI, t!("settings.tab.ai")),
                         ];
                         for (tab, icon, label) in &tabs {
                             let selected = self.active_tab == *tab;
                             // Render icon + text as a selectable row
                             let icon_size = Vec2::splat(16.0);
                             let total_width = ui.available_width();
-                            let (rect, response) = ui.allocate_exact_size(
-                                Vec2::new(total_width, 30.0),
-                                Sense::click(),
-                            );
+                            let (rect, response) = ui
+                                .allocate_exact_size(Vec2::new(total_width, 30.0), Sense::click());
                             if response.clicked() {
                                 self.active_tab = *tab;
                             }
                             // Draw selection background
                             if selected {
-                                ui.painter().rect_filled(rect, 2.0, ui.visuals().selection.bg_fill);
+                                ui.painter()
+                                    .rect_filled(rect, 2.0, ui.visuals().selection.bg_fill);
                             } else if response.hovered() {
-                                ui.painter().rect_filled(rect, 2.0, ui.visuals().widgets.hovered.bg_fill);
+                                ui.painter().rect_filled(
+                                    rect,
+                                    2.0,
+                                    ui.visuals().widgets.hovered.bg_fill,
+                                );
                             }
                             // Draw icon
                             let icon_rect = egui::Rect::from_min_size(
@@ -2449,12 +3503,16 @@ impl SettingsWindow {
                                 ui.painter().image(
                                     texture.id(),
                                     icon_rect,
-                                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                                    egui::Rect::from_min_max(
+                                        egui::pos2(0.0, 0.0),
+                                        egui::pos2(1.0, 1.0),
+                                    ),
                                     text_color,
                                 );
                             }
                             // Draw label
-                            let text_pos = egui::pos2(icon_rect.right() + 6.0, rect.center().y - 6.0);
+                            let text_pos =
+                                egui::pos2(icon_rect.right() + 6.0, rect.center().y - 6.0);
                             ui.painter().text(
                                 text_pos,
                                 egui::Align2::LEFT_TOP,
@@ -2526,11 +3584,16 @@ impl SettingsWindow {
         Self::section_header(ui, "Language");
         ui.horizontal(|ui| {
             ui.label("Language:");
-            let current_code = if settings.language.is_empty() { "auto".to_string() } else { settings.language.clone() };
+            let current_code = if settings.language.is_empty() {
+                "auto".to_string()
+            } else {
+                settings.language.clone()
+            };
             let display_text = if current_code == "auto" {
                 "Auto (System)".to_string()
             } else {
-                crate::i18n::LANGUAGES.iter()
+                crate::i18n::LANGUAGES
+                    .iter()
                     .find(|(c, _)| *c == current_code.as_str())
                     .map(|(_, name)| name.to_string())
                     .unwrap_or_else(|| current_code.clone())
@@ -2538,20 +3601,33 @@ impl SettingsWindow {
             egui::ComboBox::from_id_source("language_select")
                 .selected_text(&display_text)
                 .show_ui(ui, |ui| {
-                    if ui.selectable_label(current_code == "auto", "Auto (System)").clicked() {
+                    if ui
+                        .selectable_label(current_code == "auto", "Auto (System)")
+                        .clicked()
+                    {
                         settings.language = String::new();
                         let detected = crate::i18n::detect_system_language();
                         crate::i18n::set_language(&detected);
                     }
                     for &(code, name) in crate::i18n::LANGUAGES {
-                        if ui.selectable_label(current_code.as_str() == code, format!("{} ({})", name, code)).clicked() {
+                        if ui
+                            .selectable_label(
+                                current_code.as_str() == code,
+                                format!("{} ({})", name, code),
+                            )
+                            .clicked()
+                        {
                             settings.language = code.to_string();
                             crate::i18n::set_language(code);
                         }
                     }
                 });
         });
-        ui.label(egui::RichText::new("Restart recommended after changing language.").small().weak());
+        ui.label(
+            egui::RichText::new("Restart recommended after changing language.")
+                .small()
+                .weak(),
+        );
 
         // -- History & Auto-save -------------------------------------------
         Self::section_header(ui, &t!("settings.general.history"));
@@ -2561,24 +3637,27 @@ impl SettingsWindow {
             .min_col_width(160.0)
             .show(ui, |ui| {
                 ui.label(t!("settings.general.max_undo_steps"));
-                ui.add(egui::DragValue::new(&mut settings.max_undo_steps)
-                    .clamp_range(10..=500)
-                    .speed(1.0)
-                    .suffix(" steps"));
+                ui.add(
+                    egui::DragValue::new(&mut settings.max_undo_steps)
+                        .clamp_range(10..=500)
+                        .speed(1.0)
+                        .suffix(" steps"),
+                );
                 ui.end_row();
 
                 ui.label("Auto-save interval:");
                 {
                     const OPTIONS: &[(u32, &str)] = &[
-                        (0,  "Disabled"),
-                        (1,  "Every 1 minute"),
-                        (3,  "Every 3 minutes"),
-                        (5,  "Every 5 minutes"),
+                        (0, "Disabled"),
+                        (1, "Every 1 minute"),
+                        (3, "Every 3 minutes"),
+                        (5, "Every 5 minutes"),
                         (10, "Every 10 minutes"),
                         (15, "Every 15 minutes"),
                         (30, "Every 30 minutes"),
                     ];
-                    let current_label = OPTIONS.iter()
+                    let current_label = OPTIONS
+                        .iter()
                         .find(|(v, _)| *v == settings.auto_save_minutes)
                         .map(|(_, l)| *l)
                         .unwrap_or("Custom");
@@ -2586,7 +3665,10 @@ impl SettingsWindow {
                         .selected_text(current_label)
                         .show_ui(ui, |ui| {
                             for &(val, label) in OPTIONS {
-                                if ui.selectable_label(settings.auto_save_minutes == val, label).clicked() {
+                                if ui
+                                    .selectable_label(settings.auto_save_minutes == val, label)
+                                    .clicked()
+                                {
                                     settings.auto_save_minutes = val;
                                 }
                             }
@@ -2594,13 +3676,27 @@ impl SettingsWindow {
                 }
                 ui.end_row();
             });
-        ui.label(egui::RichText::new(t!("settings.general.max_undo_hint")).small().weak());
+        ui.label(
+            egui::RichText::new(t!("settings.general.max_undo_hint"))
+                .small()
+                .weak(),
+        );
         if settings.auto_save_minutes > 0 {
             if let Some(dir) = crate::io::autosave_dir() {
-                ui.label(egui::RichText::new(format!("Auto-saves to: {}", dir.display())).small().weak());
+                ui.label(
+                    egui::RichText::new(format!("Auto-saves to: {}", dir.display()))
+                        .small()
+                        .weak(),
+                );
             }
         } else {
-            ui.label(egui::RichText::new("Auto-save is disabled — enable it to protect against crashes.").small().weak());
+            ui.label(
+                egui::RichText::new(
+                    "Auto-save is disabled — enable it to protect against crashes.",
+                )
+                .small()
+                .weak(),
+            );
         }
 
         // -- Canvas Display -------------------------------------------
@@ -2611,7 +3707,10 @@ impl SettingsWindow {
                 .selected_text(settings.pixel_grid_mode.name())
                 .show_ui(ui, |ui| {
                     for &mode in PixelGridMode::all() {
-                        if ui.selectable_label(mode == settings.pixel_grid_mode, mode.name()).clicked() {
+                        if ui
+                            .selectable_label(mode == settings.pixel_grid_mode, mode.name())
+                            .clicked()
+                        {
                             settings.pixel_grid_mode = mode;
                         }
                     }
@@ -2621,25 +3720,58 @@ impl SettingsWindow {
         // -- Effects -----------------------------------------------------
         Self::section_header(ui, &t!("settings.general.effects"));
         ui.checkbox(&mut settings.neon_mode, t!("settings.general.neon_mode"));
-        ui.label(egui::RichText::new(t!("settings.general.neon_hint")).small().weak());
+        ui.label(
+            egui::RichText::new(t!("settings.general.neon_hint"))
+                .small()
+                .weak(),
+        );
 
         // -- Behaviour -------------------------------------------------
         Self::section_header(ui, "Behaviour");
-        ui.checkbox(&mut settings.confirm_on_exit, "Confirm before exiting with unsaved changes");
-        ui.label(egui::RichText::new("Shows a save prompt when quitting with unsaved projects.").small().weak());
+        ui.checkbox(
+            &mut settings.confirm_on_exit,
+            "Confirm before exiting with unsaved changes",
+        );
+        ui.label(
+            egui::RichText::new("Shows a save prompt when quitting with unsaved projects.")
+                .small()
+                .weak(),
+        );
 
         // -- Debug Info ---------------------------------------------------
         Self::section_header(ui, &t!("settings.general.debug_info"));
-        ui.checkbox(&mut settings.show_debug_panel, t!("settings.general.show_debug"));
-        ui.label(egui::RichText::new(t!("settings.general.debug_hint")).small().weak());
+        ui.checkbox(
+            &mut settings.show_debug_panel,
+            t!("settings.general.show_debug"),
+        );
+        ui.label(
+            egui::RichText::new(t!("settings.general.debug_hint"))
+                .small()
+                .weak(),
+        );
         if settings.show_debug_panel {
             ui.add_space(4.0);
             ui.indent("debug_options", |ui| {
-                ui.checkbox(&mut settings.debug_show_canvas_size, t!("settings.general.debug_canvas_size"));
-                ui.checkbox(&mut settings.debug_show_zoom, t!("settings.general.debug_zoom"));
-                ui.checkbox(&mut settings.debug_show_fps, t!("settings.general.debug_fps"));
-                ui.checkbox(&mut settings.debug_show_gpu, t!("settings.general.debug_gpu"));
-                ui.checkbox(&mut settings.debug_show_operations, t!("settings.general.debug_operations"));
+                ui.checkbox(
+                    &mut settings.debug_show_canvas_size,
+                    t!("settings.general.debug_canvas_size"),
+                );
+                ui.checkbox(
+                    &mut settings.debug_show_zoom,
+                    t!("settings.general.debug_zoom"),
+                );
+                ui.checkbox(
+                    &mut settings.debug_show_fps,
+                    t!("settings.general.debug_fps"),
+                );
+                ui.checkbox(
+                    &mut settings.debug_show_gpu,
+                    t!("settings.general.debug_gpu"),
+                );
+                ui.checkbox(
+                    &mut settings.debug_show_operations,
+                    t!("settings.general.debug_operations"),
+                );
             });
         }
 
@@ -2680,18 +3812,27 @@ impl SettingsWindow {
     fn show_hardware_tab(&mut self, ui: &mut egui::Ui, settings: &mut AppSettings) {
         // -- Acceleration ----------------------------------------------
         Self::section_header(ui, "GPU Acceleration");
-        ui.checkbox(&mut settings.gpu_acceleration, "Enable hardware-accelerated rendering");
-        ui.label(egui::RichText::new("Disable only if you experience rendering glitches. Takes effect after restart.").small().weak());
+        ui.checkbox(
+            &mut settings.gpu_acceleration,
+            "Enable hardware-accelerated rendering",
+        );
+        ui.label(
+            egui::RichText::new(
+                "Disable only if you experience rendering glitches. Takes effect after restart.",
+            )
+            .small()
+            .weak(),
+        );
 
         // -- Preferred Adapter --------------------------------------------
         Self::section_header(ui, &t!("settings.hardware.preferred_gpu"));
 
         // Poll background GPU enumeration result
-        if let Some(rx) = &self.gpu_adapters_receiver {
-            if let Ok(adapters) = rx.try_recv() {
-                self.gpu_adapters = adapters;
-                self.gpu_adapters_receiver = None;
-            }
+        if let Some(rx) = &self.gpu_adapters_receiver
+            && let Ok(adapters) = rx.try_recv()
+        {
+            self.gpu_adapters = adapters;
+            self.gpu_adapters_receiver = None;
         }
 
         // Kick off background enumeration on first visit (non-blocking)
@@ -2710,7 +3851,8 @@ impl SettingsWindow {
                     let info = adapter.get_info();
                     // Skip software/fallback adapters (CPU-simulated or unknown)
                     if info.device_type != wgpu::DeviceType::Other
-                        && info.device_type != wgpu::DeviceType::Cpu {
+                        && info.device_type != wgpu::DeviceType::Cpu
+                    {
                         let name = info.name.clone();
                         if !name.is_empty() && !adapters.contains(&name) {
                             adapters.push(name);
@@ -2735,7 +3877,10 @@ impl SettingsWindow {
                         .selected_text(&settings.preferred_gpu)
                         .show_ui(ui, |ui| {
                             for adapter in &self.gpu_adapters {
-                                if ui.selectable_label(settings.preferred_gpu == *adapter, adapter).clicked() {
+                                if ui
+                                    .selectable_label(settings.preferred_gpu == *adapter, adapter)
+                                    .clicked()
+                                {
                                     settings.preferred_gpu = adapter.clone();
                                 }
                             }
@@ -2743,11 +3888,16 @@ impl SettingsWindow {
                 }
                 ui.end_row();
             });
-        ui.label(egui::RichText::new(t!("settings.hardware.restart_warning")).small().weak());
+        ui.label(
+            egui::RichText::new(t!("settings.hardware.restart_warning"))
+                .small()
+                .weak(),
+        );
 
         // -- Status -----------------------------------------------------
         Self::section_header(ui, &t!("settings.hardware.status"));
-        let status_text = t!("settings.hardware.running_on").replace("{0}", &settings.preferred_gpu);
+        let status_text =
+            t!("settings.hardware.running_on").replace("{0}", &settings.preferred_gpu);
         ui.label(egui::RichText::new(status_text).strong());
 
         // -- Reset ------------------------------------------------------
@@ -2781,16 +3931,28 @@ impl SettingsWindow {
                 ui.label(t!("settings.interface.mode"));
                 let current_name = match self.staged_mode {
                     ThemeMode::Light => t!("settings.interface.mode.light"),
-                    ThemeMode::Dark  => t!("settings.interface.mode.dark"),
+                    ThemeMode::Dark => t!("settings.interface.mode.dark"),
                 };
                 egui::ComboBox::from_id_source("theme_mode_sel")
                     .selected_text(&current_name)
                     .show_ui(ui, |ui| {
-                        if ui.selectable_label(self.staged_mode == ThemeMode::Light, t!("settings.interface.mode.light")).clicked() {
+                        if ui
+                            .selectable_label(
+                                self.staged_mode == ThemeMode::Light,
+                                t!("settings.interface.mode.light"),
+                            )
+                            .clicked()
+                        {
                             self.staged_mode = ThemeMode::Light;
                             self.dirty = true;
                         }
-                        if ui.selectable_label(self.staged_mode == ThemeMode::Dark, t!("settings.interface.mode.dark")).clicked() {
+                        if ui
+                            .selectable_label(
+                                self.staged_mode == ThemeMode::Dark,
+                                t!("settings.interface.mode.dark"),
+                            )
+                            .clicked()
+                        {
                             self.staged_mode = ThemeMode::Dark;
                             self.dirty = true;
                         }
@@ -2802,7 +3964,10 @@ impl SettingsWindow {
                     .selected_text(self.staged_preset.label())
                     .show_ui(ui, |ui| {
                         for &preset in ThemePreset::all() {
-                            if ui.selectable_label(self.staged_preset == preset, preset.label()).clicked() {
+                            if ui
+                                .selectable_label(self.staged_preset == preset, preset.label())
+                                .clicked()
+                            {
                                 self.staged_preset = preset;
                                 self.staged_accent = preset.accent_colors();
                                 self.dirty = true;
@@ -2819,7 +3984,7 @@ impl SettingsWindow {
         Self::section_header(ui, &t!("settings.interface.accent_color"));
         let mode_colors_label = match self.staged_mode {
             ThemeMode::Light => t!("settings.interface.light_mode_colors"),
-            ThemeMode::Dark  => t!("settings.interface.dark_mode_colors"),
+            ThemeMode::Dark => t!("settings.interface.dark_mode_colors"),
         };
         ui.label(egui::RichText::new(mode_colors_label).weak());
         ui.add_space(4.0);
@@ -2828,16 +3993,40 @@ impl SettingsWindow {
         let changed = match self.staged_mode {
             ThemeMode::Light => {
                 let mut c = false;
-                c |= Self::color_row(ui, &t!("settings.interface.accent_normal"), &mut self.staged_accent.light_normal);
-                c |= Self::color_row(ui, &t!("settings.interface.accent_faint"),  &mut self.staged_accent.light_faint);
-                c |= Self::color_row(ui, &t!("settings.interface.accent_strong"), &mut self.staged_accent.light_strong);
+                c |= Self::color_row(
+                    ui,
+                    &t!("settings.interface.accent_normal"),
+                    &mut self.staged_accent.light_normal,
+                );
+                c |= Self::color_row(
+                    ui,
+                    &t!("settings.interface.accent_faint"),
+                    &mut self.staged_accent.light_faint,
+                );
+                c |= Self::color_row(
+                    ui,
+                    &t!("settings.interface.accent_strong"),
+                    &mut self.staged_accent.light_strong,
+                );
                 c
             }
             ThemeMode::Dark => {
                 let mut c = false;
-                c |= Self::color_row(ui, &t!("settings.interface.accent_normal"), &mut self.staged_accent.dark_normal);
-                c |= Self::color_row(ui, &t!("settings.interface.accent_faint"),  &mut self.staged_accent.dark_faint);
-                c |= Self::color_row(ui, &t!("settings.interface.accent_strong"), &mut self.staged_accent.dark_strong);
+                c |= Self::color_row(
+                    ui,
+                    &t!("settings.interface.accent_normal"),
+                    &mut self.staged_accent.dark_normal,
+                );
+                c |= Self::color_row(
+                    ui,
+                    &t!("settings.interface.accent_faint"),
+                    &mut self.staged_accent.dark_faint,
+                );
+                c |= Self::color_row(
+                    ui,
+                    &t!("settings.interface.accent_strong"),
+                    &mut self.staged_accent.dark_strong,
+                );
                 c
             }
         };
@@ -2858,7 +4047,10 @@ impl SettingsWindow {
                     .selected_text(settings.zoom_filter_mode.name())
                     .show_ui(ui, |ui| {
                         for &mode in ZoomFilterMode::all() {
-                            if ui.selectable_label(settings.zoom_filter_mode == mode, mode.name()).clicked() {
+                            if ui
+                                .selectable_label(settings.zoom_filter_mode == mode, mode.name())
+                                .clicked()
+                            {
                                 settings.zoom_filter_mode = mode;
                                 settings.save();
                             }
@@ -2867,16 +4059,28 @@ impl SettingsWindow {
                 ui.end_row();
 
                 ui.label(t!("settings.interface.brightness"));
-                if ui.add(egui::Slider::new(&mut settings.checkerboard_brightness, 0.5..=2.0)
-                    .step_by(0.1)
-                    .text(""))
-                    .changed() {
+                if ui
+                    .add(
+                        egui::Slider::new(&mut settings.checkerboard_brightness, 0.5..=2.0)
+                            .step_by(0.1)
+                            .text(""),
+                    )
+                    .changed()
+                {
                     settings.save();
                 }
                 ui.end_row();
             });
-        ui.label(egui::RichText::new(t!("settings.interface.zoom_filter_hint")).small().weak());
-        ui.label(egui::RichText::new(t!("settings.interface.brightness_hint")).small().weak());
+        ui.label(
+            egui::RichText::new(t!("settings.interface.zoom_filter_hint"))
+                .small()
+                .weak(),
+        );
+        ui.label(
+            egui::RichText::new(t!("settings.interface.brightness_hint"))
+                .small()
+                .weak(),
+        );
 
         // -- Apply / Reset -------------------------------------------
         ui.add_space(16.0);
@@ -2940,8 +4144,12 @@ impl SettingsWindow {
         // If mode changed, rebuild with correct mode
         if settings.theme_mode != theme.mode {
             *theme = match settings.theme_mode {
-                ThemeMode::Light => crate::theme::Theme::light_with_accent(self.staged_preset, self.staged_accent),
-                ThemeMode::Dark  => crate::theme::Theme::dark_with_accent(self.staged_preset, self.staged_accent),
+                ThemeMode::Light => {
+                    crate::theme::Theme::light_with_accent(self.staged_preset, self.staged_accent)
+                }
+                ThemeMode::Dark => {
+                    crate::theme::Theme::dark_with_accent(self.staged_preset, self.staged_accent)
+                }
             };
         }
         theme.apply(ctx);
@@ -2957,20 +4165,25 @@ impl SettingsWindow {
         ui.label(t!("settings.ai.library_path"));
         ui.horizontal(|ui| {
             let field_w = (ui.available_width() - 38.0).max(120.0);
-            ui.add(egui::TextEdit::singleline(&mut self.staged_onnx_path)
-                .desired_width(field_w)
-                .hint_text(t!("settings.ai.onnx_path_placeholder")));
-            if ui.button("\u{1F4C2}").clicked() {
-                if let Some(path) = rfd::FileDialog::new()
+            ui.add(
+                egui::TextEdit::singleline(&mut self.staged_onnx_path)
+                    .desired_width(field_w)
+                    .hint_text(t!("settings.ai.onnx_path_placeholder")),
+            );
+            if ui.button("\u{1F4C2}").clicked()
+                && let Some(path) = rfd::FileDialog::new()
                     .add_filter("Dynamic Library", &["dll", "so", "dylib"])
                     .pick_file()
-                {
-                    self.staged_onnx_path = path.display().to_string();
-                    self.onnx_probe_result = None;
-                }
+            {
+                self.staged_onnx_path = path.display().to_string();
+                self.onnx_probe_result = None;
             }
         });
-        ui.label(egui::RichText::new(t!("settings.ai.library_hint")).small().weak());
+        ui.label(
+            egui::RichText::new(t!("settings.ai.library_hint"))
+                .small()
+                .weak(),
+        );
 
         // Security warning — remind users to only use the official runtime
         ui.add_space(4.0);
@@ -3001,12 +4214,16 @@ impl SettingsWindow {
             }
             match &self.onnx_probe_result {
                 Some(Ok(version)) => {
-                    ui.label(egui::RichText::new(t!("settings.ai.onnx_loaded").replace("{0}", version))
-                        .color(egui::Color32::from_rgb(0, 180, 0)));
+                    ui.label(
+                        egui::RichText::new(t!("settings.ai.onnx_loaded").replace("{0}", version))
+                            .color(egui::Color32::from_rgb(0, 180, 0)),
+                    );
                 }
                 Some(Err(e)) => {
-                    ui.label(egui::RichText::new(format!("\u{274C} {}", e))
-                        .color(egui::Color32::from_rgb(220, 0, 0)));
+                    ui.label(
+                        egui::RichText::new(format!("\u{274C} {}", e))
+                            .color(egui::Color32::from_rgb(220, 0, 0)),
+                    );
                 }
                 None => {
                     ui.weak(t!("settings.ai.not_tested"));
@@ -3016,7 +4233,11 @@ impl SettingsWindow {
 
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(t!("settings.ai.download_from")).small().weak());
+            ui.label(
+                egui::RichText::new(t!("settings.ai.download_from"))
+                    .small()
+                    .weak(),
+            );
             ui.hyperlink_to(
                 egui::RichText::new("github.com/microsoft/onnxruntime").small(),
                 "https://github.com/microsoft/onnxruntime/releases",
@@ -3029,19 +4250,24 @@ impl SettingsWindow {
         ui.label(t!("settings.ai.model_path"));
         ui.horizontal(|ui| {
             let field_w = (ui.available_width() - 38.0).max(120.0);
-            ui.add(egui::TextEdit::singleline(&mut self.staged_model_path)
-                .desired_width(field_w)
-                .hint_text(t!("settings.ai.model_path_placeholder")));
-            if ui.button("\u{1F4C2}").clicked() {
-                if let Some(path) = rfd::FileDialog::new()
+            ui.add(
+                egui::TextEdit::singleline(&mut self.staged_model_path)
+                    .desired_width(field_w)
+                    .hint_text(t!("settings.ai.model_path_placeholder")),
+            );
+            if ui.button("\u{1F4C2}").clicked()
+                && let Some(path) = rfd::FileDialog::new()
                     .add_filter("ONNX Model", &["onnx"])
                     .pick_file()
-                {
-                    self.staged_model_path = path.display().to_string();
-                }
+            {
+                self.staged_model_path = path.display().to_string();
             }
         });
-        ui.label(egui::RichText::new(t!("settings.ai.model_hint")).small().weak());
+        ui.label(
+            egui::RichText::new(t!("settings.ai.model_hint"))
+                .small()
+                .weak(),
+        );
 
         ui.add_space(12.0);
         ui.label(egui::RichText::new(t!("settings.ai.supported_models")).strong());
@@ -3050,30 +4276,58 @@ impl SettingsWindow {
             .num_columns(3)
             .spacing([16.0, 4.0])
             .show(ui, |ui| {
-                ui.label(egui::RichText::new(t!("settings.ai.model_header")).strong().small());
-                ui.label(egui::RichText::new(t!("settings.ai.input_size_header")).strong().small());
-                ui.label(egui::RichText::new(t!("settings.ai.best_for_header")).strong().small());
+                ui.label(
+                    egui::RichText::new(t!("settings.ai.model_header"))
+                        .strong()
+                        .small(),
+                );
+                ui.label(
+                    egui::RichText::new(t!("settings.ai.input_size_header"))
+                        .strong()
+                        .small(),
+                );
+                ui.label(
+                    egui::RichText::new(t!("settings.ai.best_for_header"))
+                        .strong()
+                        .small(),
+                );
                 ui.end_row();
 
                 ui.label(egui::RichText::new(t!("settings.ai.birefnet")).small());
                 ui.label(egui::RichText::new("1024\u{00D7}1024").small().weak());
-                ui.label(egui::RichText::new(t!("settings.ai.birefnet_desc")).small().weak());
+                ui.label(
+                    egui::RichText::new(t!("settings.ai.birefnet_desc"))
+                        .small()
+                        .weak(),
+                );
                 ui.end_row();
 
                 ui.label(egui::RichText::new(t!("settings.ai.u2net")).small());
                 ui.label(egui::RichText::new("320\u{00D7}320").small().weak());
-                ui.label(egui::RichText::new(t!("settings.ai.u2net_desc")).small().weak());
+                ui.label(
+                    egui::RichText::new(t!("settings.ai.u2net_desc"))
+                        .small()
+                        .weak(),
+                );
                 ui.end_row();
 
                 ui.label(egui::RichText::new(t!("settings.ai.isnet")).small());
                 ui.label(egui::RichText::new("1024\u{00D7}1024").small().weak());
-                ui.label(egui::RichText::new(t!("settings.ai.isnet_desc")).small().weak());
+                ui.label(
+                    egui::RichText::new(t!("settings.ai.isnet_desc"))
+                        .small()
+                        .weak(),
+                );
                 ui.end_row();
             });
 
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(t!("settings.ai.download_models")).small().weak());
+            ui.label(
+                egui::RichText::new(t!("settings.ai.download_models"))
+                    .small()
+                    .weak(),
+            );
             ui.hyperlink_to(
                 egui::RichText::new("BiRefNet").small(),
                 "https://github.com/ZhengPeng7/BiRefNet/releases",
@@ -3114,10 +4368,17 @@ impl SettingsWindow {
         ui.add_space(8.0);
         // Show current status
         if !settings.onnx_runtime_path.is_empty() && !settings.birefnet_model_path.is_empty() {
-            ui.label(egui::RichText::new(t!("settings.ai.configured")).small()
-                .color(egui::Color32::from_rgb(0, 160, 0)));
+            ui.label(
+                egui::RichText::new(t!("settings.ai.configured"))
+                    .small()
+                    .color(egui::Color32::from_rgb(0, 160, 0)),
+            );
         } else {
-            ui.label(egui::RichText::new(t!("settings.ai.not_configured")).small().weak());
+            ui.label(
+                egui::RichText::new(t!("settings.ai.not_configured"))
+                    .small()
+                    .weak(),
+            );
         }
     }
 
@@ -3147,19 +4408,25 @@ impl SettingsWindow {
                                 let ch = t.chars().next().unwrap_or(' ');
                                 if !ch.is_ascii_alphabetic() && !ch.is_ascii_digit() {
                                     return Some(KeyCombo {
-                                        ctrl, shift, alt,
+                                        ctrl,
+                                        shift,
+                                        alt,
                                         key: None,
                                         text_char: Some(t.clone()),
                                     });
                                 }
                             }
-                            egui::Event::Key { key, pressed: true, .. } => {
+                            egui::Event::Key {
+                                key, pressed: true, ..
+                            } => {
                                 // Skip pure modifier keys
                                 match key {
                                     egui::Key::Escape => {} // handled above
                                     _ => {
                                         return Some(KeyCombo {
-                                            ctrl, shift, alt,
+                                            ctrl,
+                                            shift,
+                                            alt,
                                             key: Some(*key),
                                             text_char: None,
                                         });
@@ -3186,46 +4453,48 @@ impl SettingsWindow {
             .auto_shrink([false; 2])
             .max_height(880.0)
             .show(ui, |ui| {
-            let mut current_category = String::new();
-            for action in BindableAction::all() {
-                let cat = action.category();
-                if cat != current_category {
-                    if !current_category.is_empty() {
-                        ui.add_space(6.0);
-                    }
-                    ui.label(egui::RichText::new(&cat).strong().size(13.0));
-                    ui.separator();
-                    current_category = cat;
-                }
-
-                ui.horizontal(|ui| {
-                    let name = action.display_name();
-                    ui.label(egui::RichText::new(name).size(12.0));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let is_rebinding = self.rebinding_action == Some(*action);
-                        let btn_text = if is_rebinding {
-                            egui::RichText::new(t!("settings.keybinds.press_key")).italics().color(
-                                if ui.visuals().dark_mode {
-                                    Color32::from_rgb(100, 200, 255)
-                                } else {
-                                    Color32::from_rgb(0, 100, 200)
-                                }
-                            )
-                        } else {
-                            let combo_text = self.staged_keybindings
-                                .get(*action)
-                                .map(|c| c.display())
-                                .unwrap_or_else(|| "—".to_string());
-                            egui::RichText::new(combo_text).monospace()
-                        };
-                        let btn = ui.add(egui::Button::new(btn_text).min_size(egui::vec2(100.0, 20.0)));
-                        if btn.clicked() && !is_rebinding {
-                            self.rebinding_action = Some(*action);
+                let mut current_category = String::new();
+                for action in BindableAction::all() {
+                    let cat = action.category();
+                    if cat != current_category {
+                        if !current_category.is_empty() {
+                            ui.add_space(6.0);
                         }
+                        ui.label(egui::RichText::new(&cat).strong().size(13.0));
+                        ui.separator();
+                        current_category = cat;
+                    }
+
+                    ui.horizontal(|ui| {
+                        let name = action.display_name();
+                        ui.label(egui::RichText::new(name).size(12.0));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let is_rebinding = self.rebinding_action == Some(*action);
+                            let btn_text = if is_rebinding {
+                                egui::RichText::new(t!("settings.keybinds.press_key"))
+                                    .italics()
+                                    .color(if ui.visuals().dark_mode {
+                                        Color32::from_rgb(100, 200, 255)
+                                    } else {
+                                        Color32::from_rgb(0, 100, 200)
+                                    })
+                            } else {
+                                let combo_text = self
+                                    .staged_keybindings
+                                    .get(*action)
+                                    .map(|c| c.display())
+                                    .unwrap_or_else(|| "—".to_string());
+                                egui::RichText::new(combo_text).monospace()
+                            };
+                            let btn = ui
+                                .add(egui::Button::new(btn_text).min_size(egui::vec2(100.0, 20.0)));
+                            if btn.clicked() && !is_rebinding {
+                                self.rebinding_action = Some(*action);
+                            }
+                        });
                     });
-                });
-            }
-        });
+                }
+            });
 
         ui.add_space(12.0);
         ui.separator();
@@ -3245,4 +4514,6 @@ impl SettingsWindow {
 }
 
 /// Common brush size presets
-pub const BRUSH_SIZE_PRESETS: &[f32] = &[1.0, 2.0, 4.0, 8.0, 12.0, 16.0, 24.0, 32.0, 48.0, 64.0, 96.0, 128.0];
+pub const BRUSH_SIZE_PRESETS: &[f32] = &[
+    1.0, 2.0, 4.0, 8.0, 12.0, 16.0, 24.0, 32.0, 48.0, 64.0, 96.0, 128.0,
+];

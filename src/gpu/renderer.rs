@@ -2,11 +2,11 @@
 // GPU RENDERER — top-level coordinator for GPU-accelerated rendering
 // ============================================================================
 
-use std::collections::HashMap;
 use egui;
+use std::collections::HashMap;
 
-use super::context::GpuContext;
 use super::compositor::Compositor;
+use super::context::GpuContext;
 
 // ============================================================================
 // ASYNC GPU READBACK — double-buffered staging for stall-free rendering
@@ -67,7 +67,11 @@ impl AsyncReadback {
         }
         for i in 0..2 {
             self.buffers[i] = Some(device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(if i == 0 { "async_readback_0" } else { "async_readback_1" }),
+                label: Some(if i == 0 {
+                    "async_readback_0"
+                } else {
+                    "async_readback_1"
+                }),
                 size,
                 usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
                 mapped_at_creation: false,
@@ -104,14 +108,19 @@ impl AsyncReadback {
     /// Non-blocking read of the previous frame's data.  Calls
     /// `device.poll(Poll)` to pump callbacks.  Returns packed RGBA pixels
     /// (alignment padding stripped) if the mapping has completed.
-    pub fn try_read(&mut self, device: &wgpu::Device) -> Option<(Vec<u8>, u32, u32, u32, u32, bool)> {
+    pub fn try_read(
+        &mut self,
+        device: &wgpu::Device,
+    ) -> Option<(Vec<u8>, u32, u32, u32, u32, bool)> {
         if !self.read_pending {
             return None;
         }
 
         device.poll(wgpu::Maintain::Poll);
 
-        let ready = self.read_rx.as_ref()
+        let ready = self
+            .read_rx
+            .as_ref()
             .and_then(|rx| rx.try_recv().ok())
             .is_some();
 
@@ -156,12 +165,11 @@ impl AsyncReadback {
     }
 }
 use super::compute::{
-    GpuBlurPipeline, GpuBrightnessContrastPipeline,
-    GpuGradientPipeline, GpuHslPipeline, GpuInvertPipeline, GpuLiquifyPipeline, GpuMedianPipeline,
-    GpuMeshWarpDisplacementPipeline,
+    GpuBlurPipeline, GpuBrightnessContrastPipeline, GpuGradientPipeline, GpuHslPipeline,
+    GpuInvertPipeline, GpuLiquifyPipeline, GpuMedianPipeline, GpuMeshWarpDisplacementPipeline,
 };
-use super::texture::{LayerTexture, MipmapPipeline};
 use super::pool::TexturePool;
+use super::texture::{LayerTexture, MipmapPipeline};
 
 /// Tracks which region of a layer is dirty and needs re-upload.
 #[derive(Clone, Debug)]
@@ -272,29 +280,39 @@ impl GpuRenderer {
         data: &[u8],
         generation: u64,
     ) {
-        if !self.available { return; }
+        if !self.available {
+            return;
+        }
 
-        if let Some(state) = self.layer_textures.get(&layer_idx) {
-            if state.generation == generation
-                && state.texture.width == width
-                && state.texture.height == height
-            {
-                return;
-            }
+        if let Some(state) = self.layer_textures.get(&layer_idx)
+            && state.generation == generation
+            && state.texture.width == width
+            && state.texture.height == height
+        {
+            return;
         }
 
         let mip_levels = LayerTexture::mip_level_count(width, height);
         let texture = if let Some(recycled) = self.texture_pool.acquire(width, height, mip_levels) {
             let view = recycled.create_view(&wgpu::TextureViewDescriptor::default());
             let sampler = self.compositor.sampler_for_zoom(1.0);
-            let bind_group = self.ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("recycled_layer_bg"),
-                layout: &self.compositor.texture_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
-                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(sampler) },
-                ],
-            });
+            let bind_group = self
+                .ctx
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("recycled_layer_bg"),
+                    layout: &self.compositor.texture_bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(&view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(sampler),
+                        },
+                    ],
+                });
             let lt = LayerTexture {
                 texture: recycled,
                 view,
@@ -305,8 +323,12 @@ impl GpuRenderer {
             };
             lt.upload_full(&self.ctx.queue, data);
             self.mipmap_pipeline.generate(
-                &self.ctx.device, &self.ctx.queue,
-                &lt.texture, width, height, mip_levels,
+                &self.ctx.device,
+                &self.ctx.queue,
+                &lt.texture,
+                width,
+                height,
+                mip_levels,
             );
             lt
         } else {
@@ -316,7 +338,9 @@ impl GpuRenderer {
                 &self.ctx.queue,
                 &self.compositor.texture_bind_group_layout,
                 sampler,
-                width, height, data,
+                width,
+                height,
+                data,
                 Some(&self.mipmap_pipeline),
             )
         };
@@ -330,24 +354,26 @@ impl GpuRenderer {
             );
         }
 
-        self.layer_textures.insert(layer_idx, GpuLayerState {
-            texture,
-            generation,
-        });
+        self.layer_textures.insert(
+            layer_idx,
+            GpuLayerState {
+                texture,
+                generation,
+            },
+        );
     }
 
-    pub fn update_layer_rect(
-        &mut self,
-        layer_idx: usize,
-        region: &DirtyRegion,
-        data: &[u8],
-    ) {
-        if !self.available { return; }
+    pub fn update_layer_rect(&mut self, layer_idx: usize, region: &DirtyRegion, data: &[u8]) {
+        if !self.available {
+            return;
+        }
         if let Some(state) = self.layer_textures.get(&layer_idx) {
             state.texture.update_rect(
                 &self.ctx.queue,
-                region.x, region.y,
-                region.width, region.height,
+                region.x,
+                region.y,
+                region.width,
+                region.height,
                 data,
             );
         }
@@ -355,15 +381,17 @@ impl GpuRenderer {
 
     /// Check whether a texture exists for `layer_idx` with a matching generation.
     pub fn layer_is_current(&self, layer_idx: usize, generation: u64) -> bool {
-        self.layer_textures.get(&layer_idx).map_or(false, |s| s.generation == generation)
+        self.layer_textures
+            .get(&layer_idx)
+            .is_some_and(|s| s.generation == generation)
     }
 
     /// Check whether a texture exists for `layer_idx` at the expected size,
     /// regardless of generation (i.e. it can receive a partial update).
     pub fn layer_has_texture(&self, layer_idx: usize, w: u32, h: u32) -> bool {
-        self.layer_textures.get(&layer_idx).map_or(false, |s| {
-            s.texture.width == w && s.texture.height == h
-        })
+        self.layer_textures
+            .get(&layer_idx)
+            .is_some_and(|s| s.texture.width == w && s.texture.height == h)
     }
 
     /// Update the stored generation counter for an existing layer texture
@@ -395,7 +423,8 @@ impl GpuRenderer {
         self.remove_layer(del_idx);
 
         // 2. Shift all entries above del_idx down by one.
-        let mut keys_above: Vec<usize> = self.layer_textures
+        let mut keys_above: Vec<usize> = self
+            .layer_textures
             .keys()
             .copied()
             .filter(|&k| k > del_idx)
@@ -432,7 +461,11 @@ impl GpuRenderer {
         for i in 0..2 {
             self.ping_pong[i] = Some(self.ctx.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(if i == 0 { "ping" } else { "pong" }),
-                size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+                size: wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
@@ -458,7 +491,9 @@ impl GpuRenderer {
         canvas_h: u32,
         layer_info: &[(usize, f32, bool, u8)],
     ) -> Option<Vec<u8>> {
-        if !self.available { return None; }
+        if !self.available {
+            return None;
+        }
 
         self.ensure_ping_pong(canvas_w, canvas_h);
 
@@ -470,7 +505,9 @@ impl GpuRenderer {
         // Collect visible layers.
         let mut visible_layers: Vec<(f32, u32, &LayerTexture)> = Vec::new();
         for &(idx, opacity, visible, blend_mode) in layer_info.iter() {
-            if !visible { continue; }
+            if !visible {
+                continue;
+            }
             if let Some(state) = self.layer_textures.get(&idx) {
                 visible_layers.push((opacity, blend_mode as u32, &state.texture));
             }
@@ -510,7 +547,9 @@ impl GpuRenderer {
         layer_info: &[(usize, f32, bool, u8)],
         dirty_rect: Option<egui::Rect>,
     ) -> Option<(Vec<u8>, u32, u32, u32, u32, bool)> {
-        if !self.available { return None; }
+        if !self.available {
+            return None;
+        }
 
         self.ensure_ping_pong(canvas_w, canvas_h);
 
@@ -521,7 +560,9 @@ impl GpuRenderer {
 
         let mut visible_layers: Vec<(f32, u32, &LayerTexture)> = Vec::new();
         for &(idx, opacity, visible, blend_mode) in layer_info.iter() {
-            if !visible { continue; }
+            if !visible {
+                continue;
+            }
             if let Some(state) = self.layer_textures.get(&idx) {
                 visible_layers.push((opacity, blend_mode as u32, &state.texture));
             }
@@ -543,8 +584,8 @@ impl GpuRenderer {
 
         // Determine if we can do a partial readback
         if let Some(dr) = dirty_rect {
-            let rx = (dr.min.x.floor() as u32).max(0).min(canvas_w);
-            let ry = (dr.min.y.floor() as u32).max(0).min(canvas_h);
+            let rx = (dr.min.x.floor() as u32).min(canvas_w);
+            let ry = (dr.min.y.floor() as u32).min(canvas_h);
             let rx2 = (dr.max.x.ceil() as u32).min(canvas_w);
             let ry2 = (dr.max.y.ceil() as u32).min(canvas_h);
             let rw = rx2.saturating_sub(rx);
@@ -556,7 +597,12 @@ impl GpuRenderer {
 
             if rw > 0 && rh > 0 && dirty_pixels < full_pixels / 2 {
                 let pixels = Compositor::readback_texture_region(
-                    &self.ctx, result_tex, rx, ry, rw, rh,
+                    &self.ctx,
+                    result_tex,
+                    rx,
+                    ry,
+                    rw,
+                    rh,
                     &mut self.cached_staging_buf,
                 );
                 return Some((pixels, rx, ry, rw, rh, false));
@@ -565,7 +611,10 @@ impl GpuRenderer {
 
         // Full readback
         let pixels = Compositor::readback_texture(
-            &self.ctx, result_tex, canvas_w, canvas_h,
+            &self.ctx,
+            result_tex,
+            canvas_w,
+            canvas_h,
             &mut self.cached_staging_buf,
         );
         Some((pixels, 0, 0, canvas_w, canvas_h, true))
@@ -588,7 +637,9 @@ impl GpuRenderer {
         layer_info: &[(usize, f32, bool, u8)],
         dirty_rect: Option<egui::Rect>,
     ) -> Option<(Vec<u8>, u32, u32, u32, u32, bool)> {
-        if !self.available { return None; }
+        if !self.available {
+            return None;
+        }
 
         // --- Step 1: Try to read the previous frame's result (non-blocking) ---
         let previous_data = self.async_readback.try_read(&self.ctx.device);
@@ -603,7 +654,9 @@ impl GpuRenderer {
 
         let mut visible_layers: Vec<(f32, u32, &LayerTexture)> = Vec::new();
         for &(idx, opacity, visible, blend_mode) in layer_info.iter() {
-            if !visible { continue; }
+            if !visible {
+                continue;
+            }
             if let Some(state) = self.layer_textures.get(&idx) {
                 visible_layers.push((opacity, blend_mode as u32, &state.texture));
             }
@@ -625,8 +678,8 @@ impl GpuRenderer {
 
         // --- Step 3: Determine readback region and submit async copy ---
         let (rx, ry, rw, rh, is_full) = if let Some(dr) = dirty_rect {
-            let drx = (dr.min.x.floor() as u32).max(0).min(canvas_w);
-            let dry = (dr.min.y.floor() as u32).max(0).min(canvas_h);
+            let drx = (dr.min.x.floor() as u32).min(canvas_w);
+            let dry = (dr.min.y.floor() as u32).min(canvas_h);
             let drx2 = (dr.max.x.ceil() as u32).min(canvas_w);
             let dry2 = (dr.max.y.ceil() as u32).min(canvas_h);
             let drw = drx2.saturating_sub(drx);
@@ -649,12 +702,16 @@ impl GpuRenderer {
 
         let padded_bytes_per_row = Compositor::aligned_bytes_per_row(rw);
         let buffer_size = (padded_bytes_per_row * rh) as u64;
-        self.async_readback.ensure_buffers(&self.ctx.device, buffer_size);
+        self.async_readback
+            .ensure_buffers(&self.ctx.device, buffer_size);
 
         // Encode the copy-to-staging command
-        let mut encoder = self.ctx.device.create_command_encoder(
-            &wgpu::CommandEncoderDescriptor { label: Some("async_readback_copy") },
-        );
+        let mut encoder = self
+            .ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("async_readback_copy"),
+            });
         let origin = if is_full {
             wgpu::Origin3d::ZERO
         } else {
@@ -675,13 +732,22 @@ impl GpuRenderer {
                     rows_per_image: Some(rh),
                 },
             },
-            wgpu::Extent3d { width: rw, height: rh, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: rw,
+                height: rh,
+                depth_or_array_layers: 1,
+            },
         );
         self.ctx.queue.submit(std::iter::once(encoder.finish()));
 
         // Start async mapping on the write buffer, then swap
         self.async_readback.submit_and_swap(ReadbackMeta {
-            rx, ry, rw, rh, is_full, padded_bytes_per_row,
+            rx,
+            ry,
+            rw,
+            rh,
+            is_full,
+            padded_bytes_per_row,
         });
 
         // Return previous frame's data (1 frame latent, or None on first call)
@@ -698,7 +764,9 @@ impl GpuRenderer {
         layer_info: &[(usize, f32, bool, u8)],
         use_linear_filter: bool,
     ) -> Option<(wgpu::TextureView, &wgpu::Sampler)> {
-        if !self.available { return None; }
+        if !self.available {
+            return None;
+        }
 
         self.ensure_ping_pong(canvas_w, canvas_h);
 
@@ -710,7 +778,9 @@ impl GpuRenderer {
         // Collect visible layers.
         let mut visible_layers: Vec<(f32, u32, &LayerTexture)> = Vec::new();
         for &(idx, opacity, visible, blend_mode) in layer_info.iter() {
-            if !visible { continue; }
+            if !visible {
+                continue;
+            }
             if let Some(state) = self.layer_textures.get(&idx) {
                 visible_layers.push((opacity, blend_mode as u32, &state.texture));
             }
@@ -756,17 +826,27 @@ impl GpuRenderer {
 
     /// Gaussian blur (CPU ↔ GPU round-trip).
     pub fn blur_rgba(&self, data: &[u8], width: u32, height: u32, sigma: f32) -> Vec<u8> {
-        self.blur_pipeline.blur_image(&self.ctx, data, width, height, sigma)
+        self.blur_pipeline
+            .blur_image(&self.ctx, data, width, height, sigma)
     }
 
     /// Brightness/Contrast (CPU ↔ GPU round-trip).
-    pub fn brightness_contrast_rgba(&self, data: &[u8], w: u32, h: u32, brightness: f32, contrast: f32) -> Vec<u8> {
-        self.bc_pipeline.apply(&self.ctx, data, w, h, brightness, contrast)
+    pub fn brightness_contrast_rgba(
+        &self,
+        data: &[u8],
+        w: u32,
+        h: u32,
+        brightness: f32,
+        contrast: f32,
+    ) -> Vec<u8> {
+        self.bc_pipeline
+            .apply(&self.ctx, data, w, h, brightness, contrast)
     }
 
     /// Hue/Saturation/Lightness (CPU ↔ GPU round-trip).
     pub fn hsl_rgba(&self, data: &[u8], w: u32, h: u32, hue: f32, sat: f32, light: f32) -> Vec<u8> {
-        self.hsl_pipeline.apply(&self.ctx, data, w, h, hue, sat, light)
+        self.hsl_pipeline
+            .apply(&self.ctx, data, w, h, hue, sat, light)
     }
 
     /// Invert colors (CPU ↔ GPU round-trip).
@@ -788,9 +868,10 @@ impl GpuRenderer {
     }
 
     pub fn active_texture_memory(&self) -> usize {
-        self.layer_textures.values().map(|s| {
-            (s.texture.width as usize) * (s.texture.height as usize) * 4
-        }).sum()
+        self.layer_textures
+            .values()
+            .map(|s| (s.texture.width as usize) * (s.texture.height as usize) * 4)
+            .sum()
     }
 
     pub fn pooled_texture_memory(&self) -> usize {

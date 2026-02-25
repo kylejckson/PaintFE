@@ -1,8 +1,8 @@
-pub mod tools;
-pub mod layers;
-pub mod colors;
-pub mod history;
 pub mod adjustments;
-pub mod toolbar;
+pub mod colors;
 pub mod dialogs;
+pub mod history;
+pub mod layers;
 pub mod script_editor;
+pub mod toolbar;
+pub mod tools;

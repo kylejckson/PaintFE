@@ -67,7 +67,8 @@ impl GpuContext {
                         max_compute_workgroup_size_x: limits.max_compute_workgroup_size_x,
                         max_compute_workgroup_size_y: limits.max_compute_workgroup_size_y,
                         max_compute_workgroup_size_z: limits.max_compute_workgroup_size_z,
-                        max_compute_workgroups_per_dimension: limits.max_compute_workgroups_per_dimension,
+                        max_compute_workgroups_per_dimension: limits
+                            .max_compute_workgroups_per_dimension,
                         ..wgpu::Limits::downlevel_defaults()
                     },
                 },

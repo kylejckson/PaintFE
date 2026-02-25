@@ -12,16 +12,16 @@
 //   renderer.rs   — top-level GpuRenderer coordinator
 // ============================================================================
 
-pub mod context;
-pub mod shaders;
-pub mod texture;
 pub mod compositor;
 pub mod compute;
+pub mod context;
 pub mod pool;
 pub mod renderer;
+pub mod shaders;
+pub mod texture;
 
-pub use renderer::GpuRenderer;
 pub use compute::GradientGpuParams;
+pub use renderer::GpuRenderer;
 
 /// WGPU requires `bytes_per_row` to be a multiple of 256.
 /// This constant is used for aligning dirty rects.
@@ -31,7 +31,14 @@ pub const COPY_BYTES_PER_ROW_ALIGNMENT: u32 = 256;
 /// Expands the rect rightward (and clamps to texture bounds).
 ///
 /// Returns (x, y, aligned_width, height).
-pub fn align_dirty_rect(x: u32, y: u32, w: u32, h: u32, texture_width: u32, texture_height: u32) -> (u32, u32, u32, u32) {
+pub fn align_dirty_rect(
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    texture_width: u32,
+    texture_height: u32,
+) -> (u32, u32, u32, u32) {
     // bytes_per_row = width * 4 must be multiple of 256
     // So width must be multiple of 64 (256 / 4)
     const PIXEL_ALIGNMENT: u32 = 64; // 256 / 4
@@ -51,7 +58,7 @@ pub fn align_dirty_rect(x: u32, y: u32, w: u32, h: u32, texture_width: u32, text
     }
 
     // Align width up to next multiple of PIXEL_ALIGNMENT
-    let aligned_w = ((clamped_w + PIXEL_ALIGNMENT - 1) / PIXEL_ALIGNMENT) * PIXEL_ALIGNMENT;
+    let aligned_w = clamped_w.div_ceil(PIXEL_ALIGNMENT) * PIXEL_ALIGNMENT;
 
     // Clamp to texture bounds
     let final_w = aligned_w.min(max_width);

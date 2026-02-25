@@ -2,7 +2,7 @@
 // Inpainting / Content-Aware Fill algorithms
 // ============================================================================
 
-use image::{GrayImage, RgbaImage, Rgba};
+use image::{GrayImage, Rgba, RgbaImage};
 
 // -- Quality levels -----------------------------------------------------
 
@@ -19,8 +19,8 @@ pub enum ContentAwareQuality {
 impl ContentAwareQuality {
     pub fn label(&self) -> &'static str {
         match self {
-            ContentAwareQuality::Instant    => "Instant",
-            ContentAwareQuality::Balanced   => "Balanced",
+            ContentAwareQuality::Instant => "Instant",
+            ContentAwareQuality::Balanced => "Balanced",
             ContentAwareQuality::HighQuality => "High Quality",
         }
     }
@@ -34,8 +34,8 @@ impl ContentAwareQuality {
     /// Iterations to use for PatchMatch. 0 for Instant.
     pub fn patchmatch_iters(&self) -> usize {
         match self {
-            ContentAwareQuality::Instant    => 0,
-            ContentAwareQuality::Balanced   => 3,
+            ContentAwareQuality::Instant => 0,
+            ContentAwareQuality::Balanced => 3,
             ContentAwareQuality::HighQuality => 6,
         }
     }
@@ -74,10 +74,11 @@ pub struct InpaintRequest {
 ///
 /// The result is written into `out` in-place.
 pub fn inpaint_instant_brush(
-    src: &RgbaImage,    // source layer (unmodified original or preview snapshot)
+    src: &RgbaImage, // source layer (unmodified original or preview snapshot)
     hole_mask: &GrayImage,
     out: &mut RgbaImage,
-    cx: f32, cy: f32,
+    cx: f32,
+    cy: f32,
     brush_radius: f32,
     sample_radius: f32,
     hardness: f32,
@@ -98,22 +99,32 @@ pub fn inpaint_instant_brush(
         for x in min_x..=max_x {
             // Only touch painted-over pixels
             if let Some(m) = hole_mask.get_pixel_checked(x, y) {
-                if m.0[0] == 0 { continue; }
-            } else { continue; }
+                if m.0[0] == 0 {
+                    continue;
+                }
+            } else {
+                continue;
+            }
 
             let dx = x as f32 - cx;
             let dy = y as f32 - cy;
             let dist = (dx * dx + dy * dy).sqrt();
-            if dist > r { continue; }
+            if dist > r {
+                continue;
+            }
 
             // Geometric alpha (hardness-aware smoothstep)
             let t = (dist / r).clamp(0.0, 1.0);
             let hard_t = (hardness * 0.9 + 0.1).clamp(0.0, 1.0);
-            let geom_alpha = if t < hard_t { 1.0 } else {
+            let geom_alpha = if t < hard_t {
+                1.0
+            } else {
                 let s = (t - hard_t) / (1.0 - hard_t + 1e-6);
                 1.0 - s * s * (3.0 - 2.0 * s)
             };
-            if geom_alpha < 0.01 { continue; }
+            if geom_alpha < 0.01 {
+                continue;
+            }
 
             // Reference colour from the source (not from preview — avoids feedback)
             let ref_p = src.get_pixel(x, y);
@@ -130,20 +141,25 @@ pub fn inpaint_instant_brush(
             for i in 0..num_candidates {
                 // Uniform spiral: angle advances uniformly, radius spread linearly
                 let angle = i as f32 * (std::f32::consts::TAU / num_candidates as f32);
-                let rr = inner_r + (outer_r - inner_r) * (i as f32 / (num_candidates - 1).max(1) as f32);
+                let rr =
+                    inner_r + (outer_r - inner_r) * (i as f32 / (num_candidates - 1).max(1) as f32);
                 let sx = (x as f32 + angle.cos() * rr).round() as i32;
                 let sy = (y as f32 + angle.sin() * rr).round() as i32;
-                if sx < 0 || sx >= w as i32 || sy < 0 || sy >= h as i32 { continue; }
+                if sx < 0 || sx >= w as i32 || sy < 0 || sy >= h as i32 {
+                    continue;
+                }
                 let (ux, uy) = (sx as u32, sy as u32);
 
                 // Skip if candidate is inside the hole
-                if hole_mask.get_pixel(ux, uy).0[0] > 0 { continue; }
+                if hole_mask.get_pixel(ux, uy).0[0] > 0 {
+                    continue;
+                }
 
                 let sp = src.get_pixel(ux, uy);
                 let dr = sp.0[0] as f32 - ref_r;
                 let dg = sp.0[1] as f32 - ref_g;
                 let db = sp.0[2] as f32 - ref_b;
-                let w_color = (-(dr*dr + dg*dg + db*db) / sigma_color_sq).exp();
+                let w_color = (-(dr * dr + dg * dg + db * db) / sigma_color_sq).exp();
                 sum_r += sp.0[0] as f32 * w_color;
                 sum_g += sp.0[1] as f32 * w_color;
                 sum_b += sp.0[2] as f32 * w_color;
@@ -151,7 +167,9 @@ pub fn inpaint_instant_brush(
                 weight_total += w_color;
             }
 
-            if weight_total < 1e-6 { continue; }
+            if weight_total < 1e-6 {
+                continue;
+            }
 
             let filled_r = (sum_r / weight_total).clamp(0.0, 255.0) as u8;
             let filled_g = (sum_g / weight_total).clamp(0.0, 255.0) as u8;
@@ -194,12 +212,20 @@ fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
 /// direct (4-connected) neighbour.
 #[inline]
 fn is_boundary_hole(mask: &GrayImage, x: u32, y: u32) -> bool {
-    if mask.get_pixel(x, y).0[0] == 0 { return false; }
+    if mask.get_pixel(x, y).0[0] == 0 {
+        return false;
+    }
     let (w, h) = mask.dimensions();
-    for (dx, dy) in [(-1i32,0),(1,0),(0,-1i32),(0,1)] {
-        let nx = x as i32 + dx; let ny = y as i32 + dy;
-        if nx >= 0 && ny >= 0 && nx < w as i32 && ny < h as i32 {
-            if mask.get_pixel(nx as u32, ny as u32).0[0] == 0 { return true; }
+    for (dx, dy) in [(-1i32, 0), (1, 0), (0, -1i32), (0, 1)] {
+        let nx = x as i32 + dx;
+        let ny = y as i32 + dy;
+        if nx >= 0
+            && ny >= 0
+            && nx < w as i32
+            && ny < h as i32
+            && mask.get_pixel(nx as u32, ny as u32).0[0] == 0
+        {
+            return true;
         }
     }
     false
@@ -212,8 +238,10 @@ fn is_boundary_hole(mask: &GrayImage, x: u32, y: u32) -> bool {
 fn patch_ssd_masked(
     img: &RgbaImage,
     mask: &GrayImage,
-    ax: i32, ay: i32,
-    bx: i32, by: i32,
+    ax: i32,
+    ay: i32,
+    bx: i32,
+    by: i32,
     half: i32,
     min_valid: usize,
 ) -> f32 {
@@ -222,14 +250,24 @@ fn patch_ssd_masked(
     let mut count = 0usize;
     for dy in -half..=half {
         for dx in -half..=half {
-            let apx = ax + dx; let apy = ay + dy;
-            let bpx = bx + dx; let bpy = by + dy;
-            if apx < 0 || apy < 0 || apx >= w || apy >= h { continue; }
-            if bpx < 0 || bpy < 0 || bpx >= w || bpy >= h { continue; }
+            let apx = ax + dx;
+            let apy = ay + dy;
+            let bpx = bx + dx;
+            let bpy = by + dy;
+            if apx < 0 || apy < 0 || apx >= w || apy >= h {
+                continue;
+            }
+            if bpx < 0 || bpy < 0 || bpx >= w || bpy >= h {
+                continue;
+            }
             // Skip if the query pixel is in the hole (don't compare hole content)
-            if mask.get_pixel(apx as u32, apy as u32).0[0] > 0 { continue; }
+            if mask.get_pixel(apx as u32, apy as u32).0[0] > 0 {
+                continue;
+            }
             // Skip if the candidate pixel is in the hole
-            if mask.get_pixel(bpx as u32, bpy as u32).0[0] > 0 { continue; }
+            if mask.get_pixel(bpx as u32, bpy as u32).0[0] > 0 {
+                continue;
+            }
             let pa = img.get_pixel(apx as u32, apy as u32);
             let pb = img.get_pixel(bpx as u32, bpy as u32);
             for c in 0..3usize {
@@ -239,7 +277,11 @@ fn patch_ssd_masked(
             count += 1;
         }
     }
-    if count < min_valid { f32::MAX } else { ssd / count as f32 }
+    if count < min_valid {
+        f32::MAX
+    } else {
+        ssd / count as f32
+    }
 }
 
 /// Run one PatchMatch pass over `pixels` (a set of hole pixels to refine).
@@ -248,8 +290,8 @@ fn patchmatch_pass(
     img: &RgbaImage,
     mask: &GrayImage,
     pixels: &[(u32, u32)],
-    nnf_ox:  &mut [i32],
-    nnf_oy:  &mut [i32],
+    nnf_ox: &mut [i32],
+    nnf_oy: &mut [i32],
     nnf_ssd: &mut [f32],
     half: i32,
     min_valid: usize,
@@ -257,7 +299,7 @@ fn patchmatch_pass(
     iter: usize,
 ) {
     let (w, h) = (img.width() as i32, img.height() as i32);
-    let forward = iter % 2 == 0;
+    let forward = iter.is_multiple_of(2);
 
     let iter_order: Box<dyn Iterator<Item = &(u32, u32)>> = if forward {
         Box::new(pixels.iter())
@@ -267,23 +309,40 @@ fn patchmatch_pass(
 
     for &(hx, hy) in iter_order {
         let idx = (hy * img.width() + hx) as usize;
-        let mut best_ox  = nnf_ox[idx];
-        let mut best_oy  = nnf_oy[idx];
+        let mut best_ox = nnf_ox[idx];
+        let mut best_oy = nnf_oy[idx];
         let mut best_ssd = nnf_ssd[idx];
 
         // Propagation: try offsets from spatial neighbours
-        let neighbours: &[(i32, i32)] = if forward { &[(-1, 0), (0, -1)] } else { &[(1, 0), (0, 1)] };
+        let neighbours: &[(i32, i32)] = if forward {
+            &[(-1, 0), (0, -1)]
+        } else {
+            &[(1, 0), (0, 1)]
+        };
         for &(ndx, ndy) in neighbours {
-            let nx = hx as i32 + ndx; let ny = hy as i32 + ndy;
-            if nx < 0 || ny < 0 || nx >= w || ny >= h { continue; }
+            let nx = hx as i32 + ndx;
+            let ny = hy as i32 + ndy;
+            if nx < 0 || ny < 0 || nx >= w || ny >= h {
+                continue;
+            }
             let ni = (ny as u32 * img.width() + nx as u32) as usize;
-            if nnf_ssd[ni] == f32::MAX { continue; }
+            if nnf_ssd[ni] == f32::MAX {
+                continue;
+            }
             let cx = hx as i32 + nnf_ox[ni];
             let cy = hy as i32 + nnf_oy[ni];
-            if cx < 0 || cy < 0 || cx >= w || cy >= h { continue; }
-            if mask.get_pixel(cx as u32, cy as u32).0[0] > 0 { continue; }
+            if cx < 0 || cy < 0 || cx >= w || cy >= h {
+                continue;
+            }
+            if mask.get_pixel(cx as u32, cy as u32).0[0] > 0 {
+                continue;
+            }
             let ssd = patch_ssd_masked(img, mask, hx as i32, hy as i32, cx, cy, half, min_valid);
-            if ssd < best_ssd { best_ssd = ssd; best_ox = cx - hx as i32; best_oy = cy - hy as i32; }
+            if ssd < best_ssd {
+                best_ssd = ssd;
+                best_ox = cx - hx as i32;
+                best_oy = cy - hy as i32;
+            }
         }
 
         // Random search with LCG PRNG — halving radius each step
@@ -293,24 +352,35 @@ fn patchmatch_pass(
             .wrapping_add(iter as u64 * 1234567891);
         let mut search_r = max_radius;
         while search_r >= 1.0 {
-            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let ra = (rng >> 33) as f32 / (u32::MAX as f32);
-            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let rb = (rng >> 33) as f32 / (u32::MAX as f32);
             let cx = (hx as f32 + best_ox as f32 + (ra * 2.0 - 1.0) * search_r).round() as i32;
             let cy = (hy as f32 + best_oy as f32 + (rb * 2.0 - 1.0) * search_r).round() as i32;
-            if cx >= 0 && cy >= 0 && cx < w && cy < h
-               && mask.get_pixel(cx as u32, cy as u32).0[0] == 0 {
-                let ssd = patch_ssd_masked(img, mask, hx as i32, hy as i32, cx, cy, half, min_valid);
+            if cx >= 0
+                && cy >= 0
+                && cx < w
+                && cy < h
+                && mask.get_pixel(cx as u32, cy as u32).0[0] == 0
+            {
+                let ssd =
+                    patch_ssd_masked(img, mask, hx as i32, hy as i32, cx, cy, half, min_valid);
                 if ssd < best_ssd {
-                    best_ssd = ssd; best_ox = cx - hx as i32; best_oy = cy - hy as i32;
+                    best_ssd = ssd;
+                    best_ox = cx - hx as i32;
+                    best_oy = cy - hy as i32;
                 }
             }
             search_r *= 0.5;
         }
 
-        nnf_ox[idx]  = best_ox;
-        nnf_oy[idx]  = best_oy;
+        nnf_ox[idx] = best_ox;
+        nnf_oy[idx] = best_oy;
         nnf_ssd[idx] = best_ssd;
     }
 }
@@ -334,11 +404,11 @@ pub fn fill_region_patchmatch(
     let max_radius = w.max(h) as f32;
     let total = (w * h) as usize;
 
-    let mut out        = src.clone();
-    let mut live_mask  = hole_mask.clone();
-    let mut nnf_ox     = vec![0i32; total];
-    let mut nnf_oy     = vec![0i32; total];
-    let mut nnf_ssd    = vec![f32::MAX; total];
+    let mut out = src.clone();
+    let mut live_mask = hole_mask.clone();
+    let mut nnf_ox = vec![0i32; total];
+    let mut nnf_oy = vec![0i32; total];
+    let mut nnf_ssd = vec![f32::MAX; total];
 
     // Collect initial source pixels for seeding the NNF
     let mut source_pixels: Vec<(u32, u32)> = (0..h)
@@ -346,7 +416,9 @@ pub fn fill_region_patchmatch(
         .filter(|&(x, y)| hole_mask.get_pixel(x, y).0[0] == 0)
         .collect();
 
-    if source_pixels.is_empty() { return out; }
+    if source_pixels.is_empty() {
+        return out;
+    }
 
     // Onion-peeling loop: each pass fills one "layer" of the hole boundary
     let max_peeling_passes = (w.max(h) as usize + 1) * 2;
@@ -357,7 +429,9 @@ pub fn fill_region_patchmatch(
             .filter(|&(x, y)| is_boundary_hole(&live_mask, x, y))
             .collect();
 
-        if boundary.is_empty() { break; }
+        if boundary.is_empty() {
+            break;
+        }
 
         let src_count = source_pixels.len();
 
@@ -367,25 +441,28 @@ pub fn fill_region_patchmatch(
                 .wrapping_add((hy as usize).wrapping_mul(6271))
                 % src_count;
             let (sx, sy) = source_pixels[seed];
-            let ssd = patch_ssd_masked(&out, &live_mask, hx as i32, hy as i32,
-                                        sx as i32, sy as i32, half, min_valid);
+            let ssd = patch_ssd_masked(
+                &out, &live_mask, hx as i32, hy as i32, sx as i32, sy as i32, half, min_valid,
+            );
             let idx = (hy * w + hx) as usize;
-            nnf_ox[idx]  = sx as i32 - hx as i32;
-            nnf_oy[idx]  = sy as i32 - hy as i32;
+            nnf_ox[idx] = sx as i32 - hx as i32;
+            nnf_oy[idx] = sy as i32 - hy as i32;
             nnf_ssd[idx] = ssd;
 
             // Also try a few more random seeds to warm-start better
-            let mut rng = (hx as u64).wrapping_mul(1234567891)
+            let mut rng = (hx as u64)
+                .wrapping_mul(1234567891)
                 .wrapping_add(hy as u64 * 987654321);
             for _ in 0..4 {
                 rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
                 let si = (rng >> 33) as usize % src_count;
                 let (tx, ty) = source_pixels[si];
-                let s2 = patch_ssd_masked(&out, &live_mask, hx as i32, hy as i32,
-                                           tx as i32, ty as i32, half, min_valid);
+                let s2 = patch_ssd_masked(
+                    &out, &live_mask, hx as i32, hy as i32, tx as i32, ty as i32, half, min_valid,
+                );
                 if s2 < nnf_ssd[idx] {
-                    nnf_ox[idx]  = tx as i32 - hx as i32;
-                    nnf_oy[idx]  = ty as i32 - hy as i32;
+                    nnf_ox[idx] = tx as i32 - hx as i32;
+                    nnf_oy[idx] = ty as i32 - hy as i32;
                     nnf_ssd[idx] = s2;
                 }
             }
@@ -394,22 +471,40 @@ pub fn fill_region_patchmatch(
         // --- PatchMatch iterations ---
         let pm_iters = if iterations <= 3 { 2 } else { 4 };
         for iter in 0..pm_iters {
-            patchmatch_pass(&out, &live_mask, &boundary,
-                            &mut nnf_ox, &mut nnf_oy, &mut nnf_ssd,
-                            half, min_valid, max_radius, iter);
+            patchmatch_pass(
+                &out,
+                &live_mask,
+                &boundary,
+                &mut nnf_ox,
+                &mut nnf_oy,
+                &mut nnf_ssd,
+                half,
+                min_valid,
+                max_radius,
+                iter,
+            );
         }
 
         // --- Fill boundary pixels & update mask ---
         // Collect fills first to avoid borrow conflict (out is both source and dest)
-        let fills: Vec<(u32, u32, image::Rgba<u8>)> = boundary.iter().filter_map(|&(hx, hy)| {
-            let idx = (hy * w + hx) as usize;
-            if nnf_ssd[idx] == f32::MAX { return None; }
-            let sx = hx as i32 + nnf_ox[idx];
-            let sy = hy as i32 + nnf_oy[idx];
-            if sx < 0 || sy < 0 || sx >= w as i32 || sy >= h as i32 { return None; }
-            if live_mask.get_pixel(sx as u32, sy as u32).0[0] > 0 { return None; }
-            Some((hx, hy, *out.get_pixel(sx as u32, sy as u32)))
-        }).collect();
+        let fills: Vec<(u32, u32, image::Rgba<u8>)> = boundary
+            .iter()
+            .filter_map(|&(hx, hy)| {
+                let idx = (hy * w + hx) as usize;
+                if nnf_ssd[idx] == f32::MAX {
+                    return None;
+                }
+                let sx = hx as i32 + nnf_ox[idx];
+                let sy = hy as i32 + nnf_oy[idx];
+                if sx < 0 || sy < 0 || sx >= w as i32 || sy >= h as i32 {
+                    return None;
+                }
+                if live_mask.get_pixel(sx as u32, sy as u32).0[0] > 0 {
+                    return None;
+                }
+                Some((hx, hy, *out.get_pixel(sx as u32, sy as u32)))
+            })
+            .collect();
 
         for (x, y, pixel) in fills {
             out.put_pixel(x, y, pixel);

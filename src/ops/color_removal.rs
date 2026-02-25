@@ -62,10 +62,10 @@ pub fn compute_color_removal(
                 if core_mask[idx] {
                     continue;
                 }
-                if let Some(mask) = selection_mask {
-                    if mask.get_pixel(nx, ny).0[0] == 0 {
-                        continue;
-                    }
+                if let Some(mask) = selection_mask
+                    && mask.get_pixel(nx, ny).0[0] == 0
+                {
+                    continue;
                 }
                 let p = pixels.get_pixel(nx, ny);
                 if p[3] == 0 {
@@ -86,10 +86,10 @@ pub fn compute_color_removal(
         core_mask.par_iter_mut().enumerate().for_each(|(idx, m)| {
             let x = (idx % w as usize) as u32;
             let y = (idx / w as usize) as u32;
-            if let Some(mask) = selection_mask {
-                if mask.get_pixel(x, y).0[0] == 0 {
-                    return;
-                }
+            if let Some(mask) = selection_mask
+                && mask.get_pixel(x, y).0[0] == 0
+            {
+                return;
             }
             let p = pixels.get_pixel(x, y);
             if p[3] == 0 {
@@ -135,10 +135,10 @@ pub fn compute_color_removal(
                     let nidx = (ny * w + nx) as usize;
                     if !core_mask[nidx] && distance[nidx] == u32::MAX {
                         // Check selection mask
-                        if let Some(mask) = selection_mask {
-                            if mask.get_pixel(nx, ny).0[0] == 0 {
-                                continue;
-                            }
+                        if let Some(mask) = selection_mask
+                            && mask.get_pixel(nx, ny).0[0] == 0
+                        {
+                            continue;
                         }
                         distance[nidx] = 1;
                         frontier.push_back((nx, ny));
@@ -167,10 +167,10 @@ pub fn compute_color_removal(
                 if distance[nidx] != u32::MAX {
                     continue;
                 }
-                if let Some(mask) = selection_mask {
-                    if mask.get_pixel(nx, ny).0[0] == 0 {
-                        continue;
-                    }
+                if let Some(mask) = selection_mask
+                    && mask.get_pixel(nx, ny).0[0] == 0
+                {
+                    continue;
                 }
                 distance[nidx] = cur_dist + 1;
                 frontier.push_back((nx, ny));
