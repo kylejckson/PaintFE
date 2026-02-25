@@ -1,0 +1,17 @@
+# cargo-audit configuration
+# These advisories are acknowledged: all are "unmaintained" crate warnings
+# (no known exploits or CVEs). They are all transitive dependencies that
+# cannot be removed without major version bumps of eframe, wgpu, rfd, or
+# imagepipe. They will be resolved when those dependencies are next upgraded.
+
+[advisories]
+ignore = [
+    "RUSTSEC-2024-0416",  # atk-sys:    gtk3 bindings unmaintained  (transitive via rfd 0.12)
+    "RUSTSEC-2024-0418",  # gdk-sys:    gtk3 bindings unmaintained  (transitive via rfd 0.12)
+    "RUSTSEC-2024-0420",  # gtk-sys:    gtk3 bindings unmaintained  (transitive via rfd 0.12)
+    "RUSTSEC-2024-0388",  # derivative: unmaintained                (transitive via eframe → zbus)
+    "RUSTSEC-2024-0384",  # instant:    unmaintained                (transitive via eframe → winit)
+    "RUSTSEC-2024-0436",  # paste:      unmaintained                (transitive via wgpu → metal)
+    "RUSTSEC-2025-0141",  # bincode:    unmaintained                (direct dep, used for .pfe serialization; no breaking alternative without API changes)
+    "RUSTSEC-2024-0320",  # yaml-rust:  unmaintained                (transitive via imagepipe → serde_yaml)
+]

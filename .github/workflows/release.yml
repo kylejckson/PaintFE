@@ -6,6 +6,8 @@ on:
     tags:
       - "v*"
 
+permissions: read-all
+
 env:
   CARGO_TERM_COLOR: always
 
