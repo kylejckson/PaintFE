@@ -27,7 +27,7 @@ dependencies = [
  "rfd",
  "rhai",
  "serde",
- "tiff 0.9.1",
+ "tiff 0.10.3",
  "uuid",
  "wgpu",
  "winapi",
