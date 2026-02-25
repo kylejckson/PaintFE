@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 eframe = "0.24.0"    # Wrapper for egui (the GUI framework)
 egui = "0.24.0"      # The core GUI library
-image = { version = "0.24.7", features = ["jpeg", "png", "webp", "bmp", "tga", "ico", "tiff"] }
+image = { version = "0.25.9", features = ["jpeg", "png", "webp", "bmp", "tga", "ico", "tiff"] }
 tiff = "0.9"         # Direct dependency for TIFF compression options
 rfd = "0.12"         # Native file dialogs (Open/Save)
 rayon = "1.7"        # Parallel processing for faster compositing
