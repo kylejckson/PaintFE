@@ -9,7 +9,7 @@ use std::io::Write;
 use std::path::Path;
 
 fn title_case(s: &str) -> String {
-    s.split(|c: char| c == '_' || c == '-')
+    s.split(['_', '-'])
         .filter(|w| !w.is_empty())
         .map(|word| {
             let mut chars = word.chars();
@@ -88,7 +88,7 @@ fn main() {
             .filter(|p| {
                 p.extension()
                     .and_then(|ext| ext.to_str())
-                    .map_or(false, |ext| ext.eq_ignore_ascii_case("png"))
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("png"))
             })
             .collect();
         pngs.sort();
