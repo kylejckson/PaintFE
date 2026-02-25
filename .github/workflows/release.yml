@@ -244,6 +244,14 @@ jobs:
           chmod +x dist/linux/PaintFE
           chmod +x dist/linux/PaintFE-x86_64.AppImage
 
+      - name: Generate SHA-256 checksums
+        run: |
+          cd dist
+          sha256sum windows/PaintFE.exe linux/PaintFE linux/PaintFE-x86_64.AppImage \
+            | sed 's|windows/||; s|linux/||' \
+            > checksums-SHA256.txt
+          cat checksums-SHA256.txt
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -254,3 +262,4 @@ jobs:
             dist/windows/PaintFE.exe
             dist/linux/PaintFE
             dist/linux/PaintFE-x86_64.AppImage
+            dist/checksums-SHA256.txt
