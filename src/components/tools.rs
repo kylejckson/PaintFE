@@ -3386,6 +3386,7 @@ impl ToolsPanel {
         canvas_pos: Option<(u32, u32)>,
         canvas_pos_f32: Option<(f32, f32)>,
         canvas_pos_f32_clamped: Option<(f32, f32)>,
+        canvas_pos_unclamped: Option<(f32, f32)>,
         raw_motion_events: &[(f32, f32)],
         painter: &egui::Painter,
         canvas_rect: Rect,
@@ -4428,9 +4429,9 @@ impl ToolsPanel {
                 //   else       → context bar mode
                 if (is_primary_pressed || is_secondary_pressed)
                     && !self.selection_state.dragging
-                    && let Some(pos) = canvas_pos
+                    && let Some(pos_f) = canvas_pos_unclamped
                 {
-                    let pos2 = Pos2::new(pos.0 as f32, pos.1 as f32);
+                    let pos2 = Pos2::new(pos_f.0, pos_f.1);
                     self.selection_state.dragging = true;
                     self.selection_state.drag_start = Some(pos2);
                     self.selection_state.drag_end = Some(pos2);
@@ -4454,9 +4455,9 @@ impl ToolsPanel {
 
                 if any_button_down
                     && self.selection_state.dragging
-                    && let Some(pos) = canvas_pos
+                    && let Some(pos_f) = canvas_pos_unclamped
                 {
-                    let mut end = Pos2::new(pos.0 as f32, pos.1 as f32);
+                    let mut end = Pos2::new(pos_f.0, pos_f.1);
 
                     // Shift => constrain to 1:1 aspect ratio (square / circle)
                     if shift_held && let Some(start) = self.selection_state.drag_start {
@@ -4478,12 +4479,16 @@ impl ToolsPanel {
                         self.selection_state.drag_start,
                         self.selection_state.drag_end,
                     ) {
-                        let min_x = start.x.min(end.x).max(0.0) as u32;
-                        let min_y = start.y.min(end.y).max(0.0) as u32;
+                        let raw_min_x = start.x.min(end.x).max(0.0);
+                        let raw_min_y = start.y.min(end.y).max(0.0);
+                        let raw_max_x = start.x.max(end.x).max(0.0);
+                        let raw_max_y = start.y.max(end.y).max(0.0);
+                        let min_x = (raw_min_x as u32).min(canvas_state.width.saturating_sub(1));
+                        let min_y = (raw_min_y as u32).min(canvas_state.height.saturating_sub(1));
                         let max_x =
-                            (start.x.max(end.x) as u32).min(canvas_state.width.saturating_sub(1));
+                            (raw_max_x as u32).min(canvas_state.width.saturating_sub(1));
                         let max_y =
-                            (start.y.max(end.y) as u32).min(canvas_state.height.saturating_sub(1));
+                            (raw_max_y as u32).min(canvas_state.height.saturating_sub(1));
 
                         // Ignore tiny accidental clicks (< 2px)
                         if max_x.saturating_sub(min_x) > 1 && max_y.saturating_sub(min_y) > 1 {
@@ -5974,16 +5979,10 @@ impl ToolsPanel {
                     }
                 }
 
-                // Only start/grab gradient on clicks that are actually on the canvas
-                let pointer_on_canvas = ui.input(|i| {
-                    i.pointer
-                        .interact_pos()
-                        .is_some_and(|pos| canvas_rect.contains(pos))
-                });
-
+                // Start/grab gradient — allow clicking outside canvas so handles
+                // can be dragged off-edge (e.g. gradient extends past border)
                 if is_primary_pressed
-                    && pointer_on_canvas
-                    && let Some(pos_f) = canvas_pos_f32
+                    && let Some(pos_f) = canvas_pos_unclamped
                 {
                     let click_pos = Pos2::new(pos_f.0, pos_f.1);
 
@@ -6037,7 +6036,7 @@ impl ToolsPanel {
 
                 if is_primary_down
                     && self.gradient_state.dragging
-                    && let Some(pos_f) = canvas_pos_f32
+                    && let Some(pos_f) = canvas_pos_unclamped
                 {
                     let new_pos = Pos2::new(pos_f.0, pos_f.1);
                     match self.gradient_state.dragging_handle {
@@ -6054,7 +6053,7 @@ impl ToolsPanel {
                     let released_handle = self.gradient_state.dragging_handle;
                     self.gradient_state.dragging = false;
                     self.gradient_state.dragging_handle = None;
-                    if let Some(pos_f) = canvas_pos_f32 {
+                    if let Some(pos_f) = canvas_pos_unclamped {
                         let new_pos = Pos2::new(pos_f.0, pos_f.1);
                         match released_handle {
                             Some(0) => self.gradient_state.drag_start = Some(new_pos),
@@ -6416,7 +6415,7 @@ impl ToolsPanel {
                 // Start lasso drag — lock effective mode from modifier keys at drag start
                 if (is_primary_pressed || is_secondary_pressed)
                     && !self.lasso_state.dragging
-                    && let Some(pos) = canvas_pos
+                    && let Some(pos_f) = canvas_pos_unclamped
                 {
                     self.lasso_state.dragging = true;
                     self.lasso_state.right_click_drag = is_secondary_pressed;
@@ -6434,14 +6433,14 @@ impl ToolsPanel {
                     self.lasso_state.points.clear();
                     self.lasso_state
                         .points
-                        .push(Pos2::new(pos.0 as f32, pos.1 as f32));
+                        .push(Pos2::new(pos_f.0, pos_f.1));
                 }
 
                 // Accumulate points while dragging
                 let any_button_down = is_primary_down || is_secondary_down;
                 if any_button_down && self.lasso_state.dragging {
-                    if let Some(pos) = canvas_pos {
-                        let p = Pos2::new(pos.0 as f32, pos.1 as f32);
+                    if let Some(pos_f) = canvas_pos_unclamped {
+                        let p = Pos2::new(pos_f.0, pos_f.1);
                         // Only add if moved at least 1px from last point
                         if let Some(last) = self.lasso_state.points.last() {
                             let d = (*last - p).length();

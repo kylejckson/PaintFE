@@ -11,6 +11,7 @@ use crate::project::Project;
 use crate::theme::{Theme, WindowVisibility};
 use eframe::egui;
 use image::RgbaImage;
+use std::path::PathBuf;
 use std::sync::mpsc;
 
 // ============================================================================
@@ -192,6 +193,14 @@ pub struct PaintFEApp {
 
     /// True only on the very first update() call — used to send a reliable Maximized command.
     first_frame: bool,
+
+    // Single-instance IPC: file paths sent from other PaintFE invocations
+    ipc_receiver: mpsc::Receiver<PathBuf>,
+    /// File paths to open on the first update() frame (from positional CLI args).
+    pending_startup_files: Vec<PathBuf>,
+    /// True when startup files have been queued and the initial blank project
+    /// should be auto-closed once the first real file finishes loading.
+    close_initial_blank: bool,
 }
 
 /// Discover a system CJK font at runtime (for Japanese, Korean, Chinese support).
@@ -265,7 +274,11 @@ fn discover_system_cjk_font() -> Option<(String, Vec<u8>)> {
 }
 
 impl PaintFEApp {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        startup_files: Vec<PathBuf>,
+        ipc_receiver: mpsc::Receiver<PathBuf>,
+    ) -> Self {
         // Initialize settings from disk (or defaults if no saved file)
         let settings = AppSettings::load();
 
@@ -406,6 +419,9 @@ impl PaintFEApp {
             force_exit: false,
             last_autosave: std::time::Instant::now(),
             first_frame: true,
+            ipc_receiver,
+            close_initial_blank: !startup_files.is_empty(),
+            pending_startup_files: startup_files,
         }
     }
 
@@ -426,6 +442,28 @@ impl PaintFEApp {
         self.projects.push(project);
         self.active_project_index = self.projects.len() - 1;
         self.canvas.reset_zoom();
+    }
+
+    /// If the initial blank project should be auto-closed (because we opened a
+    /// file from the command line or IPC), close it now. Called once after the
+    /// first real file finishes loading.
+    fn maybe_close_initial_blank(&mut self) {
+        if !self.close_initial_blank {
+            return;
+        }
+        self.close_initial_blank = false;
+
+        // The initial blank project is always at index 0.  Only auto-close it
+        // if it's still untitled, unmodified, and there's now at least one
+        // other project.
+        if self.projects.len() > 1 {
+            let is_blank = self.projects[0].path.is_none() && !self.projects[0].is_dirty;
+            if is_blank {
+                self.projects.remove(0);
+                // The newly loaded project was pushed to the end; adjust index.
+                self.active_project_index = self.projects.len() - 1;
+            }
+        }
     }
 
     /// Close a project by index, with dirty check
@@ -569,6 +607,24 @@ impl eframe::App for PaintFEApp {
         if self.first_frame {
             self.first_frame = false;
             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+
+            // Open files passed as positional arguments (e.g. right-click → "Open with PaintFE")
+            let files = std::mem::take(&mut self.pending_startup_files);
+            let current_time = ctx.input(|i| i.time);
+            for path in files {
+                self.open_file_by_path(path, current_time);
+            }
+        }
+
+        // --- Single-instance IPC: open files sent from other PaintFE invocations ---
+        {
+            let current_time = ctx.input(|i| i.time);
+            while let Ok(path) = self.ipc_receiver.try_recv() {
+                self.open_file_by_path(path, current_time);
+                // Bring our window to the foreground (the sender already tried via
+                // FindWindow, but this handles the case where it didn't have permission).
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            }
         }
 
         // --- Auto-save tick ---
@@ -841,6 +897,7 @@ impl eframe::App for PaintFEApp {
                     self.canvas.reset_zoom();
                     // Clear GPU layer cache for the new project
                     self.canvas.gpu_clear_layers();
+                    self.maybe_close_initial_blank();
                 }
                 IoResult::LoadFailed(msg) => {
                     eprintln!("Failed to open image: {}", msg);
@@ -905,6 +962,7 @@ impl eframe::App for PaintFEApp {
                     self.active_project_index = self.projects.len() - 1;
                     self.canvas.reset_zoom();
                     self.canvas.gpu_clear_layers();
+                    self.maybe_close_initial_blank();
                 }
                 IoResult::AnimatedFramesLoaded { path, frames } => {
                     // Find the project that was created by the AnimatedLoaded handler
@@ -952,6 +1010,7 @@ impl eframe::App for PaintFEApp {
                     self.active_project_index = self.projects.len() - 1;
                     self.canvas.reset_zoom();
                     self.canvas.gpu_clear_layers();
+                    self.maybe_close_initial_blank();
                 }
             }
         }

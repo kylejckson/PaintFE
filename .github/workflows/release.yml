@@ -34,6 +34,9 @@ jobs:
           restore-keys: windows-cargo-
 
       - name: Build release
+        # .cargo/config.toml applies -C target-feature=+crt-static on Windows,
+        # statically linking vcruntime into the EXE — no external C++ dependency
+        # (satisfies Microsoft Store policy 10.2.4.1).
         run: cargo build --release
 
       - name: Upload artifact

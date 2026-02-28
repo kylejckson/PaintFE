@@ -24,6 +24,8 @@ Set-Location $repo
 # ── Step 1: Build release binary ─────────────────────────────────────────────
 if (-not $SkipBuild) {
     Write-Host "==> [1/5] Building release binary..."
+    # .cargo/config.toml applies -C target-feature=+crt-static automatically,
+    # statically linking vcruntime into the EXE (no Visual C++ Redistributable needed).
     cargo build --release
     if ($LASTEXITCODE -ne 0) { Write-Error "cargo build failed"; exit 1 }
 } else {

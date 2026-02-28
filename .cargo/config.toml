@@ -1,0 +1,8 @@
+# .cargo/config.toml — Cargo build configuration
+#
+# Windows: statically link the MSVC C runtime (vcruntime140.dll / msvcp140.dll)
+# into the binary so there is no external Visual C++ Redistributable dependency.
+# This keeps the EXE self-contained and satisfies Microsoft Store policy 10.2.4.1
+# (undisclosed software dependencies).
+[target.'cfg(target_os = "windows")']
+rustflags = ["-C", "target-feature=+crt-static"]

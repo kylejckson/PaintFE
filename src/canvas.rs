@@ -3693,14 +3693,16 @@ impl Canvas {
                 let max_x = start.x.max(end.x);
                 let max_y = start.y.max(end.y);
 
-                // Convert canvas coords => screen coords
+                // Snap to pixel grid: the selection of pixel (x,y) covers the
+                // screen region [x*zoom, (x+1)*zoom), so floor the min and
+                // ceil(max+1) to ensure the overlay aligns with pixel edges.
                 let screen_min = Pos2::new(
-                    image_rect.min.x + min_x * self.zoom,
-                    image_rect.min.y + min_y * self.zoom,
+                    (image_rect.min.x + min_x.floor() * self.zoom).round(),
+                    (image_rect.min.y + min_y.floor() * self.zoom).round(),
                 );
                 let screen_max = Pos2::new(
-                    image_rect.min.x + max_x * self.zoom,
-                    image_rect.min.y + max_y * self.zoom,
+                    (image_rect.min.x + (max_x.floor() + 1.0) * self.zoom).round(),
+                    (image_rect.min.y + (max_y.floor() + 1.0) * self.zoom).round(),
                 );
                 let sel_rect = Rect::from_min_max(screen_min, screen_max);
 
@@ -3986,6 +3988,9 @@ impl Canvas {
             // Extended version for overlay tools (mesh warp) — allows clicks slightly outside canvas bounds
             let canvas_pos_f32_clamped = mouse_pos
                 .and_then(|pos| self.screen_to_canvas_f32_clamped(pos, canvas_rect, state, 16.0));
+            // Unclamped version for selection/gradient: always returns coords even outside canvas
+            let canvas_pos_unclamped = mouse_pos
+                .map(|pos| self.screen_to_canvas_unclamped(pos, canvas_rect, state));
 
             // Check if we're in the middle of a stroke (mouse button is held)
             let is_painting = ui.input(|i| i.pointer.primary_down() || i.pointer.secondary_down());
@@ -4033,12 +4038,16 @@ impl Canvas {
                 Vec::new()
             };
 
-            // Only process if not blocked by UI AND (pointer over canvas OR actively painting)
+            // Only process if not blocked by UI AND (pointer over canvas OR actively painting
+            // OR a tool drag is in progress that should allow off-canvas tracking)
             // AND paste overlay didn't consume the input
+            let tool_drag_active = tools.selection_state.dragging
+                || tools.lasso_state.dragging
+                || tools.gradient_state.dragging;
             let allow_input = !modal_open
                 && !ui_blocking
                 && !paste_consumed_input
-                && (pointer_over_canvas || is_painting);
+                && (pointer_over_canvas || is_painting || tool_drag_active);
 
             if allow_input {
                 tools.handle_input(
@@ -4047,6 +4056,7 @@ impl Canvas {
                     canvas_pos,
                     canvas_pos_f32,
                     canvas_pos_f32_clamped,
+                    canvas_pos_unclamped,
                     &raw_motion_events,
                     &painter,
                     image_rect,
@@ -5203,17 +5213,17 @@ impl Canvas {
                 state.selection_overlay_bounds = Some((min_x, min_y, max_x, max_y));
             }
 
-            // Paint the cached texture at the correct position.
+            // Paint the cached texture at the correct position (pixel-snapped).
             if let Some(ref tex) = state.selection_overlay_texture
                 && let Some((bx0, by0, bx1, by1)) = state.selection_overlay_bounds
             {
-                let screen_x = image_rect.min.x + bx0 as f32 * zoom;
-                let screen_y = image_rect.min.y + by0 as f32 * zoom;
-                let screen_w = (bx1 - bx0 + 1) as f32 * zoom;
-                let screen_h = (by1 - by0 + 1) as f32 * zoom;
-                let sub_rect = Rect::from_min_size(
+                let screen_x = (image_rect.min.x + bx0 as f32 * zoom).round();
+                let screen_y = (image_rect.min.y + by0 as f32 * zoom).round();
+                let screen_x1 = (image_rect.min.x + (bx1 + 1) as f32 * zoom).round();
+                let screen_y1 = (image_rect.min.y + (by1 + 1) as f32 * zoom).round();
+                let sub_rect = Rect::from_min_max(
                     Pos2::new(screen_x, screen_y),
-                    Vec2::new(screen_w, screen_h),
+                    Pos2::new(screen_x1, screen_y1),
                 );
                 let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
                 painter.image(tex.id(), sub_rect, uv, Color32::WHITE);
@@ -5286,11 +5296,11 @@ impl Canvas {
         let total_segs = state.selection_border_h_segs.len() + state.selection_border_v_segs.len();
         let skip_glow = total_segs > 10_000;
 
-        // Draw horizontal border segments
+        // Draw horizontal border segments (pixel-snapped)
         for &(y_line, x0, x1) in &state.selection_border_h_segs {
-            let sy = image_rect.min.y + y_line as f32 * zoom;
-            let sx0 = image_rect.min.x + x0 as f32 * zoom;
-            let sx1 = image_rect.min.x + x1 as f32 * zoom;
+            let sy = (image_rect.min.y + y_line as f32 * zoom).round();
+            let sx0 = (image_rect.min.x + x0 as f32 * zoom).round();
+            let sx1 = (image_rect.min.x + x1 as f32 * zoom).round();
             let a = Pos2::new(sx0, sy);
             let b = Pos2::new(sx1, sy);
             if !skip_glow {
@@ -5299,11 +5309,11 @@ impl Canvas {
             painter.line_segment([a, b], egui::Stroke::new(stroke_width + 0.5, accent));
         }
 
-        // Draw vertical border segments
+        // Draw vertical border segments (pixel-snapped)
         for &(x_line, y0, y1) in &state.selection_border_v_segs {
-            let sx = image_rect.min.x + x_line as f32 * zoom;
-            let sy0 = image_rect.min.y + y0 as f32 * zoom;
-            let sy1 = image_rect.min.y + y1 as f32 * zoom;
+            let sx = (image_rect.min.x + x_line as f32 * zoom).round();
+            let sy0 = (image_rect.min.y + y0 as f32 * zoom).round();
+            let sy1 = (image_rect.min.y + y1 as f32 * zoom).round();
             let a = Pos2::new(sx, sy0);
             let b = Pos2::new(sx, sy1);
             if !skip_glow {
@@ -5587,6 +5597,33 @@ impl Canvas {
         state: &CanvasState,
     ) -> Option<(f32, f32)> {
         self.screen_to_canvas_f32(screen_pos, canvas_rect, state)
+    }
+
+    /// Converts any screen position to canvas-space float coordinates without
+    /// bounds checking.  Returns coordinates even when the pointer is outside the
+    /// canvas image — values can be negative or exceed `(width, height)`.
+    /// Used by selection tools and gradient handles so the user can start/drag
+    /// from outside the canvas area.
+    fn screen_to_canvas_unclamped(
+        &self,
+        screen_pos: Pos2,
+        canvas_rect: Rect,
+        state: &CanvasState,
+    ) -> (f32, f32) {
+        let image_width = state.width as f32 * self.zoom;
+        let image_height = state.height as f32 * self.zoom;
+
+        let center_x = canvas_rect.center().x + self.pan_offset.x;
+        let center_y = canvas_rect.center().y + self.pan_offset.y;
+
+        let image_rect = Rect::from_center_size(
+            Pos2::new(center_x, center_y),
+            Vec2::new(image_width, image_height),
+        );
+
+        let rel_x = (screen_pos.x - image_rect.min.x) / self.zoom;
+        let rel_y = (screen_pos.y - image_rect.min.y) / self.zoom;
+        (rel_x, rel_y)
     }
 
     /// Like `screen_to_canvas` but returns sub-pixel float coordinates for

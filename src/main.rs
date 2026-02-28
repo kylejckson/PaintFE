@@ -19,6 +19,7 @@ mod cli;
 mod components;
 mod gpu;
 mod io;
+mod ipc;
 pub mod logger;
 mod ops;
 mod project;
@@ -111,6 +112,21 @@ fn main() -> Result<(), eframe::Error> {
     // Initialize the internationalization system
     i18n::init();
 
+    // Collect positional file arguments (e.g. `paintfe.exe photo.png` from
+    // right-click → "Open with" on Windows, or drag-onto-exe).
+    let startup_files = ipc::collect_startup_files();
+
+    // Single-instance: if another PaintFE GUI is already running, send the
+    // file paths to it via named pipe and exit this process.
+    if ipc::try_send_to_existing(&startup_files) {
+        ipc::focus_existing_window();
+        std::process::exit(0);
+    }
+
+    // We are the first instance — start the IPC listener so future
+    // invocations can send their file paths to us.
+    let ipc_receiver = ipc::start_listener();
+
     // Load application icon (window title bar, taskbar, Alt+Tab)
     let icon = load_app_icon();
 
@@ -133,7 +149,7 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native(
         "PaintFE",
         options,
-        Box::new(|cc| Box::new(PaintFEApp::new(cc))),
+        Box::new(move |cc| Box::new(PaintFEApp::new(cc, startup_files, ipc_receiver))),
     )
 }
 
