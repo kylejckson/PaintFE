@@ -6,6 +6,21 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.0.11] - 2026-02-28
+
+### Added
+- Single-instance IPC via Windows named pipe: right-click "Open with PaintFE" sends the file to the running instance instead of launching a duplicate. New instances forward paths and focus the existing window.
+- Positional file argument support: `paintfe.exe photo.png` opens the image directly (file association / drag-onto-exe).
+
+### Fixed
+- Selection overlay (rect, ellipse, crosshatch, border segments) now pixel-snaps when zoomed in, making pixel art selection precise.
+- Selection tools (rect, ellipse, lasso) and gradient handles can now be dragged outside the canvas area. Dragging from outside to the other side selects the full canvas edge-to-edge.
+
+### Changed
+- Windows binaries statically link vcruntime via `.cargo/config.toml` (`crt-static`), eliminating the Visual C++ Redistributable dependency.
+
+---
+
 ## [1.0.10] - 2026-02-25
 
 ### Fixed
