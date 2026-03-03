@@ -131,11 +131,11 @@ impl DialogColors {
         } else {
             Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 25)
         };
-        // In dark mode, boost muted text so labels stay readable
+        // Blue-tinted muted text matching Signal Grid palette
         let text_muted = if is_dark {
-            Color32::from_gray(160)
+            Color32::from_rgb(122, 122, 144) // #7a7a90
         } else {
-            v.weak_text_color()
+            Color32::from_rgb(85, 85, 110) // #55556e
         };
         Self {
             accent,
@@ -150,7 +150,7 @@ impl DialogColors {
     }
 }
 
-/// Paint the accent header bar with icon + title.
+/// Paint the accent header bar with icon + title (Signal Grid style).
 pub(crate) fn paint_dialog_header(
     ui: &mut egui::Ui,
     colors: &DialogColors,
@@ -163,36 +163,37 @@ pub(crate) fn paint_dialog_header(
         ui.allocate_exact_size(Vec2::new(available_width, header_height), Sense::hover());
 
     let painter = ui.painter();
-    // Gradient-like header: solid accent left fading to faint right
-    painter.rect_filled(rect, Rounding::ZERO, colors.accent_faint);
-    // Left accent bar
+    // Gradient-like header: accent faint fill with rounded top corners
+    painter.rect_filled(rect, Rounding::same(4.0), colors.accent_faint);
+    // Left accent bar (3px, full accent color)
     painter.rect_filled(
         Rect::from_min_size(rect.min, Vec2::new(3.0, header_height)),
         Rounding::ZERO,
         colors.accent,
     );
 
-    // Icon + title
+    // Diamond icon + title
     let text_pos = Pos2::new(rect.min.x + 12.0, rect.center().y);
     painter.text(
         text_pos,
         egui::Align2::LEFT_CENTER,
-        format!("{} {}", icon, title),
+        format!("{icon} {title}"),
         egui::FontId::proportional(14.0),
         colors.accent_strong,
     );
 }
 
-/// Styled section label (small caps feel).
+/// Styled section label with monospace uppercase styling.
 pub(crate) fn section_label(ui: &mut egui::Ui, colors: &DialogColors, text: &str) {
     ui.add_space(6.0);
     ui.horizontal(|ui| {
         ui.add_space(2.0);
         ui.label(
-            egui::RichText::new(text)
+            egui::RichText::new(text.to_uppercase())
                 .size(11.0)
                 .color(colors.text_muted)
-                .strong(),
+                .strong()
+                .monospace(),
         );
     });
     ui.add_space(2.0);

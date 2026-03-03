@@ -465,6 +465,7 @@ theme_preset.purple=Фиолетовый
 theme_preset.red=Красный
 theme_preset.green=Зелёный
 theme_preset.lime=Лайм
+theme_preset.signal=Signal
 theme_preset.custom=Пользовательский
 keybind_category.file=Файл
 keybind_category.edit=Редактирование

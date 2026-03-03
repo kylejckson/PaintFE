@@ -23,6 +23,8 @@ mod ipc;
 pub mod logger;
 mod ops;
 mod project;
+mod signal_draw;
+mod signal_widgets;
 mod theme;
 
 use app::PaintFEApp;

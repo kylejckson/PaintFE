@@ -465,6 +465,7 @@ theme_preset.purple=Roxo
 theme_preset.red=Vermelho
 theme_preset.green=Verde
 theme_preset.lime=Lima
+theme_preset.signal=Signal
 theme_preset.custom=Personalizado
 keybind_category.file=Arquivo
 keybind_category.edit=Editar

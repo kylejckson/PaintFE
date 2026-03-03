@@ -465,6 +465,7 @@ theme_preset.purple=Fioletowy
 theme_preset.red=Czerwony
 theme_preset.green=Zielony
 theme_preset.lime=Limonkowy
+theme_preset.signal=Signal
 theme_preset.custom=Niestandardowy
 keybind_category.file=Plik
 keybind_category.edit=Edycja

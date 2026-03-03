@@ -465,6 +465,7 @@ theme_preset.purple=Paars
 theme_preset.red=Rood
 theme_preset.green=Groen
 theme_preset.lime=Limoen
+theme_preset.signal=Signal
 theme_preset.custom=Aangepast
 keybind_category.file=Bestand
 keybind_category.edit=Bewerken

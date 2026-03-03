@@ -465,6 +465,7 @@ theme_preset.purple=Mor
 theme_preset.red=Kırmızı
 theme_preset.green=Yeşil
 theme_preset.lime=Limon Yeşili
+theme_preset.signal=Signal
 theme_preset.custom=Özel
 keybind_category.file=Dosya
 keybind_category.edit=Düzen

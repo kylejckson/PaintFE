@@ -154,24 +154,10 @@ impl ScriptEditorPanel {
         let muted = theme.text_muted;
         let time = ui.input(|i| i.time);
 
-        // -- Custom title bar --
-        ui.horizontal(|ui| {
-            // Neon icon
-            ui.label(RichText::new("◆").color(accent).size(14.0));
-            ui.label(
-                RichText::new(crate::t!("script.title"))
-                    .size(14.0)
-                    .color(text_color)
-                    .strong(),
-            );
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.small_button("×").clicked() {
-                    self.close_requested = true;
-                }
-            });
-        });
-
-        ui.add_space(2.0);
+        // -- Signal Grid panel header --
+        if crate::signal_widgets::panel_header(ui, theme, &crate::t!("script.title"), Some(("SCRIPT", accent))) {
+            self.close_requested = true;
+        }
 
         // -- Toolbar row --
         ui.horizontal(|ui| {
@@ -684,7 +670,22 @@ impl ScriptEditorPanel {
                 let bar = egui::ProgressBar::new(p)
                     .text(format!("{:.0}%", p * 100.0))
                     .desired_width(avail_w);
-                ui.add(bar);
+                let bar_resp = ui.add(bar);
+                // Accent glow behind progress bar (Phase 9)
+                let glow_rect = bar_resp.rect.expand(3.0);
+                let glow_color = egui::Color32::from_rgba_unmultiplied(
+                    accent.r(),
+                    accent.g(),
+                    accent.b(),
+                    20,
+                );
+                let bg_painter = ui.ctx().layer_painter(
+                    egui::LayerId::new(
+                        egui::Order::Background,
+                        egui::Id::new("progress_glow"),
+                    ),
+                );
+                bg_painter.rect_filled(glow_rect, 4.0, glow_color);
             } else {
                 ui.horizontal(|ui| {
                     ui.spinner();

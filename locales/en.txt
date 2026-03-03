@@ -490,6 +490,7 @@ theme_preset.ember=Ember
 theme_preset.sakura=Sakura
 theme_preset.glacier=Glacier
 theme_preset.midnight=Midnight
+theme_preset.signal=Signal
 theme_preset.custom=Custom
 keybind_category.file=File
 keybind_category.edit=Edit

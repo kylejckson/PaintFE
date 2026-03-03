@@ -465,6 +465,7 @@ theme_preset.purple=紫色
 theme_preset.red=紅色
 theme_preset.green=綠色
 theme_preset.lime=黃綠色
+theme_preset.signal=Signal
 theme_preset.custom=自訂
 keybind_category.file=檔案
 keybind_category.edit=編輯

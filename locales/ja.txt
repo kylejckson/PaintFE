@@ -465,6 +465,7 @@ theme_preset.purple=パープル
 theme_preset.red=レッド
 theme_preset.green=グリーン
 theme_preset.lime=ライム
+theme_preset.signal=Signal
 theme_preset.custom=カスタム
 keybind_category.file=ファイル
 keybind_category.edit=編集

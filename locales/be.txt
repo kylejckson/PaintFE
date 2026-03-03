@@ -466,6 +466,7 @@ theme_preset.purple=Purple
 theme_preset.red=Red
 theme_preset.green=Green
 theme_preset.lime=Lime
+theme_preset.signal=Signal
 theme_preset.custom=DIY
 keybind_category.file=File
 keybind_category.edit=Fix Up

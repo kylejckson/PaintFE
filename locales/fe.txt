@@ -465,6 +465,7 @@ theme_preset.purple=Cadbury Purple
 theme_preset.red=Post Box Red
 theme_preset.green=Waitrose Green
 theme_preset.lime=Nuclear Lime
+theme_preset.signal=Signal
 theme_preset.custom=Bespoke
 keybind_category.file=The Ledger
 keybind_category.edit=Alterations

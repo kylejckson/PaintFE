@@ -8,6 +8,7 @@ use crate::ops::clipboard::PasteOverlay;
 use crate::ops::dialogs::{ActiveDialog, DialogResult};
 use crate::ops::scripting::{ScriptMessage, apply_canvas_ops};
 use crate::project::Project;
+use crate::signal_widgets;
 use crate::theme::{Theme, WindowVisibility};
 use eframe::egui;
 use image::RgbaImage;
@@ -331,12 +332,14 @@ impl PaintFEApp {
         } else {
             settings.theme_preset.accent_colors()
         };
-        let theme = match settings.theme_mode {
+        let mut theme = match settings.theme_mode {
             crate::theme::ThemeMode::Dark => Theme::dark_with_accent(settings.theme_preset, accent),
             crate::theme::ThemeMode::Light => {
                 Theme::light_with_accent(settings.theme_preset, accent)
             }
         };
+        let ov = settings.build_theme_overrides();
+        theme.apply_overrides(&ov);
         theme.apply(&cc.egui_ctx);
 
         // Initialize with one default project
@@ -2096,7 +2099,10 @@ impl eframe::App for PaintFEApp {
 
         // --- Top Menu Bar ---
         let menu_kb = self.settings.keybindings.clone();
-        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
+        let menu_resp = egui::TopBottomPanel::top("menu_bar")
+            .frame(self.theme.menu_frame())
+            .exact_height(28.0)
+            .show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button(t!("menu.file"), |ui| {
                     if self
@@ -3660,6 +3666,23 @@ impl eframe::App for PaintFEApp {
             });
         });
 
+        // Accent bottom line below menu bar (bottom-only, not 4-sided stroke)
+        {
+            let menu_rect = menu_resp.response.rect;
+            let [ar, ag, ab, _] = self.theme.accent.to_array();
+            let line_alpha = if self.settings.neon_mode && self.theme.mode == crate::theme::ThemeMode::Dark { 50u8 } else { 20u8 };
+            let line_color = egui::Color32::from_rgba_unmultiplied(ar, ag, ab, line_alpha);
+            let painter = ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Background,
+                egui::Id::new("menu_bottom_line"),
+            ));
+            let line_rect = egui::Rect::from_min_max(
+                egui::pos2(menu_rect.left(), menu_rect.bottom() - 1.0),
+                egui::pos2(menu_rect.right(), menu_rect.bottom()),
+            );
+            painter.rect_filled(line_rect, 0.0, line_color);
+        }
+
         // --- Row 2: Actions + Project Tabs ---
         let toolbar_resp = egui::TopBottomPanel::top("toolbar_tabs")
             .frame(self.theme.toolbar_frame())
@@ -3858,31 +3881,38 @@ impl eframe::App for PaintFEApp {
                                                 for (idx, project) in self.projects.iter().enumerate() {
                                                     let is_active = idx == self.active_project_index;
                                                     
+                                                    // Animated crossfade for tab transitions (Phase 9)
+                                                    let tab_anim_id = egui::Id::new("tab_active_anim").with(idx);
+                                                    let active_t = ui.ctx().animate_bool(tab_anim_id, is_active);
+
                                                     // Tab styling
                                                     let tab_text = project.display_title();
-                                                    let text_color = if is_active {
-                                                        egui::Color32::WHITE
-                                                    } else {
-                                                        match self.theme.mode {
-                                                            crate::theme::ThemeMode::Dark => egui::Color32::from_gray(180),
-                                                            crate::theme::ThemeMode::Light => egui::Color32::from_gray(50),
-                                                        }
+                                                    let active_text_color = egui::Color32::WHITE;
+                                                    let inactive_text_color = match self.theme.mode {
+                                                        crate::theme::ThemeMode::Dark => egui::Color32::from_gray(180),
+                                                        crate::theme::ThemeMode::Light => egui::Color32::from_gray(50),
                                                     };
+                                                    let text_color = crate::theme::Theme::lerp_color(
+                                                        inactive_text_color,
+                                                        active_text_color,
+                                                        active_t,
+                                                    );
                                                     let text = egui::RichText::new(&tab_text).color(text_color);
                                                     let text = if is_active { text.strong() } else { text };
                                                     
-                                                    // Tab frame with white for inactive, accent for active
-                                                    let fill = if is_active {
-                                                        self.theme.accent
-                                                    } else {
-                                                        match self.theme.mode {
-                                                            crate::theme::ThemeMode::Dark => egui::Color32::from_gray(38),
-                                                            crate::theme::ThemeMode::Light => egui::Color32::WHITE,
-                                                        }
+                                                    // Tab frame with animated fill crossfade
+                                                    let inactive_fill = match self.theme.mode {
+                                                        crate::theme::ThemeMode::Dark => egui::Color32::from_gray(38),
+                                                        crate::theme::ThemeMode::Light => egui::Color32::WHITE,
                                                     };
+                                                    let fill = crate::theme::Theme::lerp_color(
+                                                        inactive_fill,
+                                                        self.theme.accent,
+                                                        active_t,
+                                                    );
                                                     
                                                     // Get the frame response to paint shadow
-                                                    egui::Frame::none()
+                                                    let tab_resp = egui::Frame::none()
                                                         .fill(fill)
                                                         .inner_margin(egui::Margin::symmetric(8.0, 2.85))
                                                         .rounding(egui::Rounding::same(4.0))
@@ -3905,6 +3935,25 @@ impl eframe::App for PaintFEApp {
                                                                 }
                                                             });
                                                         });
+
+                                                    // Accent underglow for active tab — use Background layer so it renders behind the tab
+                                                    if is_active {
+                                                        let tab_rect = tab_resp.response.rect;
+                                                        let glow_rect = tab_rect.expand(2.0);
+                                                        let glow_color = egui::Color32::from_rgba_unmultiplied(
+                                                            self.theme.accent.r(),
+                                                            self.theme.accent.g(),
+                                                            self.theme.accent.b(),
+                                                            30,
+                                                        );
+                                                        let bg_painter = ui.ctx().layer_painter(
+                                                            egui::LayerId::new(
+                                                                egui::Order::Background,
+                                                                egui::Id::new("tab_underglow").with(idx),
+                                                            ),
+                                                        );
+                                                        bg_painter.rect_filled(glow_rect, 6.0, glow_color);
+                                                    }
                                                     
                                                     ui.add_space(2.0);
                                                 }
@@ -3973,8 +4022,11 @@ impl eframe::App for PaintFEApp {
             ));
             let shadow_height = 8.0_f32;
             let steps = 8;
+            // Always use subtle accent-tinted shadow (Signal Grid design);
+            // neon mode just makes it stronger
             let is_neon =
                 self.settings.neon_mode && self.theme.mode == crate::theme::ThemeMode::Dark;
+            let [ar, ag, ab, _] = self.theme.accent.to_array();
             for i in 0..steps {
                 let t = i as f32 / steps as f32;
                 let y = toolbar_rect.bottom() + t * shadow_height;
@@ -3983,14 +4035,29 @@ impl eframe::App for PaintFEApp {
                     egui::pos2(screen_rect.left(), y),
                     egui::pos2(screen_rect.right(), next_y),
                 );
+                let falloff = 1.0 - t;
                 let color = if is_neon {
-                    let [r, g, b, _] = self.theme.accent.to_array();
-                    egui::Color32::from_rgba_unmultiplied(r, g, b, ((1.0 - t) * 20.0) as u8)
+                    egui::Color32::from_rgba_unmultiplied(ar, ag, ab, (falloff * 20.0) as u8)
                 } else {
-                    egui::Color32::from_black_alpha(((1.0 - t) * 30.0) as u8)
+                    // Blend: dark shadow base + subtle accent tint
+                    let accent_alpha = (falloff * 8.0) as u8;
+                    let dark_alpha = (falloff * 25.0) as u8;
+                    // Draw two layers: dark base + accent tint
+                    painter.rect_filled(rect, 0.0, egui::Color32::from_black_alpha(dark_alpha));
+                    egui::Color32::from_rgba_unmultiplied(ar, ag, ab, accent_alpha)
                 };
                 painter.rect_filled(rect, 0.0, color);
             }
+
+            // Thin accent line at toolbar bottom edge — crisp Signal Grid boundary
+            let accent_line_alpha = if is_neon { 60u8 } else { 25u8 };
+            let line_color =
+                egui::Color32::from_rgba_unmultiplied(ar, ag, ab, accent_line_alpha);
+            let line_rect = egui::Rect::from_min_max(
+                egui::pos2(screen_rect.left(), toolbar_rect.bottom()),
+                egui::pos2(screen_rect.right(), toolbar_rect.bottom() + 1.0),
+            );
+            painter.rect_filled(line_rect, 0.0, line_color);
         }
 
         // --- Row 3: Context Bar (Dynamic Tool Options / Paste Options) ---
@@ -3998,6 +4065,10 @@ impl eframe::App for PaintFEApp {
             .frame(self.theme.context_bar_frame())
             .exact_height(36.0) // Fixed height — prevents canvas shifting when tool context bar changes size
             .show(ctx, |ui| {
+                // Context bar label styling: 12pt, text_dim (Phase 6 spec)
+                ui.style_mut().override_font_id =
+                    Some(egui::FontId::proportional(crate::theme::Theme::FONT_LABEL));
+                ui.visuals_mut().override_text_color = Some(self.theme.text_muted);
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     if let Some(ref mut overlay) = self.paste_overlay {
                         // --- Paste overlay context bar ---
@@ -8729,61 +8800,25 @@ impl PaintFEApp {
         let first_show = self.tools_panel_pos.is_none();
         let (pos_x, pos_y) = self.tools_panel_pos.unwrap_or((12.0, 128.0));
 
+        let hover_id = egui::Id::new("ToolsStrip_hover");
+        let hover_t = ctx.animate_bool(hover_id, false);
         let mut window = egui::Window::new("ToolsStrip")
             .open(&mut show)
             .resizable(false)
             .collapsible(false)
-            .fixed_size(egui::vec2(60.0, 150.0))
+            .default_size(egui::vec2(120.0, 400.0))
             .title_bar(false)
-            .frame(self.theme.floating_window_frame());
+            .frame(self.theme.floating_window_frame_animated(hover_t));
 
         if first_show || screen_size_changed {
             window = window.current_pos(egui::pos2(pos_x, pos_y));
         }
 
         let resp = window.show(ctx, |ui| {
-            // Header: title left, × right
-            let header_rect = ui.available_rect_before_wrap();
-            let header_rect =
-                egui::Rect::from_min_size(header_rect.min, egui::vec2(header_rect.width(), 18.0));
-            let (header_rect, _) = ui.allocate_exact_size(header_rect.size(), egui::Sense::hover());
-            ui.painter().text(
-                header_rect.left_center(),
-                egui::Align2::LEFT_CENTER,
-                "Tools",
-                egui::FontId::proportional(14.0),
-                self.theme.text_color,
-            );
-            let close_rect = egui::Rect::from_min_size(
-                egui::pos2(header_rect.right() + 13.0, header_rect.center().y - 8.0),
-                egui::vec2(16.0, 16.0),
-            );
-            let close_response = ui.allocate_rect(close_rect, egui::Sense::click());
-            // Draw button background with border on hover
-            let (bg_color, border_stroke) = if close_response.hovered() {
-                (
-                    ui.visuals().widgets.hovered.bg_fill,
-                    egui::Stroke::new(1.0, ui.visuals().widgets.hovered.bg_stroke.color),
-                )
-            } else {
-                (egui::Color32::from_black_alpha(40), egui::Stroke::NONE)
-            };
-            ui.painter().rect(close_rect, 2.0, bg_color, border_stroke);
-            ui.painter().text(
-                close_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                "×",
-                egui::FontId::proportional(14.0),
-                if close_response.hovered() {
-                    ui.visuals().widgets.hovered.fg_stroke.color
-                } else {
-                    ui.visuals().text_color()
-                },
-            );
-            if close_response.clicked() {
+            // Signal Grid panel header
+            if signal_widgets::panel_header(ui, &self.theme, "Tools", Some(("TOOLS", self.theme.accent3))) {
                 close_clicked = true;
             }
-            ui.add_space(5.0);
             // Make all text in this window slightly smaller
             ui.style_mut().override_text_style = Some(egui::TextStyle::Small);
             let primary = self.colors_panel.get_primary_color();
@@ -8811,6 +8846,10 @@ impl PaintFEApp {
         if let Some(inner_resp) = resp {
             let win_rect = inner_resp.response.rect;
             self.tools_panel_pos = Some((win_rect.min.x, win_rect.min.y));
+            let hovered = ctx.input(|i| {
+                i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p))
+            });
+            ctx.animate_bool(hover_id, hovered);
         }
 
         if close_clicked {
@@ -8833,6 +8872,8 @@ impl PaintFEApp {
         let (right_off, y_pos) = self.layers_panel_right_offset.unwrap_or((264.0, 128.0));
         let pos_x = screen_w - right_off;
 
+        let hover_id = egui::Id::new("Layers_hover");
+        let hover_t = ctx.animate_bool(hover_id, false);
         let mut window = egui::Window::new("Layers")
             .open(&mut show)
             .resizable(true)
@@ -8841,7 +8882,7 @@ impl PaintFEApp {
             .min_width(180.0)
             .min_height(200.0)
             .title_bar(false)
-            .frame(self.theme.floating_window_frame());
+            .frame(self.theme.floating_window_frame_animated(hover_t));
 
         // Only force position on first show or when screen size changes
         if first_show || screen_size_changed {
@@ -8849,20 +8890,10 @@ impl PaintFEApp {
         }
 
         let resp = window.show(ctx, |ui| {
-            // Custom left-aligned title with close button
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("Layers")
-                        .size(14.0)
-                        .color(self.theme.text_color),
-                );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("×").clicked() {
-                        close_clicked = true;
-                    }
-                });
-            });
-            ui.add_space(4.0);
+            // Signal Grid panel header
+            if signal_widgets::panel_header(ui, &self.theme, "Layers", Some(("LAYERS", self.theme.accent3))) {
+                close_clicked = true;
+            }
             if let Some(project) = self.projects.get_mut(self.active_project_index) {
                 self.layers_panel.show(
                     ui,
@@ -8940,6 +8971,10 @@ impl PaintFEApp {
         if let Some(inner_resp) = resp {
             let win_rect = inner_resp.response.rect;
             self.layers_panel_right_offset = Some((screen_w - win_rect.min.x, win_rect.min.y));
+            let hovered = ctx.input(|i| {
+                i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p))
+            });
+            ctx.animate_bool(hover_id, hovered);
         }
 
         if close_clicked {
@@ -8964,6 +8999,8 @@ impl PaintFEApp {
         let pos_x = screen_w - right_off;
         let pos_y = screen_h - bot_off;
 
+        let hover_id = egui::Id::new("History_hover");
+        let hover_t = ctx.animate_bool(hover_id, false);
         let mut window = egui::Window::new("History")
             .open(&mut show)
             .resizable(false)
@@ -8971,27 +9008,17 @@ impl PaintFEApp {
             .min_width(200.0)
             .default_size(egui::vec2(200.0, 200.0))
             .title_bar(false)
-            .frame(self.theme.floating_window_frame());
+            .frame(self.theme.floating_window_frame_animated(hover_t));
 
         if first_show || screen_size_changed {
             window = window.current_pos(egui::pos2(pos_x, pos_y));
         }
 
         let resp = window.show(ctx, |ui| {
-            // Custom left-aligned title with close button
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("History")
-                        .size(14.0)
-                        .color(self.theme.text_color),
-                );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("×").clicked() {
-                        close_clicked = true;
-                    }
-                });
-            });
-            ui.add_space(2.0);
+            // Signal Grid panel header
+            if signal_widgets::panel_header(ui, &self.theme, "History", None) {
+                close_clicked = true;
+            }
             ui.style_mut().override_text_style = Some(egui::TextStyle::Small);
             if let Some(project) = self.projects.get_mut(self.active_project_index) {
                 self.history_panel.show_interactive(
@@ -9007,6 +9034,10 @@ impl PaintFEApp {
             let win_rect = inner_resp.response.rect;
             self.history_panel_right_offset =
                 Some((screen_w - win_rect.min.x, screen_h - win_rect.min.y));
+            let hovered = ctx.input(|i| {
+                i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p))
+            });
+            ctx.animate_bool(hover_id, hovered);
         }
 
         if close_clicked {
@@ -9036,33 +9067,25 @@ impl PaintFEApp {
             egui::vec2(210.0, 330.0)
         };
 
+        let hover_id = egui::Id::new("Colors_hover");
+        let hover_t = ctx.animate_bool(hover_id, false);
         let mut window = egui::Window::new("Colors")
             .open(&mut show)
             .resizable(false)
             .collapsible(false)
             .fixed_size(panel_size)
             .title_bar(false)
-            .frame(self.theme.floating_window_frame());
+            .frame(self.theme.floating_window_frame_animated(hover_t));
 
         if first_show || screen_size_changed {
             window = window.current_pos(egui::pos2(x_off, pos_y));
         }
 
         let resp = window.show(ctx, |ui| {
-            // Custom left-aligned title with close button
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("Colors")
-                        .size(14.0)
-                        .color(self.theme.text_color),
-                );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("×").clicked() {
-                        close_clicked = true;
-                    }
-                });
-            });
-            ui.add_space(2.0);
+            // Signal Grid panel header
+            if signal_widgets::panel_header(ui, &self.theme, "Colors", Some(("COLOR", self.theme.accent))) {
+                close_clicked = true;
+            }
             ui.style_mut().override_text_style = Some(egui::TextStyle::Small);
             self.colors_panel.show(ui, &self.assets);
         });
@@ -9070,6 +9093,10 @@ impl PaintFEApp {
         if let Some(inner_resp) = resp {
             let win_rect = inner_resp.response.rect;
             self.colors_panel_left_offset = Some((win_rect.min.x, screen_h - win_rect.min.y));
+            let hovered = ctx.input(|i| {
+                i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p))
+            });
+            ctx.animate_bool(hover_id, hovered);
         }
 
         if close_clicked {
@@ -9098,6 +9125,8 @@ impl PaintFEApp {
         let pos_x = screen_w - right_off;
         let pos_y = top_off;
 
+        let hover_id = egui::Id::new("ScriptEditor_hover");
+        let hover_t = ctx.animate_bool(hover_id, false);
         let mut window = egui::Window::new("ScriptEditor")
             .open(&mut show)
             .resizable(true)
@@ -9106,7 +9135,7 @@ impl PaintFEApp {
             .min_height(350.0)
             .default_size(egui::vec2(520.0, 500.0))
             .title_bar(false)
-            .frame(self.theme.floating_window_frame());
+            .frame(self.theme.floating_window_frame_animated(hover_t));
 
         if first_show || screen_size_changed {
             window = window.current_pos(egui::pos2(pos_x, pos_y));
@@ -9136,6 +9165,10 @@ impl PaintFEApp {
         if let Some(inner_resp) = resp {
             let win_rect = inner_resp.response.rect;
             self.script_right_offset = Some((screen_w - win_rect.min.x, win_rect.min.y));
+            let hovered = ctx.input(|i| {
+                i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p))
+            });
+            ctx.animate_bool(hover_id, hovered);
         }
 
         if self.script_editor.close_requested {

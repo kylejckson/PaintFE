@@ -3155,14 +3155,45 @@ impl Canvas {
         // Fill background with theme color
         painter.rect_filled(canvas_rect, 0.0, bg_color);
 
-        // Draw subtle glow/shadow around the canvas (emanating from all sides)
-        let glow_layers = 6;
-        let max_glow_distance = 12.0;
-        for i in 0..glow_layers {
-            let distance = (i as f32 + 1.0) * (max_glow_distance / glow_layers as f32);
-            let alpha = (((8 - i) * 2) as f32 * 0.6) as u8; // 40% more subtle
-            let glow_rect = image_rect.expand(distance);
-            painter.rect_filled(glow_rect, 3.0, Color32::from_black_alpha(alpha));
+        // Draw subtle grid texture on canvas background (Signal Grid pattern)
+        // Only draw when grid cells would be visible (> 5px on screen) and grid is enabled
+        if debug_settings.canvas_grid_visible {
+            let grid_cell = 40.0; // matches website's .grid-bg
+            if grid_cell > 5.0 {
+                let base_alpha = debug_settings.canvas_grid_opacity;
+                let grid_color = if bg_color.r() < 128 {
+                    // Dark mode: blue-tinted gray (not pure white) for subtle contrast
+                    Color32::from_rgba_unmultiplied(120, 120, 145, (6.0 * base_alpha) as u8)
+                } else {
+                    // Light mode: dark blue-black, visible on white bg
+                    Color32::from_rgba_unmultiplied(0, 0, 20, (18.0 * base_alpha) as u8)
+                };
+                crate::signal_draw::draw_grid_texture(&painter, canvas_rect, grid_cell, grid_color);
+            }
+        }
+
+        // Draw accent-tinted under-glow + depth shadow around the canvas image
+        {
+            let gi = debug_settings.glow_intensity;
+            let ss = debug_settings.shadow_strength;
+            let glow_alpha_outer = (6.0 * gi).min(255.0) as u8;
+            let glow_alpha_inner = (12.0 * gi).min(255.0) as u8;
+            if glow_alpha_outer > 0 {
+                painter.rect_filled(image_rect.expand(16.0), 8.0,
+                    Color32::from_rgba_unmultiplied(accent_color.r(), accent_color.g(), accent_color.b(), glow_alpha_outer));
+            }
+            if glow_alpha_inner > 0 {
+                painter.rect_filled(image_rect.expand(8.0), 6.0,
+                    Color32::from_rgba_unmultiplied(accent_color.r(), accent_color.g(), accent_color.b(), glow_alpha_inner));
+            }
+            // Dark depth layers
+            for i in 0..4u32 {
+                let distance = i as f32 * 2.0 + 2.0;
+                let alpha = (((4 - i) * 5) as f32 * ss).min(255.0) as u8;
+                if alpha > 0 {
+                    painter.rect_filled(image_rect.expand(distance), 4.0, Color32::from_black_alpha(alpha));
+                }
+            }
         }
 
         // Draw checkerboard background (clipped to visible canvas area)
@@ -5481,19 +5512,28 @@ impl Canvas {
 
     fn draw_checkerboard(&self, painter: &egui::Painter, rect: Rect, clip: Rect, brightness: f32) {
         let checker_size = 10.0 * self.zoom;
-        // Apply brightness multiplier to the base grayscale values
-        let base_light = 220.0 * brightness;
-        let base_dark = 180.0 * brightness;
-        let light = Color32::from_gray(base_light.clamp(0.0, 255.0) as u8);
-        let dark = Color32::from_gray(base_dark.clamp(0.0, 255.0) as u8);
+        // Blue-tinted Signal Grid checkerboard colors
+        let is_dark = brightness < 1.5; // heuristic: low brightness = dark theme
+        let (base_light_r, base_light_g, base_light_b, base_dark_r, base_dark_g, base_dark_b) = if is_dark {
+            // Dark mode: subtle blue-tinted squares
+            (28u8, 28, 35, 22, 22, 28)
+        } else {
+            // Light mode: subtle blue-tinted squares
+            (240u8, 240, 245, 225, 225, 235)
+        };
+        let scale = |v: u8| -> u8 { (v as f32 * brightness).clamp(0.0, 255.0) as u8 };
+        let light = Color32::from_rgb(scale(base_light_r), scale(base_light_g), scale(base_light_b));
+        let dark = Color32::from_rgb(scale(base_dark_r), scale(base_dark_g), scale(base_dark_b));
 
         // When zoomed out far enough that cells are too small to distinguish,
         // just draw a solid average color.  This avoids generating tens of
         // thousands of rect_filled calls that overwhelm egui's tessellator
         // (e.g. ~41K rects for a 4K canvas at any zoom level).
         if checker_size < 3.0 {
-            let avg = ((base_light + base_dark) * 0.5).clamp(0.0, 255.0) as u8;
-            painter.rect_filled(rect, 0.0, Color32::from_gray(avg));
+            let avg_r = ((base_light_r as u16 + base_dark_r as u16) / 2) as u8;
+            let avg_g = ((base_light_g as u16 + base_dark_g as u16) / 2) as u8;
+            let avg_b = ((base_light_b as u16 + base_dark_b as u16) / 2) as u8;
+            painter.rect_filled(rect, 0.0, Color32::from_rgb(scale(avg_r), scale(avg_g), scale(avg_b)));
             return;
         }
 

@@ -1537,9 +1537,14 @@ impl ToolsPanel {
 
         ui.add_space(4.0);
 
-        // Separator color for between-group dividers
+        // Separator color for between-group dividers (accent-tinted for Signal Grid)
+        let accent = ui.visuals().selection.bg_fill;
         let sep_color = if ui.visuals().dark_mode {
-            egui::Color32::from_gray(60)
+            egui::Color32::from_rgb(
+                60u8.saturating_add(accent.r() / 8),
+                60u8.saturating_add(accent.g() / 8),
+                60u8.saturating_add(accent.b() / 8),
+            )
         } else {
             egui::Color32::from_gray(200)
         };
@@ -1631,6 +1636,21 @@ impl ToolsPanel {
                 } else {
                     tool_btn_fill
                 };
+
+                // Accent glow behind active tool
+                if selected {
+                    let glow_expand = 3.0;
+                    let glow_rect = btn_rect.expand(glow_expand);
+                    let sel = ui.visuals().selection.bg_fill;
+                    let glow_color = egui::Color32::from_rgba_unmultiplied(
+                        sel.r(),
+                        sel.g(),
+                        sel.b(),
+                        40,
+                    );
+                    ui.painter().rect_filled(glow_rect, 6.0, glow_color);
+                }
+
                 ui.painter().rect_filled(btn_rect, 4.0, fill);
 
                 // Border
@@ -1725,6 +1745,21 @@ impl ToolsPanel {
             } else {
                 tool_btn_fill
             };
+
+            // Accent glow behind active Shapes button
+            if is_shapes {
+                let glow_expand = 3.0;
+                let glow_rect = shape_rect.expand(glow_expand);
+                let sel = ui.visuals().selection.bg_fill;
+                let glow_color = egui::Color32::from_rgba_unmultiplied(
+                    sel.r(),
+                    sel.g(),
+                    sel.b(),
+                    40,
+                );
+                ui.painter().rect_filled(glow_rect, 6.0, glow_color);
+            }
+
             ui.painter().rect_filled(shape_rect, 4.0, fill);
 
             if is_shapes {

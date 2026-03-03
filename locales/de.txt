@@ -465,6 +465,7 @@ theme_preset.purple=Lila
 theme_preset.red=Rot
 theme_preset.green=Grün
 theme_preset.lime=Limette
+theme_preset.signal=Signal
 theme_preset.custom=Benutzerdefiniert
 keybind_category.file=Datei
 keybind_category.edit=Bearbeiten

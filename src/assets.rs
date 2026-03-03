@@ -1,5 +1,5 @@
 use crate::ops::shapes::ShapeKind;
-use crate::theme::{AccentColors, ThemeMode, ThemePreset};
+use crate::theme::{AccentColors, ThemeMode, ThemeOverrides, ThemePreset, UiDensity};
 use eframe::egui;
 use egui::{Color32, ColorImage, Sense, TextureHandle, TextureOptions, Vec2};
 use std::collections::HashMap;
@@ -1906,13 +1906,7 @@ impl Assets {
 
     /// Create a menu item button with a small icon + text label
     pub fn menu_item(&self, ui: &mut egui::Ui, icon: Icon, text: &str) -> egui::Response {
-        if let Some(texture) = self.textures.get(&icon) {
-            let sized_texture = egui::load::SizedTexture::from_handle(texture);
-            let img = egui::Image::from_texture(sized_texture).fit_to_exact_size(Vec2::splat(16.0));
-            ui.add(egui::Button::image_and_text(img, text))
-        } else {
-            ui.button(format!("{} {}", icon.emoji(), text))
-        }
+        self.render_menu_item_no_shortcut(ui, icon, text, true)
     }
 
     /// Create a menu item button with a small icon + text label, with enabled/disabled state
@@ -1923,16 +1917,94 @@ impl Assets {
         text: &str,
         enabled: bool,
     ) -> egui::Response {
-        if let Some(texture) = self.textures.get(&icon) {
-            let sized_texture = egui::load::SizedTexture::from_handle(texture);
-            let img = egui::Image::from_texture(sized_texture).fit_to_exact_size(Vec2::splat(16.0));
-            ui.add_enabled(enabled, egui::Button::image_and_text(img, text))
+        self.render_menu_item_no_shortcut(ui, icon, text, enabled)
+    }
+
+    /// Custom-painted menu item without shortcut — matches the accent-bar style of
+    /// `render_menu_item_with_shortcut` for visual consistency.
+    fn render_menu_item_no_shortcut(
+        &self,
+        ui: &mut egui::Ui,
+        icon: Icon,
+        text: &str,
+        enabled: bool,
+    ) -> egui::Response {
+        let icon_size = 16.0_f32;
+        let padding = ui.spacing().button_padding;
+        let icon_gap = 4.0_f32;
+        let accent_bar_width = 2.0_f32;
+
+        let text_font = egui::TextStyle::Button.resolve(ui.style());
+
+        let label_color = if enabled {
+            ui.visuals().text_color()
         } else {
-            ui.add_enabled(
-                enabled,
-                egui::Button::new(format!("{} {}", icon.emoji(), text)),
-            )
+            ui.visuals().weak_text_color()
+        };
+        let text_galley =
+            ui.painter()
+                .layout_no_wrap(text.to_string(), text_font.clone(), label_color);
+
+        let desired_width =
+            (padding.x + icon_size + icon_gap + text_galley.size().x + padding.x)
+                .max(ui.available_width());
+        let row_height = icon_size.max(text_galley.size().y) + padding.y * 2.0;
+
+        let sense = if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        };
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(desired_width, row_height), sense);
+
+        if ui.is_rect_visible(rect) {
+            let visuals = ui.style().interact(&response);
+            if enabled && (response.hovered() || response.has_focus()) {
+                ui.painter().rect_filled(rect, 0.0, visuals.bg_fill);
+                // Left accent bar (Signal Grid hover indicator)
+                let accent = ui.visuals().selection.stroke.color;
+                let bar_rect = egui::Rect::from_min_max(
+                    rect.left_top(),
+                    egui::pos2(rect.left() + accent_bar_width, rect.bottom()),
+                );
+                ui.painter().rect_filled(bar_rect, 0.0, accent);
+            }
+
+            let text_color = if enabled {
+                visuals.text_color()
+            } else {
+                ui.visuals().weak_text_color()
+            };
+
+            // Icon
+            let icon_rect = egui::Rect::from_min_size(
+                egui::pos2(rect.left() + padding.x, rect.center().y - icon_size / 2.0),
+                egui::vec2(icon_size, icon_size),
+            );
+            if let Some(texture) = self.textures.get(&icon) {
+                let tint = if enabled {
+                    text_color
+                } else {
+                    Color32::from_gray(128)
+                };
+                ui.painter().image(
+                    texture.id(),
+                    icon_rect,
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    tint,
+                );
+            }
+
+            // Label text (left-aligned after icon)
+            let text_pos = egui::pos2(
+                icon_rect.right() + icon_gap,
+                rect.center().y - text_galley.size().y / 2.0,
+            );
+            ui.painter().galley(text_pos, text_galley);
         }
+
+        response
     }
 
     /// Create a menu item button with a small icon + text label + right-aligned shortcut hint
@@ -1980,9 +2052,10 @@ impl Assets {
         let icon_size = 16.0_f32;
         let padding = ui.spacing().button_padding;
         let icon_gap = 4.0_f32;
+        let accent_bar_width = 2.0_f32;
 
         let text_font = egui::TextStyle::Button.resolve(ui.style());
-        let shortcut_font = egui::FontId::proportional(text_font.size * 0.9);
+        let shortcut_font = egui::FontId::monospace(text_font.size * 0.85);
 
         let label_color = if enabled {
             ui.visuals().text_color()
@@ -2025,6 +2098,13 @@ impl Assets {
             let visuals = ui.style().interact(&response);
             if enabled && (response.hovered() || response.has_focus()) {
                 ui.painter().rect_filled(rect, 0.0, visuals.bg_fill);
+                // Left accent bar (Signal Grid hover indicator)
+                let accent = ui.visuals().selection.stroke.color;
+                let bar_rect = egui::Rect::from_min_max(
+                    rect.left_top(),
+                    egui::pos2(rect.left() + accent_bar_width, rect.bottom()),
+                );
+                ui.painter().rect_filled(bar_rect, 0.0, accent);
             }
 
             let text_color = if enabled {
@@ -2115,9 +2195,10 @@ impl Assets {
         let icon_size = 16.0_f32;
         let padding = ui.spacing().button_padding;
         let icon_gap = 4.0_f32;
+        let accent_bar_width = 2.0_f32;
 
         let text_font = egui::TextStyle::Button.resolve(ui.style());
-        let shortcut_font = egui::FontId::proportional(text_font.size * 0.78);
+        let shortcut_font = egui::FontId::monospace(text_font.size * 0.78);
 
         let label_color = if enabled {
             ui.visuals().text_color()
@@ -2153,6 +2234,13 @@ impl Assets {
             let visuals = ui.style().interact(&response);
             if enabled && (response.hovered() || response.has_focus()) {
                 ui.painter().rect_filled(rect, 0.0, visuals.bg_fill);
+                // Left accent bar (Signal Grid hover indicator)
+                let accent = ui.visuals().selection.stroke.color;
+                let bar_rect = egui::Rect::from_min_max(
+                    rect.left_top(),
+                    egui::pos2(rect.left() + accent_bar_width, rect.bottom()),
+                );
+                ui.painter().rect_filled(bar_rect, 0.0, accent);
             }
 
             let text_color = if enabled {
@@ -2920,6 +3008,50 @@ pub struct AppSettings {
     // Behaviour
     /// Show a save-confirmation dialog when the user exits with unsaved projects.
     pub confirm_on_exit: bool,
+
+    // --- Advanced Customization (Phase 10) ---
+    /// Master toggle — when false, all overrides are ignored.
+    pub advanced_customization: bool,
+    /// UI density (Compact / Normal / Spacious).
+    pub ui_density: UiDensity,
+    /// Show subtle grid texture on canvas background.
+    pub canvas_grid_visible: bool,
+    /// Grid texture opacity (0.0–1.0).
+    pub canvas_grid_opacity: f32,
+    /// Glow intensity multiplier (0.0–2.0, default 1.0).
+    pub glow_intensity: f32,
+    /// Shadow strength multiplier (0.0–2.0, default 1.0).
+    pub shadow_strength: f32,
+    /// Widget rounding override (px).
+    pub widget_rounding: Option<f32>,
+    /// Window rounding override (px).
+    pub window_rounding: Option<f32>,
+    /// Menu rounding override (px).
+    pub menu_rounding: Option<f32>,
+
+    // Theme color overrides (None = use preset default)
+    pub ov_bg_color: Option<Color32>,
+    pub ov_panel_bg: Option<Color32>,
+    pub ov_window_bg: Option<Color32>,
+    pub ov_bg2: Option<Color32>,
+    pub ov_bg3: Option<Color32>,
+    pub ov_text_color: Option<Color32>,
+    pub ov_text_muted: Option<Color32>,
+    pub ov_text_faint: Option<Color32>,
+    pub ov_border_color: Option<Color32>,
+    pub ov_border_lit: Option<Color32>,
+    pub ov_separator_color: Option<Color32>,
+    pub ov_button_bg: Option<Color32>,
+    pub ov_button_hover: Option<Color32>,
+    pub ov_button_active: Option<Color32>,
+    pub ov_floating_window_bg: Option<Color32>,
+    pub ov_toolbar_bg: Option<Color32>,
+    pub ov_menu_bg: Option<Color32>,
+    pub ov_canvas_bg_top: Option<Color32>,
+    pub ov_canvas_bg_bottom: Option<Color32>,
+    pub ov_glow_accent: Option<Color32>,
+    pub ov_accent3: Option<Color32>,
+    pub ov_accent4: Option<Color32>,
 }
 
 impl Default for AppSettings {
@@ -2952,6 +3084,39 @@ impl Default for AppSettings {
             language: String::new(), // empty = auto-detect on first boot
 
             confirm_on_exit: true,
+
+            // Advanced Customization defaults
+            advanced_customization: false,
+            ui_density: UiDensity::Normal,
+            canvas_grid_visible: true,
+            canvas_grid_opacity: 0.4,
+            glow_intensity: 1.0,
+            shadow_strength: 1.0,
+            widget_rounding: None,
+            window_rounding: None,
+            menu_rounding: None,
+            ov_bg_color: None,
+            ov_panel_bg: None,
+            ov_window_bg: None,
+            ov_bg2: None,
+            ov_bg3: None,
+            ov_text_color: None,
+            ov_text_muted: None,
+            ov_text_faint: None,
+            ov_border_color: None,
+            ov_border_lit: None,
+            ov_separator_color: None,
+            ov_button_bg: None,
+            ov_button_hover: None,
+            ov_button_active: None,
+            ov_floating_window_bg: None,
+            ov_toolbar_bg: None,
+            ov_menu_bg: None,
+            ov_canvas_bg_top: None,
+            ov_canvas_bg_bottom: None,
+            ov_glow_accent: None,
+            ov_accent3: None,
+            ov_accent4: None,
         }
     }
 }
@@ -3028,6 +3193,60 @@ impl AppSettings {
         }
     }
 
+    /// Serialize an optional Color32 as "r,g,b,a" or empty string.
+    fn opt_color_to_str(c: Option<Color32>) -> String {
+        match c {
+            Some(c) => Self::color_to_str(c),
+            None => String::new(),
+        }
+    }
+
+    /// Deserialize an optional Color32 from "r,g,b,a" (empty/invalid → None).
+    fn str_to_opt_color(s: &str) -> Option<Color32> {
+        if s.is_empty() {
+            None
+        } else {
+            Self::str_to_color(s)
+        }
+    }
+
+    /// Build a `ThemeOverrides` from the current settings.
+    /// Returns `ThemeOverrides::empty()` when `advanced_customization` is off.
+    pub fn build_theme_overrides(&self) -> ThemeOverrides {
+        if !self.advanced_customization {
+            return ThemeOverrides::empty();
+        }
+        ThemeOverrides {
+            bg_color: self.ov_bg_color,
+            panel_bg: self.ov_panel_bg,
+            window_bg: self.ov_window_bg,
+            bg2: self.ov_bg2,
+            bg3: self.ov_bg3,
+            text_color: self.ov_text_color,
+            text_muted: self.ov_text_muted,
+            text_faint: self.ov_text_faint,
+            border_color: self.ov_border_color,
+            border_lit: self.ov_border_lit,
+            separator_color: self.ov_separator_color,
+            button_bg: self.ov_button_bg,
+            button_hover: self.ov_button_hover,
+            button_active: self.ov_button_active,
+            floating_window_bg: self.ov_floating_window_bg,
+            toolbar_bg: self.ov_toolbar_bg,
+            menu_bg: self.ov_menu_bg,
+            canvas_bg_top: self.ov_canvas_bg_top,
+            canvas_bg_bottom: self.ov_canvas_bg_bottom,
+            glow_accent: self.ov_glow_accent,
+            accent3: self.ov_accent3,
+            accent4: self.ov_accent4,
+            widget_rounding: self.widget_rounding,
+            window_rounding: self.window_rounding,
+            menu_rounding: self.menu_rounding,
+            glow_intensity: Some(self.glow_intensity),
+            shadow_strength: Some(self.shadow_strength),
+        }
+    }
+
     /// Save settings to disk
     pub fn save(&self) {
         let Some(path) = Self::settings_path() else {
@@ -3049,6 +3268,7 @@ impl AppSettings {
             ThemePreset::Sakura => "sakura",
             ThemePreset::Glacier => "glacier",
             ThemePreset::Midnight => "midnight",
+            ThemePreset::Signal => "signal",
             ThemePreset::Custom => "custom",
         };
         let grid_str = match self.pixel_grid_mode {
@@ -3104,6 +3324,57 @@ impl AppSettings {
             content.push_str(&line);
             content.push('\n');
         }
+        // Append advanced customization settings
+        let density_str = match self.ui_density {
+            UiDensity::Compact => "compact",
+            UiDensity::Normal => "normal",
+            UiDensity::Spacious => "spacious",
+        };
+        content.push_str(&format!("advanced_customization={}\n", self.advanced_customization));
+        content.push_str(&format!("ui_density={density_str}\n"));
+        content.push_str(&format!("canvas_grid_visible={}\n", self.canvas_grid_visible));
+        content.push_str(&format!("canvas_grid_opacity={}\n", self.canvas_grid_opacity));
+        content.push_str(&format!("glow_intensity={}\n", self.glow_intensity));
+        content.push_str(&format!("shadow_strength={}\n", self.shadow_strength));
+        if let Some(v) = self.widget_rounding {
+            content.push_str(&format!("widget_rounding={v}\n"));
+        }
+        if let Some(v) = self.window_rounding {
+            content.push_str(&format!("window_rounding={v}\n"));
+        }
+        if let Some(v) = self.menu_rounding {
+            content.push_str(&format!("menu_rounding={v}\n"));
+        }
+        // Color overrides — skip lines for None values (saves space)
+        let ov_fields: &[(&str, Option<Color32>)] = &[
+            ("ov_bg_color", self.ov_bg_color),
+            ("ov_panel_bg", self.ov_panel_bg),
+            ("ov_window_bg", self.ov_window_bg),
+            ("ov_bg2", self.ov_bg2),
+            ("ov_bg3", self.ov_bg3),
+            ("ov_text_color", self.ov_text_color),
+            ("ov_text_muted", self.ov_text_muted),
+            ("ov_text_faint", self.ov_text_faint),
+            ("ov_border_color", self.ov_border_color),
+            ("ov_border_lit", self.ov_border_lit),
+            ("ov_separator_color", self.ov_separator_color),
+            ("ov_button_bg", self.ov_button_bg),
+            ("ov_button_hover", self.ov_button_hover),
+            ("ov_button_active", self.ov_button_active),
+            ("ov_floating_window_bg", self.ov_floating_window_bg),
+            ("ov_toolbar_bg", self.ov_toolbar_bg),
+            ("ov_menu_bg", self.ov_menu_bg),
+            ("ov_canvas_bg_top", self.ov_canvas_bg_top),
+            ("ov_canvas_bg_bottom", self.ov_canvas_bg_bottom),
+            ("ov_glow_accent", self.ov_glow_accent),
+            ("ov_accent3", self.ov_accent3),
+            ("ov_accent4", self.ov_accent4),
+        ];
+        for (key, val) in ov_fields {
+            if let Some(c) = val {
+                content.push_str(&format!("{}={}\n", key, Self::color_to_str(*c)));
+            }
+        }
         let _ = std::fs::write(path, content);
     }
 
@@ -3143,6 +3414,7 @@ impl AppSettings {
                         "sakura" => ThemePreset::Sakura,
                         "glacier" => ThemePreset::Glacier,
                         "midnight" => ThemePreset::Midnight,
+                        "signal" => ThemePreset::Signal,
                         "custom" => ThemePreset::Custom,
                         _ => ThemePreset::Blue,
                     };
@@ -3220,6 +3492,61 @@ impl AppSettings {
                 "confirm_on_exit" => {
                     s.confirm_on_exit = val == "true";
                 }
+                // Advanced customization fields
+                "advanced_customization" => {
+                    s.advanced_customization = val == "true";
+                }
+                "ui_density" => {
+                    s.ui_density = match val {
+                        "compact" => UiDensity::Compact,
+                        "spacious" => UiDensity::Spacious,
+                        _ => UiDensity::Normal,
+                    };
+                }
+                "canvas_grid_visible" => {
+                    s.canvas_grid_visible = val == "true";
+                }
+                "canvas_grid_opacity" => {
+                    s.canvas_grid_opacity = val.parse().unwrap_or(0.4);
+                }
+                "glow_intensity" => {
+                    s.glow_intensity = val.parse().unwrap_or(1.0);
+                }
+                "shadow_strength" => {
+                    s.shadow_strength = val.parse().unwrap_or(1.0);
+                }
+                "widget_rounding" => {
+                    s.widget_rounding = val.parse().ok();
+                }
+                "window_rounding" => {
+                    s.window_rounding = val.parse().ok();
+                }
+                "menu_rounding" => {
+                    s.menu_rounding = val.parse().ok();
+                }
+                // Color overrides
+                "ov_bg_color" => { s.ov_bg_color = Self::str_to_opt_color(val); }
+                "ov_panel_bg" => { s.ov_panel_bg = Self::str_to_opt_color(val); }
+                "ov_window_bg" => { s.ov_window_bg = Self::str_to_opt_color(val); }
+                "ov_bg2" => { s.ov_bg2 = Self::str_to_opt_color(val); }
+                "ov_bg3" => { s.ov_bg3 = Self::str_to_opt_color(val); }
+                "ov_text_color" => { s.ov_text_color = Self::str_to_opt_color(val); }
+                "ov_text_muted" => { s.ov_text_muted = Self::str_to_opt_color(val); }
+                "ov_text_faint" => { s.ov_text_faint = Self::str_to_opt_color(val); }
+                "ov_border_color" => { s.ov_border_color = Self::str_to_opt_color(val); }
+                "ov_border_lit" => { s.ov_border_lit = Self::str_to_opt_color(val); }
+                "ov_separator_color" => { s.ov_separator_color = Self::str_to_opt_color(val); }
+                "ov_button_bg" => { s.ov_button_bg = Self::str_to_opt_color(val); }
+                "ov_button_hover" => { s.ov_button_hover = Self::str_to_opt_color(val); }
+                "ov_button_active" => { s.ov_button_active = Self::str_to_opt_color(val); }
+                "ov_floating_window_bg" => { s.ov_floating_window_bg = Self::str_to_opt_color(val); }
+                "ov_toolbar_bg" => { s.ov_toolbar_bg = Self::str_to_opt_color(val); }
+                "ov_menu_bg" => { s.ov_menu_bg = Self::str_to_opt_color(val); }
+                "ov_canvas_bg_top" => { s.ov_canvas_bg_top = Self::str_to_opt_color(val); }
+                "ov_canvas_bg_bottom" => { s.ov_canvas_bg_bottom = Self::str_to_opt_color(val); }
+                "ov_glow_accent" => { s.ov_glow_accent = Self::str_to_opt_color(val); }
+                "ov_accent3" => { s.ov_accent3 = Self::str_to_opt_color(val); }
+                "ov_accent4" => { s.ov_accent4 = Self::str_to_opt_color(val); }
                 _ => {
                     // Parse keybinding lines: keybind.ActionName=combo
                     if let Some(action_name) = key.strip_prefix("keybind.") {
@@ -4082,6 +4409,211 @@ impl SettingsWindow {
                 .weak(),
         );
 
+        // -- Advanced Customization -----------------------------------
+        Self::section_header(ui, "Advanced Customization");
+        ui.checkbox(
+            &mut settings.advanced_customization,
+            "Enable advanced theme overrides",
+        );
+        ui.label(
+            egui::RichText::new(
+                "Fine-tune individual colors, geometry, and effects. Overrides apply on top of the selected preset.",
+            )
+            .small()
+            .weak(),
+        );
+
+        if settings.advanced_customization {
+            ui.add_space(6.0);
+
+            // UI Density
+            egui::Grid::new("advanced_density_grid")
+                .num_columns(2)
+                .spacing([16.0, 6.0])
+                .min_col_width(140.0)
+                .show(ui, |ui| {
+                    ui.label("UI Density");
+                    egui::ComboBox::from_id_source("ui_density_sel")
+                        .selected_text(settings.ui_density.label())
+                        .show_ui(ui, |ui| {
+                            for &density in UiDensity::all() {
+                                if ui
+                                    .selectable_label(settings.ui_density == density, density.label())
+                                    .clicked()
+                                {
+                                    settings.ui_density = density;
+                                    self.dirty = true;
+                                }
+                            }
+                        });
+                    ui.end_row();
+                });
+
+            // --- Surface Colors ---
+            let id = ui.make_persistent_id("adv_surface");
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
+                .show_header(ui, |ui| {
+                    ui.strong("Surface Colors");
+                })
+                .body(|ui| {
+                    Self::opt_color_row(ui, "Background", &mut settings.ov_bg_color, &mut self.dirty);
+                    Self::opt_color_row(ui, "Panel", &mut settings.ov_panel_bg, &mut self.dirty);
+                    Self::opt_color_row(ui, "Window", &mut settings.ov_window_bg, &mut self.dirty);
+                    Self::opt_color_row(ui, "Elevated (bg2)", &mut settings.ov_bg2, &mut self.dirty);
+                    Self::opt_color_row(ui, "Active (bg3)", &mut settings.ov_bg3, &mut self.dirty);
+                });
+
+            // --- Text & Labels ---
+            let id = ui.make_persistent_id("adv_text");
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
+                .show_header(ui, |ui| {
+                    ui.strong("Text & Labels");
+                })
+                .body(|ui| {
+                    Self::opt_color_row(ui, "Primary Text", &mut settings.ov_text_color, &mut self.dirty);
+                    Self::opt_color_row(ui, "Muted Text", &mut settings.ov_text_muted, &mut self.dirty);
+                    Self::opt_color_row(ui, "Faint Text", &mut settings.ov_text_faint, &mut self.dirty);
+                });
+
+            // --- Borders & Separators ---
+            let id = ui.make_persistent_id("adv_borders");
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
+                .show_header(ui, |ui| {
+                    ui.strong("Borders & Separators");
+                })
+                .body(|ui| {
+                    Self::opt_color_row(ui, "Border", &mut settings.ov_border_color, &mut self.dirty);
+                    Self::opt_color_row(ui, "Hover Border", &mut settings.ov_border_lit, &mut self.dirty);
+                    Self::opt_color_row(ui, "Separator", &mut settings.ov_separator_color, &mut self.dirty);
+                });
+
+            // --- Buttons & Controls ---
+            let id = ui.make_persistent_id("adv_buttons");
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
+                .show_header(ui, |ui| {
+                    ui.strong("Buttons & Controls");
+                })
+                .body(|ui| {
+                    Self::opt_color_row(ui, "Button BG", &mut settings.ov_button_bg, &mut self.dirty);
+                    Self::opt_color_row(ui, "Hover", &mut settings.ov_button_hover, &mut self.dirty);
+                    Self::opt_color_row(ui, "Active", &mut settings.ov_button_active, &mut self.dirty);
+                });
+
+            // --- Panels & Windows ---
+            let id = ui.make_persistent_id("adv_panels");
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
+                .show_header(ui, |ui| {
+                    ui.strong("Panels & Windows");
+                })
+                .body(|ui| {
+                    Self::opt_color_row(ui, "Floating Window", &mut settings.ov_floating_window_bg, &mut self.dirty);
+                    Self::opt_color_row(ui, "Toolbar", &mut settings.ov_toolbar_bg, &mut self.dirty);
+                    Self::opt_color_row(ui, "Menu", &mut settings.ov_menu_bg, &mut self.dirty);
+                });
+
+            // --- Canvas Background ---
+            let id = ui.make_persistent_id("adv_canvas");
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
+                .show_header(ui, |ui| {
+                    ui.strong("Canvas Background");
+                })
+                .body(|ui| {
+                    Self::opt_color_row(ui, "Gradient Top", &mut settings.ov_canvas_bg_top, &mut self.dirty);
+                    Self::opt_color_row(ui, "Gradient Bottom", &mut settings.ov_canvas_bg_bottom, &mut self.dirty);
+                    ui.horizontal(|ui| {
+                        ui.label("Grid Visible:");
+                        ui.checkbox(&mut settings.canvas_grid_visible, "");
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Grid Opacity:");
+                        if ui.add(egui::Slider::new(&mut settings.canvas_grid_opacity, 0.0..=1.0).step_by(0.05)).changed() {
+                            self.dirty = true;
+                        }
+                    });
+                });
+
+            // --- Geometry & Shape ---
+            let id = ui.make_persistent_id("adv_geometry");
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
+                .show_header(ui, |ui| {
+                    ui.strong("Geometry & Shape");
+                })
+                .body(|ui| {
+                    Self::opt_f32_row(ui, "Widget Rounding", &mut settings.widget_rounding, 0.0, 24.0, &mut self.dirty);
+                    Self::opt_f32_row(ui, "Window Rounding", &mut settings.window_rounding, 0.0, 24.0, &mut self.dirty);
+                    Self::opt_f32_row(ui, "Menu Rounding", &mut settings.menu_rounding, 0.0, 24.0, &mut self.dirty);
+                });
+
+            // --- Effects & Atmosphere ---
+            let id = ui.make_persistent_id("adv_effects");
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
+                .show_header(ui, |ui| {
+                    ui.strong("Effects & Atmosphere");
+                })
+                .body(|ui| {
+                    Self::opt_color_row(ui, "Glow Accent", &mut settings.ov_glow_accent, &mut self.dirty);
+                    ui.horizontal(|ui| {
+                        ui.label("Glow Intensity:");
+                        if ui.add(egui::Slider::new(&mut settings.glow_intensity, 0.0..=2.0).step_by(0.1)).changed() {
+                            self.dirty = true;
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Shadow Strength:");
+                        if ui.add(egui::Slider::new(&mut settings.shadow_strength, 0.0..=2.0).step_by(0.1)).changed() {
+                            self.dirty = true;
+                        }
+                    });
+                });
+
+            // --- Additional Accents ---
+            let id = ui.make_persistent_id("adv_accents");
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
+                .show_header(ui, |ui| {
+                    ui.strong("Additional Accents");
+                })
+                .body(|ui| {
+                    Self::opt_color_row(ui, "Secondary (Green)", &mut settings.ov_accent3, &mut self.dirty);
+                    Self::opt_color_row(ui, "Tertiary (Amber)", &mut settings.ov_accent4, &mut self.dirty);
+                });
+
+            // Reset overrides button
+            ui.add_space(8.0);
+            if ui.button("Reset All Overrides").clicked() {
+                settings.ov_bg_color = None;
+                settings.ov_panel_bg = None;
+                settings.ov_window_bg = None;
+                settings.ov_bg2 = None;
+                settings.ov_bg3 = None;
+                settings.ov_text_color = None;
+                settings.ov_text_muted = None;
+                settings.ov_text_faint = None;
+                settings.ov_border_color = None;
+                settings.ov_border_lit = None;
+                settings.ov_separator_color = None;
+                settings.ov_button_bg = None;
+                settings.ov_button_hover = None;
+                settings.ov_button_active = None;
+                settings.ov_floating_window_bg = None;
+                settings.ov_toolbar_bg = None;
+                settings.ov_menu_bg = None;
+                settings.ov_canvas_bg_top = None;
+                settings.ov_canvas_bg_bottom = None;
+                settings.ov_glow_accent = None;
+                settings.ov_accent3 = None;
+                settings.ov_accent4 = None;
+                settings.widget_rounding = None;
+                settings.window_rounding = None;
+                settings.menu_rounding = None;
+                settings.glow_intensity = 1.0;
+                settings.shadow_strength = 1.0;
+                settings.canvas_grid_visible = true;
+                settings.canvas_grid_opacity = 0.4;
+                settings.ui_density = UiDensity::Normal;
+                self.dirty = true;
+            }
+        }
+
         // -- Apply / Reset -------------------------------------------
         ui.add_space(16.0);
         ui.separator();
@@ -4129,6 +4661,88 @@ impl SettingsWindow {
         changed
     }
 
+    /// Render an optional color override row with an enable checkbox + color picker + reset button.
+    fn opt_color_row(
+        ui: &mut egui::Ui,
+        label: &str,
+        opt: &mut Option<Color32>,
+        dirty: &mut bool,
+    ) {
+        ui.horizontal(|ui| {
+            let mut enabled = opt.is_some();
+            if ui.checkbox(&mut enabled, "").changed() {
+                if enabled {
+                    // Initialise to a neutral grey so the user sees something
+                    *opt = Some(opt.unwrap_or(Color32::from_rgb(128, 128, 128)));
+                } else {
+                    *opt = None;
+                }
+                *dirty = true;
+            }
+            ui.label(format!("{label}:"));
+            if let Some(color) = opt {
+                let mut rgba = [
+                    color.r() as f32 / 255.0,
+                    color.g() as f32 / 255.0,
+                    color.b() as f32 / 255.0,
+                    color.a() as f32 / 255.0,
+                ];
+                if ui.color_edit_button_rgba_unmultiplied(&mut rgba).changed() {
+                    *color = Color32::from_rgba_unmultiplied(
+                        (rgba[0] * 255.0) as u8,
+                        (rgba[1] * 255.0) as u8,
+                        (rgba[2] * 255.0) as u8,
+                        (rgba[3] * 255.0) as u8,
+                    );
+                    *dirty = true;
+                }
+                if ui.small_button("\u{21BA}").on_hover_text("Reset").clicked() {
+                    *opt = None;
+                    *dirty = true;
+                }
+            } else {
+                ui.weak("(preset default)");
+            }
+        });
+    }
+
+    /// Render an optional float override row with an enable checkbox + slider + reset button.
+    fn opt_f32_row(
+        ui: &mut egui::Ui,
+        label: &str,
+        opt: &mut Option<f32>,
+        min: f32,
+        max: f32,
+        dirty: &mut bool,
+    ) {
+        ui.horizontal(|ui| {
+            let mut enabled = opt.is_some();
+            if ui.checkbox(&mut enabled, "").changed() {
+                if enabled {
+                    *opt = Some((min + max) * 0.5);
+                } else {
+                    *opt = None;
+                }
+                *dirty = true;
+            }
+            ui.label(format!("{label}:"));
+            if let Some(val) = opt {
+                if ui
+                    .add(egui::Slider::new(val, min..=max).step_by(0.5_f64))
+                    .changed()
+                {
+                    *dirty = true;
+                }
+                if ui.small_button("\u{21BA}").on_hover_text("Reset").clicked() {
+                    *opt = None;
+                    *dirty = true;
+                }
+            } else {
+                ui.weak("(preset default)");
+            }
+        });
+    }
+
     /// Commit staged theme changes to settings and rebuild the theme
     fn apply_theme(
         &mut self,
@@ -4152,6 +4766,9 @@ impl SettingsWindow {
                 }
             };
         }
+        // Apply user overrides
+        let ov = settings.build_theme_overrides();
+        theme.apply_overrides(&ov);
         theme.apply(ctx);
         self.dirty = false;
         settings.save();

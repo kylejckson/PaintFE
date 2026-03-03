@@ -465,6 +465,7 @@ theme_preset.purple=紫色
 theme_preset.red=红色
 theme_preset.green=绿色
 theme_preset.lime=黄绿色
+theme_preset.signal=Signal
 theme_preset.custom=自定义
 keybind_category.file=文件
 keybind_category.edit=编辑

@@ -465,6 +465,7 @@ theme_preset.purple=Violet
 theme_preset.red=Rouge
 theme_preset.green=Vert
 theme_preset.lime=Citron vert
+theme_preset.signal=Signal
 theme_preset.custom=Personnalisé
 keybind_category.file=Fichier
 keybind_category.edit=Édition
