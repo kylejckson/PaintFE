@@ -97,6 +97,14 @@ pub struct ToolProperties {
     pub size: f32,
     pub color: Color32,
     pub hardness: f32,
+    /// Pen pressure sensitivity: scale brush size by pen pressure.
+    pub pressure_size: bool,
+    /// Pen pressure sensitivity: scale brush opacity by pen pressure.
+    pub pressure_opacity: bool,
+    /// Minimum size multiplier at zero pressure (0.0..1.0). Default 0.1.
+    pub pressure_min_size: f32,
+    /// Minimum opacity multiplier at zero pressure (0.0..1.0). Default 0.1.
+    pub pressure_min_opacity: f32,
     pub blending_mode: BlendMode,
     pub anti_aliased: bool,
     pub brush_tip: BrushTip,
@@ -126,6 +134,10 @@ impl Default for ToolProperties {
             size: 10.0,
             color: Color32::BLACK,
             hardness: 0.75,
+            pressure_size: false,
+            pressure_opacity: false,
+            pressure_min_size: 0.1,
+            pressure_min_opacity: 0.1,
             blending_mode: BlendMode::Normal,
             anti_aliased: true,
             brush_tip: BrushTip::Circle,
@@ -242,7 +254,6 @@ impl Default for LineToolState {
     }
 }
 
-#[derive(Default)]
 pub struct ToolState {
     last_pos: Option<(u32, u32)>,
     last_precise_pos: Option<Pos2>, // Float position for sub-pixel spacing tracking
@@ -252,6 +263,22 @@ pub struct ToolState {
     /// EMA-smoothed brush position for rounding off angular corners
     /// during fast mouse movement.
     smooth_pos: Option<Pos2>,
+    /// Current pen pressure (0.0..1.0). Defaults to 1.0 (no pen / full pressure).
+    pub current_pressure: f32,
+}
+
+impl Default for ToolState {
+    fn default() -> Self {
+        Self {
+            last_pos: None,
+            last_precise_pos: None,
+            distance_remainder: 0.0,
+            last_brush_pos: None,
+            using_secondary_color: false,
+            smooth_pos: None,
+            current_pressure: 1.0,
+        }
+    }
 }
 
 /// Tracks stroke state for undo/redo integration
@@ -2501,7 +2528,9 @@ impl ToolsPanel {
         ui.separator();
         let dyn_active = self.properties.scatter > 0.01
             || self.properties.hue_jitter > 0.01
-            || self.properties.brightness_jitter > 0.01;
+            || self.properties.brightness_jitter > 0.01
+            || self.properties.pressure_size
+            || self.properties.pressure_opacity;
         let dyn_popup_id = ui.make_persistent_id("brush_dyn_popup");
         let dyn_resp = assets.icon_button(ui, Icon::UiBrushDynamics, egui::Vec2::splat(20.0));
         if dyn_active {
@@ -2555,6 +2584,50 @@ impl ToolsPanel {
                         .changed()
                     {
                         self.properties.brightness_jitter = bj_pct / 100.0;
+                    }
+                    ui.end_row();
+
+                    // Pen pressure sensitivity
+                    ui.separator();
+                    ui.separator();
+                    ui.end_row();
+
+                    ui.label("Pen Pressure");
+                    ui.label("");
+                    ui.end_row();
+
+                    ui.checkbox(&mut self.properties.pressure_size, "Size")
+                        .on_hover_text("Pen pressure controls brush size");
+                    let mut min_size_pct = (self.properties.pressure_min_size * 100.0).round();
+                    if ui
+                        .add_enabled(
+                            self.properties.pressure_size,
+                            egui::Slider::new(&mut min_size_pct, 1.0..=100.0)
+                                .suffix("% min")
+                                .max_decimals(0),
+                        )
+                        .on_hover_text("Minimum brush size at zero pressure")
+                        .changed()
+                    {
+                        self.properties.pressure_min_size = min_size_pct / 100.0;
+                    }
+                    ui.end_row();
+
+                    ui.checkbox(&mut self.properties.pressure_opacity, "Opacity")
+                        .on_hover_text("Pen pressure controls brush opacity");
+                    let mut min_opacity_pct =
+                        (self.properties.pressure_min_opacity * 100.0).round();
+                    if ui
+                        .add_enabled(
+                            self.properties.pressure_opacity,
+                            egui::Slider::new(&mut min_opacity_pct, 1.0..=100.0)
+                                .suffix("% min")
+                                .max_decimals(0),
+                        )
+                        .on_hover_text("Minimum opacity at zero pressure")
+                        .changed()
+                    {
+                        self.properties.pressure_min_opacity = min_opacity_pct / 100.0;
                     }
                     ui.end_row();
                 });
@@ -3633,6 +3706,30 @@ impl ToolsPanel {
         let shift_held = ui.input(|i| i.modifiers.shift);
         let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
 
+        // Read pen/touch pressure from egui touch events (Apple Pencil, Wacom, etc.)
+        // Uses the latest Touch event's force value; falls back to 1.0 (no pen).
+        let touch_pressure = ui.input(|i| {
+            let mut pressure = None;
+            for ev in &i.events {
+                if let egui::Event::Touch {
+                    force: Some(f),
+                    phase,
+                    ..
+                } = ev
+                    && matches!(phase, egui::TouchPhase::Start | egui::TouchPhase::Move)
+                {
+                    pressure = Some(*f);
+                }
+            }
+            pressure
+        });
+        if let Some(p) = touch_pressure {
+            self.tool_state.current_pressure = p.clamp(0.0, 1.0);
+        } else if !is_primary_down && !is_secondary_down {
+            // Reset to full pressure when not actively drawing
+            self.tool_state.current_pressure = 1.0;
+        }
+
         match self.active_tool {
             Tool::Brush | Tool::Eraser | Tool::Pencil => {
                 let is_painting = is_primary_down || is_secondary_down;
@@ -4485,10 +4582,8 @@ impl ToolsPanel {
                         let raw_max_y = start.y.max(end.y).max(0.0);
                         let min_x = (raw_min_x as u32).min(canvas_state.width.saturating_sub(1));
                         let min_y = (raw_min_y as u32).min(canvas_state.height.saturating_sub(1));
-                        let max_x =
-                            (raw_max_x as u32).min(canvas_state.width.saturating_sub(1));
-                        let max_y =
-                            (raw_max_y as u32).min(canvas_state.height.saturating_sub(1));
+                        let max_x = (raw_max_x as u32).min(canvas_state.width.saturating_sub(1));
+                        let max_y = (raw_max_y as u32).min(canvas_state.height.saturating_sub(1));
 
                         // Ignore tiny accidental clicks (< 2px)
                         if max_x.saturating_sub(min_x) > 1 && max_y.saturating_sub(min_y) > 1 {
@@ -4532,7 +4627,7 @@ impl ToolsPanel {
                 let esc_pressed = ui.input(|i| i.key_pressed(egui::Key::Escape));
                 let shift_held_mw = ui.input(|i| i.modifiers.shift);
                 let alt_held_mw = ui.input(|i| i.modifiers.alt);
-                let ctrl_held_mw = ui.input(|i| i.modifiers.ctrl);
+                let ctrl_held_mw = ui.input(|i| i.modifiers.command);
                 // Ctrl+Shift = global select (all matching pixels across entire canvas)
                 let global_select = ctrl_held_mw && shift_held_mw;
                 // Determine click-time SelectionMode from modifier keys
@@ -5981,9 +6076,7 @@ impl ToolsPanel {
 
                 // Start/grab gradient — allow clicking outside canvas so handles
                 // can be dragged off-edge (e.g. gradient extends past border)
-                if is_primary_pressed
-                    && let Some(pos_f) = canvas_pos_unclamped
-                {
+                if is_primary_pressed && let Some(pos_f) = canvas_pos_unclamped {
                     let click_pos = Pos2::new(pos_f.0, pos_f.1);
 
                     // Check if clicking near an existing handle first
@@ -6431,9 +6524,7 @@ impl ToolsPanel {
                         self.lasso_state.mode
                     };
                     self.lasso_state.points.clear();
-                    self.lasso_state
-                        .points
-                        .push(Pos2::new(pos_f.0, pos_f.1));
+                    self.lasso_state.points.push(Pos2::new(pos_f.0, pos_f.1));
                 }
 
                 // Accumulate points while dragging
@@ -6990,6 +7081,30 @@ impl ToolsPanel {
     // spline curvature.  The EMA naturally accumulates across consecutive
     // direction changes, rounding off corners regardless of input density.
 
+    /// Compute effective brush size accounting for pen pressure.
+    /// Returns `self.properties.size` scaled by pressure when pressure_size is enabled.
+    pub fn pressure_size(&self) -> f32 {
+        if self.properties.pressure_size {
+            let p = self.tool_state.current_pressure;
+            let min = self.properties.pressure_min_size;
+            self.properties.size * (min + (1.0 - min) * p)
+        } else {
+            self.properties.size
+        }
+    }
+
+    /// Compute effective flow accounting for pen pressure.
+    /// Returns `self.properties.flow` scaled by pressure when pressure_opacity is enabled.
+    fn pressure_flow(&self) -> f32 {
+        if self.properties.pressure_opacity {
+            let p = self.tool_state.current_pressure;
+            let min = self.properties.pressure_min_opacity;
+            self.properties.flow * (min + (1.0 - min) * p)
+        } else {
+            self.properties.flow
+        }
+    }
+
     /// B6: Rebuild brush alpha LUT when brush properties change.
     /// The LUT maps squared-distance ratio (0..255 → 0.0..1.0 of `dist_sq/radius_sq`)
     /// to alpha (0..255).  Eliminates per-pixel `sqrt` + `smoothstep`.
@@ -7146,7 +7261,7 @@ impl ToolsPanel {
         let (cx, cy) = {
             let (px, py) = pos;
             if self.properties.scatter > 0.01 {
-                let diam = self.properties.size;
+                let diam = self.pressure_size();
                 let h1 = Self::stamp_hash(px, py, self.stamp_counter) as f32 / u32::MAX as f32;
                 let h2 = Self::stamp_hash(py, px, self.stamp_counter.wrapping_add(99991)) as f32
                     / u32::MAX as f32;
@@ -7157,7 +7272,7 @@ impl ToolsPanel {
                 (px, py)
             }
         };
-        let radius = self.properties.size / 2.0;
+        let radius = self.pressure_size() / 2.0;
         let radius_sq = radius * radius;
         if radius_sq < 0.001 {
             return;
@@ -7297,7 +7412,7 @@ impl ToolsPanel {
                         let px_off = row_off + lx as usize * 4;
 
                         if is_eraser {
-                            let erase_strength = geom_alpha * src_a * self.properties.flow;
+                            let erase_strength = geom_alpha * src_a * self.pressure_flow();
                             if erase_strength < 0.01 {
                                 continue;
                             }
@@ -7309,7 +7424,7 @@ impl ToolsPanel {
                                 chunk_raw[px_off + 3] = (erase_strength * 255.0) as u8;
                             }
                         } else {
-                            let brush_alpha = geom_alpha * src_a * self.properties.flow;
+                            let brush_alpha = geom_alpha * src_a * self.pressure_flow();
                             if brush_alpha < 0.01 {
                                 continue;
                             }
@@ -7506,7 +7621,7 @@ impl ToolsPanel {
         let (cx, cy) = {
             let (px, py) = pos;
             if self.properties.scatter > 0.01 {
-                let diam = self.properties.size;
+                let diam = self.pressure_size();
                 let h1 = Self::stamp_hash(px, py, self.stamp_counter) as f32 / u32::MAX as f32;
                 let h2 = Self::stamp_hash(py, px, self.stamp_counter.wrapping_add(99991)) as f32
                     / u32::MAX as f32;
@@ -7685,7 +7800,7 @@ impl ToolsPanel {
                         let px_off = row_off + lx as usize * 4;
 
                         if is_eraser {
-                            let erase_strength = geom_alpha * src_a * self.properties.flow;
+                            let erase_strength = geom_alpha * src_a * self.pressure_flow();
                             if erase_strength < 0.01 {
                                 continue;
                             }
@@ -7697,7 +7812,7 @@ impl ToolsPanel {
                                 chunk_raw[px_off + 3] = (erase_strength * 255.0) as u8;
                             }
                         } else {
-                            let brush_alpha = geom_alpha * src_a * self.properties.flow;
+                            let brush_alpha = geom_alpha * src_a * self.pressure_flow();
                             let brush_alpha_u8 = (brush_alpha * 255.0) as u8;
                             let old_alpha = chunk_raw[px_off + 3];
                             if brush_alpha_u8 >= old_alpha {
@@ -7762,7 +7877,7 @@ impl ToolsPanel {
         let step = if self.properties.brush_tip.is_circle() {
             1.0
         } else {
-            (self.properties.size * self.properties.spacing).max(1.0)
+            (self.pressure_size() * self.properties.spacing).max(1.0)
         };
         let steps = (distance / step).ceil() as usize;
 
@@ -7826,14 +7941,14 @@ impl ToolsPanel {
         self.stamp_counter = self.stamp_counter.wrapping_add(1);
 
         let (cx, cy) = pos;
-        let radius = self.properties.size / 2.0;
+        let radius = self.pressure_size() / 2.0;
 
-        // Calculate bounds — expanded by max scatter offset so the dirty rect
+        // Calculate bounds - expanded by max scatter offset so the dirty rect
         // covers stamps that landed far from the nominal position.
         let width = canvas_state.width;
         let height = canvas_state.height;
         // scatter moves center by up to scatter * size per axis
-        let scatter_pad = self.properties.scatter * self.properties.size;
+        let scatter_pad = self.properties.scatter * self.pressure_size();
 
         let min_x = (cx - radius - scatter_pad).max(0.0) as u32;
         let max_x = ((cx + radius + scatter_pad) as u32).min(width - 1);
@@ -8324,12 +8439,12 @@ impl ToolsPanel {
         // Increment stamp counter for random rotation seeding (for the whole line)
         self.stamp_counter = self.stamp_counter.wrapping_add(1);
 
-        let radius = self.properties.size / 2.0;
+        let radius = self.pressure_size() / 2.0;
         let width = canvas_state.width;
         let height = canvas_state.height;
 
         // Calculate bounding box of the line + brush radius + max scatter offset
-        let scatter_pad = self.properties.scatter * self.properties.size;
+        let scatter_pad = self.properties.scatter * self.pressure_size();
         let min_x = (start.0.min(end.0) - radius - scatter_pad).max(0.0) as u32;
         let max_x = ((start.0.max(end.0) + radius + scatter_pad) as u32).min(width);
         let min_y = (start.1.min(end.1) - radius - scatter_pad).max(0.0) as u32;

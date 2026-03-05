@@ -1979,8 +1979,7 @@ impl eframe::App for PaintFEApp {
                                 if ui
                                     .add(
                                         egui::Button::new(
-                                            egui::RichText::new("Exit Without")
-                                                .color(danger_text),
+                                            egui::RichText::new("Exit Without").color(danger_text),
                                         )
                                         .fill(danger_fill)
                                         .min_size(btn_size),
@@ -4801,19 +4800,18 @@ impl PaintFEApp {
         let composite = project.canvas_state.composite();
         let was_animated = project.was_animated;
         let animation_fps = project.animation_fps;
-        let frame_images: Option<Vec<image::RgbaImage>> =
-            if project.canvas_state.layers.len() > 1 {
-                Some(
-                    project
-                        .canvas_state
-                        .layers
-                        .iter()
-                        .map(|l| l.pixels.to_rgba_image())
-                        .collect(),
-                )
-            } else {
-                None
-            };
+        let frame_images: Option<Vec<image::RgbaImage>> = if project.canvas_state.layers.len() > 1 {
+            Some(
+                project
+                    .canvas_state
+                    .layers
+                    .iter()
+                    .map(|l| l.pixels.to_rgba_image())
+                    .collect(),
+            )
+        } else {
+            None
+        };
         self.save_file_dialog.reset();
         self.save_file_dialog.set_source_image(&composite);
         if let Some(frames) = frame_images.as_ref() {
@@ -5333,10 +5331,15 @@ impl PaintFEApp {
                             self.filter_status_description = "Resize Canvas".to_string();
                             self.pending_filter_jobs += 1;
                             rayon::spawn(move || {
-                                let result_layers =
-                                    crate::ops::transform::resize_canvas_layers(
-                                        flat_layers, old_w, old_h, w, h, anchor, fill,
-                                    );
+                                let result_layers = crate::ops::transform::resize_canvas_layers(
+                                    flat_layers,
+                                    old_w,
+                                    old_h,
+                                    w,
+                                    h,
+                                    anchor,
+                                    fill,
+                                );
                                 let _ = sender.send(CanvasOpResult {
                                     project_index,
                                     before,
