@@ -1,4 +1,4 @@
-use crate::assets::{Assets, BRUSH_SIZE_PRESETS, TEXT_SIZE_PRESETS, Icon};
+use crate::assets::{Assets, BRUSH_SIZE_PRESETS, Icon, TEXT_SIZE_PRESETS};
 use crate::canvas::{
     BlendMode, CHUNK_SIZE, CanvasState, SelectionMode, SelectionShape, TiledImage,
 };
@@ -277,7 +277,7 @@ pub struct LineToolState {
     pub last_pattern: LinePattern,   // Track pattern for change detection
     pub last_cap_style: CapStyle,    // Track cap style for change detection
     pub last_end_shape: LineEndShape, // Track end shape for change detection
-    pub last_arrow_side: ArrowSide,   // Track arrow side for change detection
+    pub last_arrow_side: ArrowSide,  // Track arrow side for change detection
 }
 
 impl Default for LineToolState {
@@ -1010,6 +1010,8 @@ pub struct TextToolState {
     pub text_box_click_guard: bool,
     /// Whether the cursor is hovering the rotation handle (for cursor icon).
     pub hovering_rotation_handle: bool,
+    /// Which resize handle the cursor is hovering (for resize cursor icon).
+    pub hovering_resize_handle: Option<TextBoxDragType>,
     // --- Glyph Edit Mode (Phase 5 — Batch 9) ---
     /// Whether glyph edit mode is active (per-glyph select/move/rotate/scale).
     pub glyph_edit_mode: bool,
@@ -1096,6 +1098,7 @@ impl Default for TextToolState {
             active_block_height: 0.0,
             text_box_click_guard: false,
             hovering_rotation_handle: false,
+            hovering_resize_handle: None,
             glyph_edit_mode: false,
             selected_glyphs: Vec::new(),
             cached_glyph_bounds: Vec::new(),
@@ -1871,8 +1874,8 @@ impl ToolsPanel {
                 let selected = self.active_tool == *tool;
 
                 // On text layers, only Text/Zoom/Pan are enabled
-                let tool_disabled = is_text_layer
-                    && !matches!(tool, Tool::Text | Tool::Zoom | Tool::Pan);
+                let tool_disabled =
+                    is_text_layer && !matches!(tool, Tool::Text | Tool::Zoom | Tool::Pan);
 
                 // Manual painting (like Shapes button) for full control over fill/tint
                 let resp = ui.allocate_rect(btn_rect, egui::Sense::click());
@@ -2759,19 +2762,14 @@ impl ToolsPanel {
                 ui.painter().vline(
                     sep_x,
                     dv_rect.top() + 3.0..=dv_rect.bottom() - 3.0,
-                    egui::Stroke::new(
-                        1.0,
-                        inactive.bg_stroke.color.linear_multiply(0.4),
-                    ),
+                    egui::Stroke::new(1.0, inactive.bg_stroke.color.linear_multiply(0.4)),
                 );
 
                 if let Some(tex) = assets.get_texture(Icon::DropDown) {
                     let sized = egui::load::SizedTexture::from_handle(tex);
-                    let img = egui::Image::from_texture(sized)
-                        .fit_to_exact_size(egui::vec2(12.0, 12.0));
-                    ui.add(
-                        egui::Button::image(img).min_size(egui::vec2(14.0, dv_height)),
-                    )
+                    let img =
+                        egui::Image::from_texture(sized).fit_to_exact_size(egui::vec2(12.0, 12.0));
+                    ui.add(egui::Button::image(img).min_size(egui::vec2(14.0, dv_height)))
                 } else {
                     ui.add(
                         egui::Button::new(egui::RichText::new("\u{25BE}").size(9.0))
@@ -2855,8 +2853,8 @@ impl ToolsPanel {
 
                 if let Some(tex) = assets.get_texture(Icon::DropDown) {
                     let sized = egui::load::SizedTexture::from_handle(tex);
-                    let img = egui::Image::from_texture(sized)
-                        .fit_to_exact_size(egui::vec2(12.0, 12.0));
+                    let img =
+                        egui::Image::from_texture(sized).fit_to_exact_size(egui::vec2(12.0, 12.0));
                     ui.add(egui::Button::image(img).min_size(egui::vec2(14.0, dv_height)))
                 } else {
                     ui.add(
@@ -2875,10 +2873,7 @@ impl ToolsPanel {
             for &preset in TEXT_SIZE_PRESETS.iter() {
                 let label = format!("{:.0} px", preset);
                 if ui
-                    .selectable_label(
-                        (self.text_state.font_size - preset).abs() < 0.1,
-                        &label,
-                    )
+                    .selectable_label((self.text_state.font_size - preset).abs() < 0.1, &label)
                     .clicked()
                 {
                     self.text_state.font_size = preset;
@@ -5382,8 +5377,9 @@ impl ToolsPanel {
                 });
 
                 // Detect hover over the move handle (for cursor icon)
+                // Use canvas_pos_unclamped so the handle is reachable even when text is off-canvas
                 self.text_state.hovering_handle = if self.text_state.is_editing {
-                    if let (Some(pos_f), Some(hp)) = (canvas_pos_f32, handle_canvas_pos) {
+                    if let (Some(pos_f), Some(hp)) = (canvas_pos_unclamped, handle_canvas_pos) {
                         let dx = (pos_f.0 - hp.0) * zoom;
                         let dy = (pos_f.1 - hp.1) * zoom;
                         (dx * dx + dy * dy).sqrt() < handle_radius_screen + 4.0
@@ -5394,8 +5390,9 @@ impl ToolsPanel {
                     false
                 };
 
-                // Detect hover over rotation handle (for rotate cursor icon)
+                // Detect hover over rotation / resize handles (for cursor icon)
                 self.text_state.hovering_rotation_handle = false;
+                self.text_state.hovering_resize_handle = None;
                 if self.text_state.is_editing
                     && self.text_state.editing_text_layer
                     && !self.text_state.dragging_handle
@@ -5454,11 +5451,16 @@ impl ToolsPanel {
                     let my = pos_f.1 * zoom + canvas_rect.min.y;
 
                     // Get block rotation and inverse-rotate the mouse to axis-aligned space
-                    let blk_rot = if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                    let blk_rot = if let Some(layer) =
+                        canvas_state.layers.get(canvas_state.active_layer_index)
                         && let crate::canvas::LayerContent::Text(ref td) = layer.content
                         && let Some(bid) = self.text_state.active_block_id
                         && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
-                    { block.rotation } else { 0.0 };
+                    {
+                        block.rotation
+                    } else {
+                        0.0
+                    };
 
                     let s_bottom = s_top + (visual_h + pad * 2.0) * zoom;
                     let pivot = Pos2::new((s_left + s_right) * 0.5, (s_top + s_bottom) * 0.5);
@@ -5472,14 +5474,48 @@ impl ToolsPanel {
                     let rot_dist = ((sx - rot_cx).powi(2) + (sy - rot_cy).powi(2)).sqrt();
                     if rot_dist < 10.0 {
                         self.text_state.hovering_rotation_handle = true;
+                    } else {
+                        // Check corner resize handles hover
+                        let hit_r = 8.0;
+                        let bh_total = (visual_h + pad * 2.0) * zoom;
+                        let corners = [
+                            (s_left, s_top, TextBoxDragType::ResizeTopLeft),
+                            (s_right, s_top, TextBoxDragType::ResizeTopRight),
+                            (s_left, s_top + bh_total, TextBoxDragType::ResizeBottomLeft),
+                            (
+                                s_right,
+                                s_top + bh_total,
+                                TextBoxDragType::ResizeBottomRight,
+                            ),
+                        ];
+                        for &(cx, cy, drag_type) in &corners {
+                            if (sx - cx).abs() < hit_r && (sy - cy).abs() < hit_r {
+                                self.text_state.hovering_resize_handle = Some(drag_type);
+                                break;
+                            }
+                        }
+                        // Check edge resize handles hover (midpoints of left/right edges)
+                        if self.text_state.hovering_resize_handle.is_none() {
+                            let mid_y = s_top + bh_total * 0.5;
+                            if (sx - s_left).abs() < hit_r && (sy - mid_y).abs() < bh_total * 0.5 {
+                                self.text_state.hovering_resize_handle =
+                                    Some(TextBoxDragType::ResizeLeft);
+                            } else if (sx - s_right).abs() < hit_r
+                                && (sy - mid_y).abs() < bh_total * 0.5
+                            {
+                                self.text_state.hovering_resize_handle =
+                                    Some(TextBoxDragType::ResizeRight);
+                            }
+                        }
                     }
                 }
 
                 // Handle dragging the move handle
+                // Use canvas_pos_unclamped so the handle is grabbable even when text is off-canvas
                 if is_primary_pressed
                     && self.text_state.is_editing
                     && self.text_state.text_box_drag.is_none()
-                    && let (Some(pos_f), Some(hp)) = (canvas_pos_f32, handle_canvas_pos)
+                    && let (Some(pos_f), Some(hp)) = (canvas_pos_unclamped, handle_canvas_pos)
                 {
                     let dx = (pos_f.0 - hp.0) * zoom;
                     let dy = (pos_f.1 - hp.1) * zoom;
@@ -5557,15 +5593,17 @@ impl ToolsPanel {
                     let s_bottom = s_top + bh * zoom;
 
                     // Inverse-rotate mouse position into axis-aligned space
-                    let blk_rot = if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                    let blk_rot = if let Some(layer) =
+                        canvas_state.layers.get(canvas_state.active_layer_index)
                         && let crate::canvas::LayerContent::Text(ref td) = layer.content
                         && let Some(bid) = self.text_state.active_block_id
                         && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
-                    { block.rotation } else { 0.0 };
-                    let pivot = Pos2::new(
-                        (s_left + s_right) * 0.5,
-                        (s_top + s_bottom) * 0.5,
-                    );
+                    {
+                        block.rotation
+                    } else {
+                        0.0
+                    };
+                    let pivot = Pos2::new((s_left + s_right) * 0.5, (s_top + s_bottom) * 0.5);
                     let raw_sx = pos_f.0 * zoom + canvas_rect.min.x;
                     let raw_sy = pos_f.1 * zoom + canvas_rect.min.y;
                     let mp = rotate_screen_point(Pos2::new(raw_sx, raw_sy), pivot, -blk_rot);
@@ -5582,7 +5620,8 @@ impl ToolsPanel {
                         // Delete this block
                         self.text_state.text_box_click_guard = true;
                         if let Some(bid) = self.text_state.active_block_id {
-                            if let Some(layer) = canvas_state.layers.get_mut(canvas_state.active_layer_index)
+                            if let Some(layer) =
+                                canvas_state.layers.get_mut(canvas_state.active_layer_index)
                                 && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
                             {
                                 td.blocks.retain(|b| b.id != bid);
@@ -5614,7 +5653,8 @@ impl ToolsPanel {
                             self.text_state.text_box_drag = Some(TextBoxDragType::Rotate);
                             self.text_state.text_box_drag_start_mouse = [pos_f.0, pos_f.1];
                             // Get current block rotation
-                            let cur_rot = if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                            let cur_rot = if let Some(layer) =
+                                canvas_state.layers.get(canvas_state.active_layer_index)
                                 && let crate::canvas::LayerContent::Text(ref td) = layer.content
                                 && let Some(bid) = self.text_state.active_block_id
                                 && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
@@ -5640,11 +5680,13 @@ impl ToolsPanel {
                                     self.text_state.text_box_click_guard = true;
                                     self.text_state.text_box_drag = Some(drag_type);
                                     self.text_state.text_box_drag_start_mouse = [pos_f.0, pos_f.1];
-                                    self.text_state.text_box_drag_start_width = self.text_state.active_block_max_width;
+                                    self.text_state.text_box_drag_start_width =
+                                        self.text_state.active_block_max_width;
                                     self.text_state.text_box_drag_start_height = Some(
-                                        self.text_state.active_block_max_height
+                                        self.text_state
+                                            .active_block_max_height
                                             .map(|mh| mh.max(self.text_state.active_block_height))
-                                            .unwrap_or(self.text_state.active_block_height)
+                                            .unwrap_or(self.text_state.active_block_height),
                                     );
                                     self.text_state.text_box_drag_start_origin = origin;
                                     break;
@@ -5656,161 +5698,195 @@ impl ToolsPanel {
 
                 // Process text box drag (resize / rotate)
                 if let Some(drag_type) = self.text_state.text_box_drag {
-                    if is_primary_down
-                        && let Some(pos_f) = canvas_pos_unclamped
-                    {
-                            let raw_dx = pos_f.0 - self.text_state.text_box_drag_start_mouse[0];
-                            let raw_dy = pos_f.1 - self.text_state.text_box_drag_start_mouse[1];
-                            let start_origin = self.text_state.text_box_drag_start_origin;
-                            let font_size = self.text_state.font_size;
+                    if is_primary_down && let Some(pos_f) = canvas_pos_unclamped {
+                        let raw_dx = pos_f.0 - self.text_state.text_box_drag_start_mouse[0];
+                        let raw_dy = pos_f.1 - self.text_state.text_box_drag_start_mouse[1];
+                        let start_origin = self.text_state.text_box_drag_start_origin;
+                        let font_size = self.text_state.font_size;
 
-                            // Project drag delta onto the box's local axes (rotation-aware)
-                            let blk_rot = if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
-                                && let crate::canvas::LayerContent::Text(ref td) = layer.content
-                                && let Some(bid) = self.text_state.active_block_id
-                                && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
-                            { block.rotation } else { 0.0 };
-                            let cos_r = blk_rot.cos();
-                            let sin_r = blk_rot.sin();
-                            // Local-X and local-Y components of the drag delta
-                            let dx = raw_dx * cos_r + raw_dy * sin_r;
-                            let dy = -raw_dx * sin_r + raw_dy * cos_r;
+                        // Project drag delta onto the box's local axes (rotation-aware)
+                        let blk_rot = if let Some(layer) =
+                            canvas_state.layers.get(canvas_state.active_layer_index)
+                            && let crate::canvas::LayerContent::Text(ref td) = layer.content
+                            && let Some(bid) = self.text_state.active_block_id
+                            && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
+                        {
+                            block.rotation
+                        } else {
+                            0.0
+                        };
+                        let cos_r = blk_rot.cos();
+                        let sin_r = blk_rot.sin();
+                        // Local-X and local-Y components of the drag delta
+                        let dx = raw_dx * cos_r + raw_dy * sin_r;
+                        let dy = -raw_dx * sin_r + raw_dy * cos_r;
 
-                            let content_height = self.text_state.active_block_height;
+                        let content_height = self.text_state.active_block_height;
 
-                            // Helper closure: compute natural text width from font metrics
-                            let compute_natural_width = || -> f32 {
-                                if let Some(ref font) = self.text_state.loaded_font {
-                                    use ab_glyph::{Font as _, ScaleFont as _};
-                                    let scaled = font.as_scaled(font_size);
-                                    let ls = self.text_state.letter_spacing;
-                                    let lines: Vec<&str> = self.text_state.text.split('\n').collect();
-                                    let mut max_w = font_size * 2.0;
-                                    for line in &lines {
-                                        let mut w = 0.0f32;
-                                        let mut prev = None;
-                                        for ch in line.chars() {
-                                            let gid = font.glyph_id(ch);
-                                            if let Some(prev_id) = prev {
-                                                w += scaled.kern(prev_id, gid);
-                                                w += ls;
-                                            }
-                                            w += scaled.h_advance(gid);
-                                            prev = Some(gid);
+                        // Helper closure: compute natural text width from font metrics
+                        let compute_natural_width = || -> f32 {
+                            if let Some(ref font) = self.text_state.loaded_font {
+                                use ab_glyph::{Font as _, ScaleFont as _};
+                                let scaled = font.as_scaled(font_size);
+                                let ls = self.text_state.letter_spacing;
+                                let lines: Vec<&str> = self.text_state.text.split('\n').collect();
+                                let mut max_w = font_size * 2.0;
+                                for line in &lines {
+                                    let mut w = 0.0f32;
+                                    let mut prev = None;
+                                    for ch in line.chars() {
+                                        let gid = font.glyph_id(ch);
+                                        if let Some(prev_id) = prev {
+                                            w += scaled.kern(prev_id, gid);
+                                            w += ls;
                                         }
-                                        max_w = max_w.max(w);
+                                        w += scaled.h_advance(gid);
+                                        prev = Some(gid);
                                     }
-                                    max_w
-                                } else {
-                                    font_size * 2.0
+                                    max_w = max_w.max(w);
+                                }
+                                max_w
+                            } else {
+                                font_size * 2.0
+                            }
+                        };
+
+                        // Determine width change
+                        let is_right = matches!(
+                            drag_type,
+                            TextBoxDragType::ResizeRight
+                                | TextBoxDragType::ResizeTopRight
+                                | TextBoxDragType::ResizeBottomRight
+                        );
+                        let is_left = matches!(
+                            drag_type,
+                            TextBoxDragType::ResizeLeft
+                                | TextBoxDragType::ResizeTopLeft
+                                | TextBoxDragType::ResizeBottomLeft
+                        );
+                        let is_top = matches!(
+                            drag_type,
+                            TextBoxDragType::ResizeTopLeft | TextBoxDragType::ResizeTopRight
+                        );
+                        let is_bottom = matches!(
+                            drag_type,
+                            TextBoxDragType::ResizeBottomLeft | TextBoxDragType::ResizeBottomRight
+                        );
+
+                        if is_right || is_left {
+                            let start_w = self
+                                .text_state
+                                .text_box_drag_start_width
+                                .unwrap_or_else(&compute_natural_width);
+                            let new_w = if is_right {
+                                (start_w + dx).max(font_size * 2.0)
+                            } else {
+                                (start_w - dx).max(font_size * 2.0)
+                            };
+                            self.text_state.active_block_max_width = Some(new_w);
+
+                            // For left-side handles, shift origin along local-X to keep right edge fixed
+                            let mut new_origin_x = start_origin[0];
+                            let mut new_origin_y = start_origin[1];
+                            if is_left {
+                                let width_delta = start_w - new_w;
+                                new_origin_x += width_delta * cos_r;
+                                new_origin_y += width_delta * sin_r;
+                            }
+
+                            // For top handles, shift origin along local-Y to keep bottom edge fixed
+                            if is_top {
+                                let start_h = self
+                                    .text_state
+                                    .text_box_drag_start_height
+                                    .unwrap_or(content_height);
+                                let new_h = (start_h - dy).max(font_size);
+                                let h_delta = start_h - new_h;
+                                // Shift origin along local-Y direction
+                                new_origin_x += h_delta * (-sin_r);
+                                new_origin_y += h_delta * cos_r;
+                                self.text_state.active_block_max_height = Some(new_h);
+                            }
+
+                            // For bottom handles, set max_height from drag
+                            if is_bottom {
+                                let start_h = self
+                                    .text_state
+                                    .text_box_drag_start_height
+                                    .unwrap_or(content_height);
+                                let new_h = (start_h + dy).max(font_size);
+                                self.text_state.active_block_max_height = Some(new_h);
+                            }
+
+                            if is_left || is_top {
+                                self.text_state.origin = Some([new_origin_x, new_origin_y]);
+                            }
+
+                            // Write to TextBlock immediately
+                            if let Some(layer) =
+                                canvas_state.layers.get_mut(canvas_state.active_layer_index)
+                                && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
+                                && let Some(bid) = self.text_state.active_block_id
+                                && let Some(block) = td.blocks.iter_mut().find(|b| b.id == bid)
+                            {
+                                block.max_width = Some(new_w);
+                                if is_top || is_bottom {
+                                    block.max_height = self.text_state.active_block_max_height;
+                                }
+                                if is_left || is_top {
+                                    block.position = [new_origin_x, new_origin_y];
+                                }
+                                td.mark_dirty();
+                            }
+                            let idx = canvas_state.active_layer_index;
+                            canvas_state.force_rasterize_text_layer(idx);
+                            canvas_state.mark_dirty(None);
+                        }
+
+                        if matches!(drag_type, TextBoxDragType::Rotate) {
+                            // Compute rotation angle from mouse position relative to box center
+                            // Box center must match the overlay rotation pivot
+                            let display_w = self
+                                .text_state
+                                .active_block_max_width
+                                .unwrap_or(font_size * 2.0)
+                                .max(font_size * 2.0);
+                            let text_h = self.text_state.active_block_height;
+                            let visual_h = self
+                                .text_state
+                                .active_block_max_height
+                                .map(|mh| mh.max(text_h))
+                                .unwrap_or(text_h);
+                            let box_center_x = {
+                                use crate::ops::text::TextAlignment;
+                                match self.text_state.alignment {
+                                    TextAlignment::Left => start_origin[0] + display_w * 0.5,
+                                    TextAlignment::Center => start_origin[0],
+                                    TextAlignment::Right => start_origin[0] - display_w * 0.5,
                                 }
                             };
-
-                            // Determine width change
-                            let is_right = matches!(drag_type,
-                                TextBoxDragType::ResizeRight | TextBoxDragType::ResizeTopRight | TextBoxDragType::ResizeBottomRight);
-                            let is_left = matches!(drag_type,
-                                TextBoxDragType::ResizeLeft | TextBoxDragType::ResizeTopLeft | TextBoxDragType::ResizeBottomLeft);
-                            let is_top = matches!(drag_type,
-                                TextBoxDragType::ResizeTopLeft | TextBoxDragType::ResizeTopRight);
-                            let is_bottom = matches!(drag_type,
-                                TextBoxDragType::ResizeBottomLeft | TextBoxDragType::ResizeBottomRight);
-
-                            if is_right || is_left {
-                                let start_w = self.text_state.text_box_drag_start_width.unwrap_or_else(&compute_natural_width);
-                                let new_w = if is_right {
-                                    (start_w + dx).max(font_size * 2.0)
-                                } else {
-                                    (start_w - dx).max(font_size * 2.0)
-                                };
-                                self.text_state.active_block_max_width = Some(new_w);
-
-                                // For left-side handles, shift origin along local-X to keep right edge fixed
-                                let mut new_origin_x = start_origin[0];
-                                let mut new_origin_y = start_origin[1];
-                                if is_left {
-                                    let width_delta = start_w - new_w;
-                                    new_origin_x += width_delta * cos_r;
-                                    new_origin_y += width_delta * sin_r;
-                                }
-
-                                // For top handles, shift origin along local-Y to keep bottom edge fixed
-                                if is_top {
-                                    let start_h = self.text_state.text_box_drag_start_height.unwrap_or(content_height);
-                                    let new_h = (start_h - dy).max(font_size);
-                                    let h_delta = start_h - new_h;
-                                    // Shift origin along local-Y direction
-                                    new_origin_x += h_delta * (-sin_r);
-                                    new_origin_y += h_delta * cos_r;
-                                    self.text_state.active_block_max_height = Some(new_h);
-                                }
-
-                                // For bottom handles, set max_height from drag
-                                if is_bottom {
-                                    let start_h = self.text_state.text_box_drag_start_height.unwrap_or(content_height);
-                                    let new_h = (start_h + dy).max(font_size);
-                                    self.text_state.active_block_max_height = Some(new_h);
-                                }
-
-                                if is_left || is_top {
-                                    self.text_state.origin = Some([new_origin_x, new_origin_y]);
-                                }
-
-                                // Write to TextBlock immediately
-                                if let Some(layer) = canvas_state.layers.get_mut(canvas_state.active_layer_index)
-                                    && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
-                                    && let Some(bid) = self.text_state.active_block_id
-                                    && let Some(block) = td.blocks.iter_mut().find(|b| b.id == bid)
-                                {
-                                    block.max_width = Some(new_w);
-                                    if is_top || is_bottom {
-                                        block.max_height = self.text_state.active_block_max_height;
-                                    }
-                                    if is_left || is_top {
-                                        block.position = [new_origin_x, new_origin_y];
-                                    }
-                                    td.mark_dirty();
-                                }
-                                let idx = canvas_state.active_layer_index;
-                                canvas_state.force_rasterize_text_layer(idx);
-                                canvas_state.mark_dirty(None);
+                            let box_center_y = start_origin[1] + visual_h * 0.5;
+                            let start_angle = (self.text_state.text_box_drag_start_mouse[1]
+                                - box_center_y)
+                                .atan2(self.text_state.text_box_drag_start_mouse[0] - box_center_x);
+                            let current_angle =
+                                (pos_f.1 - box_center_y).atan2(pos_f.0 - box_center_x);
+                            let delta = current_angle - start_angle;
+                            let new_rotation = self.text_state.text_box_drag_start_rotation + delta;
+                            // Write rotation to TextBlock
+                            if let Some(layer) =
+                                canvas_state.layers.get_mut(canvas_state.active_layer_index)
+                                && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
+                                && let Some(bid) = self.text_state.active_block_id
+                                && let Some(block) = td.blocks.iter_mut().find(|b| b.id == bid)
+                            {
+                                block.rotation = new_rotation;
+                                td.mark_dirty();
                             }
-
-                            if matches!(drag_type, TextBoxDragType::Rotate) {
-                                    // Compute rotation angle from mouse position relative to box center
-                                    // Box center must match the overlay rotation pivot
-                                    let display_w = self.text_state.active_block_max_width.unwrap_or(font_size * 2.0).max(font_size * 2.0);
-                                    let text_h = self.text_state.active_block_height;
-                                    let visual_h = self.text_state.active_block_max_height
-                                        .map(|mh| mh.max(text_h))
-                                        .unwrap_or(text_h);
-                                    let box_center_x = {
-                                        use crate::ops::text::TextAlignment;
-                                        match self.text_state.alignment {
-                                            TextAlignment::Left => start_origin[0] + display_w * 0.5,
-                                            TextAlignment::Center => start_origin[0],
-                                            TextAlignment::Right => start_origin[0] - display_w * 0.5,
-                                        }
-                                    };
-                                    let box_center_y = start_origin[1] + visual_h * 0.5;
-                                    let start_angle = (self.text_state.text_box_drag_start_mouse[1] - box_center_y)
-                                        .atan2(self.text_state.text_box_drag_start_mouse[0] - box_center_x);
-                                    let current_angle = (pos_f.1 - box_center_y).atan2(pos_f.0 - box_center_x);
-                                    let delta = current_angle - start_angle;
-                                    let new_rotation = self.text_state.text_box_drag_start_rotation + delta;
-                                    // Write rotation to TextBlock
-                                    if let Some(layer) = canvas_state.layers.get_mut(canvas_state.active_layer_index)
-                                        && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
-                                        && let Some(bid) = self.text_state.active_block_id
-                                        && let Some(block) = td.blocks.iter_mut().find(|b| b.id == bid)
-                                    {
-                                        block.rotation = new_rotation;
-                                        td.mark_dirty();
-                                    }
-                                    let idx = canvas_state.active_layer_index;
-                                    canvas_state.force_rasterize_text_layer(idx);
-                                    canvas_state.mark_dirty(None);
-                            }
+                            let idx = canvas_state.active_layer_index;
+                            canvas_state.force_rasterize_text_layer(idx);
+                            canvas_state.mark_dirty(None);
+                        }
                     }
                     if is_primary_released {
                         self.text_state.text_box_drag = None;
@@ -5829,7 +5905,8 @@ impl ToolsPanel {
                         // Text layer: update block position directly and force-rasterize.
                         // Using the cached raster overlay would leave a ghost at the old position
                         // because the layer's own rasterized pixels aren't cleared.
-                        if let Some(layer) = canvas_state.layers.get_mut(canvas_state.active_layer_index)
+                        if let Some(layer) =
+                            canvas_state.layers.get_mut(canvas_state.active_layer_index)
                             && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
                             && let Some(bid) = self.text_state.active_block_id
                             && let Some(block) = td.blocks.iter_mut().find(|b| b.id == bid)
@@ -5843,7 +5920,9 @@ impl ToolsPanel {
                         self.text_state.preview_dirty = false;
                     } else {
                         // Raster text: reuse cached raster buffer and re-blit at new origin offset.
-                        if self.text_state.cached_raster_w > 0 && self.text_state.cached_raster_h > 0 {
+                        if self.text_state.cached_raster_w > 0
+                            && self.text_state.cached_raster_h > 0
+                        {
                             if let Some(cached_origin) = self.text_state.cached_raster_origin {
                                 let dx = new_x - cached_origin[0];
                                 let dy = new_y - cached_origin[1];
@@ -5869,21 +5948,23 @@ impl ToolsPanel {
                                 canvas_state.preview_is_eraser = false;
                                 canvas_state.preview_downscale = 1;
                                 canvas_state.preview_flat_ready = false;
-                                canvas_state.preview_stroke_bounds = Some(egui::Rect::from_min_max(
-                                    egui::pos2(off_x as f32, off_y as f32),
-                                    egui::pos2(
-                                        (off_x + buf_w as i32) as f32,
-                                        (off_y + buf_h as i32) as f32,
-                                    ),
-                                ));
-                                if canvas_state.preview_texture_cache.is_some() {
-                                    canvas_state.preview_dirty_rect = Some(egui::Rect::from_min_max(
+                                canvas_state.preview_stroke_bounds =
+                                    Some(egui::Rect::from_min_max(
                                         egui::pos2(off_x as f32, off_y as f32),
                                         egui::pos2(
                                             (off_x + buf_w as i32) as f32,
                                             (off_y + buf_h as i32) as f32,
                                         ),
                                     ));
+                                if canvas_state.preview_texture_cache.is_some() {
+                                    canvas_state.preview_dirty_rect =
+                                        Some(egui::Rect::from_min_max(
+                                            egui::pos2(off_x as f32, off_y as f32),
+                                            egui::pos2(
+                                                (off_x + buf_w as i32) as f32,
+                                                (off_y + buf_h as i32) as f32,
+                                            ),
+                                        ));
                                 } else {
                                     canvas_state.preview_texture_cache = None;
                                 }
@@ -5909,16 +5990,21 @@ impl ToolsPanel {
                 // Click to place origin (or commit existing + start new)
                 // Only if not dragging the handle
                 let any_popup_open = ui.ctx().memory(|m| m.any_popup_open());
-                if is_primary_clicked && !self.text_state.dragging_handle && !self.text_state.text_box_click_guard && !any_popup_open {
+                if is_primary_clicked
+                    && !self.text_state.dragging_handle
+                    && !self.text_state.text_box_click_guard
+                    && !any_popup_open
+                {
                     // Check if click is on the handle — if so, skip placement
-                    let on_handle =
-                        if let (Some(pos_f), Some(hp)) = (canvas_pos_f32, handle_canvas_pos) {
-                            let dx = (pos_f.0 - hp.0) * zoom;
-                            let dy = (pos_f.1 - hp.1) * zoom;
-                            (dx * dx + dy * dy).sqrt() < handle_radius_screen + 4.0
-                        } else {
-                            false
-                        };
+                    let on_handle = if let (Some(pos_f), Some(hp)) =
+                        (canvas_pos_unclamped, handle_canvas_pos)
+                    {
+                        let dx = (pos_f.0 - hp.0) * zoom;
+                        let dy = (pos_f.1 - hp.1) * zoom;
+                        (dx * dx + dy * dy).sqrt() < handle_radius_screen + 4.0
+                    } else {
+                        false
+                    };
 
                     if !on_handle && let Some(pos_f) = canvas_pos_f32 {
                         if self.text_state.is_editing && !self.text_state.text.is_empty() {
@@ -5965,7 +6051,13 @@ impl ToolsPanel {
                                                     .text
                                                     .split('\n')
                                                     .flat_map(|line| {
-                                                        crate::ops::text::word_wrap_line(line, font, self.text_state.font_size, mw, ls)
+                                                        crate::ops::text::word_wrap_line(
+                                                            line,
+                                                            font,
+                                                            self.text_state.font_size,
+                                                            mw,
+                                                            ls,
+                                                        )
                                                     })
                                                     .collect();
                                                 vlines.len()
@@ -6015,14 +6107,16 @@ impl ToolsPanel {
                                                 // No wrapping — use logical line mapping
                                                 let lines: Vec<&str> =
                                                     self.text_state.text.split('\n').collect();
-                                                let clamped = line_idx.min(lines.len().saturating_sub(1));
+                                                let clamped =
+                                                    line_idx.min(lines.len().saturating_sub(1));
                                                 let line_start: usize = lines
                                                     .iter()
                                                     .take(clamped)
                                                     .map(|l| l.len() + 1)
                                                     .sum();
                                                 let line_text = lines[clamped];
-                                                let clamped_pos = best_pos.min(line_text.chars().count());
+                                                let clamped_pos =
+                                                    best_pos.min(line_text.chars().count());
                                                 let byte_offset: usize = line_text
                                                     .chars()
                                                     .take(clamped_pos)
@@ -6326,9 +6420,7 @@ impl ToolsPanel {
                                 ..
                             } => {
                                 // Move cursor to same x-position on the previous visual line
-                                self.text_move_cursor_vertical(
-                                    -1, shift_held, canvas_state,
-                                );
+                                self.text_move_cursor_vertical(-1, shift_held, canvas_state);
                             }
                             egui::Event::Key {
                                 key: egui::Key::ArrowDown,
@@ -6336,9 +6428,7 @@ impl ToolsPanel {
                                 ..
                             } => {
                                 // Move cursor to same x-position on the next visual line
-                                self.text_move_cursor_vertical(
-                                    1, shift_held, canvas_state,
-                                );
+                                self.text_move_cursor_vertical(1, shift_held, canvas_state);
                             }
                             egui::Event::Key {
                                 key: egui::Key::Delete,
@@ -9796,12 +9886,27 @@ impl ToolsPanel {
                     let dx = tx / len;
                     let dy = ty / len;
                     let tip = Pos2::new(p3.x + dx * tip_advance, p3.y + dy * tip_advance);
-                    let base_center = Pos2::new(tip.x - dx * arrow_length, tip.y - dy * arrow_length);
+                    let base_center =
+                        Pos2::new(tip.x - dx * arrow_length, tip.y - dy * arrow_length);
                     let px = -dy;
                     let py = dx;
-                    let wing1 = Pos2::new(base_center.x + px * arrow_half_width, base_center.y + py * arrow_half_width);
-                    let wing2 = Pos2::new(base_center.x - px * arrow_half_width, base_center.y - py * arrow_half_width);
-                    self.draw_filled_triangle(preview, tip, wing1, wing2, color_f32, canvas_state.width, canvas_state.height);
+                    let wing1 = Pos2::new(
+                        base_center.x + px * arrow_half_width,
+                        base_center.y + py * arrow_half_width,
+                    );
+                    let wing2 = Pos2::new(
+                        base_center.x - px * arrow_half_width,
+                        base_center.y - py * arrow_half_width,
+                    );
+                    self.draw_filled_triangle(
+                        preview,
+                        tip,
+                        wing1,
+                        wing2,
+                        color_f32,
+                        canvas_state.width,
+                        canvas_state.height,
+                    );
                 }
 
                 // Start arrow (points backward along the curve)
@@ -9813,12 +9918,27 @@ impl ToolsPanel {
                     let dx = tx / len;
                     let dy = ty / len;
                     let tip = Pos2::new(p0.x - dx * tip_advance, p0.y - dy * tip_advance);
-                    let base_center = Pos2::new(tip.x + dx * arrow_length, tip.y + dy * arrow_length);
+                    let base_center =
+                        Pos2::new(tip.x + dx * arrow_length, tip.y + dy * arrow_length);
                     let px = -dy;
                     let py = dx;
-                    let wing1 = Pos2::new(base_center.x + px * arrow_half_width, base_center.y + py * arrow_half_width);
-                    let wing2 = Pos2::new(base_center.x - px * arrow_half_width, base_center.y - py * arrow_half_width);
-                    self.draw_filled_triangle(preview, tip, wing1, wing2, color_f32, canvas_state.width, canvas_state.height);
+                    let wing1 = Pos2::new(
+                        base_center.x + px * arrow_half_width,
+                        base_center.y + py * arrow_half_width,
+                    );
+                    let wing2 = Pos2::new(
+                        base_center.x - px * arrow_half_width,
+                        base_center.y - py * arrow_half_width,
+                    );
+                    self.draw_filled_triangle(
+                        preview,
+                        tip,
+                        wing1,
+                        wing2,
+                        color_f32,
+                        canvas_state.width,
+                        canvas_state.height,
+                    );
                 }
             }
         }
@@ -9840,9 +9960,11 @@ impl ToolsPanel {
 
         // Bounding box expanded by fade zone
         let min_x = (a.x.min(b.x).min(c.x) - fade_px).floor().max(0.0) as u32;
-        let max_x = ((a.x.max(b.x).max(c.x) + fade_px).ceil() as u32).min(canvas_w.saturating_sub(1));
+        let max_x =
+            ((a.x.max(b.x).max(c.x) + fade_px).ceil() as u32).min(canvas_w.saturating_sub(1));
         let min_y = (a.y.min(b.y).min(c.y) - fade_px).floor().max(0.0) as u32;
-        let max_y = ((a.y.max(b.y).max(c.y) + fade_px).ceil() as u32).min(canvas_h.saturating_sub(1));
+        let max_y =
+            ((a.y.max(b.y).max(c.y) + fade_px).ceil() as u32).min(canvas_h.saturating_sub(1));
 
         let [src_r, src_g, src_b, src_a] = color_f32;
 
@@ -11554,8 +11676,7 @@ impl ToolsPanel {
             // Count whitespace gap consumed between this visual line and next
             let mut next_start = line_end;
             if vi < visual_lines.len() - 1 {
-                while next_start < logical_chars.len()
-                    && logical_chars[next_start].is_whitespace()
+                while next_start < logical_chars.len() && logical_chars[next_start].is_whitespace()
                 {
                     next_start += 1;
                 }
@@ -11590,9 +11711,7 @@ impl ToolsPanel {
             }
             let line_end = consumed + vlen;
             let mut next_start = line_end;
-            while next_start < logical_chars.len()
-                && logical_chars[next_start].is_whitespace()
-            {
+            while next_start < logical_chars.len() && logical_chars[next_start].is_whitespace() {
                 next_start += 1;
             }
             consumed = next_start.max(line_end);
@@ -11616,15 +11735,25 @@ impl ToolsPanel {
         for logical_line in &logical_lines {
             let logical_byte_end = logical_byte_start + logical_line.len();
             if byte_pos <= logical_byte_end {
-                let char_in_logical =
-                    text[logical_byte_start..byte_pos].chars().count();
-                let visual =
-                    crate::ops::text::word_wrap_line(logical_line, font, font_size, max_width, letter_spacing);
-                let (vl, vc) = Self::map_char_to_visual_line(logical_line, char_in_logical, &visual);
+                let char_in_logical = text[logical_byte_start..byte_pos].chars().count();
+                let visual = crate::ops::text::word_wrap_line(
+                    logical_line,
+                    font,
+                    font_size,
+                    max_width,
+                    letter_spacing,
+                );
+                let (vl, vc) =
+                    Self::map_char_to_visual_line(logical_line, char_in_logical, &visual);
                 return (visual_line_offset + vl, vc);
             }
-            let visual =
-                crate::ops::text::word_wrap_line(logical_line, font, font_size, max_width, letter_spacing);
+            let visual = crate::ops::text::word_wrap_line(
+                logical_line,
+                font,
+                font_size,
+                max_width,
+                letter_spacing,
+            );
             visual_line_offset += visual.len();
             logical_byte_start = logical_byte_end + 1;
         }
@@ -11646,13 +11775,22 @@ impl ToolsPanel {
         let mut logical_byte_start = 0usize;
         let mut visual_line_offset = 0usize;
         for logical_line in &logical_lines {
-            let visual =
-                crate::ops::text::word_wrap_line(logical_line, font, font_size, max_width, letter_spacing);
+            let visual = crate::ops::text::word_wrap_line(
+                logical_line,
+                font,
+                font_size,
+                max_width,
+                letter_spacing,
+            );
             let visual_count = visual.len();
             if visual_line < visual_line_offset + visual_count {
                 let local_visual = visual_line - visual_line_offset;
-                let char_in_logical =
-                    Self::map_visual_line_to_char(logical_line, &visual, local_visual, char_in_line);
+                let char_in_logical = Self::map_visual_line_to_char(
+                    logical_line,
+                    &visual,
+                    local_visual,
+                    char_in_line,
+                );
                 // Convert char offset to byte offset within logical line
                 let byte_in_logical: usize = logical_line
                     .chars()
@@ -11680,8 +11818,13 @@ impl ToolsPanel {
         let logical_lines: Vec<&str> = text.split('\n').collect();
         let mut byte_start = 0usize;
         for logical_line in &logical_lines {
-            let visual =
-                crate::ops::text::word_wrap_line(logical_line, font, font_size, max_width, letter_spacing);
+            let visual = crate::ops::text::word_wrap_line(
+                logical_line,
+                font,
+                font_size,
+                max_width,
+                letter_spacing,
+            );
             let logical_chars: Vec<char> = logical_line.chars().collect();
             let mut char_consumed = 0usize;
             for (vi, vline) in visual.iter().enumerate() {
@@ -11697,9 +11840,7 @@ impl ToolsPanel {
                 // Skip whitespace gap
                 let mut next = line_end;
                 if vi < visual.len() - 1 {
-                    while next < logical_chars.len()
-                        && logical_chars[next].is_whitespace()
-                    {
+                    while next < logical_chars.len() && logical_chars[next].is_whitespace() {
                         next += 1;
                     }
                 }
@@ -11730,58 +11871,54 @@ impl ToolsPanel {
         if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
             && let crate::canvas::LayerContent::Text(ref td) = layer.content
         {
-                let dotted_color = Color32::from_rgba_unmultiplied(
-                    accent.r(),
-                    accent.g(),
-                    accent.b(),
-                    70,
-                );
-                for block in &td.blocks {
-                    if Some(block.id) == self.text_state.active_block_id {
-                        continue; // Active block gets full overlay below
-                    }
-                    // Skip truly empty blocks that have no explicit box size
-                    // (freshly created via click, not yet typed into or resized)
-                    let has_text = block.runs.iter().any(|r| !r.text.is_empty());
-                    if !has_text && block.max_width.is_none() {
-                        continue;
-                    }
-                    let layout = crate::ops::text_layer::compute_block_layout(block);
-                    let bx = block.position[0];
-                    let by = block.position[1];
-                    let bw = if let Some(mw) = block.max_width {
-                        mw
-                    } else {
-                        layout.total_width
-                    };
-                    let bh = if let Some(mh) = block.max_height {
-                        mh.max(layout.total_height)
-                    } else {
-                        layout.total_height
-                    };
-                    if bw < 1.0 && bh < 1.0 {
-                        continue;
-                    }
-                    let pad = 4.0;
-                    let sx = canvas_rect.min.x + (bx - pad) * zoom;
-                    let sy = canvas_rect.min.y + (by - pad) * zoom;
-                    let sw = (bw + pad * 2.0) * zoom;
-                    let sh = (bh + pad * 2.0) * zoom;
-                    let r = egui::Rect::from_min_size(Pos2::new(sx, sy), egui::vec2(sw, sh));
-                    if block.rotation.abs() > 0.001 {
-                        let center = r.center();
-                        let corners = [
-                            rotate_screen_point(r.left_top(), center, block.rotation),
-                            rotate_screen_point(r.right_top(), center, block.rotation),
-                            rotate_screen_point(r.right_bottom(), center, block.rotation),
-                            rotate_screen_point(r.left_bottom(), center, block.rotation),
-                        ];
-                        draw_dotted_quad(painter, corners, dotted_color, 1.0, 4.0, 3.0);
-                    } else {
-                        // Draw dotted outline
-                        draw_dotted_rect(painter, r, dotted_color, 1.0, 4.0, 3.0);
-                    }
+            let dotted_color =
+                Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 70);
+            for block in &td.blocks {
+                if Some(block.id) == self.text_state.active_block_id {
+                    continue; // Active block gets full overlay below
                 }
+                // Skip truly empty blocks that have no explicit box size
+                // (freshly created via click, not yet typed into or resized)
+                let has_text = block.runs.iter().any(|r| !r.text.is_empty());
+                if !has_text && block.max_width.is_none() {
+                    continue;
+                }
+                let layout = crate::ops::text_layer::compute_block_layout(block);
+                let bx = block.position[0];
+                let by = block.position[1];
+                let bw = if let Some(mw) = block.max_width {
+                    mw
+                } else {
+                    layout.total_width
+                };
+                let bh = if let Some(mh) = block.max_height {
+                    mh.max(layout.total_height)
+                } else {
+                    layout.total_height
+                };
+                if bw < 1.0 && bh < 1.0 {
+                    continue;
+                }
+                let pad = 4.0;
+                let sx = canvas_rect.min.x + (bx - pad) * zoom;
+                let sy = canvas_rect.min.y + (by - pad) * zoom;
+                let sw = (bw + pad * 2.0) * zoom;
+                let sh = (bh + pad * 2.0) * zoom;
+                let r = egui::Rect::from_min_size(Pos2::new(sx, sy), egui::vec2(sw, sh));
+                if block.rotation.abs() > 0.001 {
+                    let center = r.center();
+                    let corners = [
+                        rotate_screen_point(r.left_top(), center, block.rotation),
+                        rotate_screen_point(r.right_top(), center, block.rotation),
+                        rotate_screen_point(r.right_bottom(), center, block.rotation),
+                        rotate_screen_point(r.left_bottom(), center, block.rotation),
+                    ];
+                    draw_dotted_quad(painter, corners, dotted_color, 1.0, 4.0, 3.0);
+                } else {
+                    // Draw dotted outline
+                    draw_dotted_rect(painter, r, dotted_color, 1.0, 4.0, 3.0);
+                }
+            }
         }
 
         // --- Phase 2: Active block overlay (full handles, cursor, etc.) ---
@@ -11817,7 +11954,9 @@ impl ToolsPanel {
             if let Some(mw) = self.text_state.active_block_max_width {
                 let visual_lines: Vec<String> = lines
                     .iter()
-                    .flat_map(|line| crate::ops::text::word_wrap_line(line, font, font_size, mw, ls))
+                    .flat_map(|line| {
+                        crate::ops::text::word_wrap_line(line, font, font_size, mw, ls)
+                    })
                     .collect();
                 let mut max_w = font_size * 2.0;
                 for line in &visual_lines {
@@ -11909,7 +12048,8 @@ impl ToolsPanel {
         let border_rect = egui::Rect::from_min_size(Pos2::new(sx, sy), egui::vec2(sw, sh));
 
         // Get block rotation for transforming the overlay
-        let block_rotation = if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+        let block_rotation = if let Some(layer) =
+            canvas_state.layers.get(canvas_state.active_layer_index)
             && let crate::canvas::LayerContent::Text(ref td) = layer.content
             && let Some(bid) = self.text_state.active_block_id
             && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
@@ -11944,71 +12084,92 @@ impl ToolsPanel {
 
         // --- Resize handles, rotation handle, delete button (text layer only) ---
         if self.text_state.editing_text_layer {
-        // --- Resize handles (4 corners) ---
-        let handle_size = 5.0; // screen pixels
-        let handle_stroke = egui::Stroke::new(1.0, Color32::WHITE);
-        let corners_raw = [
-            border_rect.left_top(),
-            border_rect.right_top(),
-            border_rect.left_bottom(),
-            border_rect.right_bottom(),
-        ];
-        for &corner in &corners_raw {
-            let c = if has_rot { rotate_screen_point(corner, rot_pivot, block_rotation) } else { corner };
-            let hr = egui::Rect::from_center_size(c, egui::vec2(handle_size * 2.0, handle_size * 2.0));
-            painter.rect_filled(hr, 1.0, accent_fill);
-            painter.rect_stroke(hr, 1.0, handle_stroke);
-        }
+            // --- Resize handles (4 corners) ---
+            let handle_size = 5.0; // screen pixels
+            let handle_stroke = egui::Stroke::new(1.0, Color32::WHITE);
+            let corners_raw = [
+                border_rect.left_top(),
+                border_rect.right_top(),
+                border_rect.left_bottom(),
+                border_rect.right_bottom(),
+            ];
+            for &corner in &corners_raw {
+                let c = if has_rot {
+                    rotate_screen_point(corner, rot_pivot, block_rotation)
+                } else {
+                    corner
+                };
+                let hr = egui::Rect::from_center_size(
+                    c,
+                    egui::vec2(handle_size * 2.0, handle_size * 2.0),
+                );
+                painter.rect_filled(hr, 1.0, accent_fill);
+                painter.rect_stroke(hr, 1.0, handle_stroke);
+            }
 
-        // --- Rotation handle (circle above top-center with connector line) ---
-        let rot_handle_offset = 20.0; // screen pixels above the box
-        let rot_handle_base = border_rect.center_top();
-        let rot_center_raw = Pos2::new(rot_handle_base.x, rot_handle_base.y - rot_handle_offset);
-        let rot_center = if has_rot { rotate_screen_point(rot_center_raw, rot_pivot, block_rotation) } else { rot_center_raw };
-        let rot_base = if has_rot { rotate_screen_point(rot_handle_base, rot_pivot, block_rotation) } else { rot_handle_base };
-        painter.line_segment(
-            [rot_base, rot_center],
-            egui::Stroke::new(1.0, accent_faint),
-        );
-        painter.circle_filled(rot_center, 5.0, accent_fill);
-        painter.circle_stroke(rot_center, 5.0, egui::Stroke::new(1.0, Color32::WHITE));
-        // Small rotation icon (curved arrow hint)
-        let arc_r = 3.0;
-        painter.line_segment(
-            [
-                Pos2::new(rot_center.x - arc_r, rot_center.y - 1.0),
-                Pos2::new(rot_center.x + arc_r, rot_center.y - 1.0),
-            ],
-            egui::Stroke::new(1.0, Color32::WHITE),
-        );
+            // --- Rotation handle (circle above top-center with connector line) ---
+            let rot_handle_offset = 20.0; // screen pixels above the box
+            let rot_handle_base = border_rect.center_top();
+            let rot_center_raw =
+                Pos2::new(rot_handle_base.x, rot_handle_base.y - rot_handle_offset);
+            let rot_center = if has_rot {
+                rotate_screen_point(rot_center_raw, rot_pivot, block_rotation)
+            } else {
+                rot_center_raw
+            };
+            let rot_base = if has_rot {
+                rotate_screen_point(rot_handle_base, rot_pivot, block_rotation)
+            } else {
+                rot_handle_base
+            };
+            painter.line_segment([rot_base, rot_center], egui::Stroke::new(1.0, accent_faint));
+            painter.circle_filled(rot_center, 5.0, accent_fill);
+            painter.circle_stroke(rot_center, 5.0, egui::Stroke::new(1.0, Color32::WHITE));
+            // Small rotation icon (curved arrow hint)
+            let arc_r = 3.0;
+            painter.line_segment(
+                [
+                    Pos2::new(rot_center.x - arc_r, rot_center.y - 1.0),
+                    Pos2::new(rot_center.x + arc_r, rot_center.y - 1.0),
+                ],
+                egui::Stroke::new(1.0, Color32::WHITE),
+            );
 
-        // --- Delete button (× at top-right corner, outside the box) ---
-        let del_offset = 14.0; // screen pixels outside top-right
-        let del_center_raw = Pos2::new(
-            border_rect.max.x + del_offset,
-            border_rect.min.y - del_offset,
-        );
-        let del_center = if has_rot { rotate_screen_point(del_center_raw, rot_pivot, block_rotation) } else { del_center_raw };
-        let del_radius = 8.0;
-        let del_bg = Color32::from_rgba_unmultiplied(200, 60, 60, 220);
-        painter.circle_filled(del_center, del_radius, del_bg);
-        painter.circle_stroke(del_center, del_radius, egui::Stroke::new(1.0, Color32::WHITE));
-        let xr = 3.5;
-        let x_stroke = egui::Stroke::new(1.5, Color32::WHITE);
-        painter.line_segment(
-            [
-                Pos2::new(del_center.x - xr, del_center.y - xr),
-                Pos2::new(del_center.x + xr, del_center.y + xr),
-            ],
-            x_stroke,
-        );
-        painter.line_segment(
-            [
-                Pos2::new(del_center.x + xr, del_center.y - xr),
-                Pos2::new(del_center.x - xr, del_center.y + xr),
-            ],
-            x_stroke,
-        );
+            // --- Delete button (× at top-right corner, outside the box) ---
+            let del_offset = 14.0; // screen pixels outside top-right
+            let del_center_raw = Pos2::new(
+                border_rect.max.x + del_offset,
+                border_rect.min.y - del_offset,
+            );
+            let del_center = if has_rot {
+                rotate_screen_point(del_center_raw, rot_pivot, block_rotation)
+            } else {
+                del_center_raw
+            };
+            let del_radius = 8.0;
+            let del_bg = Color32::from_rgba_unmultiplied(200, 60, 60, 220);
+            painter.circle_filled(del_center, del_radius, del_bg);
+            painter.circle_stroke(
+                del_center,
+                del_radius,
+                egui::Stroke::new(1.0, Color32::WHITE),
+            );
+            let xr = 3.5;
+            let x_stroke = egui::Stroke::new(1.5, Color32::WHITE);
+            painter.line_segment(
+                [
+                    Pos2::new(del_center.x - xr, del_center.y - xr),
+                    Pos2::new(del_center.x + xr, del_center.y + xr),
+                ],
+                x_stroke,
+            );
+            painter.line_segment(
+                [
+                    Pos2::new(del_center.x + xr, del_center.y - xr),
+                    Pos2::new(del_center.x - xr, del_center.y + xr),
+                ],
+                x_stroke,
+            );
         } // end editing_text_layer handles
 
         // Move handle (cross circle — existing)
@@ -12032,7 +12193,11 @@ impl ToolsPanel {
             }
         };
         let handle_pos_raw = Pos2::new(handle_screen_x, handle_screen_y);
-        let handle_pos = if has_rot { rotate_screen_point(handle_pos_raw, rot_pivot, block_rotation) } else { handle_pos_raw };
+        let handle_pos = if has_rot {
+            rotate_screen_point(handle_pos_raw, rot_pivot, block_rotation)
+        } else {
+            handle_pos_raw
+        };
 
         painter.circle_filled(handle_pos, handle_radius_screen, accent_fill);
         painter.circle_stroke(
@@ -12074,7 +12239,11 @@ impl ToolsPanel {
                 ),
             }
         };
-        let connector_target = if has_rot { rotate_screen_point(connector_target_raw, rot_pivot, block_rotation) } else { connector_target_raw };
+        let connector_target = if has_rot {
+            rotate_screen_point(connector_target_raw, rot_pivot, block_rotation)
+        } else {
+            connector_target_raw
+        };
         painter.line_segment(
             [handle_pos, connector_target],
             egui::Stroke::new(1.0, accent_faint),
@@ -12114,9 +12283,7 @@ impl ToolsPanel {
                 self.text_state.active_block_max_width,
                 &self.text_state.loaded_font,
             ) {
-                Self::compute_visual_lines_with_byte_offsets(
-                    full_text, font, font_size, mw, ls,
-                )
+                Self::compute_visual_lines_with_byte_offsets(full_text, font, font_size, mw, ls)
             } else {
                 // No wrapping — one visual line per logical line
                 let mut result = Vec::new();
@@ -12253,11 +12420,9 @@ impl ToolsPanel {
                         )
                     } else {
                         // No wrapping — use logical line mapping
-                        let text_before =
-                            &self.text_state.text[..self.text_state.cursor_pos];
+                        let text_before = &self.text_state.text[..self.text_state.cursor_pos];
                         let newlines_before = text_before.matches('\n').count();
-                        let last_line =
-                            text_before.rsplit('\n').next().unwrap_or(text_before);
+                        let last_line = text_before.rsplit('\n').next().unwrap_or(text_before);
                         (newlines_before, last_line.chars().count())
                     };
 
@@ -12272,10 +12437,8 @@ impl ToolsPanel {
                         use ab_glyph::{Font as _, ScaleFont as _};
                         let scaled = font.as_scaled(font_size);
                         // Get the visual line text to measure
-                        let text_before =
-                            &self.text_state.text[..self.text_state.cursor_pos];
-                        let last_line =
-                            text_before.rsplit('\n').next().unwrap_or(text_before);
+                        let text_before = &self.text_state.text[..self.text_state.cursor_pos];
+                        let last_line = text_before.rsplit('\n').next().unwrap_or(text_before);
                         let mut x = 0.0f32;
                         let mut prev_glyph_id = None;
                         for ch in last_line.chars() {
@@ -12320,15 +12483,9 @@ impl ToolsPanel {
                                 crate::ops::text::word_wrap_line(line, font, font_size, mw, ls)
                             })
                             .collect();
-                        all_visual
-                            .get(cursor_line)
-                            .cloned()
-                            .unwrap_or_default()
+                        all_visual.get(cursor_line).cloned().unwrap_or_default()
                     } else {
-                        lines
-                            .get(cursor_line)
-                            .unwrap_or(&"")
-                            .to_string()
+                        lines.get(cursor_line).unwrap_or(&"").to_string()
                     };
                     let line_w = if let Some(ref font) = self.text_state.loaded_font {
                         use ab_glyph::{Font as _, ScaleFont as _};
@@ -12378,14 +12535,8 @@ impl ToolsPanel {
                 (cursor_top, cursor_bot, cursor_top2, cursor_bot2)
             };
 
-            painter.line_segment(
-                [ct, cb],
-                egui::Stroke::new(1.5, Color32::BLACK),
-            );
-            painter.line_segment(
-                [ct2, cb2],
-                egui::Stroke::new(0.5, Color32::WHITE),
-            );
+            painter.line_segment([ct, cb], egui::Stroke::new(1.5, Color32::BLACK));
+            painter.line_segment([ct2, cb2], egui::Stroke::new(0.5, Color32::WHITE));
         }
         // Throttle repaint to cursor blink rate (2Hz)
         ui.ctx()
@@ -13187,6 +13338,7 @@ impl ToolsPanel {
                                             self.text_state.font_family = (*font_name).clone();
                                             self.text_state.loaded_font = None;
                                             self.text_state.preview_dirty = true;
+                                            self.text_state.ctx_bar_style_dirty = true;
                                             self.text_state.cached_raster_key.clear();
                                             // Refresh available weights for new family
                                             self.text_state.available_weights =
@@ -13271,6 +13423,7 @@ impl ToolsPanel {
                             self.text_state.font_weight = *val;
                             self.text_state.loaded_font = None;
                             self.text_state.preview_dirty = true;
+                            self.text_state.ctx_bar_style_dirty = true;
                             self.text_state.cached_raster_key.clear();
                         }
                     }
@@ -13660,7 +13813,16 @@ impl ToolsPanel {
         };
 
         // Get the block data (or create new block)
-        let (block_text, style, position, bid, alignment, block_max_width, block_max_height, block_line_spacing);
+        let (
+            block_text,
+            style,
+            position,
+            bid,
+            alignment,
+            block_max_width,
+            block_max_height,
+            block_line_spacing,
+        );
         if let Some(bid_val) = target_block_id {
             if let Some(block) = text_data.blocks.iter().find(|b| b.id == bid_val) {
                 block_text = block.flat_text();
@@ -13979,19 +14141,18 @@ impl ToolsPanel {
         let ls = self.text_state.letter_spacing;
 
         // Determine current visual line and char offset
-        let (cur_vis_line, cur_vis_char) =
-            if let (Some(mw), Some(font)) = (
-                self.text_state.active_block_max_width,
-                &self.text_state.loaded_font,
-            ) {
-                Self::byte_pos_to_visual(text, self.text_state.cursor_pos, font, font_size, mw, ls)
-            } else {
-                // No wrapping — use logical lines
-                let before = &text[..self.text_state.cursor_pos];
-                let line_idx = before.matches('\n').count();
-                let last_line = before.rsplit('\n').next().unwrap_or(before);
-                (line_idx, last_line.chars().count())
-            };
+        let (cur_vis_line, cur_vis_char) = if let (Some(mw), Some(font)) = (
+            self.text_state.active_block_max_width,
+            &self.text_state.loaded_font,
+        ) {
+            Self::byte_pos_to_visual(text, self.text_state.cursor_pos, font, font_size, mw, ls)
+        } else {
+            // No wrapping — use logical lines
+            let before = &text[..self.text_state.cursor_pos];
+            let line_idx = before.matches('\n').count();
+            let last_line = before.rsplit('\n').next().unwrap_or(before);
+            (line_idx, last_line.chars().count())
+        };
 
         // Compute total visual line count
         let total_visual_lines = if let (Some(mw), Some(font)) = (
@@ -14038,23 +14199,22 @@ impl ToolsPanel {
             .unwrap_or(0.0);
 
         // Find the closest char position on the target line
-        let target_char = if let Some(advances) =
-            self.text_state.cached_line_advances.get(target_line)
-        {
-            let mut best = 0;
-            let mut best_dist = f32::MAX;
-            for (ci, &adv) in advances.iter().enumerate() {
-                let dist = (adv - cursor_x).abs();
-                if dist < best_dist {
-                    best_dist = dist;
-                    best = ci;
+        let target_char =
+            if let Some(advances) = self.text_state.cached_line_advances.get(target_line) {
+                let mut best = 0;
+                let mut best_dist = f32::MAX;
+                for (ci, &adv) in advances.iter().enumerate() {
+                    let dist = (adv - cursor_x).abs();
+                    if dist < best_dist {
+                        best_dist = dist;
+                        best = ci;
+                    }
                 }
-            }
-            // Clamp to line char count (advances has count+1 entries)
-            best.min(advances.len().saturating_sub(1))
-        } else {
-            cur_vis_char
-        };
+                // Clamp to line char count (advances has count+1 entries)
+                best.min(advances.len().saturating_sub(1))
+            } else {
+                cur_vis_char
+            };
 
         // Convert (target_line, target_char) back to byte position
         let new_byte_pos = if let (Some(mw), Some(font)) = (
@@ -15237,7 +15397,12 @@ fn draw_dotted_rect(
 ) {
     draw_dotted_quad(
         painter,
-        [rect.left_top(), rect.right_top(), rect.right_bottom(), rect.left_bottom()],
+        [
+            rect.left_top(),
+            rect.right_top(),
+            rect.right_bottom(),
+            rect.left_bottom(),
+        ],
         color,
         thickness,
         dash_len,

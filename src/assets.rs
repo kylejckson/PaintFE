@@ -3428,17 +3428,35 @@ impl AppSettings {
             };
         }
         if let Some(v) = map.get("accent_light_normal")
-            && let Some(c) = Self::str_to_color(v) { self.custom_accent.light_normal = c; }
+            && let Some(c) = Self::str_to_color(v)
+        {
+            self.custom_accent.light_normal = c;
+        }
         if let Some(v) = map.get("accent_light_faint")
-            && let Some(c) = Self::str_to_color(v) { self.custom_accent.light_faint = c; }
+            && let Some(c) = Self::str_to_color(v)
+        {
+            self.custom_accent.light_faint = c;
+        }
         if let Some(v) = map.get("accent_light_strong")
-            && let Some(c) = Self::str_to_color(v) { self.custom_accent.light_strong = c; }
+            && let Some(c) = Self::str_to_color(v)
+        {
+            self.custom_accent.light_strong = c;
+        }
         if let Some(v) = map.get("accent_dark_normal")
-            && let Some(c) = Self::str_to_color(v) { self.custom_accent.dark_normal = c; }
+            && let Some(c) = Self::str_to_color(v)
+        {
+            self.custom_accent.dark_normal = c;
+        }
         if let Some(v) = map.get("accent_dark_faint")
-            && let Some(c) = Self::str_to_color(v) { self.custom_accent.dark_faint = c; }
+            && let Some(c) = Self::str_to_color(v)
+        {
+            self.custom_accent.dark_faint = c;
+        }
         if let Some(v) = map.get("accent_dark_strong")
-            && let Some(c) = Self::str_to_color(v) { self.custom_accent.dark_strong = c; }
+            && let Some(c) = Self::str_to_color(v)
+        {
+            self.custom_accent.dark_strong = c;
+        }
         if let Some(v) = map.get("neon_mode") {
             self.neon_mode = v == "true";
         }
@@ -3454,9 +3472,15 @@ impl AppSettings {
             };
         }
         if let Some(v) = map.get("glow_intensity")
-            && let Ok(f) = v.parse::<f32>() { self.glow_intensity = f; }
+            && let Ok(f) = v.parse::<f32>()
+        {
+            self.glow_intensity = f;
+        }
         if let Some(v) = map.get("shadow_strength")
-            && let Ok(f) = v.parse::<f32>() { self.shadow_strength = f; }
+            && let Ok(f) = v.parse::<f32>()
+        {
+            self.shadow_strength = f;
+        }
         if let Some(v) = map.get("widget_rounding") {
             self.widget_rounding = v.parse::<f32>().ok();
         }
@@ -4467,6 +4491,7 @@ impl SettingsWindow {
                 // Use wgpu's own adapter enumeration — zero child processes spawned,
                 // no console flash, and it returns the same GPU names the app actually uses.
                 let mut adapters = vec!["Auto".to_string()];
+
                 let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
                     backends: wgpu::Backends::all(),
                     ..Default::default()
@@ -5098,24 +5123,24 @@ impl SettingsWindow {
                     .add_filter("PaintFE Theme", &["paintfe-theme"])
                     .pick_file()
             {
-                    match std::fs::read_to_string(&path) {
-                        Ok(content) => {
-                            settings.import_theme_from_string(&content);
-                            self.sync_from_settings(settings);
-                            self.dirty = true;
-                            self.apply_theme(settings, theme, ctx);
-                            self.theme_status = Some((
-                                t!("settings.interface.theme_imported"),
-                                ui.input(|i| i.time),
-                            ));
-                        }
-                        Err(e) => {
-                            self.theme_status = Some((
-                                format!("{}: {e}", t!("settings.interface.theme_error")),
-                                ui.input(|i| i.time),
-                            ));
-                        }
+                match std::fs::read_to_string(&path) {
+                    Ok(content) => {
+                        settings.import_theme_from_string(&content);
+                        self.sync_from_settings(settings);
+                        self.dirty = true;
+                        self.apply_theme(settings, theme, ctx);
+                        self.theme_status = Some((
+                            t!("settings.interface.theme_imported"),
+                            ui.input(|i| i.time),
+                        ));
                     }
+                    Err(e) => {
+                        self.theme_status = Some((
+                            format!("{}: {e}", t!("settings.interface.theme_error")),
+                            ui.input(|i| i.time),
+                        ));
+                    }
+                }
             }
         });
 
@@ -5625,6 +5650,6 @@ pub const BRUSH_SIZE_PRESETS: &[f32] = &[
 ];
 
 pub const TEXT_SIZE_PRESETS: &[f32] = &[
-    8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 28.0, 32.0, 36.0, 48.0, 64.0, 72.0, 96.0,
-    128.0, 192.0, 256.0,
+    8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 28.0, 32.0, 36.0, 48.0, 64.0, 72.0, 96.0, 128.0,
+    192.0, 256.0,
 ];

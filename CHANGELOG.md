@@ -6,6 +6,19 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.1.1] - 2026-03-09
+
+### Fixed
+- **Text layer font switching**: Changing font family or weight now updates the canvas instantly (previously required clicking away and back).
+- **Decorative/bulky font clipping**: Fonts with large ascenders, descenders, or wide strokes (e.g. Impact, Showcard Gothic) are no longer clipped or squished — rasterizer now uses actual outline bounds with scaled padding.
+- **Text move handle off-canvas**: The drag handle for repositioning text blocks can now be grabbed even when it extends outside the visible canvas area.
+- **GPU blur shader crash on DX12**: Fixed a crash on launch caused by the Gaussian blur compute shader using `workgroupBarrier()` inside divergent control flow, which the FXC compiler rejects.
+
+### Added
+- **Resize cursors on text bounding boxes**: Hovering over text box resize handles now shows the appropriate system resize cursor (↔, ↗↙, ↘↖) instead of the default pointer.
+
+---
+
 ## [1.1.0] - 2026-03-06
 
 ### Added

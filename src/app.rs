@@ -2742,11 +2742,7 @@ impl eframe::App for PaintFEApp {
                         ui.separator();
                         if self
                             .assets
-                            .menu_item(
-                                ui,
-                                Icon::Rename,
-                                &t!("menu.canvas.new_text_layer"),
-                            )
+                            .menu_item(ui, Icon::Rename, &t!("menu.canvas.new_text_layer"))
                             .clicked()
                         {
                             if let Some(project) = self.active_project_mut() {
@@ -5597,8 +5593,7 @@ impl PaintFEApp {
                 && project.canvas_state.layers[idx].is_text_layer()
             {
                 project.canvas_state.ensure_all_text_layers_rasterized();
-                project.canvas_state.layers[idx].content =
-                    crate::canvas::LayerContent::Raster;
+                project.canvas_state.layers[idx].content = crate::canvas::LayerContent::Raster;
             }
             let mut cmd =
                 SingleLayerSnapshotCommand::new(description.to_string(), &project.canvas_state);
@@ -5624,8 +5619,7 @@ impl PaintFEApp {
                 && project.canvas_state.layers[idx].is_text_layer()
             {
                 project.canvas_state.ensure_all_text_layers_rasterized();
-                project.canvas_state.layers[idx].content =
-                    crate::canvas::LayerContent::Raster;
+                project.canvas_state.layers[idx].content = crate::canvas::LayerContent::Raster;
             }
             let mut cmd =
                 SingleLayerSnapshotCommand::new(description.to_string(), &project.canvas_state);

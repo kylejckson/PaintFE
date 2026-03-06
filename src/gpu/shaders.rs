@@ -515,53 +515,55 @@ fn cs_blur(@builtin(global_invocation_id) gid: vec3<u32>,
     if (params.direction == 0u) {
         // ---- HORIZONTAL PASS ----
         let y = gid.y;
-        if (y >= params.height) { return; }
+        // Clamp y so out-of-bounds threads still load valid data for shared
+        // memory. All threads MUST reach the barrier (FXC requirement).
+        let safe_y = min(y, params.height - 1u);
 
         // Load tile + left/right apron into shared memory.
         let apron_size = i32(TILE_W) + 2 * radius;
         var i = local_idx;
         while (i < apron_size) {
             let gx = clamp(tile_start + i - radius, 0, i32(params.width) - 1);
-            shared_tile[i] = textureLoad(input_tex, vec2<u32>(u32(gx), y), 0);
+            shared_tile[i] = textureLoad(input_tex, vec2<u32>(u32(gx), safe_y), 0);
             i = i + i32(TILE_W);
         }
         workgroupBarrier();
 
-        // Compute blurred value for this pixel.
+        // Compute blurred value — only for in-bounds pixels.
         let x = tile_start + local_idx;
-        if (x >= i32(params.width)) { return; }
-
-        var color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
-        for (var k: i32 = -radius; k <= radius; k = k + 1) {
-            let shared_idx = local_idx + radius + k;
-            let weight = kernel[u32(k + radius)];
-            color = color + shared_tile[shared_idx] * weight;
+        if (y < params.height && x < i32(params.width)) {
+            var color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+            for (var k: i32 = -radius; k <= radius; k = k + 1) {
+                let shared_idx = local_idx + radius + k;
+                let weight = kernel[u32(k + radius)];
+                color = color + shared_tile[shared_idx] * weight;
+            }
+            textureStore(output_tex, vec2<u32>(u32(x), y), color);
         }
-        textureStore(output_tex, vec2<u32>(u32(x), y), color);
     } else {
         // ---- VERTICAL PASS ----
         let x = gid.y;  // gid.y carries the column index
-        if (x >= params.width) { return; }
+        let safe_x = min(x, params.width - 1u);
 
         let apron_size = i32(TILE_W) + 2 * radius;
         var i = local_idx;
         while (i < apron_size) {
             let gy = clamp(tile_start + i - radius, 0, i32(params.height) - 1);
-            shared_tile[i] = textureLoad(input_tex, vec2<u32>(x, u32(gy)), 0);
+            shared_tile[i] = textureLoad(input_tex, vec2<u32>(safe_x, u32(gy)), 0);
             i = i + i32(TILE_W);
         }
         workgroupBarrier();
 
         let y = tile_start + local_idx;
-        if (y >= i32(params.height)) { return; }
-
-        var color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
-        for (var k: i32 = -radius; k <= radius; k = k + 1) {
-            let shared_idx = local_idx + radius + k;
-            let weight = kernel[u32(k + radius)];
-            color = color + shared_tile[shared_idx] * weight;
+        if (x < params.width && y < i32(params.height)) {
+            var color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+            for (var k: i32 = -radius; k <= radius; k = k + 1) {
+                let shared_idx = local_idx + radius + k;
+                let weight = kernel[u32(k + radius)];
+                color = color + shared_tile[shared_idx] * weight;
+            }
+            textureStore(output_tex, vec2<u32>(x, u32(y)), color);
         }
-        textureStore(output_tex, vec2<u32>(x, u32(y)), color);
     }
 }
 "#;

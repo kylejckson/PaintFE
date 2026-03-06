@@ -953,7 +953,16 @@ fn maybe_rotate_and_blit(
         let local_pivot = pivot_canvas.map(|(px, py)| (px - off_x as f32, py - off_y as f32));
         let (rotated, rw, rh, rx_off, ry_off) =
             rotate_glyph_buffer(buf, buf_w, buf_h, rotation, local_pivot);
-        blit_rgba_buffer(target, &rotated, rw, rh, off_x + rx_off, off_y + ry_off, canvas_w, canvas_h);
+        blit_rgba_buffer(
+            target,
+            &rotated,
+            rw,
+            rh,
+            off_x + rx_off,
+            off_y + ry_off,
+            canvas_w,
+            canvas_h,
+        );
     } else {
         blit_rgba_buffer(target, buf, buf_w, buf_h, off_x, off_y, canvas_w, canvas_h);
     }
@@ -994,7 +1003,14 @@ fn rasterize_block_multirun(
         if has_rotation {
             // Per-glyph into temp, then rotate the whole block result
             let mut temp = TiledImage::new(canvas_w, canvas_h);
-            rasterize_block_per_glyph(block, canvas_w, canvas_h, &mut temp, coverage_buf, glyph_cache);
+            rasterize_block_per_glyph(
+                block,
+                canvas_w,
+                canvas_h,
+                &mut temp,
+                coverage_buf,
+                glyph_cache,
+            );
             let max_font = block
                 .runs
                 .iter()
@@ -1011,9 +1027,16 @@ fn rasterize_block_multirun(
                 let region = temp.extract_region_rgba(bx, by, bw, bh);
                 if let Some((tx, ty, tw, th, trimmed)) = trim_to_content(&region, bw, bh) {
                     maybe_rotate_and_blit(
-                        target, &trimmed, tw, th,
-                        bx as i32 + tx as i32, by as i32 + ty as i32,
-                        block.rotation, canvas_w, canvas_h, rot_pivot,
+                        target,
+                        &trimmed,
+                        tw,
+                        th,
+                        bx as i32 + tx as i32,
+                        by as i32 + ty as i32,
+                        block.rotation,
+                        canvas_w,
+                        canvas_h,
+                        rot_pivot,
                     );
                 }
             }
@@ -1337,7 +1360,13 @@ fn find_glyph_style(block: &TextBlock, glyph_index: usize) -> Option<(TextStyle,
 /// Rotate an RGBA buffer around its center by the given angle (radians).
 /// Returns (rotated_buffer, new_width, new_height, x_offset, y_offset)
 /// where offsets are adjustments to the original blit position.
-fn rotate_glyph_buffer(buf: &[u8], w: u32, h: u32, angle: f32, pivot: Option<(f32, f32)>) -> (Vec<u8>, u32, u32, i32, i32) {
+fn rotate_glyph_buffer(
+    buf: &[u8],
+    w: u32,
+    h: u32,
+    angle: f32,
+    pivot: Option<(f32, f32)>,
+) -> (Vec<u8>, u32, u32, i32, i32) {
     let cos_a = angle.cos();
     let sin_a = angle.sin();
 
@@ -1702,10 +1731,20 @@ pub fn compute_block_layout(block: &TextBlock) -> BlockLayout {
                 let wrapped_lines: Vec<String> = run
                     .text
                     .split('\n')
-                    .flat_map(|line| text::word_wrap_line(line, &font, run.style.font_size, mw, run.style.letter_spacing))
+                    .flat_map(|line| {
+                        text::word_wrap_line(
+                            line,
+                            &font,
+                            run.style.font_size,
+                            mw,
+                            run.style.letter_spacing,
+                        )
+                    })
                     .collect();
                 let scaled = font.as_scaled(run.style.font_size);
-                total_height = wrapped_lines.len().max(1) as f32 * scaled.height() * block.paragraph.line_spacing;
+                total_height = wrapped_lines.len().max(1) as f32
+                    * scaled.height()
+                    * block.paragraph.line_spacing;
             }
         }
     }
@@ -2831,32 +2870,30 @@ fn dilate_mask(mask: &[f32], w: u32, h: u32, radius: f32) -> Vec<f32> {
     // preserves the original anti-aliased coverage values, producing smooth
     // outlines without binary thresholding or rectangular artifacts.
     let mut out = vec![0.0f32; count];
-    out.par_chunks_mut(ww)
-        .enumerate()
-        .for_each(|(y, row_out)| {
-            let y_start = y.saturating_sub(int_radius);
-            let y_end = (y + int_radius + 1).min(hh);
-            for (x, out_val) in row_out.iter_mut().enumerate() {
-                let x_start = x.saturating_sub(int_radius);
-                let x_end = (x + int_radius + 1).min(ww);
-                let mut max_val = 0.0f32;
-                for sy in y_start..y_end {
-                    let dy = sy as f32 - y as f32;
-                    let dy_sq = dy * dy;
-                    if dy_sq > r_sq {
-                        continue;
-                    }
-                    let row_off = sy * ww;
-                    for sx in x_start..x_end {
-                        let dx = sx as f32 - x as f32;
-                        if dx * dx + dy_sq <= r_sq {
-                            max_val = max_val.max(mask[row_off + sx]);
-                        }
+    out.par_chunks_mut(ww).enumerate().for_each(|(y, row_out)| {
+        let y_start = y.saturating_sub(int_radius);
+        let y_end = (y + int_radius + 1).min(hh);
+        for (x, out_val) in row_out.iter_mut().enumerate() {
+            let x_start = x.saturating_sub(int_radius);
+            let x_end = (x + int_radius + 1).min(ww);
+            let mut max_val = 0.0f32;
+            for sy in y_start..y_end {
+                let dy = sy as f32 - y as f32;
+                let dy_sq = dy * dy;
+                if dy_sq > r_sq {
+                    continue;
+                }
+                let row_off = sy * ww;
+                for sx in x_start..x_end {
+                    let dx = sx as f32 - x as f32;
+                    if dx * dx + dy_sq <= r_sq {
+                        max_val = max_val.max(mask[row_off + sx]);
                     }
                 }
-                *out_val = max_val;
             }
-        });
+            *out_val = max_val;
+        }
+    });
 
     out
 }

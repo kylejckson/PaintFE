@@ -354,7 +354,8 @@ pub fn rasterize_text(
 
     for (line_idx, line) in visual_lines.iter().enumerate() {
         let y_offset = line_idx as f32 * line_height;
-        let (mut glyphs, total_width, _, _, _) = layout_text(font, line, font_size, alignment, letter_spacing);
+        let (mut glyphs, total_width, _, _, _) =
+            layout_text(font, line, font_size, alignment, letter_spacing);
         // Offset y positions for this line
         for glyph in &mut glyphs {
             glyph.2 += y_offset;
@@ -391,7 +392,11 @@ pub fn rasterize_text(
         };
     }
 
-    // Compute bounding box of all glyphs using fast glyph_bounds (no outlining needed)
+    // Compute bounding box of all glyphs using actual outline bounds.
+    // glyph_bounds() returns the font's *declared* metrics which can be too
+    // tight for decorative/display fonts — outline_glyph().px_bounds() gives
+    // the real pixel coverage.  Fall back to glyph_bounds() for glyphs that
+    // have no outline (e.g. space).
     let mut min_x = f32::MAX;
     let mut min_y = f32::MAX;
     let mut max_x = f32::MIN;
@@ -399,11 +404,19 @@ pub fn rasterize_text(
 
     for &(glyph_id, gx, gy) in &all_glyphs {
         let glyph = glyph_id.with_scale_and_position(font_size, point(gx, gy));
-        let bounds = font.glyph_bounds(&glyph);
-        min_x = min_x.min(bounds.min.x);
-        min_y = min_y.min(bounds.min.y);
-        max_x = max_x.max(bounds.max.x);
-        max_y = max_y.max(bounds.max.y);
+        if let Some(outlined) = font.outline_glyph(glyph.clone()) {
+            let ob = outlined.px_bounds();
+            min_x = min_x.min(ob.min.x);
+            min_y = min_y.min(ob.min.y);
+            max_x = max_x.max(ob.max.x);
+            max_y = max_y.max(ob.max.y);
+        } else {
+            let bounds = font.glyph_bounds(&glyph);
+            min_x = min_x.min(bounds.min.x);
+            min_y = min_y.min(bounds.min.y);
+            max_x = max_x.max(bounds.max.x);
+            max_y = max_y.max(bounds.max.y);
+        }
     }
 
     // Handle decorations (extend bounds per line)
@@ -435,8 +448,9 @@ pub fn rasterize_text(
         };
     }
 
-    // Add padding
-    let pad = 2.0;
+    // Add padding — scale with font size so decorative/display fonts with
+    // wide swashes or overhanging serifs are not clipped at the edges.
+    let pad = (font_size * 0.15).max(2.0);
     min_x -= pad;
     min_y -= pad;
     max_x += pad;

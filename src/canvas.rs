@@ -1704,6 +1704,16 @@ impl CanvasState {
                 false
             };
             if needs {
+                // Clear glyph cache when text content changed (font switch
+                // produces different outlines for the same GlyphId).
+                let text_changed = if let LayerContent::Text(ref td) = self.layers[i].content {
+                    td.text_content_generation != td.cached_text_generation
+                } else {
+                    false
+                };
+                if text_changed {
+                    self.text_glyph_cache.clear();
+                }
                 // Temporarily take caches out of self
                 let mut cov = std::mem::take(&mut self.text_coverage_buf);
                 let mut gc = std::mem::take(&mut self.text_glyph_cache);
@@ -1773,6 +1783,19 @@ impl CanvasState {
             false
         };
         if needs {
+            // Clear glyph cache when text content changed (font switch produces
+            // different outlines for the same GlyphId, which the cache keys
+            // cannot distinguish).
+            let text_changed = if let Some(layer) = self.layers.get(layer_idx)
+                && let LayerContent::Text(ref td) = layer.content
+            {
+                td.text_content_generation != td.cached_text_generation
+            } else {
+                false
+            };
+            if text_changed {
+                self.text_glyph_cache.clear();
+            }
             let mut cov = std::mem::take(&mut self.text_coverage_buf);
             let mut gc = std::mem::take(&mut self.text_glyph_cache);
             if let LayerContent::Text(ref mut text_data) = self.layers[layer_idx].content {
@@ -4189,8 +4212,31 @@ impl Canvas {
         // Extract text tool handle state for cursor icon
         let text_hovering_handle = tools.as_ref().is_some_and(|t| t.text_state.hovering_handle);
         let text_dragging_handle = tools.as_ref().is_some_and(|t| t.text_state.dragging_handle);
-        let text_hovering_rotation = tools.as_ref().is_some_and(|t| t.text_state.hovering_rotation_handle);
-        let text_rotating = tools.as_ref().is_some_and(|t| matches!(t.text_state.text_box_drag, Some(crate::components::tools::TextBoxDragType::Rotate)));
+        let text_hovering_rotation = tools
+            .as_ref()
+            .is_some_and(|t| t.text_state.hovering_rotation_handle);
+        let text_hovering_resize = tools
+            .as_ref()
+            .and_then(|t| t.text_state.hovering_resize_handle);
+        let text_resizing = tools
+            .as_ref()
+            .and_then(|t| match t.text_state.text_box_drag {
+                Some(
+                    dt @ (crate::components::tools::TextBoxDragType::ResizeLeft
+                    | crate::components::tools::TextBoxDragType::ResizeRight
+                    | crate::components::tools::TextBoxDragType::ResizeTopLeft
+                    | crate::components::tools::TextBoxDragType::ResizeTopRight
+                    | crate::components::tools::TextBoxDragType::ResizeBottomLeft
+                    | crate::components::tools::TextBoxDragType::ResizeBottomRight),
+                ) => Some(dt),
+                _ => None,
+            });
+        let text_rotating = tools.as_ref().is_some_and(|t| {
+            matches!(
+                t.text_state.text_box_drag,
+                Some(crate::components::tools::TextBoxDragType::Rotate)
+            )
+        });
         // Extract line tool pan-handle state for cursor icon
         let line_pan_hovering = tools.as_ref().is_some_and(|t| {
             t.active_tool == crate::components::tools::Tool::Line
@@ -4326,9 +4372,10 @@ impl Canvas {
             // When editing a text layer block, handles (rotation, delete) can be drawn outside
             // canvas bounds — allow input so the user can click/drag them.
             // This also overrides ui_blocking, because the handles may overlap panels.
-            let text_handles_active = tools.text_state.is_editing
-                && tools.text_state.editing_text_layer;
-            let text_drag_override = text_handles_active || tools.text_state.text_box_drag.is_some();
+            let text_handles_active =
+                tools.text_state.is_editing && tools.text_state.editing_text_layer;
+            let text_drag_override =
+                text_handles_active || tools.text_state.text_box_drag.is_some();
             let allow_input = !modal_open
                 && !paste_consumed_input
                 && (!ui_blocking || text_drag_override)
@@ -4453,7 +4500,10 @@ impl Canvas {
                 // Only override cursor when mouse is truly over just the canvas —
                 // not when a dialog, menu, popup, or floating panel is on top.
                 // Exception: text rotation/resize handles may be drawn outside image bounds.
-                let text_handle_cursor = text_hovering_rotation || text_rotating;
+                let text_handle_cursor = text_hovering_rotation
+                    || text_rotating
+                    || text_hovering_resize.is_some()
+                    || text_resizing.is_some();
                 if (over_image || text_handle_cursor)
                     && !modal_open
                     && !ui.ctx().memory(|mem| mem.any_popup_open())
@@ -4503,13 +4553,26 @@ impl Canvas {
                         }
                         // Mesh warp — crosshair for precise control point dragging
                         Tool::MeshWarp => egui::CursorIcon::Crosshair,
-                        // Text — move cursor when hovering handle, text caret otherwise
+                        // Text — context-dependent cursor for handles
                         Tool::Text => {
-                            if text_dragging_handle {
+                            // Map resize drag type to appropriate system resize cursor
+                            let resize_cursor = |dt: crate::components::tools::TextBoxDragType| -> egui::CursorIcon {
+                                use crate::components::tools::TextBoxDragType;
+                                match dt {
+                                    TextBoxDragType::ResizeLeft | TextBoxDragType::ResizeRight => egui::CursorIcon::ResizeHorizontal,
+                                    TextBoxDragType::ResizeTopLeft | TextBoxDragType::ResizeBottomRight => egui::CursorIcon::ResizeNwSe,
+                                    TextBoxDragType::ResizeTopRight | TextBoxDragType::ResizeBottomLeft => egui::CursorIcon::ResizeNeSw,
+                                    TextBoxDragType::Rotate => egui::CursorIcon::Alias,
+                                }
+                            };
+                            if let Some(dt) = text_resizing {
+                                resize_cursor(dt)
+                            } else if text_dragging_handle {
                                 egui::CursorIcon::Grabbing
                             } else if text_rotating || text_hovering_rotation {
-                                // Alias is a circular arrow — closest to rotate in egui
                                 egui::CursorIcon::Alias
+                            } else if let Some(dt) = text_hovering_resize {
+                                resize_cursor(dt)
                             } else if text_hovering_handle {
                                 egui::CursorIcon::Move
                             } else {

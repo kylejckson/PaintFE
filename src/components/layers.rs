@@ -3,8 +3,8 @@ use crate::canvas::{BlendMode, CanvasState, Layer, LayerContent, TiledImage};
 use crate::components::history::{HistoryManager, LayerOpCommand, LayerOperation, SnapshotCommand};
 use crate::ops::dialogs::DialogColors;
 use crate::ops::text_layer::{
-    EnvelopeWarp, InnerShadowEffect, OutlineEffect, OutlinePosition, ShadowEffect,
-    TextEffects, TextWarp, TextureFillEffect,
+    EnvelopeWarp, InnerShadowEffect, OutlineEffect, OutlinePosition, ShadowEffect, TextEffects,
+    TextWarp, TextureFillEffect,
 };
 use eframe::egui;
 use egui::{
@@ -820,7 +820,10 @@ impl LayersPanel {
                 if is_text {
                     let accent = child_ui.visuals().selection.stroke.color;
                     child_ui.add(egui::Label::new(
-                        egui::RichText::new("TEXT LAYER").size(9.0).strong().color(accent),
+                        egui::RichText::new("TEXT LAYER")
+                            .size(9.0)
+                            .strong()
+                            .color(accent),
                     ));
                 }
             }
@@ -1434,12 +1437,14 @@ impl LayersPanel {
                     let colors = DialogColors::from_ctx(ui.ctx());
                     let available_w = ui.available_width();
                     let header_height = 32.0;
-                    let (header_rect, _) = ui.allocate_exact_size(
-                        Vec2::new(available_w, header_height),
-                        Sense::hover(),
-                    );
+                    let (header_rect, _) = ui
+                        .allocate_exact_size(Vec2::new(available_w, header_height), Sense::hover());
                     let painter = ui.painter();
-                    painter.rect_filled(header_rect, egui::Rounding::same(4.0), colors.accent_faint);
+                    painter.rect_filled(
+                        header_rect,
+                        egui::Rounding::same(4.0),
+                        colors.accent_faint,
+                    );
                     painter.rect_filled(
                         Rect::from_min_size(header_rect.min, Vec2::new(3.0, header_height)),
                         egui::Rounding::ZERO,
@@ -1458,11 +1463,8 @@ impl LayersPanel {
                         Pos2::new(header_rect.right() - 14.0, header_rect.center().y),
                         Vec2::splat(close_size),
                     );
-                    let close_resp = ui.interact(
-                        close_rect,
-                        Id::new("ls_close_btn"),
-                        Sense::click(),
-                    );
+                    let close_resp =
+                        ui.interact(close_rect, Id::new("ls_close_btn"), Sense::click());
                     if ui.is_rect_visible(close_rect) {
                         let hovered = close_resp.hovered();
                         if hovered {
@@ -1478,8 +1480,7 @@ impl LayersPanel {
                             colors.text_muted
                         };
                         let font = egui::FontId::proportional(13.0);
-                        let galley =
-                            painter.layout_no_wrap("\u{00D7}".to_string(), font, color);
+                        let galley = painter.layout_no_wrap("\u{00D7}".to_string(), font, color);
                         let gpos = close_rect.center() - galley.size() / 2.0;
                         painter.galley(Pos2::new(gpos.x, gpos.y), galley);
                     }
@@ -1558,8 +1559,7 @@ impl LayersPanel {
                         ui.add_space(4.0);
                         if ui
                             .button(
-                                egui::RichText::new(t!("layer.rasterize_text_layer"))
-                                    .size(13.0),
+                                egui::RichText::new(t!("layer.rasterize_text_layer")).size(13.0),
                             )
                             .clicked()
                         {
