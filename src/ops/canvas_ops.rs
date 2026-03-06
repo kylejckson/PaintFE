@@ -2,7 +2,7 @@
 // CANVAS-LEVEL OPERATIONS — add / delete / duplicate layers
 // ============================================================================
 
-use crate::canvas::{CanvasState, Layer};
+use crate::canvas::{CanvasState, Layer, LayerContent};
 use crate::components::history::{HistoryManager, LayerOpCommand, LayerOperation};
 use image::Rgba;
 
@@ -23,6 +23,14 @@ use image::Rgba;
 pub fn merge_down_as_mask(state: &mut CanvasState, layer_idx: usize) {
     if layer_idx == 0 || layer_idx >= state.layers.len() {
         return;
+    }
+
+    // Auto-rasterize text layers before merge (pixels must be up-to-date)
+    for idx in [layer_idx, layer_idx - 1] {
+        if state.layers[idx].is_text_layer() {
+            state.ensure_all_text_layers_rasterized();
+            state.layers[idx].content = LayerContent::Raster;
+        }
     }
 
     let width = state.width;
@@ -98,6 +106,24 @@ pub fn add_layer(state: &mut CanvasState, history: &mut HistoryManager) {
     state.mark_dirty(None);
 }
 
+/// Add a new editable text layer above the active layer.
+pub fn add_text_layer(state: &mut CanvasState, history: &mut HistoryManager) {
+    let idx = (state.active_layer_index + 1).min(state.layers.len());
+    let name = format!("Text Layer {}", state.layers.len() + 1);
+    let layer = Layer::new_text(name.clone(), state.width, state.height);
+    state.layers.insert(idx, layer);
+    state.active_layer_index = idx;
+
+    history.push(Box::new(LayerOpCommand::new(LayerOperation::Add {
+        index: idx,
+        name,
+        width: state.width,
+        height: state.height,
+    })));
+
+    state.mark_dirty(None);
+}
+
 /// Delete the active layer (must keep at least one layer).
 pub fn delete_layer(state: &mut CanvasState, history: &mut HistoryManager) {
     if state.layers.len() <= 1 {
@@ -112,6 +138,7 @@ pub fn delete_layer(state: &mut CanvasState, history: &mut HistoryManager) {
         name: removed.name,
         visible: removed.visible,
         opacity: removed.opacity,
+        content: removed.content,
     })));
 
     if state.active_layer_index >= state.layers.len() {
@@ -138,12 +165,14 @@ pub fn duplicate_layer(state: &mut CanvasState, history: &mut HistoryManager) {
     dup.visible = src.visible;
     dup.opacity = src.opacity;
     dup.blend_mode = src.blend_mode;
+    dup.content = src.content.clone();
 
     let new_idx = idx + 1;
     let dup_pixels = dup.pixels.clone();
     let dup_name = dup.name.clone();
     let dup_visible = dup.visible;
     let dup_opacity = dup.opacity;
+    let dup_content = dup.content.clone();
 
     state.layers.insert(new_idx, dup);
     state.active_layer_index = new_idx;
@@ -155,6 +184,7 @@ pub fn duplicate_layer(state: &mut CanvasState, history: &mut HistoryManager) {
         name: dup_name,
         visible: dup_visible,
         opacity: dup_opacity,
+        content: dup_content,
     })));
 
     state.mark_dirty(None);

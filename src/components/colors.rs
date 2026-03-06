@@ -140,39 +140,50 @@ impl ColorsPanel {
 
         if self.expanded {
             ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+
                 // -- Left column (same as compact, width-constrained) --
                 ui.vertical(|ui| {
-                    ui.set_max_width(180.0);
-                    self.draw_swatches(ui, assets);
+                    ui.set_max_width(155.0);
+                    self.draw_swatches(ui, assets, false);
                     ui.add_space(4.0);
                     self.draw_hue_ring_and_sv_triangle(ui);
                     ui.add_space(6.0);
                     self.draw_alpha_slider(ui);
-                    ui.add_space(4.0);
-                    self.draw_hex_row(ui, assets);
                 });
 
-                ui.add_space(6.0);
-                ui.separator();
-                ui.add_space(2.0);
+                // -- collapse button flush against separator --
+                ui.vertical(|ui| {
+                    ui.set_max_width(20.0);
+                    let icon = if self.expanded {
+                        Icon::Collapse
+                    } else {
+                        Icon::Expand
+                    };
+                    if assets.small_icon_button(ui, icon).clicked() {
+                        self.expanded = !self.expanded;
+                    }
+                });
 
-                // -- Right column (sliders) --
+                ui.separator();
+
+                // -- Right column (hex + sliders) --
                 ui.vertical(|ui| {
                     ui.set_min_width(180.0);
-                    ui.add_space(34.0); // align visually with ring area
+                    ui.add_space(4.0);
+                    self.draw_hex_row(ui, assets);
+                    ui.add_space(6.0);
                     self.draw_rgb_sliders(ui);
-                    ui.add_space(10.0);
+                    ui.add_space(4.0);
                     self.draw_hsv_sliders(ui);
                 });
             });
         } else {
-            self.draw_swatches(ui, assets);
+            self.draw_swatches(ui, assets, true);
             ui.add_space(4.0);
             self.draw_hue_ring_and_sv_triangle(ui);
             ui.add_space(6.0);
             self.draw_alpha_slider(ui);
-            ui.add_space(4.0);
-            self.draw_hex_row(ui, assets);
         }
     }
 
@@ -180,10 +191,12 @@ impl ColorsPanel {
     // WIDGET: Colour swatches + swap + expand toggle
     // ====================================================================
 
-    fn draw_swatches(&mut self, ui: &mut egui::Ui, assets: &Assets) {
+    fn draw_swatches(&mut self, ui: &mut egui::Ui, assets: &Assets, show_expand: bool) {
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0; // consistent spacing regardless of parent
             let pri_size = Vec2::new(30.0, 30.0);
             let sec_size = Vec2::new(24.0, 24.0);
+            let swatch_gap = 12.0; // gap between swatches for the overlapping swap icon
 
             // -- primary swatch --
             let (pri_rect, pri_resp) = ui.allocate_exact_size(pri_size, egui::Sense::click());
@@ -202,6 +215,9 @@ impl ColorsPanel {
                 self.editing_primary = true;
             }
 
+            // gap for the overlap zone
+            ui.add_space(swatch_gap);
+
             // -- secondary swatch --
             let (sec_rect, sec_resp) = ui.allocate_exact_size(sec_size, egui::Sense::click());
             if ui.is_rect_visible(sec_rect) {
@@ -219,34 +235,32 @@ impl ColorsPanel {
                 self.editing_primary = false;
             }
 
-            // -- swap button --
-            if assets
-                .small_icon_button_frameless(ui, Icon::SwapColors)
-                .clicked()
-            {
+            // -- swap button overlaid at center between the two swatches --
+            let swap_size = 16.0;
+            let swap_cx = pri_rect.right() + (sec_rect.left() - pri_rect.right()) / 2.0;
+            let swap_cy = (pri_rect.center().y + sec_rect.center().y) / 2.0;
+            let swap_rect =
+                egui::Rect::from_center_size(Pos2::new(swap_cx, swap_cy), Vec2::splat(swap_size));
+            let swap_resp = ui.allocate_ui_at_rect(swap_rect, |ui| {
+                assets.small_icon_button_frameless(ui, Icon::SwapColors)
+            });
+            if swap_resp.inner.clicked() {
                 self.swap_colors();
             }
 
-            // -- spacer + expand / collapse toggle  (right-aligned) --
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let icon = if self.expanded {
-                    Icon::Collapse
-                } else {
-                    Icon::Expand
-                };
-                let tip = if self.expanded {
-                    "Compact mode"
-                } else {
-                    "Show sliders"
-                };
-                if assets
-                    .small_icon_button(ui, icon)
-                    .on_hover_text(tip)
-                    .clicked()
-                {
-                    self.expanded = !self.expanded;
-                }
-            });
+            // -- expand / collapse toggle (right-aligned, compact mode only) --
+            if show_expand {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let icon = if self.expanded {
+                        Icon::Collapse
+                    } else {
+                        Icon::Expand
+                    };
+                    if assets.small_icon_button(ui, icon).clicked() {
+                        self.expanded = !self.expanded;
+                    }
+                });
+            }
         });
     }
 
@@ -543,12 +557,14 @@ impl ColorsPanel {
         let bar_h = 14.0;
 
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0; // consistent spacing in compact & expanded
             ui.add_sized(
                 [14.0, bar_h + 4.0],
                 egui::Label::new(egui::RichText::new("A").small().strong()),
             );
 
-            let bar_w = ui.available_width() - 40.0;
+            // Match the color wheel diameter (outer_r=78 → 156px) minus label+value space
+            let bar_w = 101.0;
             let desired = Vec2::new(bar_w, bar_h + 4.0);
             let (rect, resp) = ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
             let bar = egui::Rect::from_min_size(
@@ -608,6 +624,7 @@ impl ColorsPanel {
             }
 
             // alpha 0-255 drag-value
+            ui.add_space(3.0);
             let mut alpha_val = (a * 255.0).round() as u32;
             if ui
                 .add_sized(
@@ -685,10 +702,17 @@ impl ColorsPanel {
                 }
             }
 
-            if assets
-                .small_icon_button_frameless(ui, Icon::CopyHex)
-                .clicked()
-            {
+            // copy button at ~90% of normal icon size
+            let copy_size = 21.0;
+            let copy_resp = if let Some(texture) = assets.get_texture(Icon::CopyHex) {
+                let sized_texture = egui::load::SizedTexture::from_handle(texture);
+                let img = egui::Image::from_texture(sized_texture)
+                    .fit_to_exact_size(Vec2::splat(copy_size));
+                ui.add(egui::Button::image(img).frame(false))
+            } else {
+                ui.add(egui::Button::new("📋").frame(false))
+            };
+            if copy_resp.clicked() {
                 ui.output_mut(|o| o.copied_text = format!("{:02X}{:02X}{:02X}", r, g, b));
             }
         });

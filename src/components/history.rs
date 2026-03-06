@@ -4,7 +4,7 @@ use image::Rgba;
 use std::collections::VecDeque;
 
 use crate::assets::{Assets, Icon};
-use crate::canvas::{CanvasState, TiledImage};
+use crate::canvas::{CanvasState, LayerContent, TiledImage};
 
 // ============================================================================
 // COMMAND TRAIT
@@ -233,6 +233,7 @@ pub enum LayerOperation {
         name: String,
         visible: bool,
         opacity: f32,
+        content: LayerContent,
     },
     /// Layer was moved from one index to another
     Move { from_index: usize, to_index: usize },
@@ -258,6 +259,7 @@ pub enum LayerOperation {
         name: String,
         visible: bool,
         opacity: f32,
+        content: LayerContent,
     },
 }
 
@@ -293,6 +295,7 @@ impl Command for LayerOpCommand {
                 name,
                 visible,
                 opacity,
+                content,
             } => {
                 // Undo delete = restore the layer
                 let mut layer = Layer::new(
@@ -304,6 +307,7 @@ impl Command for LayerOpCommand {
                 layer.pixels = pixels.clone();
                 layer.visible = *visible;
                 layer.opacity = *opacity;
+                layer.content = content.clone();
 
                 let insert_idx = (*index).min(canvas.layers.len());
                 canvas.layers.insert(insert_idx, layer);
@@ -414,6 +418,7 @@ impl Command for LayerOpCommand {
                 name,
                 visible,
                 opacity,
+                content,
                 ..
             } => {
                 // Redo duplicate = restore the duplicated layer
@@ -426,6 +431,7 @@ impl Command for LayerOpCommand {
                 layer.pixels = pixels.clone();
                 layer.visible = *visible;
                 layer.opacity = *opacity;
+                layer.content = content.clone();
                 let insert_idx = (*new_index).min(canvas.layers.len());
                 canvas.layers.insert(insert_idx, layer);
                 canvas.active_layer_index = insert_idx;
@@ -652,6 +658,7 @@ pub struct LayerSnapshot {
     pub opacity: f32,
     pub blend_mode: crate::canvas::BlendMode,
     pub pixels: TiledImage,
+    pub content: LayerContent,
 }
 
 impl CanvasSnapshot {
@@ -669,6 +676,7 @@ impl CanvasSnapshot {
                     opacity: l.opacity,
                     blend_mode: l.blend_mode,
                     pixels: l.pixels.clone(),
+                    content: l.content.clone(),
                 })
                 .collect(),
         }
@@ -690,6 +698,7 @@ impl CanvasSnapshot {
             layer.visible = snap.visible;
             layer.opacity = snap.opacity;
             layer.blend_mode = snap.blend_mode;
+            layer.content = snap.content.clone();
             state.layers.push(layer);
         }
         state.composite_cache = None;
@@ -759,6 +768,8 @@ pub struct SingleLayerSnapshotCommand {
     after_opacity: f32,
     before_blend_mode: crate::canvas::BlendMode,
     after_blend_mode: crate::canvas::BlendMode,
+    before_content: LayerContent,
+    after_content: LayerContent,
 }
 
 impl SingleLayerSnapshotCommand {
@@ -775,11 +786,21 @@ impl SingleLayerSnapshotCommand {
         } else {
             layer_idx.min(state.layers.len() - 1)
         };
-        let (before_pixels, before_opacity, before_blend_mode) =
+        let (before_pixels, before_opacity, before_blend_mode, before_content) =
             if let Some(layer) = state.layers.get(safe_idx) {
-                (layer.pixels.clone(), layer.opacity, layer.blend_mode)
+                (
+                    layer.pixels.clone(),
+                    layer.opacity,
+                    layer.blend_mode,
+                    layer.content.clone(),
+                )
             } else {
-                (TiledImage::new(1, 1), 1.0, crate::canvas::BlendMode::Normal)
+                (
+                    TiledImage::new(1, 1),
+                    1.0,
+                    crate::canvas::BlendMode::Normal,
+                    LayerContent::Raster,
+                )
             };
         Self {
             description,
@@ -790,6 +811,8 @@ impl SingleLayerSnapshotCommand {
             after_opacity: before_opacity,
             before_blend_mode,
             after_blend_mode: before_blend_mode,
+            before_content: before_content.clone(),
+            after_content: before_content,
         }
     }
 
@@ -799,6 +822,7 @@ impl SingleLayerSnapshotCommand {
             self.after_pixels = Some(layer.pixels.clone());
             self.after_opacity = layer.opacity;
             self.after_blend_mode = layer.blend_mode;
+            self.after_content = layer.content.clone();
         }
     }
 }
@@ -809,6 +833,7 @@ impl Command for SingleLayerSnapshotCommand {
             layer.pixels = self.before_pixels.clone();
             layer.opacity = self.before_opacity;
             layer.blend_mode = self.before_blend_mode;
+            layer.content = self.before_content.clone();
         }
         canvas.mark_dirty(None);
     }
@@ -820,6 +845,7 @@ impl Command for SingleLayerSnapshotCommand {
             layer.pixels = after.clone();
             layer.opacity = self.after_opacity;
             layer.blend_mode = self.after_blend_mode;
+            layer.content = self.after_content.clone();
         }
         canvas.mark_dirty(None);
     }
@@ -831,6 +857,120 @@ impl Command for SingleLayerSnapshotCommand {
     fn memory_size(&self) -> usize {
         self.before_pixels.memory_bytes()
             + self.after_pixels.as_ref().map_or(0, |p| p.memory_bytes())
+    }
+}
+
+// ============================================================================
+// TEXT LAYER EDIT COMMAND — ultra-light undo for text layer vector data
+// ============================================================================
+
+/// Lightweight undo command for text layer edits.
+/// Stores only vector data (TextLayerData, typically 1–50 KB) instead of
+/// rasterized pixels (~66 MB for a single 4K layer). ~1000× more efficient.
+pub struct TextLayerEditCommand {
+    description: String,
+    layer_index: usize,
+    before: crate::ops::text_layer::TextLayerData,
+    after: Option<crate::ops::text_layer::TextLayerData>,
+}
+
+impl TextLayerEditCommand {
+    /// Create before the text edit operation. Call `set_after()` when done.
+    pub fn new(description: String, layer_index: usize, state: &CanvasState) -> Self {
+        let before = if let Some(layer) = state.layers.get(layer_index)
+            && let LayerContent::Text(ref td) = layer.content
+        {
+            td.clone()
+        } else {
+            crate::ops::text_layer::TextLayerData::default()
+        };
+        Self {
+            description,
+            layer_index,
+            before,
+            after: None,
+        }
+    }
+
+    /// Create from an already-captured TextLayerData snapshot.
+    pub fn new_from(
+        description: String,
+        layer_index: usize,
+        before: crate::ops::text_layer::TextLayerData,
+    ) -> Self {
+        Self {
+            description,
+            layer_index,
+            before,
+            after: None,
+        }
+    }
+
+    /// Capture the text layer's state after the edit.
+    pub fn set_after(&mut self, state: &CanvasState) {
+        if let Some(layer) = state.layers.get(self.layer_index)
+            && let LayerContent::Text(ref td) = layer.content
+        {
+            self.after = Some(td.clone());
+        }
+    }
+
+    /// Set the "after" state from an already-captured TextLayerData.
+    pub fn set_after_from(&mut self, after: crate::ops::text_layer::TextLayerData) {
+        self.after = Some(after);
+    }
+}
+
+impl Command for TextLayerEditCommand {
+    fn undo(&self, canvas: &mut CanvasState) {
+        if let Some(layer) = canvas.layers.get_mut(self.layer_index) {
+            layer.content = LayerContent::Text(self.before.clone());
+            // Mark dirty so rasterization is triggered before next composite
+            if let LayerContent::Text(ref mut td) = layer.content {
+                td.mark_dirty();
+            }
+            layer.invalidate_lod();
+            layer.gpu_generation += 1;
+        }
+        canvas.mark_dirty(None);
+    }
+
+    fn redo(&self, canvas: &mut CanvasState) {
+        if let Some(ref after) = self.after
+            && let Some(layer) = canvas.layers.get_mut(self.layer_index)
+        {
+            layer.content = LayerContent::Text(after.clone());
+            if let LayerContent::Text(ref mut td) = layer.content {
+                td.mark_dirty();
+            }
+            layer.invalidate_lod();
+            layer.gpu_generation += 1;
+        }
+        canvas.mark_dirty(None);
+    }
+
+    fn description(&self) -> String {
+        self.description.clone()
+    }
+
+    fn memory_size(&self) -> usize {
+        // Estimate: struct overhead + serialized sizes of TextLayerData
+        // TextLayerData is mostly Vec<TextBlock> with string data — typically 1-50KB
+        let before_size = self
+            .before
+            .blocks
+            .iter()
+            .map(|b| b.runs.iter().map(|r| r.text.len() + 100).sum::<usize>() + 200)
+            .sum::<usize>()
+            + 200;
+        let after_size = self.after.as_ref().map_or(0, |a| {
+            a.blocks
+                .iter()
+                .map(|b| b.runs.iter().map(|r| r.text.len() + 100).sum::<usize>() + 200)
+                .sum::<usize>()
+                + 200
+        });
+        before_size + after_size
     }
 }
 

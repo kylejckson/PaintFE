@@ -5,6 +5,8 @@ use rayon::prelude::*;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+use crate::ops::text_layer::TextLayerData;
+
 /// Maximum longest-edge dimension for the LOD cache thumbnail.
 const LOD_MAX_EDGE: u32 = 1024;
 
@@ -1214,6 +1216,16 @@ impl BlendMode {
     }
 }
 
+/// Discriminant for heterogeneous layer types.
+#[derive(Clone, Debug, Default)]
+pub enum LayerContent {
+    /// Standard raster layer (current behaviour). Pixel data lives in `Layer::pixels`.
+    #[default]
+    Raster,
+    /// Editable text layer. Vector data + cached rasterisation in `Layer::pixels`.
+    Text(TextLayerData),
+}
+
 pub struct Layer {
     pub name: String,
     pub visible: bool,
@@ -1227,6 +1239,9 @@ pub struct Layer {
     /// Bumped only when THIS layer's pixels are modified, so unchanged
     /// layers are never re-uploaded to the GPU.
     pub gpu_generation: u64,
+    /// Layer type discriminant — `Raster` for normal layers, `Text(..)` for
+    /// editable text layers. Default: `Raster`.
+    pub content: LayerContent,
 }
 
 impl Layer {
@@ -1241,7 +1256,27 @@ impl Layer {
             pixels,
             lod_cache: None,
             gpu_generation: 0,
+            content: LayerContent::Raster,
         }
+    }
+
+    /// Create a new text layer with default empty text data.
+    pub fn new_text(name: String, width: u32, height: u32) -> Self {
+        Self {
+            name,
+            visible: true,
+            opacity: 1.0,
+            blend_mode: BlendMode::Normal,
+            pixels: TiledImage::new(width, height),
+            lod_cache: None,
+            gpu_generation: 0,
+            content: LayerContent::Text(TextLayerData::default()),
+        }
+    }
+
+    /// Returns true if this is a text layer.
+    pub fn is_text_layer(&self) -> bool {
+        matches!(self.content, LayerContent::Text(_))
     }
 
     /// Invalidate the LOD cache (call after any pixel modification).
@@ -1475,6 +1510,21 @@ pub struct CanvasState {
     pub selection_border_v_segs: Vec<(u32, u32, u32)>,
     /// Generation at which border segments were last computed.
     pub selection_border_built_generation: u64,
+    /// When true, the display applies an RGB→CMYK→RGB round-trip (soft proof)
+    /// so the user can preview how the image will look when printed in CMYK.
+    /// Does not modify actual pixel data — display-only.
+    pub cmyk_preview: bool,
+
+    // -- Text layer rasterization caches ----------------------
+    /// Reusable coverage buffer for text rasterization (avoids per-rasterize alloc).
+    pub text_coverage_buf: Vec<f32>,
+    /// Reusable glyph pixel cache for text rasterization.
+    pub text_glyph_cache: crate::ops::text::GlyphPixelCache,
+    /// The layer index currently being edited by the text tool (skip rasterization for it).
+    pub text_editing_layer: Option<usize>,
+    /// Widget ID of the canvas painter (set by Canvas::show_with_state).
+    /// Used by tools to detect when a non-canvas widget has keyboard focus.
+    pub canvas_widget_id: Option<egui::Id>,
 }
 
 impl CanvasState {
@@ -1522,6 +1572,11 @@ impl CanvasState {
             selection_border_h_segs: Vec::new(),
             selection_border_v_segs: Vec::new(),
             selection_border_built_generation: u64::MAX, // force first compute
+            cmyk_preview: false,
+            text_coverage_buf: Vec::new(),
+            text_glyph_cache: Default::default(),
+            text_editing_layer: None,
+            canvas_widget_id: None,
         }
     }
 
@@ -1608,6 +1663,128 @@ impl CanvasState {
         }
 
         expanded_bounds
+    }
+
+    /// Ensure all text layers have up-to-date rasterized pixels.
+    /// Call before compositing so that text layer `.pixels` reflect current text data.
+    pub fn ensure_text_layers_rasterized(&mut self) {
+        let w = self.width;
+        let h = self.height;
+        for layer in &mut self.layers {
+            if let LayerContent::Text(ref text_data) = layer.content
+                && text_data.needs_rasterize()
+            {
+                // We need a mutable borrow of `text_data` inside `layer.content`,
+                // plus the shared rasterization caches on `self`. To avoid borrow
+                // conflicts we take ownership of the caches for the duration of
+                // the rasterization, then put them back.
+                //
+                // Because this loop also borrows `self.layers` mutably, we can't
+                // directly access `self.text_coverage_buf` etc. So we do a
+                // two-pass: collect indices that need rasterization, then rasterize
+                // in a second loop.
+                //
+                // Actually, we restructure below to avoid the double-loop — see
+                // the for-index loop that follows.
+                break; // fall through to index-based loop
+            }
+        }
+
+        // Index-based loop to allow mutable access to both layer and caches.
+        let len = self.layers.len();
+        for i in 0..len {
+            // Skip the layer being actively edited by the text tool — it has its
+            // own preview pipeline and rasterizing it every frame is expensive.
+            if self.text_editing_layer == Some(i) {
+                continue;
+            }
+            let needs = if let LayerContent::Text(ref td) = self.layers[i].content {
+                td.needs_rasterize()
+            } else {
+                false
+            };
+            if needs {
+                // Temporarily take caches out of self
+                let mut cov = std::mem::take(&mut self.text_coverage_buf);
+                let mut gc = std::mem::take(&mut self.text_glyph_cache);
+
+                if let LayerContent::Text(ref mut text_data) = self.layers[i].content {
+                    let new_pixels = text_data.rasterize(w, h, &mut cov, &mut gc);
+                    text_data.raster_generation = text_data.cache_generation;
+                    self.layers[i].pixels = new_pixels;
+                    self.layers[i].invalidate_lod();
+                    self.layers[i].gpu_generation += 1;
+                }
+
+                // Put caches back
+                self.text_coverage_buf = cov;
+                self.text_glyph_cache = gc;
+            }
+        }
+    }
+
+    /// Ensure ALL text layers are rasterized, including the one being
+    /// actively edited.  Use before save / export / print so that the
+    /// editing layer's pixels are guaranteed to be up-to-date in the
+    /// composite.  This does NOT alter TextLayerData — it only refreshes
+    /// `layer.pixels`, so editing can continue normally afterwards.
+    pub fn ensure_all_text_layers_rasterized(&mut self) {
+        // Unconditionally rasterize the editing layer — bypasses
+        // needs_rasterize() because the previous frame already synced
+        // generations, but we must guarantee layer.pixels is populated
+        // for the save-dialog composite.
+        if let Some(idx) = self.text_editing_layer {
+            let w = self.width;
+            let h = self.height;
+            let is_text = matches!(
+                self.layers.get(idx).map(|l| &l.content),
+                Some(LayerContent::Text(_))
+            );
+            if is_text {
+                let mut cov = std::mem::take(&mut self.text_coverage_buf);
+                let mut gc = std::mem::take(&mut self.text_glyph_cache);
+                if let LayerContent::Text(ref mut text_data) = self.layers[idx].content {
+                    let new_pixels = text_data.rasterize(w, h, &mut cov, &mut gc);
+                    text_data.raster_generation = text_data.cache_generation;
+                    self.layers[idx].pixels = new_pixels;
+                    self.layers[idx].invalidate_lod();
+                    self.layers[idx].gpu_generation += 1;
+                }
+                self.text_coverage_buf = cov;
+                self.text_glyph_cache = gc;
+            }
+        }
+        let saved = self.text_editing_layer.take();
+        self.ensure_text_layers_rasterized();
+        self.text_editing_layer = saved;
+    }
+
+    /// Force-rasterize a specific text layer by index, even if it is the
+    /// currently-editing layer.  Used to show live effects/warp changes
+    /// during text editing.
+    pub fn force_rasterize_text_layer(&mut self, layer_idx: usize) {
+        let w = self.width;
+        let h = self.height;
+        let needs = if let Some(layer) = self.layers.get(layer_idx)
+            && let LayerContent::Text(ref td) = layer.content
+        {
+            td.needs_rasterize()
+        } else {
+            false
+        };
+        if needs {
+            let mut cov = std::mem::take(&mut self.text_coverage_buf);
+            let mut gc = std::mem::take(&mut self.text_glyph_cache);
+            if let LayerContent::Text(ref mut text_data) = self.layers[layer_idx].content {
+                let new_pixels = text_data.rasterize(w, h, &mut cov, &mut gc);
+                text_data.raster_generation = text_data.cache_generation;
+                self.layers[layer_idx].pixels = new_pixels;
+                self.layers[layer_idx].invalidate_lod();
+                self.layers[layer_idx].gpu_generation += 1;
+            }
+            self.text_coverage_buf = cov;
+            self.text_glyph_cache = gc;
+        }
     }
 
     pub fn composite(&self) -> RgbaImage {
@@ -2699,6 +2876,9 @@ pub struct Canvas {
     brush_tip_cursor_key: (String, u32, u32),
     /// Tool icon texture for custom cursor overlay (set from app.rs each frame).
     pub tool_cursor_icon: Option<egui::TextureHandle>,
+    /// The egui widget Id of the main canvas area (used to distinguish canvas focus
+    /// from text-input focus so single-key tool shortcuts are suppressed while typing).
+    pub canvas_widget_id: Option<egui::Id>,
 }
 
 impl Canvas {
@@ -2724,6 +2904,7 @@ impl Canvas {
             brush_tip_cursor_tex_inv: None,
             brush_tip_cursor_key: (String::new(), 0, 0),
             tool_cursor_icon: None,
+            canvas_widget_id: None,
         }
     }
 
@@ -2819,11 +3000,23 @@ impl Canvas {
             }
         }
 
+        // Ensure text layers are up-to-date before any compositing/display.
+        state.ensure_text_layers_rasterized();
+
         let available_size = ui.available_size();
 
-        // Allocate canvas area
-        let sense = egui::Sense::click_and_drag().union(egui::Sense::hover());
+        // Allocate canvas area with focusable sense so egui claims keyboard input,
+        // preventing Windows from playing error sounds for unhandled key events.
+        let sense = egui::Sense::click_and_drag()
+            .union(egui::Sense::hover())
+            .union(egui::Sense::focusable_noninteractive());
         let (response, painter) = ui.allocate_painter(available_size, sense);
+        self.canvas_widget_id = Some(response.id);
+        state.canvas_widget_id = Some(response.id);
+        // Keep focus on the canvas when no text widget is active
+        if !ui.ctx().memory(|m| m.focus().is_some()) || response.clicked() {
+            response.request_focus();
+        }
         let canvas_rect = response.rect;
         self.last_canvas_rect = Some(canvas_rect);
 
@@ -2991,16 +3184,23 @@ impl Canvas {
                 if let Some((pixels, rx, ry, rw, rh, is_full)) = result {
                     // Plan D: bytemuck zero-copy cast from &[u8] to &[Color32]
                     let src: &[Color32] = bytemuck::cast_slice(&pixels);
+                    let cmyk = state.cmyk_preview;
 
                     if is_full {
                         // Full readback — replace entire CPU buffer.
                         // Create ColorImage directly from src to avoid a
                         // redundant 33MB clone at 4K.
+                        let display_pixels = if cmyk {
+                            apply_cmyk_soft_proof(src)
+                        } else {
+                            src.to_vec()
+                        };
                         let color_image = ColorImage {
                             size: [state.width as usize, state.height as usize],
-                            pixels: src.to_vec(),
+                            pixels: display_pixels,
                         };
                         // Update persistent CPU buffer from the same source
+                        // (un-proofed — true pixel values)
                         state.composite_cpu_buffer.clear();
                         state.composite_cpu_buffer.extend_from_slice(src);
 
@@ -3029,7 +3229,11 @@ impl Canvas {
                         // B2: Partial upload — only send the dirty region to egui.
                         // This avoids cloning the entire 33MB CPU buffer at 4K.
                         // A brush stroke (e.g. 40×40px) uploads ~6KB instead of ~33MB.
-                        let region_pixels: Vec<Color32> = src.to_vec();
+                        let region_pixels = if cmyk {
+                            apply_cmyk_soft_proof(src)
+                        } else {
+                            src.to_vec()
+                        };
                         let region_image = ColorImage {
                             size: [rw as usize, rh as usize],
                             pixels: region_pixels,
@@ -3045,9 +3249,14 @@ impl Canvas {
                             // No texture yet — need full upload. Fall back to
                             // full buffer (shouldn't happen: partial readback
                             // requires an existing buffer).
+                            let display_pixels = if cmyk {
+                                apply_cmyk_soft_proof(&state.composite_cpu_buffer)
+                            } else {
+                                state.composite_cpu_buffer.clone()
+                            };
                             let color_image = ColorImage {
                                 size: [state.width as usize, state.height as usize],
-                                pixels: state.composite_cpu_buffer.clone(),
+                                pixels: display_pixels,
                             };
                             let image_data = ImageData::Color(Arc::new(color_image));
                             state.composite_cache = Some(ui.ctx().load_texture(
@@ -3068,10 +3277,16 @@ impl Canvas {
                     gpu.async_readback.try_read(&gpu.ctx.device)
                 {
                     let src: &[Color32] = bytemuck::cast_slice(&pixels);
+                    let cmyk = state.cmyk_preview;
                     if is_full {
+                        let display_pixels = if cmyk {
+                            apply_cmyk_soft_proof(src)
+                        } else {
+                            src.to_vec()
+                        };
                         let color_image = ColorImage {
                             size: [state.width as usize, state.height as usize],
-                            pixels: src.to_vec(),
+                            pixels: display_pixels,
                         };
                         state.composite_cpu_buffer.clear();
                         state.composite_cpu_buffer.extend_from_slice(src);
@@ -3095,7 +3310,11 @@ impl Canvas {
                             state.composite_cpu_buffer[dst_start..dst_start + region_w]
                                 .copy_from_slice(&src[src_start..src_start + region_w]);
                         }
-                        let region_pixels: Vec<Color32> = src.to_vec();
+                        let region_pixels = if cmyk {
+                            apply_cmyk_soft_proof(src)
+                        } else {
+                            src.to_vec()
+                        };
                         let region_image = ColorImage {
                             size: [rw as usize, rh as usize],
                             pixels: region_pixels,
@@ -3116,9 +3335,14 @@ impl Canvas {
             } else if needs_reupload_only {
                 // Plan A: filter mode changed but pixels didn't — re-upload
                 // from existing CPU buffer with new texture options (no GPU work).
+                let display_pixels = if state.cmyk_preview {
+                    apply_cmyk_soft_proof(&state.composite_cpu_buffer)
+                } else {
+                    state.composite_cpu_buffer.clone()
+                };
                 let color_image = ColorImage {
                     size: [state.width as usize, state.height as usize],
-                    pixels: state.composite_cpu_buffer.clone(),
+                    pixels: display_pixels,
                 };
                 let image_data = ImageData::Color(Arc::new(color_image));
                 if let Some(ref mut tex) = state.composite_cache {
@@ -3176,22 +3400,42 @@ impl Canvas {
         {
             let gi = debug_settings.glow_intensity;
             let ss = debug_settings.shadow_strength;
-            let glow_alpha_outer = (6.0 * gi).min(255.0) as u8;
-            let glow_alpha_inner = (12.0 * gi).min(255.0) as u8;
+            let glow_alpha_outer = (1.5 * gi).min(255.0) as u8;
+            let glow_alpha_inner = (3.0 * gi).min(255.0) as u8;
             if glow_alpha_outer > 0 {
-                painter.rect_filled(image_rect.expand(16.0), 8.0,
-                    Color32::from_rgba_unmultiplied(accent_color.r(), accent_color.g(), accent_color.b(), glow_alpha_outer));
+                painter.rect_filled(
+                    image_rect.expand(5.0),
+                    4.0,
+                    Color32::from_rgba_unmultiplied(
+                        accent_color.r(),
+                        accent_color.g(),
+                        accent_color.b(),
+                        glow_alpha_outer,
+                    ),
+                );
             }
             if glow_alpha_inner > 0 {
-                painter.rect_filled(image_rect.expand(8.0), 6.0,
-                    Color32::from_rgba_unmultiplied(accent_color.r(), accent_color.g(), accent_color.b(), glow_alpha_inner));
+                painter.rect_filled(
+                    image_rect.expand(2.0),
+                    3.0,
+                    Color32::from_rgba_unmultiplied(
+                        accent_color.r(),
+                        accent_color.g(),
+                        accent_color.b(),
+                        glow_alpha_inner,
+                    ),
+                );
             }
             // Dark depth layers
             for i in 0..4u32 {
                 let distance = i as f32 * 2.0 + 2.0;
                 let alpha = (((4 - i) * 5) as f32 * ss).min(255.0) as u8;
                 if alpha > 0 {
-                    painter.rect_filled(image_rect.expand(distance), 4.0, Color32::from_black_alpha(alpha));
+                    painter.rect_filled(
+                        image_rect.expand(distance),
+                        4.0,
+                        Color32::from_black_alpha(alpha),
+                    );
                 }
             }
         }
@@ -3945,6 +4189,8 @@ impl Canvas {
         // Extract text tool handle state for cursor icon
         let text_hovering_handle = tools.as_ref().is_some_and(|t| t.text_state.hovering_handle);
         let text_dragging_handle = tools.as_ref().is_some_and(|t| t.text_state.dragging_handle);
+        let text_hovering_rotation = tools.as_ref().is_some_and(|t| t.text_state.hovering_rotation_handle);
+        let text_rotating = tools.as_ref().is_some_and(|t| matches!(t.text_state.text_box_drag, Some(crate::components::tools::TextBoxDragType::Rotate)));
         // Extract line tool pan-handle state for cursor icon
         let line_pan_hovering = tools.as_ref().is_some_and(|t| {
             t.active_tool == crate::components::tools::Tool::Line
@@ -4074,11 +4320,19 @@ impl Canvas {
             // AND paste overlay didn't consume the input
             let tool_drag_active = tools.selection_state.dragging
                 || tools.lasso_state.dragging
-                || tools.gradient_state.dragging;
+                || tools.gradient_state.dragging
+                || tools.text_state.text_box_drag.is_some()
+                || tools.text_state.dragging_handle;
+            // When editing a text layer block, handles (rotation, delete) can be drawn outside
+            // canvas bounds — allow input so the user can click/drag them.
+            // This also overrides ui_blocking, because the handles may overlap panels.
+            let text_handles_active = tools.text_state.is_editing
+                && tools.text_state.editing_text_layer;
+            let text_drag_override = text_handles_active || tools.text_state.text_box_drag.is_some();
             let allow_input = !modal_open
-                && !ui_blocking
                 && !paste_consumed_input
-                && (pointer_over_canvas || is_painting || tool_drag_active);
+                && (!ui_blocking || text_drag_override)
+                && (pointer_over_canvas || is_painting || tool_drag_active || text_handles_active);
 
             if allow_input {
                 tools.handle_input(
@@ -4173,6 +4427,8 @@ impl Canvas {
             // Always check if text/shape properties changed (color picker, context bar)
             if tools.active_tool == crate::components::tools::Tool::Text {
                 tools.update_text_if_dirty(state, primary_color_f32);
+                // Draw overlay (border, handle, cursor) even when pointer is off-canvas
+                tools.draw_text_overlay(ui, state, &painter, image_rect, self.zoom);
             }
             if tools.active_tool == crate::components::tools::Tool::Shapes {
                 tools.update_shape_if_dirty(state, primary_color_f32, secondary_color_f32);
@@ -4196,10 +4452,12 @@ impl Canvas {
                 let over_image = mouse_pos.is_some_and(|pos| image_rect.contains(pos));
                 // Only override cursor when mouse is truly over just the canvas —
                 // not when a dialog, menu, popup, or floating panel is on top.
-                if over_image
+                // Exception: text rotation/resize handles may be drawn outside image bounds.
+                let text_handle_cursor = text_hovering_rotation || text_rotating;
+                if (over_image || text_handle_cursor)
                     && !modal_open
                     && !ui.ctx().memory(|mem| mem.any_popup_open())
-                    && !ui.ctx().is_pointer_over_area()
+                    && (!ui.ctx().is_pointer_over_area() || text_handle_cursor)
                     && let Some(tool) = active_tool_for_cursor
                 {
                     use crate::components::tools::Tool;
@@ -4249,6 +4507,9 @@ impl Canvas {
                         Tool::Text => {
                             if text_dragging_handle {
                                 egui::CursorIcon::Grabbing
+                            } else if text_rotating || text_hovering_rotation {
+                                // Alias is a circular arrow — closest to rotate in egui
+                                egui::CursorIcon::Alias
                             } else if text_hovering_handle {
                                 egui::CursorIcon::Move
                             } else {
@@ -5518,28 +5779,19 @@ impl Canvas {
 
     fn draw_checkerboard(&self, painter: &egui::Painter, rect: Rect, clip: Rect, brightness: f32) {
         let checker_size = 10.0 * self.zoom;
-        // Blue-tinted Signal Grid checkerboard colors
-        let is_dark = brightness < 1.5; // heuristic: low brightness = dark theme
-        let (base_light_r, base_light_g, base_light_b, base_dark_r, base_dark_g, base_dark_b) = if is_dark {
-            // Dark mode: subtle blue-tinted squares
-            (28u8, 28, 35, 22, 22, 28)
-        } else {
-            // Light mode: subtle blue-tinted squares
-            (240u8, 240, 245, 225, 225, 235)
-        };
-        let scale = |v: u8| -> u8 { (v as f32 * brightness).clamp(0.0, 255.0) as u8 };
-        let light = Color32::from_rgb(scale(base_light_r), scale(base_light_g), scale(base_light_b));
-        let dark = Color32::from_rgb(scale(base_dark_r), scale(base_dark_g), scale(base_dark_b));
+        // Apply brightness multiplier to the base grayscale values
+        let base_light = 220.0 * brightness;
+        let base_dark = 180.0 * brightness;
+        let light = Color32::from_gray(base_light.clamp(0.0, 255.0) as u8);
+        let dark = Color32::from_gray(base_dark.clamp(0.0, 255.0) as u8);
 
         // When zoomed out far enough that cells are too small to distinguish,
         // just draw a solid average color.  This avoids generating tens of
         // thousands of rect_filled calls that overwhelm egui's tessellator
         // (e.g. ~41K rects for a 4K canvas at any zoom level).
         if checker_size < 3.0 {
-            let avg_r = ((base_light_r as u16 + base_dark_r as u16) / 2) as u8;
-            let avg_g = ((base_light_g as u16 + base_dark_g as u16) / 2) as u8;
-            let avg_b = ((base_light_b as u16 + base_dark_b as u16) / 2) as u8;
-            painter.rect_filled(rect, 0.0, Color32::from_rgb(scale(avg_r), scale(avg_g), scale(avg_b)));
+            let avg = ((base_light + base_dark) * 0.5).clamp(0.0, 255.0) as u8;
+            painter.rect_filled(rect, 0.0, Color32::from_gray(avg));
             return;
         }
 
@@ -5759,4 +6011,123 @@ fn rgba_image_to_color_image(img: &RgbaImage) -> ColorImage {
         size,
         pixels: color_pixels,
     }
+}
+
+// ============================================================================
+// CMYK Soft Proof — display-only gamut-compressed preview
+// ============================================================================
+//
+// Simulates how the image will look when printed in CMYK by applying:
+//   1. RGB → naïve CMYK conversion
+//   2. Gray Component Replacement (GCR) — shifts common CMY ink to K
+//   3. Total ink limit (300% of 400% max) — desaturates over-inked pixels
+//   4. sRGB gamut compression — vivid blues/greens are pulled inward
+//   5. Paper white simulation — darkens highlights slightly (paper isn't 100% white)
+//   6. CMYK → RGB back-conversion
+//
+// The result visibly desaturates out-of-gamut colours (vivid blues, greens,
+// purples, neon tones) and slightly mutes highlights, matching what users
+// would see in a professional CMYK proofing tool.
+
+/// Apply CMYK soft proof to a single premultiplied Color32 pixel.
+#[inline]
+fn cmyk_soft_proof_pixel(c: Color32) -> Color32 {
+    let a = c.a();
+    if a == 0 {
+        return c;
+    }
+
+    // Un-premultiply to get linear RGB 0..255
+    let (r, g, b) = if a == 255 {
+        (c.r() as f32, c.g() as f32, c.b() as f32)
+    } else {
+        let inv_a = 255.0 / a as f32;
+        (
+            (c.r() as f32 * inv_a).min(255.0),
+            (c.g() as f32 * inv_a).min(255.0),
+            (c.b() as f32 * inv_a).min(255.0),
+        )
+    };
+
+    // Normalise to 0..1
+    let rn = r / 255.0;
+    let gn = g / 255.0;
+    let bn = b / 255.0;
+
+    // ---- Step 1: RGB → naïve CMYK ----
+    let max_rgb = rn.max(gn).max(bn);
+    if max_rgb <= 0.0 {
+        // Pure black — unchanged
+        return c;
+    }
+    let k_naive = 1.0 - max_rgb;
+    let inv_k = 1.0 / max_rgb; // == 1/(1-k_naive)
+    let c0 = (1.0 - rn - k_naive) * inv_k;
+    let m0 = (1.0 - gn - k_naive) * inv_k;
+    let y0 = (1.0 - bn - k_naive) * inv_k;
+
+    // ---- Step 2: GCR (Gray Component Replacement) ----
+    // Move a portion of the common CMY component into K.
+    // GCR ratio of 0.5 is moderate (lighter than Photoshop's "Heavy" GCR).
+    let gcr_ratio = 0.5_f32;
+    let gray = c0.min(m0).min(y0);
+    let k_add = gray * gcr_ratio;
+    let mut cf = c0 - k_add;
+    let mut mf = m0 - k_add;
+    let mut yf = y0 - k_add;
+    let mut kf = k_naive + k_add * (1.0 - k_naive); // scale k_add into K space
+
+    // ---- Step 3: Total ink limit (300% of 400% max) ----
+    let total_ink = cf + mf + yf + kf;
+    let ink_limit = 3.0_f32;
+    if total_ink > ink_limit {
+        let scale = ink_limit / total_ink;
+        cf *= scale;
+        mf *= scale;
+        yf *= scale;
+        // K is preserved (it's cheaper ink), scale CMY only
+        // But re-check: if still over, scale K too
+        let total2 = cf + mf + yf + kf;
+        if total2 > ink_limit {
+            kf *= ink_limit / total2;
+        }
+    }
+
+    // ---- Step 4: Gamut compression for vivid sRGB blues/greens ----
+    // Real CMYK (SWOP/Fogra) can't reproduce very saturated blues or greens.
+    // Apply subtle desaturation to high-saturation, low-K colours.
+    let sat = 1.0 - cf.min(mf).min(yf) / (cf.max(mf).max(yf).max(0.001));
+    let bright = 1.0 - kf;
+    // Compress factor: stronger for vivid bright colours
+    let compress = 1.0 - 0.12 * sat * bright;
+    cf *= compress;
+    mf *= compress;
+    yf *= compress;
+
+    // ---- Step 5: Paper white simulation ----
+    // Real paper is ~92-96% reflective.  Nudge K up slightly for highlights.
+    kf = kf + 0.03 * (1.0 - kf);
+
+    // ---- Step 6: CMYK → RGB ----
+    let ro = ((1.0 - cf) * (1.0 - kf) * 255.0).round().clamp(0.0, 255.0) as u8;
+    let go = ((1.0 - mf) * (1.0 - kf) * 255.0).round().clamp(0.0, 255.0) as u8;
+    let bo = ((1.0 - yf) * (1.0 - kf) * 255.0).round().clamp(0.0, 255.0) as u8;
+
+    // Re-premultiply
+    if a == 255 {
+        Color32::from_rgba_premultiplied(ro, go, bo, 255)
+    } else {
+        let af = a as f32 / 255.0;
+        Color32::from_rgba_premultiplied(
+            (ro as f32 * af).round() as u8,
+            (go as f32 * af).round() as u8,
+            (bo as f32 * af).round() as u8,
+            a,
+        )
+    }
+}
+
+/// Apply CMYK soft proof to a buffer of Color32 pixels (rayon-parallelised).
+fn apply_cmyk_soft_proof(src: &[Color32]) -> Vec<Color32> {
+    src.par_iter().map(|&c| cmyk_soft_proof_pixel(c)).collect()
 }

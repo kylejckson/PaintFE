@@ -71,6 +71,8 @@ pub fn decode_raw_image(path: &Path) -> Result<RgbaImage, String> {
 const PFE_MAGIC_V0: &str = "PFE0";
 /// Magic header for the tiled sparse format (v1)
 const PFE_MAGIC_V1: &str = "PFE1";
+/// Magic header for the tiled format with text layer support (v2)
+const PFE_MAGIC_V2: &str = "PFE2";
 
 /// V0 (legacy) serializable project file structure
 #[derive(Serialize, Deserialize)]
@@ -120,6 +122,32 @@ struct ChunkData {
     pixels: Vec<u8>,
 }
 
+/// V2 serializable project file — sparse tiled format with text layer support.
+/// Always includes rasterized chunks for backward compatibility (V1 readers).
+#[derive(Serialize, Deserialize)]
+pub(crate) struct ProjectFileV2 {
+    magic: String,
+    width: u32,
+    height: u32,
+    active_layer_index: usize,
+    layers: Vec<LayerDataV2>,
+}
+
+/// V2 serializable layer data — sparse chunks + optional serialized text data.
+#[derive(Serialize, Deserialize)]
+struct LayerDataV2 {
+    name: String,
+    visible: bool,
+    opacity: f32,
+    blend_mode: u8,
+    /// 0 = Raster, 1 = Text
+    layer_type: u8,
+    /// Rasterized chunks — always present for backward compatibility.
+    chunks: Vec<ChunkData>,
+    /// Serialized `TextLayerData` (bincode). Only present when `layer_type == 1`.
+    text_data: Option<Vec<u8>>,
+}
+
 /// Error type for PFE file operations
 #[derive(Debug)]
 pub enum PfeError {
@@ -150,10 +178,39 @@ impl From<Box<bincode::ErrorKind>> for PfeError {
     }
 }
 
-/// Save a CanvasState as a .pfe project file (v1 tiled format)
+/// Save a CanvasState as a .pfe project file.
+/// Uses V2 format when text layers are present, V1 otherwise for backward compatibility.
 pub fn save_pfe(state: &CanvasState, path: &Path) -> Result<(), PfeError> {
-    let project = build_pfe_v1(state);
-    write_pfe_v1(&project, path)
+    let data = build_pfe(state);
+    write_pfe(&data, path)
+}
+
+/// Version-independent PFE project data — auto-selects V1 or V2 at build time.
+pub enum PfeData {
+    V1(ProjectFileV1),
+    V2(ProjectFileV2),
+}
+
+/// Build a serializable PFE project, auto-selecting V1 or V2 based on content.
+/// Safe to call on the main thread, then move the result to a background thread.
+pub fn build_pfe(state: &CanvasState) -> PfeData {
+    let has_text_layers = state
+        .layers
+        .iter()
+        .any(|l| matches!(l.content, crate::canvas::LayerContent::Text(_)));
+    if has_text_layers {
+        PfeData::V2(build_pfe_v2(state))
+    } else {
+        PfeData::V1(build_pfe_v1(state))
+    }
+}
+
+/// Write a pre-built PFE project to disk. Safe to call on a background thread.
+pub fn write_pfe(data: &PfeData, path: &Path) -> Result<(), PfeError> {
+    match data {
+        PfeData::V1(project) => write_pfe_v1(project, path),
+        PfeData::V2(project) => write_pfe_v2(project, path),
+    }
 }
 
 /// Build the serializable PFE v1 project data from canvas state.
@@ -205,6 +262,68 @@ pub fn write_pfe_v1(project: &ProjectFileV1, path: &Path) -> Result<(), PfeError
     Ok(())
 }
 
+/// Build the serializable PFE v2 project data from canvas state.
+/// V2 includes text layer vector data alongside rasterized chunks.
+/// Safe to call on the main thread, then move the result to a background thread.
+pub fn build_pfe_v2(state: &CanvasState) -> ProjectFileV2 {
+    use crate::canvas::LayerContent;
+
+    let layers: Vec<LayerDataV2> = state
+        .layers
+        .iter()
+        .map(|layer| {
+            let chunks: Vec<ChunkData> = layer
+                .pixels
+                .chunk_keys()
+                .map(|(cx, cy)| {
+                    let chunk_img = layer.pixels.get_chunk(cx, cy).unwrap();
+                    ChunkData {
+                        cx,
+                        cy,
+                        pixels: chunk_img.as_raw().clone(),
+                    }
+                })
+                .collect();
+
+            let (layer_type, text_data) = match &layer.content {
+                LayerContent::Raster => (0u8, None),
+                LayerContent::Text(td) => {
+                    // Serialize TextLayerData with bincode
+                    let serialized = bincode::serialize(td).ok();
+                    (1u8, serialized)
+                }
+            };
+
+            LayerDataV2 {
+                name: layer.name.clone(),
+                visible: layer.visible,
+                opacity: layer.opacity,
+                blend_mode: layer.blend_mode.to_u8(),
+                layer_type,
+                chunks,
+                text_data,
+            }
+        })
+        .collect();
+
+    ProjectFileV2 {
+        magic: PFE_MAGIC_V2.to_string(),
+        width: state.width,
+        height: state.height,
+        active_layer_index: state.active_layer_index,
+        layers,
+    }
+}
+
+/// Serialize + write a pre-built ProjectFileV2 to disk.
+/// Safe to call on a background thread.
+pub fn write_pfe_v2(project: &ProjectFileV2, path: &Path) -> Result<(), PfeError> {
+    let file = File::create(path)?;
+    let writer = BufWriter::new(file);
+    bincode::serialize_into(writer, &project)?;
+    Ok(())
+}
+
 /// Load a .pfe project file (supports both v0 flat and v1 tiled formats)
 pub fn load_pfe(path: &Path) -> Result<CanvasState, PfeError> {
     // Peek at the first 4 bytes to determine version
@@ -218,6 +337,7 @@ pub fn load_pfe(path: &Path) -> Result<CanvasState, PfeError> {
     let magic = std::str::from_utf8(&raw[8..12]).unwrap_or("");
 
     match magic {
+        "PFE2" => load_pfe_v2(&raw),
         "PFE1" => load_pfe_v1(&raw),
         "PFE0" => load_pfe_v0(&raw),
         _ => Err(PfeError::InvalidFormat(format!(
@@ -289,6 +409,7 @@ pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
         pixels: TiledImage::from_rgba_image(&img),
         lod_cache: None,
         gpu_generation: 0,
+        content: crate::canvas::LayerContent::Raster,
     };
 
     Ok(CanvasState {
@@ -331,6 +452,156 @@ pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
         selection_border_h_segs: Vec::new(),
         selection_border_v_segs: Vec::new(),
         selection_border_built_generation: u64::MAX,
+        cmyk_preview: false,
+        text_coverage_buf: Vec::new(),
+        text_glyph_cache: Default::default(),
+        text_editing_layer: None,
+        canvas_widget_id: None,
+    })
+}
+
+/// Load a v2 tiled project file with text layer support
+fn load_pfe_v2(raw: &[u8]) -> Result<CanvasState, PfeError> {
+    use crate::canvas::LayerContent;
+
+    let project: ProjectFileV2 = bincode::deserialize(raw)?;
+
+    if project.width == 0 || project.height == 0 {
+        return Err(PfeError::InvalidFormat(
+            "Canvas dimensions cannot be zero".into(),
+        ));
+    }
+    if project.width > MAX_CANVAS_DIM || project.height > MAX_CANVAS_DIM {
+        return Err(PfeError::InvalidFormat(format!(
+            "Canvas size {}x{} exceeds maximum allowed {}x{}",
+            project.width, project.height, MAX_CANVAS_DIM, MAX_CANVAS_DIM
+        )));
+    }
+    if project.layers.len() > MAX_LAYERS {
+        return Err(PfeError::InvalidFormat(format!(
+            "Project contains {} layers, which exceeds the maximum of {}",
+            project.layers.len(),
+            MAX_LAYERS
+        )));
+    }
+
+    let expected_chunk_bytes = (CHUNK_SIZE * CHUNK_SIZE * 4) as usize;
+
+    let mut layers = Vec::with_capacity(project.layers.len());
+    for ld in project.layers {
+        let mut tiled = TiledImage::new(project.width, project.height);
+        for cd in ld.chunks {
+            if cd.pixels.len() != expected_chunk_bytes {
+                return Err(PfeError::InvalidFormat(format!(
+                    "Chunk ({},{}) in layer '{}' has {} bytes, expected {}",
+                    cd.cx,
+                    cd.cy,
+                    ld.name,
+                    cd.pixels.len(),
+                    expected_chunk_bytes,
+                )));
+            }
+            let chunk_img =
+                RgbaImage::from_raw(CHUNK_SIZE, CHUNK_SIZE, cd.pixels).ok_or_else(|| {
+                    PfeError::InvalidFormat(format!(
+                        "Failed to reconstruct chunk ({},{}) for layer '{}'",
+                        cd.cx, cd.cy, ld.name
+                    ))
+                })?;
+            tiled.set_chunk(cd.cx, cd.cy, chunk_img);
+        }
+
+        // Reconstruct LayerContent from layer_type + text_data
+        let content = if ld.layer_type == 1 {
+            if let Some(text_bytes) = ld.text_data {
+                match bincode::deserialize::<crate::ops::text_layer::TextLayerData>(&text_bytes) {
+                    Ok(mut td) => {
+                        // Re-initialize transient state after deserialization
+                        td.cache_generation = 1;
+                        td.raster_generation = 1; // pixels are already up-to-date from chunks
+                        // Rebuild next_block_id from max existing id
+                        td.next_block_id = td.blocks.iter().map(|b| b.id).max().unwrap_or(0) + 1;
+                        LayerContent::Text(td)
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: failed to deserialize text data for layer '{}': {}. Treating as raster.",
+                            ld.name, e
+                        );
+                        LayerContent::Raster
+                    }
+                }
+            } else {
+                // layer_type says Text but no text_data — treat as raster
+                LayerContent::Raster
+            }
+        } else {
+            LayerContent::Raster
+        };
+
+        layers.push(Layer {
+            name: ld.name,
+            visible: ld.visible,
+            opacity: ld.opacity,
+            blend_mode: BlendMode::from_u8(ld.blend_mode),
+            pixels: tiled,
+            lod_cache: None,
+            gpu_generation: 0,
+            content,
+        });
+    }
+
+    if layers.is_empty() {
+        return Err(PfeError::InvalidFormat("Project contains no layers".into()));
+    }
+
+    let active = project.active_layer_index.min(layers.len() - 1);
+
+    Ok(CanvasState {
+        width: project.width,
+        height: project.height,
+        layers,
+        active_layer_index: active,
+        composite_cache: None,
+        dirty_rect: None,
+        show_pixel_grid: true,
+        show_guidelines: false,
+        mirror_mode: crate::canvas::MirrorMode::None,
+        preview_layer: None,
+        preview_blend_mode: BlendMode::Normal,
+        preview_force_composite: false,
+        preview_is_eraser: false,
+        preview_replaces_layer: false,
+        dirty_generation: 0,
+        selection_mask: None,
+        lod_composite_cache: None,
+        lod_generation: 0,
+        preview_dirty_rect: None,
+        preview_texture_cache: None,
+        preview_generation: 0,
+        preview_stroke_bounds: None,
+        preview_flat_buffer: Vec::new(),
+        preview_flat_ready: false,
+        preview_downscale: 1,
+        composite_cpu_buffer: Vec::new(),
+        composite_cpu_buffer_back: Vec::new(),
+        region_extract_buf: Vec::new(),
+        composite_above_buffer: Vec::new(),
+        preview_premul_cache: Vec::new(),
+        preview_cache_rect: None,
+        selection_overlay_texture: None,
+        selection_overlay_generation: 0,
+        selection_overlay_built_generation: 0,
+        selection_overlay_anim_offset: -1.0,
+        selection_overlay_bounds: None,
+        selection_border_h_segs: Vec::new(),
+        selection_border_v_segs: Vec::new(),
+        selection_border_built_generation: u64::MAX,
+        cmyk_preview: false,
+        text_coverage_buf: Vec::new(),
+        text_glyph_cache: Default::default(),
+        text_editing_layer: None,
+        canvas_widget_id: None,
     })
 }
 
@@ -391,6 +662,7 @@ fn load_pfe_v1(raw: &[u8]) -> Result<CanvasState, PfeError> {
             pixels: tiled,
             lod_cache: None,
             gpu_generation: 0,
+            content: crate::canvas::LayerContent::Raster,
         });
     }
 
@@ -440,6 +712,11 @@ fn load_pfe_v1(raw: &[u8]) -> Result<CanvasState, PfeError> {
         selection_border_h_segs: Vec::new(),
         selection_border_v_segs: Vec::new(),
         selection_border_built_generation: u64::MAX,
+        cmyk_preview: false,
+        text_coverage_buf: Vec::new(),
+        text_glyph_cache: Default::default(),
+        text_editing_layer: None,
+        canvas_widget_id: None,
     })
 }
 
@@ -497,6 +774,7 @@ fn load_pfe_v0(raw: &[u8]) -> Result<CanvasState, PfeError> {
             pixels: TiledImage::from_rgba_image(&flat),
             lod_cache: None,
             gpu_generation: 0,
+            content: crate::canvas::LayerContent::Raster,
         });
     }
 
@@ -546,6 +824,11 @@ fn load_pfe_v0(raw: &[u8]) -> Result<CanvasState, PfeError> {
         selection_border_h_segs: Vec::new(),
         selection_border_v_segs: Vec::new(),
         selection_border_built_generation: u64::MAX,
+        cmyk_preview: false,
+        text_coverage_buf: Vec::new(),
+        text_glyph_cache: Default::default(),
+        text_editing_layer: None,
+        canvas_widget_id: None,
     })
 }
 

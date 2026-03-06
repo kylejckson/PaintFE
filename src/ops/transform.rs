@@ -227,6 +227,7 @@ pub fn resize_canvas_layers(
 
 /// Flatten all visible layers into a single "Background" layer.
 pub fn flatten_image(state: &mut CanvasState) {
+    state.ensure_all_text_layers_rasterized();
     let composite = state.composite();
     state.layers.clear();
     let mut bg = Layer::new(

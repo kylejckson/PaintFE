@@ -331,12 +331,12 @@ impl ThemePreset {
             },
             // Signal — website-inspired burnt orange + green (Signal Grid design language)
             ThemePreset::Signal => AccentColors {
-                light_normal: Color32::from_rgb(232, 89, 12),     // #e8590c burnt orange
+                light_normal: Color32::from_rgb(232, 89, 12), // #e8590c burnt orange
                 light_faint: Color32::from_rgba_unmultiplied(232, 89, 12, 30),
-                light_strong: Color32::from_rgb(200, 60, 5),     // deep orange
-                dark_normal: Color32::from_rgb(232, 89, 12),     // #e8590c
+                light_strong: Color32::from_rgb(200, 60, 5), // deep orange
+                dark_normal: Color32::from_rgb(232, 89, 12), // #e8590c
                 dark_faint: Color32::from_rgba_unmultiplied(232, 89, 12, 40),
-                dark_strong: Color32::from_rgb(249, 115, 22),    // #f97316 bright orange
+                dark_strong: Color32::from_rgb(249, 115, 22), // #f97316 bright orange
             },
             // Custom returns Blue as fallback (actual custom colors stored separately)
             ThemePreset::Custom => ThemePreset::Blue.accent_colors(),
@@ -355,8 +355,8 @@ pub struct Theme {
     pub bg_color: Color32,
     pub panel_bg: Color32,
     pub window_bg: Color32,
-    pub bg2: Color32,      // Elevated surface (controls, insets)
-    pub bg3: Color32,      // Highest surface (active controls, headers)
+    pub bg2: Color32, // Elevated surface (controls, insets)
+    pub bg3: Color32, // Highest surface (active controls, headers)
     pub text_color: Color32,
     pub text_muted: Color32,
     pub text_faint: Color32, // Tertiary text (hints, placeholder)
@@ -369,12 +369,12 @@ pub struct Theme {
     pub selection_bg: Color32,
 
     // Additional semantic accents
-    pub accent3: Color32,       // Secondary accent (green — success, links)
-    pub accent4: Color32,       // Tertiary accent (amber — warning)
+    pub accent3: Color32, // Secondary accent (green — success, links)
+    pub accent4: Color32, // Tertiary accent (amber — warning)
 
     // Borders and strokes
     pub border_color: Color32,
-    pub border_lit: Color32,    // Brighter "hover" border
+    pub border_lit: Color32, // Brighter "hover" border
     pub separator_color: Color32,
 
     // Button colors
@@ -392,8 +392,8 @@ pub struct Theme {
     pub canvas_bg_bottom: Color32,
 
     // Glow/atmosphere colors
-    pub glow_accent: Color32,   // Accent glow (rgba with low alpha)
-    pub glow_accent3: Color32,  // Green glow
+    pub glow_accent: Color32,  // Accent glow (rgba with low alpha)
+    pub glow_accent3: Color32, // Green glow
 
     // Transparency values for glass effect
     pub window_opacity: u8,
@@ -422,14 +422,14 @@ impl Theme {
             accent_colors,
 
             // Base colors — blue-tinted neutrals (Signal Grid dark palette)
-            bg_color: Color32::from_rgb(10, 10, 11),       // #0a0a0b deepest
-            panel_bg: Color32::from_rgb(17, 17, 20),       // #111114
-            window_bg: Color32::from_rgb(23, 23, 28),      // #17171c
-            bg2: Color32::from_rgb(23, 23, 28),            // #17171c elevated controls
-            bg3: Color32::from_rgb(30, 30, 38),            // #1e1e26 active controls
-            text_color: Color32::from_rgb(232, 232, 240),  // #e8e8f0
-            text_muted: Color32::from_rgb(122, 122, 144),  // #7a7a90
-            text_faint: Color32::from_rgb(61, 61, 85),     // #3d3d55
+            bg_color: Color32::from_rgb(17, 17, 20), // #111114 elevated from deepest
+            panel_bg: Color32::from_rgb(17, 17, 20), // #111114
+            window_bg: Color32::from_rgb(23, 23, 28), // #17171c
+            bg2: Color32::from_rgb(23, 23, 28),      // #17171c elevated controls
+            bg3: Color32::from_rgb(30, 30, 38),      // #1e1e26 active controls
+            text_color: Color32::from_rgb(232, 232, 240), // #e8e8f0
+            text_muted: Color32::from_rgb(122, 122, 144), // #7a7a90
+            text_faint: Color32::from_rgb(61, 61, 85), // #3d3d55
 
             // Accent — derived from accent definition
             accent: normal,
@@ -439,23 +439,23 @@ impl Theme {
             selection_bg: faint,
 
             // Additional semantic accents
-            accent3: Color32::from_rgb(76, 175, 124),      // #4caf7c green
-            accent4: Color32::from_rgb(234, 179, 8),       // #eab308 amber
+            accent3: Color32::from_rgb(76, 175, 124), // #4caf7c green
+            accent4: Color32::from_rgb(234, 179, 8),  // #eab308 amber
 
             // Borders
-            border_color: Color32::from_rgb(42, 42, 53),   // #2a2a35
-            border_lit: Color32::from_rgb(61, 61, 85),     // #3d3d55 hover border
+            border_color: Color32::from_rgb(42, 42, 53), // #2a2a35
+            border_lit: Color32::from_rgb(61, 61, 85),   // #3d3d55 hover border
             separator_color: Color32::from_rgb(35, 35, 45),
 
             // Buttons
-            button_bg: Color32::from_rgb(23, 23, 28),      // #17171c (bg2)
-            button_hover: Color32::from_rgb(30, 30, 38),   // #1e1e26 (bg3)
-            button_active: Color32::from_rgb(42, 42, 53),  // matches border
+            button_bg: Color32::from_rgb(23, 23, 28), // #17171c (bg2)
+            button_hover: Color32::from_rgb(30, 30, 38), // #1e1e26 (bg3)
+            button_active: Color32::from_rgb(42, 42, 53), // matches border
 
             // Floating elements — subtle transparency
             floating_window_bg: Color32::from_rgba_unmultiplied(17, 17, 20, 240),
-            toolbar_bg: Color32::from_rgb(10, 10, 11),     // #0a0a0b deepest
-            menu_bg: Color32::from_rgb(17, 17, 20),        // #111114
+            toolbar_bg: Color32::from_rgb(17, 17, 20), // #111114 matches panel_bg for visibility
+            menu_bg: Color32::from_rgb(17, 17, 20),    // #111114
 
             // Canvas background — dark blue-tinted
             canvas_bg_top: Color32::from_rgb(10, 10, 14),
@@ -486,14 +486,14 @@ impl Theme {
             accent_colors,
 
             // Base colors — blue-tinted neutrals (Signal Grid light palette)
-            bg_color: Color32::from_rgb(244, 244, 247),    // #f4f4f7
-            panel_bg: Color32::from_rgb(255, 255, 255),    // white
-            window_bg: Color32::from_rgb(234, 234, 240),   // #eaeaf0
-            bg2: Color32::from_rgb(234, 234, 240),         // #eaeaf0 elevated controls
-            bg3: Color32::from_rgb(224, 224, 234),         // #e0e0ea active controls
-            text_color: Color32::from_rgb(24, 24, 42),     // #18182a
-            text_muted: Color32::from_rgb(85, 85, 110),    // #55556e
-            text_faint: Color32::from_rgb(180, 180, 200),  // #b4b4c8
+            bg_color: Color32::from_rgb(244, 244, 247), // #f4f4f7
+            panel_bg: Color32::from_rgb(255, 255, 255), // white
+            window_bg: Color32::from_rgb(246, 246, 249), // #f6f6f9 — matches toolbar tone for menus/dialogs
+            bg2: Color32::from_rgb(234, 234, 240),       // #eaeaf0 elevated controls
+            bg3: Color32::from_rgb(224, 224, 234),       // #e0e0ea active controls
+            text_color: Color32::from_rgb(24, 24, 42),   // #18182a
+            text_muted: Color32::from_rgb(85, 85, 110),  // #55556e
+            text_faint: Color32::from_rgb(180, 180, 200), // #b4b4c8
 
             // Accent — derived from accent definition
             accent: normal,
@@ -503,22 +503,22 @@ impl Theme {
             selection_bg: faint,
 
             // Additional semantic accents
-            accent3: Color32::from_rgb(58, 138, 94),       // #3a8a5e green
-            accent4: Color32::from_rgb(234, 179, 8),       // #eab308 amber
+            accent3: Color32::from_rgb(58, 138, 94), // #3a8a5e green
+            accent4: Color32::from_rgb(234, 179, 8), // #eab308 amber
 
             // Borders
-            border_color: Color32::from_rgb(208, 208, 222),// #d0d0de
-            border_lit: Color32::from_rgb(180, 180, 204),  // #b4b4cc hover border
+            border_color: Color32::from_rgb(208, 208, 222), // #d0d0de
+            border_lit: Color32::from_rgb(180, 180, 204),   // #b4b4cc hover border
             separator_color: Color32::from_rgb(216, 216, 230),
 
             // Buttons
-            button_bg: Color32::from_rgb(234, 234, 240),   // #eaeaf0 (bg2)
+            button_bg: Color32::from_rgb(234, 234, 240), // #eaeaf0 (bg2)
             button_hover: Color32::from_rgb(224, 224, 234), // #e0e0ea (bg3)
-            button_active: Color32::from_rgb(208, 208, 222),// matches border
+            button_active: Color32::from_rgb(208, 208, 222), // matches border
 
             // Floating elements
             floating_window_bg: Color32::from_rgba_unmultiplied(255, 255, 255, 248),
-            toolbar_bg: Color32::from_rgb(244, 244, 247),  // #f4f4f7
+            toolbar_bg: Color32::from_rgb(244, 244, 247), // #f4f4f7
             menu_bg: Color32::from_rgb(255, 255, 255),
 
             // Canvas background — light blue-tinted gradient
@@ -566,35 +566,83 @@ impl Theme {
 
     /// Apply user overrides on top of the current theme values.
     pub fn apply_overrides(&mut self, ov: &ThemeOverrides) {
-        if let Some(c) = ov.bg_color { self.bg_color = c; }
-        if let Some(c) = ov.panel_bg { self.panel_bg = c; }
-        if let Some(c) = ov.window_bg { self.window_bg = c; }
-        if let Some(c) = ov.bg2 { self.bg2 = c; }
-        if let Some(c) = ov.bg3 { self.bg3 = c; }
-        if let Some(c) = ov.text_color { self.text_color = c; }
-        if let Some(c) = ov.text_muted { self.text_muted = c; }
-        if let Some(c) = ov.text_faint { self.text_faint = c; }
-        if let Some(c) = ov.border_color { self.border_color = c; }
-        if let Some(c) = ov.border_lit { self.border_lit = c; }
-        if let Some(c) = ov.separator_color { self.separator_color = c; }
-        if let Some(c) = ov.button_bg { self.button_bg = c; }
-        if let Some(c) = ov.button_hover { self.button_hover = c; }
-        if let Some(c) = ov.button_active { self.button_active = c; }
-        if let Some(c) = ov.floating_window_bg { self.floating_window_bg = c; }
-        if let Some(c) = ov.toolbar_bg { self.toolbar_bg = c; }
-        if let Some(c) = ov.menu_bg { self.menu_bg = c; }
-        if let Some(c) = ov.canvas_bg_top { self.canvas_bg_top = c; }
-        if let Some(c) = ov.canvas_bg_bottom { self.canvas_bg_bottom = c; }
-        if let Some(c) = ov.glow_accent { self.glow_accent = c; }
+        if let Some(c) = ov.bg_color {
+            self.bg_color = c;
+        }
+        if let Some(c) = ov.panel_bg {
+            self.panel_bg = c;
+        }
+        if let Some(c) = ov.window_bg {
+            self.window_bg = c;
+        }
+        if let Some(c) = ov.bg2 {
+            self.bg2 = c;
+        }
+        if let Some(c) = ov.bg3 {
+            self.bg3 = c;
+        }
+        if let Some(c) = ov.text_color {
+            self.text_color = c;
+        }
+        if let Some(c) = ov.text_muted {
+            self.text_muted = c;
+        }
+        if let Some(c) = ov.text_faint {
+            self.text_faint = c;
+        }
+        if let Some(c) = ov.border_color {
+            self.border_color = c;
+        }
+        if let Some(c) = ov.border_lit {
+            self.border_lit = c;
+        }
+        if let Some(c) = ov.separator_color {
+            self.separator_color = c;
+        }
+        if let Some(c) = ov.button_bg {
+            self.button_bg = c;
+        }
+        if let Some(c) = ov.button_hover {
+            self.button_hover = c;
+        }
+        if let Some(c) = ov.button_active {
+            self.button_active = c;
+        }
+        if let Some(c) = ov.floating_window_bg {
+            self.floating_window_bg = c;
+        }
+        if let Some(c) = ov.toolbar_bg {
+            self.toolbar_bg = c;
+        }
+        if let Some(c) = ov.menu_bg {
+            self.menu_bg = c;
+        }
+        if let Some(c) = ov.canvas_bg_top {
+            self.canvas_bg_top = c;
+        }
+        if let Some(c) = ov.canvas_bg_bottom {
+            self.canvas_bg_bottom = c;
+        }
+        if let Some(c) = ov.glow_accent {
+            self.glow_accent = c;
+        }
         if let Some(c) = ov.accent3 {
             self.accent3 = c;
             self.glow_accent3 = Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), 38);
         }
-        if let Some(c) = ov.accent4 { self.accent4 = c; }
+        if let Some(c) = ov.accent4 {
+            self.accent4 = c;
+        }
         // Geometry overrides
-        if let Some(v) = ov.widget_rounding { self.widget_rounding = v; }
-        if let Some(v) = ov.window_rounding { self.window_rounding = v; }
-        if let Some(v) = ov.menu_rounding { self.menu_rounding = v; }
+        if let Some(v) = ov.widget_rounding {
+            self.widget_rounding = v;
+        }
+        if let Some(v) = ov.window_rounding {
+            self.window_rounding = v;
+        }
+        if let Some(v) = ov.menu_rounding {
+            self.menu_rounding = v;
+        }
     }
 
     /// Lighten a color by adding `amount` to each RGB channel
@@ -627,8 +675,8 @@ impl Theme {
         // Inactive widgets: slider rails, checkbox bg, combo-box bg.
         // Must contrast clearly against panel_bg / window_bg (which equal button_bg in our palette).
         let inactive_fill = match self.mode {
-            ThemeMode::Dark  => Color32::from_rgb(42, 42, 53),   // #2a2a35 — blue-tinted mid-gray
-            ThemeMode::Light => Color32::from_rgb(208, 208, 222),// #d0d0de — noticeably darker than white
+            ThemeMode::Dark => Color32::from_rgb(42, 42, 53), // #2a2a35 — blue-tinted mid-gray
+            ThemeMode::Light => Color32::from_gray(228), // subtle but visible buttons/dropdowns
         };
         visuals.widgets.inactive.bg_fill = inactive_fill;
         visuals.widgets.inactive.weak_bg_fill = inactive_fill;
@@ -651,7 +699,10 @@ impl Theme {
 
         // Open menus: accent3 (green) text, accent3 alpha-20 bg — matches website nav active style
         let accent3_bg = Color32::from_rgba_unmultiplied(
-            self.accent3.r(), self.accent3.g(), self.accent3.b(), 20,
+            self.accent3.r(),
+            self.accent3.g(),
+            self.accent3.b(),
+            20,
         );
         visuals.widgets.open.bg_fill = accent3_bg;
         visuals.widgets.open.fg_stroke = Stroke::new(1.0, self.accent3);
@@ -677,13 +728,13 @@ impl Theme {
         // Menu styling
         visuals.menu_rounding = Rounding::same(self.menu_rounding);
 
-        // Popup styling
+        // Popup styling — minimal extrusion keeps dropdowns snug against trigger
         let popup_alpha = match self.mode {
-            ThemeMode::Dark => 36, // 50% stronger
-            ThemeMode::Light => 24,
+            ThemeMode::Dark => 28,
+            ThemeMode::Light => 18,
         };
         visuals.popup_shadow = Shadow {
-            extrusion: 4.0,
+            extrusion: 1.0,
             color: Color32::from_black_alpha(popup_alpha),
         };
 
@@ -696,7 +747,7 @@ impl Theme {
                 visuals.extreme_bg_color = Color32::from_rgb(8, 8, 10); // darker than panel_bg for visible track groove
             }
             ThemeMode::Light => {
-                visuals.extreme_bg_color = Color32::from_rgb(208, 208, 222); // darker than white for visible track
+                visuals.extreme_bg_color = Color32::from_gray(218); // input fields slightly darker than buttons
             }
         }
 
@@ -717,7 +768,7 @@ impl Theme {
         // Handle uses fg_stroke (text color) instead of bg_fill (button bg) which was
         // near-invisible against the track in our blue-tinted Signal Grid palette.
         let mut scroll = egui::style::ScrollStyle::solid();
-        scroll.foreground_color = true;  // handle = fg_stroke (visible text color)
+        scroll.foreground_color = true; // handle = fg_stroke (visible text color)
         scroll.bar_width = 8.0;
         scroll.bar_inner_margin = 2.0;
         style.spacing.scroll = scroll;
@@ -742,10 +793,10 @@ impl Theme {
     pub const SPACE_2XL: f32 = 32.0;
 
     // Font sizes
-    pub const FONT_LABEL: f32 = 11.0;  // Badges, metadata, mono labels
-    pub const FONT_BODY: f32 = 13.0;   // Normal text
+    pub const FONT_LABEL: f32 = 11.0; // Badges, metadata, mono labels
+    pub const FONT_BODY: f32 = 13.0; // Normal text
     pub const FONT_HEADING: f32 = 14.0; // Panel titles
-    pub const FONT_TITLE: f32 = 16.0;  // Dialog titles
+    pub const FONT_TITLE: f32 = 16.0; // Dialog titles
 
     pub fn floating_window_frame(&self) -> egui::Frame {
         let shadow_alpha = match self.mode {
@@ -766,20 +817,30 @@ impl Theme {
     /// Floating window frame with animated border — call with hover_t from
     /// `ctx.animate_bool(id, is_hovered)` to smoothly transition border color.
     pub fn floating_window_frame_animated(&self, hover_t: f32) -> egui::Frame {
-        let shadow_alpha = match self.mode {
-            ThemeMode::Dark => 50,
-            ThemeMode::Light => 32,
-        };
         let border = Self::lerp_color(self.border_color, self.border_lit, hover_t);
-        egui::Frame::none()
-            .fill(self.panel_bg)
-            .rounding(Rounding::same(10.0))
-            .stroke(Stroke::new(1.0, border))
-            .shadow(Shadow {
-                extrusion: 10.0,
-                color: Color32::from_black_alpha(shadow_alpha),
-            })
-            .inner_margin(egui::Margin::same(10.0))
+        match self.mode {
+            ThemeMode::Dark => egui::Frame::none()
+                .fill(self.panel_bg)
+                .rounding(Rounding::same(10.0))
+                .stroke(Stroke::new(1.0, border))
+                .shadow(Shadow {
+                    extrusion: 10.0,
+                    color: Color32::from_black_alpha(50),
+                })
+                .inner_margin(egui::Margin::same(10.0)),
+            ThemeMode::Light => {
+                // Light mode: clean white fill, very subtle shadow, defined border
+                egui::Frame::none()
+                    .fill(self.panel_bg)
+                    .rounding(Rounding::same(10.0))
+                    .stroke(Stroke::new(1.0, Color32::from_rgb(190, 190, 205)))
+                    .shadow(Shadow {
+                        extrusion: 6.0,
+                        color: Color32::from_black_alpha(18),
+                    })
+                    .inner_margin(egui::Margin::same(10.0))
+            }
+        }
     }
 
     /// Linearly interpolate between two colors.
@@ -859,6 +920,33 @@ impl Theme {
     /// Text color for inactive tabs
     pub fn inactive_tab_text(&self) -> Color32 {
         self.text_muted
+    }
+
+    /// Floating tool shelf frame — sits below the toolbar, overlaying the canvas.
+    /// Rounded container with subtle shadow, matching website `.card` pattern.
+    pub fn tool_shelf_frame(&self) -> egui::Frame {
+        match self.mode {
+            ThemeMode::Dark => {
+                egui::Frame::none()
+                    .fill(Color32::from_rgb(17, 17, 22)) // slightly warmer than panel_bg
+                    .rounding(Rounding::same(8.0))
+                    .stroke(Stroke::new(1.0, self.border_color))
+                    .shadow(Shadow {
+                        extrusion: 6.0,
+                        color: Color32::from_black_alpha(40),
+                    })
+                    .inner_margin(egui::Margin::symmetric(10.0, 5.0))
+            }
+            ThemeMode::Light => egui::Frame::none()
+                .fill(Color32::WHITE)
+                .rounding(Rounding::same(8.0))
+                .stroke(Stroke::new(1.0, Color32::from_rgb(208, 208, 222)))
+                .shadow(Shadow {
+                    extrusion: 4.0,
+                    color: Color32::from_black_alpha(14),
+                })
+                .inner_margin(egui::Margin::symmetric(10.0, 5.0)),
+        }
     }
 }
 

@@ -91,6 +91,7 @@ pub enum Icon {
     SoloLayer,
     HideAll,
     ShowAll,
+    DropDown,
 
     // === Settings Tabs ===
     SettingsGeneral,
@@ -263,6 +264,7 @@ impl Icon {
             Icon::ResetCancel => "\u{2718}",
             Icon::Expand => "\u{25B8}",
             Icon::Collapse => "\u{25C2}",
+            Icon::DropDown => "\u{25BE}",
             Icon::Info => "\u{2139}",
             Icon::Search => "\u{1F50D}",
             Icon::ClearSearch => "\u{00D7}",
@@ -441,6 +443,7 @@ impl Icon {
             Icon::ResetCancel => "Reset",
             Icon::Expand => "Expand",
             Icon::Collapse => "Collapse",
+            Icon::DropDown => "Presets",
             Icon::Info => "Info",
             Icon::Search => "Search",
             Icon::ClearSearch => "Clear Search",
@@ -848,6 +851,11 @@ impl Assets {
             ctx,
             Icon::ResetCancel,
             include_bytes!("../assets/icons/ui/reset_cancel.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::DropDown,
+            include_bytes!("../assets/icons/ui/drop_down.png"),
         );
         self.load_icon(
             ctx,
@@ -1794,6 +1802,8 @@ impl Assets {
             let mut btn = egui::Button::image(img);
             if ui.visuals().dark_mode {
                 btn = btn.fill(egui::Color32::from_gray(18));
+            } else {
+                btn = btn.fill(egui::Color32::from_gray(238));
             }
             ui.add(btn)
         } else {
@@ -1814,7 +1824,8 @@ impl Assets {
         response.on_hover_text(icon.tooltip())
     }
 
-    /// Create an enabled/disabled icon button
+    /// Create an enabled/disabled icon button.
+    /// When disabled, the icon is faded instead of changing the button background.
     pub fn icon_button_enabled(
         &self,
         ui: &mut egui::Ui,
@@ -1823,12 +1834,32 @@ impl Assets {
     ) -> egui::Response {
         let response = if let Some(texture) = self.textures.get(&icon) {
             let sized_texture = egui::load::SizedTexture::from_handle(texture);
-            let img = egui::Image::from_texture(sized_texture).fit_to_exact_size(Vec2::splat(24.0));
+            let tint = if !enabled {
+                // Fade the icon to look disabled instead of changing background
+                if ui.visuals().dark_mode {
+                    egui::Color32::from_white_alpha(60)
+                } else {
+                    egui::Color32::from_black_alpha(60)
+                }
+            } else if ui.visuals().dark_mode {
+                egui::Color32::WHITE
+            } else {
+                egui::Color32::from_gray(0)
+            };
+            let img = egui::Image::from_texture(sized_texture)
+                .fit_to_exact_size(Vec2::splat(24.0))
+                .tint(tint);
             let mut btn = egui::Button::image(img);
             if ui.visuals().dark_mode {
                 btn = btn.fill(egui::Color32::from_gray(18));
+            } else {
+                btn = btn.fill(egui::Color32::from_gray(238));
             }
-            ui.add_enabled(enabled, btn)
+            if enabled {
+                ui.add(btn)
+            } else {
+                ui.add_enabled(false, btn)
+            }
         } else {
             ui.add_enabled(enabled, egui::Button::new(icon.emoji()))
         };
@@ -1945,9 +1976,8 @@ impl Assets {
             ui.painter()
                 .layout_no_wrap(text.to_string(), text_font.clone(), label_color);
 
-        let desired_width =
-            (padding.x + icon_size + icon_gap + text_galley.size().x + padding.x)
-                .max(ui.available_width());
+        let desired_width = (padding.x + icon_size + icon_gap + text_galley.size().x + padding.x)
+            .max(ui.available_width());
         let row_height = icon_size.max(text_galley.size().y) + padding.y * 2.0;
 
         let sense = if enabled {
@@ -1955,8 +1985,7 @@ impl Assets {
         } else {
             egui::Sense::hover()
         };
-        let (rect, response) =
-            ui.allocate_exact_size(egui::vec2(desired_width, row_height), sense);
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(desired_width, row_height), sense);
 
         if ui.is_rect_visible(rect) {
             let visuals = ui.style().interact(&response);
@@ -2772,7 +2801,7 @@ impl KeyBindings {
 
         if let Some(ref text_char) = combo.text_char {
             // Text-based binding (like [ or ])
-            ctx.input(|i| {
+            ctx.input_mut(|i| {
                 // Check modifier match
                 if combo.ctrl != i.modifiers.command {
                     return false;
@@ -2783,14 +2812,18 @@ impl KeyBindings {
                 if combo.alt != i.modifiers.alt {
                     return false;
                 }
-                for ev in &i.events {
-                    if let egui::Event::Text(t) = ev
+                let mut found = false;
+                i.events.retain(|ev| {
+                    if !found
+                        && let egui::Event::Text(t) = ev
                         && t == text_char
                     {
-                        return true;
+                        found = true;
+                        return false; // consume the event
                     }
-                }
-                false
+                    true
+                });
+                found
             })
         } else if let Some(key) = combo.key {
             let mods = egui::Modifiers {
@@ -3072,7 +3105,7 @@ pub struct AppSettings {
 
 impl Default for AppSettings {
     fn default() -> Self {
-        let preset = ThemePreset::Blue;
+        let preset = ThemePreset::Signal;
         Self {
             theme_mode: ThemeMode::Light,
             theme_preset: preset,
@@ -3091,7 +3124,7 @@ impl Default for AppSettings {
             show_debug_panel: true,
             debug_show_canvas_size: true,
             debug_show_zoom: true,
-            debug_show_fps: true,
+            debug_show_fps: false,
             debug_show_gpu: false,
             debug_show_operations: true,
 
@@ -3263,6 +3296,207 @@ impl AppSettings {
         }
     }
 
+    /// Export all theme-related settings as a shareable plain-text string.
+    pub fn export_theme_to_string(&self) -> String {
+        let mode_str = match self.theme_mode {
+            ThemeMode::Light => "light",
+            ThemeMode::Dark => "dark",
+        };
+        let preset_str = match self.theme_preset {
+            ThemePreset::Blue => "blue",
+            ThemePreset::Orange => "orange",
+            ThemePreset::Purple => "purple",
+            ThemePreset::Red => "red",
+            ThemePreset::Green => "green",
+            ThemePreset::Lime => "lime",
+            ThemePreset::Nebula => "nebula",
+            ThemePreset::Ember => "ember",
+            ThemePreset::Sakura => "sakura",
+            ThemePreset::Glacier => "glacier",
+            ThemePreset::Midnight => "midnight",
+            ThemePreset::Signal => "signal",
+            ThemePreset::Custom => "custom",
+        };
+        let density_str = match self.ui_density {
+            UiDensity::Compact => "compact",
+            UiDensity::Normal => "normal",
+            UiDensity::Spacious => "spacious",
+        };
+        let mut content = format!(
+            "# PaintFE Theme\n\
+             theme_mode={mode_str}\n\
+             theme_preset={preset_str}\n\
+             accent_light_normal={}\n\
+             accent_light_faint={}\n\
+             accent_light_strong={}\n\
+             accent_dark_normal={}\n\
+             accent_dark_faint={}\n\
+             accent_dark_strong={}\n\
+             neon_mode={}\n\
+             advanced_customization={}\n\
+             ui_density={density_str}\n\
+             glow_intensity={}\n\
+             shadow_strength={}\n",
+            Self::color_to_str(self.custom_accent.light_normal),
+            Self::color_to_str(self.custom_accent.light_faint),
+            Self::color_to_str(self.custom_accent.light_strong),
+            Self::color_to_str(self.custom_accent.dark_normal),
+            Self::color_to_str(self.custom_accent.dark_faint),
+            Self::color_to_str(self.custom_accent.dark_strong),
+            self.neon_mode,
+            self.advanced_customization,
+            self.glow_intensity,
+            self.shadow_strength,
+        );
+        if let Some(v) = self.widget_rounding {
+            content.push_str(&format!("widget_rounding={v}\n"));
+        }
+        if let Some(v) = self.window_rounding {
+            content.push_str(&format!("window_rounding={v}\n"));
+        }
+        if let Some(v) = self.menu_rounding {
+            content.push_str(&format!("menu_rounding={v}\n"));
+        }
+        let ov_fields: &[(&str, Option<Color32>)] = &[
+            ("ov_bg_color", self.ov_bg_color),
+            ("ov_panel_bg", self.ov_panel_bg),
+            ("ov_window_bg", self.ov_window_bg),
+            ("ov_bg2", self.ov_bg2),
+            ("ov_bg3", self.ov_bg3),
+            ("ov_text_color", self.ov_text_color),
+            ("ov_text_muted", self.ov_text_muted),
+            ("ov_text_faint", self.ov_text_faint),
+            ("ov_border_color", self.ov_border_color),
+            ("ov_border_lit", self.ov_border_lit),
+            ("ov_separator_color", self.ov_separator_color),
+            ("ov_button_bg", self.ov_button_bg),
+            ("ov_button_hover", self.ov_button_hover),
+            ("ov_button_active", self.ov_button_active),
+            ("ov_floating_window_bg", self.ov_floating_window_bg),
+            ("ov_toolbar_bg", self.ov_toolbar_bg),
+            ("ov_menu_bg", self.ov_menu_bg),
+            ("ov_canvas_bg_top", self.ov_canvas_bg_top),
+            ("ov_canvas_bg_bottom", self.ov_canvas_bg_bottom),
+            ("ov_glow_accent", self.ov_glow_accent),
+            ("ov_accent3", self.ov_accent3),
+            ("ov_accent4", self.ov_accent4),
+        ];
+        for (key, val) in ov_fields {
+            if let Some(c) = val {
+                content.push_str(&format!("{}={}\n", key, Self::color_to_str(*c)));
+            }
+        }
+        content
+    }
+
+    /// Import theme-related settings from a plain-text string.
+    /// Only updates theme fields; non-theme settings are untouched.
+    pub fn import_theme_from_string(&mut self, content: &str) {
+        let mut map = std::collections::HashMap::new();
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let Some((key, val)) = line.split_once('=') {
+                map.insert(key.trim().to_string(), val.trim().to_string());
+            }
+        }
+        if let Some(v) = map.get("theme_mode") {
+            self.theme_mode = match v.as_str() {
+                "light" => ThemeMode::Light,
+                "dark" => ThemeMode::Dark,
+                _ => self.theme_mode,
+            };
+        }
+        if let Some(v) = map.get("theme_preset") {
+            self.theme_preset = match v.as_str() {
+                "blue" => ThemePreset::Blue,
+                "orange" => ThemePreset::Orange,
+                "purple" => ThemePreset::Purple,
+                "red" => ThemePreset::Red,
+                "green" => ThemePreset::Green,
+                "lime" => ThemePreset::Lime,
+                "nebula" => ThemePreset::Nebula,
+                "ember" => ThemePreset::Ember,
+                "sakura" => ThemePreset::Sakura,
+                "glacier" => ThemePreset::Glacier,
+                "midnight" => ThemePreset::Midnight,
+                "signal" => ThemePreset::Signal,
+                "custom" => ThemePreset::Custom,
+                _ => self.theme_preset,
+            };
+        }
+        if let Some(v) = map.get("accent_light_normal")
+            && let Some(c) = Self::str_to_color(v) { self.custom_accent.light_normal = c; }
+        if let Some(v) = map.get("accent_light_faint")
+            && let Some(c) = Self::str_to_color(v) { self.custom_accent.light_faint = c; }
+        if let Some(v) = map.get("accent_light_strong")
+            && let Some(c) = Self::str_to_color(v) { self.custom_accent.light_strong = c; }
+        if let Some(v) = map.get("accent_dark_normal")
+            && let Some(c) = Self::str_to_color(v) { self.custom_accent.dark_normal = c; }
+        if let Some(v) = map.get("accent_dark_faint")
+            && let Some(c) = Self::str_to_color(v) { self.custom_accent.dark_faint = c; }
+        if let Some(v) = map.get("accent_dark_strong")
+            && let Some(c) = Self::str_to_color(v) { self.custom_accent.dark_strong = c; }
+        if let Some(v) = map.get("neon_mode") {
+            self.neon_mode = v == "true";
+        }
+        if let Some(v) = map.get("advanced_customization") {
+            self.advanced_customization = v == "true";
+        }
+        if let Some(v) = map.get("ui_density") {
+            self.ui_density = match v.as_str() {
+                "compact" => UiDensity::Compact,
+                "normal" => UiDensity::Normal,
+                "spacious" => UiDensity::Spacious,
+                _ => self.ui_density,
+            };
+        }
+        if let Some(v) = map.get("glow_intensity")
+            && let Ok(f) = v.parse::<f32>() { self.glow_intensity = f; }
+        if let Some(v) = map.get("shadow_strength")
+            && let Ok(f) = v.parse::<f32>() { self.shadow_strength = f; }
+        if let Some(v) = map.get("widget_rounding") {
+            self.widget_rounding = v.parse::<f32>().ok();
+        }
+        if let Some(v) = map.get("window_rounding") {
+            self.window_rounding = v.parse::<f32>().ok();
+        }
+        if let Some(v) = map.get("menu_rounding") {
+            self.menu_rounding = v.parse::<f32>().ok();
+        }
+        macro_rules! import_ov {
+            ($key:expr, $field:ident) => {
+                if let Some(v) = map.get($key) {
+                    self.$field = Self::str_to_color(v);
+                }
+            };
+        }
+        import_ov!("ov_bg_color", ov_bg_color);
+        import_ov!("ov_panel_bg", ov_panel_bg);
+        import_ov!("ov_window_bg", ov_window_bg);
+        import_ov!("ov_bg2", ov_bg2);
+        import_ov!("ov_bg3", ov_bg3);
+        import_ov!("ov_text_color", ov_text_color);
+        import_ov!("ov_text_muted", ov_text_muted);
+        import_ov!("ov_text_faint", ov_text_faint);
+        import_ov!("ov_border_color", ov_border_color);
+        import_ov!("ov_border_lit", ov_border_lit);
+        import_ov!("ov_separator_color", ov_separator_color);
+        import_ov!("ov_button_bg", ov_button_bg);
+        import_ov!("ov_button_hover", ov_button_hover);
+        import_ov!("ov_button_active", ov_button_active);
+        import_ov!("ov_floating_window_bg", ov_floating_window_bg);
+        import_ov!("ov_toolbar_bg", ov_toolbar_bg);
+        import_ov!("ov_menu_bg", ov_menu_bg);
+        import_ov!("ov_canvas_bg_top", ov_canvas_bg_top);
+        import_ov!("ov_canvas_bg_bottom", ov_canvas_bg_bottom);
+        import_ov!("ov_glow_accent", ov_glow_accent);
+        import_ov!("ov_accent3", ov_accent3);
+        import_ov!("ov_accent4", ov_accent4);
+    }
+
     /// Save settings to disk
     pub fn save(&self) {
         let Some(path) = Self::settings_path() else {
@@ -3346,10 +3580,19 @@ impl AppSettings {
             UiDensity::Normal => "normal",
             UiDensity::Spacious => "spacious",
         };
-        content.push_str(&format!("advanced_customization={}\n", self.advanced_customization));
+        content.push_str(&format!(
+            "advanced_customization={}\n",
+            self.advanced_customization
+        ));
         content.push_str(&format!("ui_density={density_str}\n"));
-        content.push_str(&format!("canvas_grid_visible={}\n", self.canvas_grid_visible));
-        content.push_str(&format!("canvas_grid_opacity={}\n", self.canvas_grid_opacity));
+        content.push_str(&format!(
+            "canvas_grid_visible={}\n",
+            self.canvas_grid_visible
+        ));
+        content.push_str(&format!(
+            "canvas_grid_opacity={}\n",
+            self.canvas_grid_opacity
+        ));
         content.push_str(&format!("glow_intensity={}\n", self.glow_intensity));
         content.push_str(&format!("shadow_strength={}\n", self.shadow_strength));
         if let Some(v) = self.widget_rounding {
@@ -3541,28 +3784,72 @@ impl AppSettings {
                     s.menu_rounding = val.parse().ok();
                 }
                 // Color overrides
-                "ov_bg_color" => { s.ov_bg_color = Self::str_to_opt_color(val); }
-                "ov_panel_bg" => { s.ov_panel_bg = Self::str_to_opt_color(val); }
-                "ov_window_bg" => { s.ov_window_bg = Self::str_to_opt_color(val); }
-                "ov_bg2" => { s.ov_bg2 = Self::str_to_opt_color(val); }
-                "ov_bg3" => { s.ov_bg3 = Self::str_to_opt_color(val); }
-                "ov_text_color" => { s.ov_text_color = Self::str_to_opt_color(val); }
-                "ov_text_muted" => { s.ov_text_muted = Self::str_to_opt_color(val); }
-                "ov_text_faint" => { s.ov_text_faint = Self::str_to_opt_color(val); }
-                "ov_border_color" => { s.ov_border_color = Self::str_to_opt_color(val); }
-                "ov_border_lit" => { s.ov_border_lit = Self::str_to_opt_color(val); }
-                "ov_separator_color" => { s.ov_separator_color = Self::str_to_opt_color(val); }
-                "ov_button_bg" => { s.ov_button_bg = Self::str_to_opt_color(val); }
-                "ov_button_hover" => { s.ov_button_hover = Self::str_to_opt_color(val); }
-                "ov_button_active" => { s.ov_button_active = Self::str_to_opt_color(val); }
-                "ov_floating_window_bg" => { s.ov_floating_window_bg = Self::str_to_opt_color(val); }
-                "ov_toolbar_bg" => { s.ov_toolbar_bg = Self::str_to_opt_color(val); }
-                "ov_menu_bg" => { s.ov_menu_bg = Self::str_to_opt_color(val); }
-                "ov_canvas_bg_top" => { s.ov_canvas_bg_top = Self::str_to_opt_color(val); }
-                "ov_canvas_bg_bottom" => { s.ov_canvas_bg_bottom = Self::str_to_opt_color(val); }
-                "ov_glow_accent" => { s.ov_glow_accent = Self::str_to_opt_color(val); }
-                "ov_accent3" => { s.ov_accent3 = Self::str_to_opt_color(val); }
-                "ov_accent4" => { s.ov_accent4 = Self::str_to_opt_color(val); }
+                "ov_bg_color" => {
+                    s.ov_bg_color = Self::str_to_opt_color(val);
+                }
+                "ov_panel_bg" => {
+                    s.ov_panel_bg = Self::str_to_opt_color(val);
+                }
+                "ov_window_bg" => {
+                    s.ov_window_bg = Self::str_to_opt_color(val);
+                }
+                "ov_bg2" => {
+                    s.ov_bg2 = Self::str_to_opt_color(val);
+                }
+                "ov_bg3" => {
+                    s.ov_bg3 = Self::str_to_opt_color(val);
+                }
+                "ov_text_color" => {
+                    s.ov_text_color = Self::str_to_opt_color(val);
+                }
+                "ov_text_muted" => {
+                    s.ov_text_muted = Self::str_to_opt_color(val);
+                }
+                "ov_text_faint" => {
+                    s.ov_text_faint = Self::str_to_opt_color(val);
+                }
+                "ov_border_color" => {
+                    s.ov_border_color = Self::str_to_opt_color(val);
+                }
+                "ov_border_lit" => {
+                    s.ov_border_lit = Self::str_to_opt_color(val);
+                }
+                "ov_separator_color" => {
+                    s.ov_separator_color = Self::str_to_opt_color(val);
+                }
+                "ov_button_bg" => {
+                    s.ov_button_bg = Self::str_to_opt_color(val);
+                }
+                "ov_button_hover" => {
+                    s.ov_button_hover = Self::str_to_opt_color(val);
+                }
+                "ov_button_active" => {
+                    s.ov_button_active = Self::str_to_opt_color(val);
+                }
+                "ov_floating_window_bg" => {
+                    s.ov_floating_window_bg = Self::str_to_opt_color(val);
+                }
+                "ov_toolbar_bg" => {
+                    s.ov_toolbar_bg = Self::str_to_opt_color(val);
+                }
+                "ov_menu_bg" => {
+                    s.ov_menu_bg = Self::str_to_opt_color(val);
+                }
+                "ov_canvas_bg_top" => {
+                    s.ov_canvas_bg_top = Self::str_to_opt_color(val);
+                }
+                "ov_canvas_bg_bottom" => {
+                    s.ov_canvas_bg_bottom = Self::str_to_opt_color(val);
+                }
+                "ov_glow_accent" => {
+                    s.ov_glow_accent = Self::str_to_opt_color(val);
+                }
+                "ov_accent3" => {
+                    s.ov_accent3 = Self::str_to_opt_color(val);
+                }
+                "ov_accent4" => {
+                    s.ov_accent4 = Self::str_to_opt_color(val);
+                }
                 _ => {
                     // Parse keybinding lines: keybind.ActionName=combo
                     if let Some(action_name) = key.strip_prefix("keybind.") {
@@ -3634,6 +3921,8 @@ pub struct SettingsWindow {
     staged_keybindings: KeyBindings,
     /// Which action is currently being rebound (waiting for key press)
     rebinding_action: Option<BindableAction>,
+    /// Brief status message after theme import/export (cleared on next frame)
+    theme_status: Option<(String, f64)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -3647,7 +3936,7 @@ enum SettingsTab {
 
 impl Default for SettingsWindow {
     fn default() -> Self {
-        let preset = ThemePreset::Blue;
+        let preset = ThemePreset::Signal;
         Self {
             open: false,
             active_tab: SettingsTab::General,
@@ -3662,6 +3951,7 @@ impl Default for SettingsWindow {
             onnx_probe_result: None,
             staged_keybindings: KeyBindings::default(),
             rebinding_action: None,
+            theme_status: None,
         }
     }
 }
@@ -4060,15 +4350,6 @@ impl SettingsWindow {
                 });
         });
 
-        // -- Effects -----------------------------------------------------
-        Self::section_header(ui, &t!("settings.general.effects"));
-        ui.checkbox(&mut settings.neon_mode, t!("settings.general.neon_mode"));
-        ui.label(
-            egui::RichText::new(t!("settings.general.neon_hint"))
-                .small()
-                .weak(),
-        );
-
         // -- Behaviour -------------------------------------------------
         Self::section_header(ui, "Behaviour");
         ui.checkbox(
@@ -4454,7 +4735,10 @@ impl SettingsWindow {
                         .show_ui(ui, |ui| {
                             for &density in UiDensity::all() {
                                 if ui
-                                    .selectable_label(settings.ui_density == density, density.label())
+                                    .selectable_label(
+                                        settings.ui_density == density,
+                                        density.label(),
+                                    )
                                     .clicked()
                                 {
                                     settings.ui_density = density;
@@ -4472,10 +4756,20 @@ impl SettingsWindow {
                     ui.strong("Surface Colors");
                 })
                 .body(|ui| {
-                    Self::opt_color_row(ui, "Background", &mut settings.ov_bg_color, &mut self.dirty);
+                    Self::opt_color_row(
+                        ui,
+                        "Background",
+                        &mut settings.ov_bg_color,
+                        &mut self.dirty,
+                    );
                     Self::opt_color_row(ui, "Panel", &mut settings.ov_panel_bg, &mut self.dirty);
                     Self::opt_color_row(ui, "Window", &mut settings.ov_window_bg, &mut self.dirty);
-                    Self::opt_color_row(ui, "Elevated (bg2)", &mut settings.ov_bg2, &mut self.dirty);
+                    Self::opt_color_row(
+                        ui,
+                        "Elevated (bg2)",
+                        &mut settings.ov_bg2,
+                        &mut self.dirty,
+                    );
                     Self::opt_color_row(ui, "Active (bg3)", &mut settings.ov_bg3, &mut self.dirty);
                 });
 
@@ -4486,9 +4780,24 @@ impl SettingsWindow {
                     ui.strong("Text & Labels");
                 })
                 .body(|ui| {
-                    Self::opt_color_row(ui, "Primary Text", &mut settings.ov_text_color, &mut self.dirty);
-                    Self::opt_color_row(ui, "Muted Text", &mut settings.ov_text_muted, &mut self.dirty);
-                    Self::opt_color_row(ui, "Faint Text", &mut settings.ov_text_faint, &mut self.dirty);
+                    Self::opt_color_row(
+                        ui,
+                        "Primary Text",
+                        &mut settings.ov_text_color,
+                        &mut self.dirty,
+                    );
+                    Self::opt_color_row(
+                        ui,
+                        "Muted Text",
+                        &mut settings.ov_text_muted,
+                        &mut self.dirty,
+                    );
+                    Self::opt_color_row(
+                        ui,
+                        "Faint Text",
+                        &mut settings.ov_text_faint,
+                        &mut self.dirty,
+                    );
                 });
 
             // --- Borders & Separators ---
@@ -4498,9 +4807,24 @@ impl SettingsWindow {
                     ui.strong("Borders & Separators");
                 })
                 .body(|ui| {
-                    Self::opt_color_row(ui, "Border", &mut settings.ov_border_color, &mut self.dirty);
-                    Self::opt_color_row(ui, "Hover Border", &mut settings.ov_border_lit, &mut self.dirty);
-                    Self::opt_color_row(ui, "Separator", &mut settings.ov_separator_color, &mut self.dirty);
+                    Self::opt_color_row(
+                        ui,
+                        "Border",
+                        &mut settings.ov_border_color,
+                        &mut self.dirty,
+                    );
+                    Self::opt_color_row(
+                        ui,
+                        "Hover Border",
+                        &mut settings.ov_border_lit,
+                        &mut self.dirty,
+                    );
+                    Self::opt_color_row(
+                        ui,
+                        "Separator",
+                        &mut settings.ov_separator_color,
+                        &mut self.dirty,
+                    );
                 });
 
             // --- Buttons & Controls ---
@@ -4510,9 +4834,24 @@ impl SettingsWindow {
                     ui.strong("Buttons & Controls");
                 })
                 .body(|ui| {
-                    Self::opt_color_row(ui, "Button BG", &mut settings.ov_button_bg, &mut self.dirty);
-                    Self::opt_color_row(ui, "Hover", &mut settings.ov_button_hover, &mut self.dirty);
-                    Self::opt_color_row(ui, "Active", &mut settings.ov_button_active, &mut self.dirty);
+                    Self::opt_color_row(
+                        ui,
+                        "Button BG",
+                        &mut settings.ov_button_bg,
+                        &mut self.dirty,
+                    );
+                    Self::opt_color_row(
+                        ui,
+                        "Hover",
+                        &mut settings.ov_button_hover,
+                        &mut self.dirty,
+                    );
+                    Self::opt_color_row(
+                        ui,
+                        "Active",
+                        &mut settings.ov_button_active,
+                        &mut self.dirty,
+                    );
                 });
 
             // --- Panels & Windows ---
@@ -4522,8 +4861,18 @@ impl SettingsWindow {
                     ui.strong("Panels & Windows");
                 })
                 .body(|ui| {
-                    Self::opt_color_row(ui, "Floating Window", &mut settings.ov_floating_window_bg, &mut self.dirty);
-                    Self::opt_color_row(ui, "Toolbar", &mut settings.ov_toolbar_bg, &mut self.dirty);
+                    Self::opt_color_row(
+                        ui,
+                        "Floating Window",
+                        &mut settings.ov_floating_window_bg,
+                        &mut self.dirty,
+                    );
+                    Self::opt_color_row(
+                        ui,
+                        "Toolbar",
+                        &mut settings.ov_toolbar_bg,
+                        &mut self.dirty,
+                    );
                     Self::opt_color_row(ui, "Menu", &mut settings.ov_menu_bg, &mut self.dirty);
                 });
 
@@ -4534,15 +4883,31 @@ impl SettingsWindow {
                     ui.strong("Canvas Background");
                 })
                 .body(|ui| {
-                    Self::opt_color_row(ui, "Gradient Top", &mut settings.ov_canvas_bg_top, &mut self.dirty);
-                    Self::opt_color_row(ui, "Gradient Bottom", &mut settings.ov_canvas_bg_bottom, &mut self.dirty);
+                    Self::opt_color_row(
+                        ui,
+                        "Gradient Top",
+                        &mut settings.ov_canvas_bg_top,
+                        &mut self.dirty,
+                    );
+                    Self::opt_color_row(
+                        ui,
+                        "Gradient Bottom",
+                        &mut settings.ov_canvas_bg_bottom,
+                        &mut self.dirty,
+                    );
                     ui.horizontal(|ui| {
                         ui.label("Grid Visible:");
                         ui.checkbox(&mut settings.canvas_grid_visible, "");
                     });
                     ui.horizontal(|ui| {
                         ui.label("Grid Opacity:");
-                        if ui.add(egui::Slider::new(&mut settings.canvas_grid_opacity, 0.0..=1.0).step_by(0.05)).changed() {
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut settings.canvas_grid_opacity, 0.0..=1.0)
+                                    .step_by(0.05),
+                            )
+                            .changed()
+                        {
                             self.dirty = true;
                         }
                     });
@@ -4555,9 +4920,30 @@ impl SettingsWindow {
                     ui.strong("Geometry & Shape");
                 })
                 .body(|ui| {
-                    Self::opt_f32_row(ui, "Widget Rounding", &mut settings.widget_rounding, 0.0, 24.0, &mut self.dirty);
-                    Self::opt_f32_row(ui, "Window Rounding", &mut settings.window_rounding, 0.0, 24.0, &mut self.dirty);
-                    Self::opt_f32_row(ui, "Menu Rounding", &mut settings.menu_rounding, 0.0, 24.0, &mut self.dirty);
+                    Self::opt_f32_row(
+                        ui,
+                        "Widget Rounding",
+                        &mut settings.widget_rounding,
+                        0.0,
+                        24.0,
+                        &mut self.dirty,
+                    );
+                    Self::opt_f32_row(
+                        ui,
+                        "Window Rounding",
+                        &mut settings.window_rounding,
+                        0.0,
+                        24.0,
+                        &mut self.dirty,
+                    );
+                    Self::opt_f32_row(
+                        ui,
+                        "Menu Rounding",
+                        &mut settings.menu_rounding,
+                        0.0,
+                        24.0,
+                        &mut self.dirty,
+                    );
                 });
 
             // --- Effects & Atmosphere ---
@@ -4567,16 +4953,33 @@ impl SettingsWindow {
                     ui.strong("Effects & Atmosphere");
                 })
                 .body(|ui| {
-                    Self::opt_color_row(ui, "Glow Accent", &mut settings.ov_glow_accent, &mut self.dirty);
+                    Self::opt_color_row(
+                        ui,
+                        "Glow Accent",
+                        &mut settings.ov_glow_accent,
+                        &mut self.dirty,
+                    );
                     ui.horizontal(|ui| {
                         ui.label("Glow Intensity:");
-                        if ui.add(egui::Slider::new(&mut settings.glow_intensity, 0.0..=2.0).step_by(0.1)).changed() {
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut settings.glow_intensity, 0.0..=2.0)
+                                    .step_by(0.1),
+                            )
+                            .changed()
+                        {
                             self.dirty = true;
                         }
                     });
                     ui.horizontal(|ui| {
                         ui.label("Shadow Strength:");
-                        if ui.add(egui::Slider::new(&mut settings.shadow_strength, 0.0..=2.0).step_by(0.1)).changed() {
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut settings.shadow_strength, 0.0..=2.0)
+                                    .step_by(0.1),
+                            )
+                            .changed()
+                        {
                             self.dirty = true;
                         }
                     });
@@ -4589,8 +4992,18 @@ impl SettingsWindow {
                     ui.strong("Additional Accents");
                 })
                 .body(|ui| {
-                    Self::opt_color_row(ui, "Secondary (Green)", &mut settings.ov_accent3, &mut self.dirty);
-                    Self::opt_color_row(ui, "Tertiary (Amber)", &mut settings.ov_accent4, &mut self.dirty);
+                    Self::opt_color_row(
+                        ui,
+                        "Secondary (Green)",
+                        &mut settings.ov_accent3,
+                        &mut self.dirty,
+                    );
+                    Self::opt_color_row(
+                        ui,
+                        "Tertiary (Amber)",
+                        &mut settings.ov_accent4,
+                        &mut self.dirty,
+                    );
                 });
 
             // Reset overrides button
@@ -4642,14 +5055,79 @@ impl SettingsWindow {
             if apply_btn.clicked() {
                 self.apply_theme(settings, theme, ctx);
             }
-            if ui.button(t!("settings.interface.reset_to_blue")).clicked() {
-                self.staged_preset = ThemePreset::Blue;
-                self.staged_accent = ThemePreset::Blue.accent_colors();
+            if ui
+                .button(t!("settings.interface.reset_to_signal"))
+                .clicked()
+            {
+                self.staged_preset = ThemePreset::Signal;
+                self.staged_accent = ThemePreset::Signal.accent_colors();
                 self.staged_mode = ThemeMode::Light;
                 self.dirty = true;
                 self.apply_theme(settings, theme, ctx);
             }
+
+            ui.add_space(12.0);
+            ui.separator();
+            ui.add_space(4.0);
+
+            if ui.button(t!("settings.interface.export_theme")).clicked() {
+                let theme_str = settings.export_theme_to_string();
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("PaintFE Theme", &["paintfe-theme"])
+                    .set_file_name("my_theme.paintfe-theme")
+                    .save_file()
+                {
+                    match std::fs::write(&path, &theme_str) {
+                        Ok(()) => {
+                            self.theme_status = Some((
+                                t!("settings.interface.theme_exported"),
+                                ui.input(|i| i.time),
+                            ));
+                        }
+                        Err(e) => {
+                            self.theme_status = Some((
+                                format!("{}: {e}", t!("settings.interface.theme_error")),
+                                ui.input(|i| i.time),
+                            ));
+                        }
+                    }
+                }
+            }
+            if ui.button(t!("settings.interface.import_theme")).clicked()
+                && let Some(path) = rfd::FileDialog::new()
+                    .add_filter("PaintFE Theme", &["paintfe-theme"])
+                    .pick_file()
+            {
+                    match std::fs::read_to_string(&path) {
+                        Ok(content) => {
+                            settings.import_theme_from_string(&content);
+                            self.sync_from_settings(settings);
+                            self.dirty = true;
+                            self.apply_theme(settings, theme, ctx);
+                            self.theme_status = Some((
+                                t!("settings.interface.theme_imported"),
+                                ui.input(|i| i.time),
+                            ));
+                        }
+                        Err(e) => {
+                            self.theme_status = Some((
+                                format!("{}: {e}", t!("settings.interface.theme_error")),
+                                ui.input(|i| i.time),
+                            ));
+                        }
+                    }
+            }
         });
+
+        // Show status message for 3 seconds
+        if let Some((msg, time)) = &self.theme_status {
+            let now = ui.input(|i| i.time);
+            if now - time < 3.0 {
+                ui.label(egui::RichText::new(msg).small().weak());
+            } else {
+                self.theme_status = None;
+            }
+        }
     }
 
     /// Render a single color picker row, returns true if value changed
@@ -4678,12 +5156,7 @@ impl SettingsWindow {
     }
 
     /// Render an optional color override row with an enable checkbox + color picker + reset button.
-    fn opt_color_row(
-        ui: &mut egui::Ui,
-        label: &str,
-        opt: &mut Option<Color32>,
-        dirty: &mut bool,
-    ) {
+    fn opt_color_row(ui: &mut egui::Ui, label: &str, opt: &mut Option<Color32>, dirty: &mut bool) {
         ui.horizontal(|ui| {
             let mut enabled = opt.is_some();
             if ui.checkbox(&mut enabled, "").changed() {
@@ -5149,4 +5622,9 @@ impl SettingsWindow {
 /// Common brush size presets
 pub const BRUSH_SIZE_PRESETS: &[f32] = &[
     1.0, 2.0, 4.0, 8.0, 12.0, 16.0, 24.0, 32.0, 48.0, 64.0, 96.0, 128.0,
+];
+
+pub const TEXT_SIZE_PRESETS: &[f32] = &[
+    8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 28.0, 32.0, 36.0, 48.0, 64.0, 72.0, 96.0,
+    128.0, 192.0, 256.0,
 ];

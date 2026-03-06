@@ -6,6 +6,51 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.1.0] - 2026-03-06
+
+### Added
+- **Visual overhaul ("Signal Grid" design language)**: Complete UI redesign to match the PaintFE website aesthetic. Blue-tinted neutral backgrounds, orange primary accent, multi-tier depth system, rounded corners, subtle glow effects, and updated typography throughout.
+  - **Project tabs**: Drag-to-reorder tab bar showing canvas dimensions (e.g. "800x600") on the active tab. Unsaved projects display a colored dot indicator. Close button appears on hover. Horizontal scrolling when many projects are open, with a `+` button for new projects.
+  - **Floating tool shelf**: Redesigned compact vertical tool strip with frameless 26px icon buttons arranged in a 3-column grid. Tool groups separated by visual dividers. Active tool has an accent-colored glow background.
+  - **Theme management**: Full theme customization with 13 built-in presets (Blue, Orange, Purple, Red, Green, Lime, Nebula, Ember, Sakura, Glacier, Midnight, Signal, Custom). Advanced settings for surface colors, accent colors (normal/faint/strong), glow intensity, shadow strength, and UI density. Export and import themes as `.paintfe-theme` files.
+  - **Merged brush size selector**: Combined DragValue, preset dropdown, and +/- stepper buttons into a single bordered control. Preset dropdown provides quick access to common sizes (5, 10, 20, 30, 50, 75, 100px). Used consistently across Brush, Eraser, Text, Content Aware, and other sizing tools.
+  - **Signal Grid canvas background**: Subtle 40px grid texture behind the canvas area matching the website design. Color-adaptive (blue-tinted gray in dark mode, dark blue-black in light mode). Auto-hides when grid cells would be smaller than 5px on screen. Toggleable in View settings.
+  - **Color widget**: Compressed and reorganized layout with compact and expandable modes. Compact mode is width-constrained; expanded mode adds HSL sliders and a color preview column. Consistent 4px spacing throughout.
+  - **Updated icons and fonts**: Refreshed toolbar icons and adjusted fonts/spacing to align with the Signal Grid design language.
+- **Text layers**: Non-destructive editable text layers created via Canvas > New Text Layer or the Layers Panel right-click menu.
+  - Rich text formatting with multiple font families, weights, sizes, italic, underline, strikethrough, letter spacing, and per-run coloring. Bold (Ctrl+B), Italic (Ctrl+I), Underline (Ctrl+U) keyboard shortcuts.
+  - Multi-block editing: click empty areas to create new text blocks within a layer, Tab to cycle between blocks, per-block delete via the X button.
+  - Word wrapping with resizable text boxes (drag side handles to set max width), rotation via the top handle, and repositionable blocks.
+  - Text effects and warps accessible from the Layer Settings dialog (gear icon on text layer rows, or right-click > "Text Effects..." / "Text Warp..."). Effects include outline (inside/center/outside positions), drop shadow (with blur and spread), inner shadow, and texture fill (tiled from imported images). Geometric warps include arc (bend + distortion), circular (radius + start angle), and envelope (top/bottom deformation curves).
+  - PFE V2 project file format automatically stores both vector text data and pre-rasterized pixels, so V1 readers can still display text layers (without editability). Auto-versioning selects V2 only when text layers are present.
+  - Lightweight undo: TextLayerEditCommand stores only vector data (~1-50 KB per edit) instead of pixel snapshots.
+  - Rasterize on demand via Layers Panel right-click, or automatically when painting on a text layer or exporting.
+- **Arrow line endings on the Line tool**: Triangular arrowheads with configurable placement (start, end, or both ends of the line). Selectable via dropdowns in the Line tool context bar. (Closes #17, suggested by @zero54git)
+- **Layer search/filter**: Search bar appears when more than 2 layers exist, providing real-time case-insensitive filtering with a clear button.
+- **macOS builds**: Apple Silicon (ARM64) and Intel (x86_64) `.dmg` builds are now produced automatically by the release workflow, with macOS Clippy checks added to CI. (Closes #18, contributed by @fewtarius)
+- **Pen/tablet pressure sensitivity**: Brush size and opacity respond to stylus pressure on supported devices, with configurable minimum thresholds for both. (Closes #18, contributed by @fewtarius)
+
+### Fixed
+- **Wayland window icon**: Set `app_id` on the Wayland viewport so compositors resolve the PaintFE icon from the desktop entry instead of showing the default egui icon.
+- **macOS keybinding display**: Keyboard shortcuts now show Cmd/Option symbols on macOS instead of Ctrl/Alt. macOS icon loading corrected. (Closes #18, contributed by @fewtarius)
+- Layer search field no longer captures single-key tool keybinds (e.g. pressing "B" in the search box no longer switches to the Brush tool).
+
+### Changed
+- New application icon and logo, including an MSIX-compliant safe-zone icon for the Microsoft Store.
+
+### Security
+- Updated `codeql-action` to v3.28.13 via Dependabot. (Closes #16)
+
+### Contributors
+- @fewtarius: macOS support, pen/tablet pressure, icon fix (#18)
+- @zero54git: Arrow line endings feature request (#17)
+- @dependabot: CI dependency update (#16)
+
+### Known Issues
+- On Windows, system error sounds may occasionally play when pressing keys. A relaunch typically resolves it. Under investigation; not observed in the latest build.
+
+---
+
 ## [1.0.12] - 2026-03-03
 
 ### Added

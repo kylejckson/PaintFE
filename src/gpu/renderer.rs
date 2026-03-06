@@ -92,6 +92,21 @@ impl AsyncReadback {
     /// Call after `queue.submit()` with the copy command.  Starts `map_async`
     /// on the write buffer and swaps write/read indices.
     pub fn submit_and_swap(&mut self, meta: ReadbackMeta) {
+        // If the previous frame's read buffer is still mapped (wasn't consumed
+        // by try_read), force-unmap it now.  Otherwise, after the swap the old
+        // read buffer becomes the new write buffer, and on the NEXT frame the
+        // copy_texture_to_buffer referencing it would hit
+        // "Buffer is still mapped" in queue.submit.
+        if self.read_pending {
+            let old_ridx = self.read_idx();
+            if let Some(buf) = self.buffers[old_ridx].as_ref() {
+                buf.unmap();
+            }
+            self.read_pending = false;
+            self.read_rx = None;
+            self.read_meta = None;
+        }
+
         let widx = self.write_idx;
         let buf = self.buffers[widx].as_ref().unwrap();
         let slice = buf.slice(..);
@@ -157,7 +172,14 @@ impl AsyncReadback {
     /// from being applied on a subsequent frame.
     pub fn cancel_pending(&mut self) {
         if self.read_pending {
-            // Dropping the receiver cancels any pending map_async callback.
+            // Unmap the read buffer so it can be reused as a write target
+            // later.  Without this, the buffer stays mapped and a future
+            // `copy_texture_to_buffer` into it would fail with
+            // "Buffer is still mapped" in queue.submit.
+            let ridx = self.read_idx();
+            if let Some(buf) = self.buffers[ridx].as_ref() {
+                buf.unmap();
+            }
             let _ = self.read_rx.take();
             self.read_meta = None;
             self.read_pending = false;

@@ -1,4 +1,4 @@
-use crate::assets::{Assets, BRUSH_SIZE_PRESETS, Icon};
+use crate::assets::{Assets, BRUSH_SIZE_PRESETS, TEXT_SIZE_PRESETS, Icon};
 use crate::canvas::{
     BlendMode, CHUNK_SIZE, CanvasState, SelectionMode, SelectionShape, TiledImage,
 };
@@ -182,6 +182,46 @@ impl CapStyle {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LineEndShape {
+    None,
+    Arrow,
+}
+
+impl LineEndShape {
+    pub fn label(&self) -> String {
+        match self {
+            LineEndShape::None => t!("line_end.none"),
+            LineEndShape::Arrow => t!("line_end.arrow"),
+        }
+    }
+
+    pub fn all() -> &'static [LineEndShape] {
+        &[LineEndShape::None, LineEndShape::Arrow]
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ArrowSide {
+    End,
+    Start,
+    Both,
+}
+
+impl ArrowSide {
+    pub fn label(&self) -> String {
+        match self {
+            ArrowSide::End => t!("arrow_side.end"),
+            ArrowSide::Start => t!("arrow_side.start"),
+            ArrowSide::Both => t!("arrow_side.both"),
+        }
+    }
+
+    pub fn all() -> &'static [ArrowSide] {
+        &[ArrowSide::End, ArrowSide::Start, ArrowSide::Both]
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LinePattern {
     Solid,
     Dotted,
@@ -206,6 +246,8 @@ impl LinePattern {
 pub struct LineOptions {
     pub pattern: LinePattern,
     pub cap_style: CapStyle,
+    pub end_shape: LineEndShape,
+    pub arrow_side: ArrowSide,
 }
 
 impl Default for LineOptions {
@@ -213,6 +255,8 @@ impl Default for LineOptions {
         Self {
             pattern: LinePattern::Solid,
             cap_style: CapStyle::Round,
+            end_shape: LineEndShape::None,
+            arrow_side: ArrowSide::End,
         }
     }
 }
@@ -232,6 +276,8 @@ pub struct LineToolState {
     pub last_size: f32,              // Track size for change detection
     pub last_pattern: LinePattern,   // Track pattern for change detection
     pub last_cap_style: CapStyle,    // Track cap style for change detection
+    pub last_end_shape: LineEndShape, // Track end shape for change detection
+    pub last_arrow_side: ArrowSide,   // Track arrow side for change detection
 }
 
 impl Default for LineToolState {
@@ -250,6 +296,8 @@ impl Default for LineToolState {
             last_size: 10.0,
             last_pattern: LinePattern::Solid,
             last_cap_style: CapStyle::Round,
+            last_end_shape: LineEndShape::None,
+            last_arrow_side: ArrowSide::End,
         }
     }
 }
@@ -814,6 +862,48 @@ impl GradientToolState {
 // TEXT TOOL STATE
 // ============================================================================
 
+/// Drag interaction type for glyph edit mode.
+#[derive(Clone, Debug)]
+pub struct GlyphDragState {
+    /// Index of the glyph being dragged.
+    pub glyph_index: usize,
+    /// Type of drag: Move, Scale, or Rotate.
+    pub drag_type: GlyphDragType,
+    /// Starting mouse position in canvas coords.
+    pub start_pos: [f32; 2],
+    /// Original override values at drag start.
+    pub original_offset: [f32; 2],
+    pub original_rotation: f32,
+    pub original_scale: f32,
+}
+
+/// Type of glyph drag interaction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GlyphDragType {
+    Move,
+    Scale,
+    Rotate,
+}
+
+/// Type of text box drag interaction (resize, rotate).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextBoxDragType {
+    /// Dragging the left edge (changes max_width and origin X).
+    ResizeLeft,
+    /// Dragging the right edge (changes max_width).
+    ResizeRight,
+    /// Dragging top-left corner.
+    ResizeTopLeft,
+    /// Dragging top-right corner.
+    ResizeTopRight,
+    /// Dragging bottom-left corner.
+    ResizeBottomLeft,
+    /// Dragging bottom-right corner.
+    ResizeBottomRight,
+    /// Dragging the rotation handle.
+    Rotate,
+}
+
 /// State for the Text tool.
 #[derive(Debug)]
 pub struct TextToolState {
@@ -830,6 +920,10 @@ pub struct TextToolState {
     pub strikethrough: bool,
     pub anti_alias: bool,
     pub alignment: crate::ops::text::TextAlignment,
+    /// Extra spacing between characters (px). Per-block, synced with TextStyle.letter_spacing.
+    pub letter_spacing: f32,
+    /// Line height multiplier. Per-block, synced with ParagraphStyle.line_spacing.
+    pub line_spacing: f32,
     pub available_fonts: Vec<String>,
     pub font_search: String,
     pub loaded_font: Option<ab_glyph::FontArc>,
@@ -876,6 +970,65 @@ pub struct TextToolState {
         Option<std::sync::mpsc::Receiver<Vec<(String, Option<ab_glyph::FontArc>)>>>,
     /// Font names currently queued for async preview loading
     pub font_preview_pending: std::collections::HashSet<String>,
+    /// Whether we are editing a text layer's TextLayerData (vs stamping on a raster layer)
+    pub editing_text_layer: bool,
+    /// Selection within the active block (Batch 3: per-run formatting)
+    pub selection: crate::ops::text_layer::TextSelection,
+    /// ID of the currently active text block (Batch 4: multi-block)
+    pub active_block_id: Option<u64>,
+    /// Set by context bar when style properties change; consumed by handle_input
+    /// to apply to selection in text layer mode.
+    pub ctx_bar_style_dirty: bool,
+    /// Cached text effects for the current text layer (synced with TextLayerData).
+    pub text_effects: crate::ops::text_layer::TextEffects,
+    /// Whether text effects have been modified by the UI and need to be written back.
+    pub text_effects_dirty: bool,
+    /// Cached text warp for the current text layer block (synced with TextBlock).
+    pub text_warp: crate::ops::text_layer::TextWarp,
+    /// Whether text warp has been modified by the UI and needs to be written back.
+    pub text_warp_dirty: bool,
+    // --- Text Box Resize/Rotate ---
+    /// Active text box drag interaction (resize handle or rotation handle).
+    pub text_box_drag: Option<TextBoxDragType>,
+    /// Canvas coordinates of mouse at drag start.
+    pub text_box_drag_start_mouse: [f32; 2],
+    /// max_width value at drag start (for resize).
+    pub text_box_drag_start_width: Option<f32>,
+    /// max_height value at drag start (for vertical resize).
+    pub text_box_drag_start_height: Option<f32>,
+    /// Block position at drag start (for resize from left side).
+    pub text_box_drag_start_origin: [f32; 2],
+    /// Block rotation at drag start (for rotation handle).
+    pub text_box_drag_start_rotation: f32,
+    /// The max_width for the active text block (None = natural width).
+    pub active_block_max_width: Option<f32>,
+    /// The max_height for the active text block (None = auto-height from content).
+    pub active_block_max_height: Option<f32>,
+    /// Cached bounding rect height for the active block (auto from text reflow).
+    pub active_block_height: f32,
+    /// Prevents click-to-place from firing on the same mouse-up as a handle interaction.
+    pub text_box_click_guard: bool,
+    /// Whether the cursor is hovering the rotation handle (for cursor icon).
+    pub hovering_rotation_handle: bool,
+    // --- Glyph Edit Mode (Phase 5 — Batch 9) ---
+    /// Whether glyph edit mode is active (per-glyph select/move/rotate/scale).
+    pub glyph_edit_mode: bool,
+    /// Indices of the currently selected glyphs.
+    pub selected_glyphs: Vec<usize>,
+    /// Cached glyph bounding boxes for the active block (recomputed on text change).
+    pub cached_glyph_bounds: Vec<crate::ops::text_layer::GlyphBounds>,
+    /// Whether glyph bounds need recomputation.
+    pub glyph_bounds_dirty: bool,
+    /// Glyph drag state: which glyph is being dragged and the drag type.
+    pub glyph_drag: Option<GlyphDragState>,
+    /// Cached glyph overrides synced from the active block (written back on commit).
+    pub glyph_overrides: Vec<crate::ops::text_layer::GlyphOverride>,
+    /// Whether glyph overrides have been modified and need to be synced back.
+    pub glyph_overrides_dirty: bool,
+    // --- Text Layer Undo (Phase 6 — Batch 10) ---
+    /// Snapshot of the TextLayerData before editing started (for TextLayerEditCommand).
+    /// Captured when `load_text_layer_block` is called, consumed by `commit_text_layer`.
+    pub text_layer_before: Option<(usize, crate::ops::text_layer::TextLayerData)>,
 }
 
 impl Default for TextToolState {
@@ -894,6 +1047,8 @@ impl Default for TextToolState {
             strikethrough: false,
             anti_alias: true,
             alignment: crate::ops::text::TextAlignment::Left,
+            letter_spacing: 0.0,
+            line_spacing: 1.0,
             available_fonts: Vec::new(),
             font_search: String::new(),
             loaded_font: None,
@@ -922,6 +1077,33 @@ impl Default for TextToolState {
             font_preview_cache: std::collections::HashMap::new(),
             font_preview_rx: None,
             font_preview_pending: std::collections::HashSet::new(),
+            editing_text_layer: false,
+            selection: crate::ops::text_layer::TextSelection::default(),
+            active_block_id: None,
+            ctx_bar_style_dirty: false,
+            text_effects: crate::ops::text_layer::TextEffects::default(),
+            text_effects_dirty: false,
+            text_warp: crate::ops::text_layer::TextWarp::None,
+            text_warp_dirty: false,
+            text_box_drag: None,
+            text_box_drag_start_mouse: [0.0; 2],
+            text_box_drag_start_width: None,
+            text_box_drag_start_height: None,
+            text_box_drag_start_origin: [0.0; 2],
+            text_box_drag_start_rotation: 0.0,
+            active_block_max_width: None,
+            active_block_max_height: None,
+            active_block_height: 0.0,
+            text_box_click_guard: false,
+            hovering_rotation_handle: false,
+            glyph_edit_mode: false,
+            selected_glyphs: Vec::new(),
+            cached_glyph_bounds: Vec::new(),
+            glyph_bounds_dirty: true,
+            glyph_drag: None,
+            glyph_overrides: Vec::new(),
+            glyph_overrides_dirty: false,
+            text_layer_before: None,
         }
     }
 }
@@ -1195,10 +1377,19 @@ pub struct ToolsPanel {
     /// Pending history commands from tool operations (e.g., perspective crop)
     /// Consumed by app.rs each frame.
     pub pending_history_commands: Vec<Box<dyn crate::components::history::Command>>,
+    /// When set, the active text layer at this index needs to be rasterized
+    /// before a destructive tool operation can proceed. Consumed by app.rs.
+    pub pending_auto_rasterize: Option<usize>,
+    /// Saved tool before auto-switching to Text for a text layer.
+    /// Restored when switching away from a text layer.
+    tool_before_text_layer: Option<Tool>,
     /// Pixel amount for selection feather/expand/contract (context bar spinner).
     pub sel_modify_radius: f32,
     /// Pending selection modification set from context bar; consumed by app.rs.
     pub pending_sel_modify: Option<SelectionModifyOp>,
+    /// Tool usage hint — displayed at the bottom-left of the app window.
+    /// Set each frame based on the active tool.
+    pub tool_hint: String,
 }
 
 impl Default for ToolsPanel {
@@ -1238,8 +1429,11 @@ impl Default for ToolsPanel {
             stamp_counter: 0,
             active_tip_rotation_deg: 0.0,
             pending_history_commands: Vec::new(),
+            pending_auto_rasterize: None,
+            tool_before_text_layer: None,
             sel_modify_radius: 5.0,
             pending_sel_modify: None,
+            tool_hint: String::new(),
         }
     }
 }
@@ -1384,6 +1578,25 @@ impl Default for ContentAwareBrushState {
 }
 
 impl ToolsPanel {
+    /// Auto-switch to Text tool when active layer is a text layer, and
+    /// restore the previous tool when switching away. Called immediately
+    /// after layer selection changes so there is no 1-frame delay.
+    pub fn auto_switch_tool_for_layer(&mut self, canvas_state: &CanvasState) {
+        let is_text = canvas_state
+            .layers
+            .get(canvas_state.active_layer_index)
+            .is_some_and(|l| l.is_text_layer());
+        if is_text && self.active_tool != Tool::Text {
+            self.tool_before_text_layer = Some(self.active_tool);
+            self.active_tool = Tool::Text;
+        } else if !is_text
+            && let Some(prev) = self.tool_before_text_layer.take()
+            && self.active_tool == Tool::Text
+        {
+            self.active_tool = prev;
+        }
+    }
+
     /// Take the pending stroke event (if any) for processing
     pub fn take_stroke_event(&mut self) -> Option<StrokeEvent> {
         self.pending_stroke_event.take()
@@ -1492,6 +1705,7 @@ impl ToolsPanel {
                     self.text_state.text.clear();
                     self.text_state.cursor_pos = 0;
                     self.text_state.is_editing = false;
+                    self.text_state.editing_text_layer = false;
                     self.text_state.origin = None;
                     self.text_state.dragging_handle = false;
                     canvas_state.clear_preview_state();
@@ -1552,8 +1766,12 @@ impl ToolsPanel {
         primary_color: egui::Color32,
         secondary_color: egui::Color32,
         keybindings: &crate::assets::KeyBindings,
+        is_text_layer: bool,
     ) -> ToolsPanelAction {
         let mut action = ToolsPanelAction::None;
+
+        // Clear tool hint each frame — only set when hovering a tool button
+        self.tool_hint.clear();
 
         let btn_size = 26.0; // visual button size
         let cols = 3;
@@ -1632,10 +1850,11 @@ impl ToolsPanel {
         let dark_mode = ui.visuals().dark_mode;
 
         // In dark mode, use a noticeably darker fill than the panel to create a recessed look
+        // In light mode, use near-white so buttons blend into the panel
         let tool_btn_fill = if dark_mode {
             egui::Color32::from_gray(18)
         } else {
-            ui.visuals().widgets.inactive.bg_fill
+            egui::Color32::from_gray(238)
         };
 
         for (gi, group) in groups.iter().enumerate() {
@@ -1651,12 +1870,18 @@ impl ToolsPanel {
 
                 let selected = self.active_tool == *tool;
 
+                // On text layers, only Text/Zoom/Pan are enabled
+                let tool_disabled = is_text_layer
+                    && !matches!(tool, Tool::Text | Tool::Zoom | Tool::Pan);
+
                 // Manual painting (like Shapes button) for full control over fill/tint
                 let resp = ui.allocate_rect(btn_rect, egui::Sense::click());
-                let hovered = resp.hovered();
+                let hovered = resp.hovered() && !tool_disabled;
 
                 // Background fill — selected > hovered > recessed default
-                let fill = if selected {
+                let fill = if tool_disabled {
+                    tool_btn_fill
+                } else if selected {
                     ui.visuals().selection.bg_fill
                 } else if hovered {
                     ui.visuals().widgets.hovered.bg_fill
@@ -1669,12 +1894,8 @@ impl ToolsPanel {
                     let glow_expand = 3.0;
                     let glow_rect = btn_rect.expand(glow_expand);
                     let sel = ui.visuals().selection.bg_fill;
-                    let glow_color = egui::Color32::from_rgba_unmultiplied(
-                        sel.r(),
-                        sel.g(),
-                        sel.b(),
-                        40,
-                    );
+                    let glow_color =
+                        egui::Color32::from_rgba_unmultiplied(sel.r(), sel.g(), sel.b(), 40);
                     ui.painter().rect_filled(glow_rect, 6.0, glow_color);
                 }
 
@@ -1696,18 +1917,21 @@ impl ToolsPanel {
                 if let Some(texture) = assets.get_texture(*icon) {
                     let sized_texture = egui::load::SizedTexture::from_handle(texture);
                     let img_size = egui::vec2(btn_size * 0.75, btn_size * 0.75);
-                    // In dark mode, tint icons full white for contrast (inverted icons are white-on-transparent)
-                    let img = if dark_mode && !selected {
-                        egui::Image::from_texture(sized_texture)
-                            .fit_to_exact_size(img_size)
-                            .tint(egui::Color32::WHITE)
+                    // Dim disabled tools, tint white in dark mode for contrast
+                    let tint = if tool_disabled {
+                        egui::Color32::from_rgba_unmultiplied(128, 128, 128, 80)
                     } else {
-                        egui::Image::from_texture(sized_texture).fit_to_exact_size(img_size)
+                        egui::Color32::WHITE
                     };
+                    let img = egui::Image::from_texture(sized_texture)
+                        .fit_to_exact_size(img_size)
+                        .tint(tint);
                     let img_rect = egui::Rect::from_center_size(btn_rect.center(), img_size);
                     img.paint_at(ui, img_rect);
                 } else {
-                    let text_color = if selected {
+                    let text_color = if tool_disabled {
+                        egui::Color32::from_rgba_unmultiplied(128, 128, 128, 80)
+                    } else if selected {
                         egui::Color32::WHITE
                     } else {
                         ui.visuals().text_color()
@@ -1721,11 +1945,15 @@ impl ToolsPanel {
                     );
                 }
 
-                if resp
-                    .on_hover_text(icon.tooltip_with_keybind(keybindings))
-                    .clicked()
+                if !tool_disabled
+                    && resp
+                        .on_hover_text(icon.tooltip_with_keybind(keybindings))
+                        .clicked()
                 {
                     self.change_tool(*tool);
+                }
+                if hovered {
+                    self.tool_hint = Self::tool_hint_for(*tool);
                 }
             }
 
@@ -1761,11 +1989,14 @@ impl ToolsPanel {
 
             let icon = Icon::Shapes;
             let is_shapes = self.active_tool == Tool::Shapes;
+            let shapes_disabled = is_text_layer;
 
             let resp = ui.allocate_rect(shape_rect, egui::Sense::click());
-            let hovered = resp.hovered();
+            let hovered = resp.hovered() && !shapes_disabled;
 
-            let fill = if is_shapes {
+            let fill = if shapes_disabled {
+                tool_btn_fill
+            } else if is_shapes {
                 ui.visuals().selection.bg_fill
             } else if hovered {
                 ui.visuals().widgets.hovered.bg_fill
@@ -1778,12 +2009,8 @@ impl ToolsPanel {
                 let glow_expand = 3.0;
                 let glow_rect = shape_rect.expand(glow_expand);
                 let sel = ui.visuals().selection.bg_fill;
-                let glow_color = egui::Color32::from_rgba_unmultiplied(
-                    sel.r(),
-                    sel.g(),
-                    sel.b(),
-                    40,
-                );
+                let glow_color =
+                    egui::Color32::from_rgba_unmultiplied(sel.r(), sel.g(), sel.b(), 40);
                 ui.painter().rect_filled(glow_rect, 6.0, glow_color);
             }
 
@@ -1804,7 +2031,9 @@ impl ToolsPanel {
                 let sized_texture = egui::load::SizedTexture::from_handle(texture);
                 let img = egui::Image::from_texture(sized_texture)
                     .fit_to_exact_size(egui::vec2(shape_w * 0.75, btn_size * 0.75));
-                let img = if dark_mode && !is_shapes {
+                let img = if shapes_disabled {
+                    img.tint(egui::Color32::from_rgba_unmultiplied(128, 128, 128, 80))
+                } else if dark_mode && !is_shapes {
                     img.tint(egui::Color32::WHITE)
                 } else {
                     img
@@ -1815,7 +2044,9 @@ impl ToolsPanel {
                 );
                 img.paint_at(ui, img_rect);
             } else {
-                let text_color = if is_shapes {
+                let text_color = if shapes_disabled {
+                    egui::Color32::from_rgba_unmultiplied(128, 128, 128, 80)
+                } else if is_shapes {
                     egui::Color32::WHITE
                 } else {
                     ui.visuals().text_color()
@@ -1829,11 +2060,15 @@ impl ToolsPanel {
                 );
             }
 
-            if resp
-                .on_hover_text(icon.tooltip_with_keybind(keybindings))
-                .clicked()
+            if !shapes_disabled
+                && resp
+                    .on_hover_text(icon.tooltip_with_keybind(keybindings))
+                    .clicked()
             {
                 self.change_tool(Tool::Shapes);
+            }
+            if hovered {
+                self.tool_hint = Self::tool_hint_for(Tool::Shapes);
             }
         }
 
@@ -2134,6 +2369,36 @@ impl ToolsPanel {
         }
     }
 
+    /// Short usage hint for a given tool — displayed at bottom-left of the app on hover.
+    pub fn tool_hint_for(tool: Tool) -> String {
+        match tool {
+            Tool::Brush => "Left-click to paint. Right-click for secondary color. Hold Shift for straight lines.".into(),
+            Tool::Pencil => "Left-click to draw 1px aliased lines. Hold Shift for straight lines.".into(),
+            Tool::Eraser => "Left-click to erase. Removes pixels from the active layer.".into(),
+            Tool::Line => "Click and drag to draw a straight line. Adjust width in options.".into(),
+            Tool::RectangleSelect => "Click and drag to create a rectangular selection.".into(),
+            Tool::EllipseSelect => "Click and drag to create an elliptical selection.".into(),
+            Tool::MovePixels => "Click + drag to move selected pixels. No selection = move entire layer.".into(),
+            Tool::MoveSelection => "Click + drag to move the selection boundary without affecting pixels.".into(),
+            Tool::MagicWand => "Click to select contiguous areas of similar color. Adjust tolerance in options.".into(),
+            Tool::Fill => "Click to flood-fill an area with the primary color.".into(),
+            Tool::ColorPicker => "Left-click to pick primary color. Right-click for secondary color.".into(),
+            Tool::Gradient => "Click and drag to draw a gradient on the active layer.".into(),
+            Tool::Lasso => "Click to place points, or drag freehand, to create an irregular selection.".into(),
+            Tool::Zoom => "Click to zoom in. Drag a rectangle to zoom to area. Hold Alt to zoom out.".into(),
+            Tool::Pan => "Click and drag to pan the canvas viewport.".into(),
+            Tool::CloneStamp => "Ctrl+click to set source. Then paint to clone from source area.".into(),
+            Tool::ContentAwareBrush => "Paint over an area to remove it using content-aware fill.".into(),
+            Tool::Liquify => "Click and drag to push/warp pixels in the brush direction.".into(),
+            Tool::MeshWarp => "Drag control points to warp the image with a smooth mesh grid.".into(),
+            Tool::ColorRemover => "Paint over a color to remove it, making those pixels transparent.".into(),
+            Tool::Smudge => "Click and drag to smudge/blend colors in the stroke direction.".into(),
+            Tool::Text => "Click to place text. Configure font, size, and color in options.".into(),
+            Tool::PerspectiveCrop => "Drag the four corners to define a perspective crop region.".into(),
+            Tool::Shapes => "Click and drag to draw shapes. Hold Shift for constrained proportions.".into(),
+        }
+    }
+
     /// Dynamic context bar that shows options based on active tool
     /// This replaces show_properties_toolbar for the floating window layout
     pub fn show_context_bar(
@@ -2144,9 +2409,13 @@ impl ToolsPanel {
         secondary_color: Color32,
     ) {
         ui.horizontal(|ui| {
-            // Tool name label
-            ui.label(egui::RichText::new(self.active_tool_name()).strong());
-            ui.separator();
+            // Tool name tag badge (Signal Grid style)
+            crate::signal_widgets::tool_shelf_tag(
+                ui,
+                &self.active_tool_name().to_uppercase(),
+                ui.visuals().widgets.active.bg_stroke.color,
+            );
+            ui.add_space(6.0);
 
             // Rebuild tip mask cache for brush/eraser tools
             // Called both before AND after tool options UI so picker changes
@@ -2163,7 +2432,7 @@ impl ToolsPanel {
                     self.show_brush_options(ui, assets);
                 }
                 Tool::Line => {
-                    self.show_line_options(ui);
+                    self.show_line_options(ui, assets);
                 }
                 Tool::Eraser => {
                     self.show_eraser_options(ui, assets);
@@ -2185,12 +2454,10 @@ impl ToolsPanel {
                     self.show_selection_options(ui);
                 }
                 Tool::MovePixels => {
-                    ui.label(
-                        "Click + drag to move selected pixels. No selection = move entire image.",
-                    );
+                    // Hint only — no options
                 }
                 Tool::MoveSelection => {
-                    ui.label("Click + drag to move the selection boundary.");
+                    // Hint only — no options
                 }
                 Tool::MagicWand => {
                     self.show_magic_wand_options(ui);
@@ -2199,7 +2466,7 @@ impl ToolsPanel {
                     self.show_fill_options(ui);
                 }
                 Tool::ColorPicker => {
-                    ui.label("Left-click to pick Primary color. Right-click for Secondary color.");
+                    // Hint only — no options
                 }
                 Tool::Lasso => {
                     self.show_lasso_options(ui);
@@ -2217,11 +2484,10 @@ impl ToolsPanel {
                     {
                         self.zoom_tool_state.zoom_out_mode = !self.zoom_tool_state.zoom_out_mode;
                     }
-                    ui.separator();
-                    ui.label("Click/tap to zoom. Drag a rectangle to zoom to area.");
+                    // Removed inline label — zoom hint is in tool_hint
                 }
                 Tool::Pan => {
-                    ui.label("Click and drag to pan the canvas viewport.");
+                    // Hint only — no options
                 }
                 Tool::PerspectiveCrop => {
                     self.show_perspective_crop_options(ui);
@@ -2242,7 +2508,7 @@ impl ToolsPanel {
                     self.show_smudge_options(ui);
                 }
                 Tool::Text => {
-                    self.show_text_options(ui);
+                    self.show_text_options(ui, assets);
                 }
                 Tool::Shapes => {
                     self.show_shapes_options(ui, assets);
@@ -2450,6 +2716,187 @@ impl ToolsPanel {
         });
     }
 
+    /// Size widget with +/- buttons, drag value, and preset dropdown.
+    /// The DragValue and dropdown arrow are merged into a single bordered control.
+    fn show_size_widget(&mut self, ui: &mut egui::Ui, combo_id: &str, assets: &Assets) {
+        ui.label(t!("ctx.size"));
+        let popup_id = ui.make_persistent_id(combo_id);
+
+        if ui.small_button("\u{2212}").clicked() {
+            self.properties.size = (self.properties.size - 1.0).max(1.0);
+        }
+
+        // Merged DragValue + dropdown arrow in one frame
+        let inactive = ui.visuals().widgets.inactive;
+        let frame_resp = egui::Frame::none()
+            .fill(inactive.bg_fill)
+            .stroke(inactive.bg_stroke)
+            .rounding(inactive.rounding)
+            .inner_margin(egui::Margin::same(0.0))
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                // Make inner widgets frameless — the outer Frame provides the border
+                let vis = ui.visuals_mut();
+                vis.widgets.inactive.bg_fill = Color32::TRANSPARENT;
+                vis.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+                vis.widgets.hovered.bg_fill = Color32::TRANSPARENT;
+                vis.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+                vis.widgets.active.bg_fill = Color32::TRANSPARENT;
+                vis.widgets.active.bg_stroke = egui::Stroke::NONE;
+
+                let dv_resp = ui.add(
+                    egui::DragValue::new(&mut self.properties.size)
+                        .speed(0.5)
+                        .clamp_range(1.0..=256.0)
+                        .suffix("px"),
+                );
+                let dv_rect = dv_resp.rect;
+                let dv_height = dv_rect.height();
+                dv_resp.on_hover_text(t!("ctx.size_drag_tooltip"));
+
+                // Thin internal divider
+                let sep_x = ui.cursor().left();
+                ui.painter().vline(
+                    sep_x,
+                    dv_rect.top() + 3.0..=dv_rect.bottom() - 3.0,
+                    egui::Stroke::new(
+                        1.0,
+                        inactive.bg_stroke.color.linear_multiply(0.4),
+                    ),
+                );
+
+                if let Some(tex) = assets.get_texture(Icon::DropDown) {
+                    let sized = egui::load::SizedTexture::from_handle(tex);
+                    let img = egui::Image::from_texture(sized)
+                        .fit_to_exact_size(egui::vec2(12.0, 12.0));
+                    ui.add(
+                        egui::Button::image(img).min_size(egui::vec2(14.0, dv_height)),
+                    )
+                } else {
+                    ui.add(
+                        egui::Button::new(egui::RichText::new("\u{25BE}").size(9.0))
+                            .min_size(egui::vec2(14.0, dv_height)),
+                    )
+                }
+            });
+
+        let arrow_resp = frame_resp.inner;
+        if arrow_resp.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(popup_id));
+        }
+        // Anchor popup below the whole merged control, not just the arrow
+        egui::popup_below_widget(ui, popup_id, &frame_resp.response, |ui| {
+            ui.set_min_width(80.0);
+            for &preset in BRUSH_SIZE_PRESETS.iter() {
+                let label = format!("{:.0} px", preset);
+                if ui
+                    .selectable_label((self.properties.size - preset).abs() < 0.1, &label)
+                    .clicked()
+                {
+                    self.properties.size = preset;
+                    ui.memory_mut(|m| m.close_popup());
+                }
+            }
+        });
+        if ui.small_button("+").clicked() {
+            self.properties.size = (self.properties.size + 1.0).min(256.0);
+        }
+    }
+
+    /// Show text font-size widget: merged DragValue + dropdown (same as brush size).
+    fn show_text_size_widget(&mut self, ui: &mut egui::Ui, combo_id: &str, assets: &Assets) {
+        ui.label(t!("ctx.size"));
+        let popup_id = ui.make_persistent_id(combo_id);
+
+        if ui.small_button("\u{2212}").clicked() {
+            self.text_state.font_size = (self.text_state.font_size - 1.0).max(6.0);
+            self.text_state.preview_dirty = true;
+            self.text_state.glyph_cache.clear();
+            self.text_state.ctx_bar_style_dirty = true;
+        }
+
+        let inactive = ui.visuals().widgets.inactive;
+        let frame_resp = egui::Frame::none()
+            .fill(inactive.bg_fill)
+            .stroke(inactive.bg_stroke)
+            .rounding(inactive.rounding)
+            .inner_margin(egui::Margin::same(0.0))
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                let vis = ui.visuals_mut();
+                vis.widgets.inactive.bg_fill = Color32::TRANSPARENT;
+                vis.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+                vis.widgets.hovered.bg_fill = Color32::TRANSPARENT;
+                vis.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+                vis.widgets.active.bg_fill = Color32::TRANSPARENT;
+                vis.widgets.active.bg_stroke = egui::Stroke::NONE;
+
+                let dv_resp = ui.add(
+                    egui::DragValue::new(&mut self.text_state.font_size)
+                        .speed(0.5)
+                        .clamp_range(6.0..=500.0)
+                        .suffix("px"),
+                );
+                if dv_resp.changed() {
+                    self.text_state.preview_dirty = true;
+                    self.text_state.glyph_cache.clear();
+                    self.text_state.ctx_bar_style_dirty = true;
+                }
+                let dv_rect = dv_resp.rect;
+                let dv_height = dv_rect.height();
+                dv_resp.on_hover_text(t!("ctx.size_drag_tooltip"));
+
+                let sep_x = ui.cursor().left();
+                ui.painter().vline(
+                    sep_x,
+                    dv_rect.top() + 3.0..=dv_rect.bottom() - 3.0,
+                    egui::Stroke::new(1.0, inactive.bg_stroke.color.linear_multiply(0.4)),
+                );
+
+                if let Some(tex) = assets.get_texture(Icon::DropDown) {
+                    let sized = egui::load::SizedTexture::from_handle(tex);
+                    let img = egui::Image::from_texture(sized)
+                        .fit_to_exact_size(egui::vec2(12.0, 12.0));
+                    ui.add(egui::Button::image(img).min_size(egui::vec2(14.0, dv_height)))
+                } else {
+                    ui.add(
+                        egui::Button::new(egui::RichText::new("\u{25BE}").size(9.0))
+                            .min_size(egui::vec2(14.0, dv_height)),
+                    )
+                }
+            });
+
+        let arrow_resp = frame_resp.inner;
+        if arrow_resp.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(popup_id));
+        }
+        egui::popup_below_widget(ui, popup_id, &frame_resp.response, |ui| {
+            ui.set_min_width(80.0);
+            for &preset in TEXT_SIZE_PRESETS.iter() {
+                let label = format!("{:.0} px", preset);
+                if ui
+                    .selectable_label(
+                        (self.text_state.font_size - preset).abs() < 0.1,
+                        &label,
+                    )
+                    .clicked()
+                {
+                    self.text_state.font_size = preset;
+                    self.text_state.preview_dirty = true;
+                    self.text_state.glyph_cache.clear();
+                    self.text_state.ctx_bar_style_dirty = true;
+                    ui.memory_mut(|m| m.close_popup());
+                }
+            }
+        });
+        if ui.small_button("+").clicked() {
+            self.text_state.font_size = (self.text_state.font_size + 1.0).min(500.0);
+            self.text_state.preview_dirty = true;
+            self.text_state.glyph_cache.clear();
+            self.text_state.ctx_bar_style_dirty = true;
+        }
+    }
+
     /// Show brush-specific options (size, hardness, blend mode)
     /// For Pencil tool, skip size and hardness since it always paints single pixels
     fn show_brush_options(&mut self, ui: &mut egui::Ui, assets: &Assets) {
@@ -2461,37 +2908,7 @@ impl ToolsPanel {
 
         // Size - skip for Pencil tool since it always paints single pixels
         if self.active_tool != Tool::Pencil {
-            ui.label(t!("ctx.size"));
-            let size_text = format!("{:.0}px", self.properties.size);
-            egui::ComboBox::from_id_source("ctx_brush_size")
-                .selected_text(&size_text)
-                .width(65.0)
-                .show_ui(ui, |ui| {
-                    for &preset in BRUSH_SIZE_PRESETS.iter() {
-                        let label = format!("{:.0}px", preset);
-                        if ui
-                            .selectable_label((self.properties.size - preset).abs() < 0.1, &label)
-                            .clicked()
-                        {
-                            self.properties.size = preset;
-                        }
-                    }
-                });
-            ui.horizontal(|ui| {
-                if ui.button("-").clicked() {
-                    self.properties.size = (self.properties.size - 1.0).max(1.0);
-                }
-                ui.add(
-                    egui::DragValue::new(&mut self.properties.size)
-                        .speed(0.5)
-                        .clamp_range(1.0..=256.0)
-                        .suffix("px"),
-                )
-                .on_hover_text(t!("ctx.size_drag_tooltip"));
-                if ui.button("+").clicked() {
-                    self.properties.size = (self.properties.size + 1.0).min(256.0);
-                }
-            });
+            self.show_size_widget(ui, "ctx_brush_size", assets);
 
             ui.separator();
         }
@@ -2796,39 +3213,9 @@ impl ToolsPanel {
     }
 
     /// Show line tool-specific options (size, cap style, pattern, blend mode)
-    fn show_line_options(&mut self, ui: &mut egui::Ui) {
+    fn show_line_options(&mut self, ui: &mut egui::Ui, assets: &Assets) {
         // Size
-        ui.label(t!("ctx.size"));
-        let size_text = format!("{:.0}px", self.properties.size);
-        egui::ComboBox::from_id_source("ctx_line_size")
-            .selected_text(&size_text)
-            .width(65.0)
-            .show_ui(ui, |ui| {
-                for &preset in BRUSH_SIZE_PRESETS.iter() {
-                    let label = format!("{:.0}px", preset);
-                    if ui
-                        .selectable_label((self.properties.size - preset).abs() < 0.1, &label)
-                        .clicked()
-                    {
-                        self.properties.size = preset;
-                    }
-                }
-            });
-        ui.horizontal(|ui| {
-            if ui.button("-").clicked() {
-                self.properties.size = (self.properties.size - 1.0).max(1.0);
-            }
-            ui.add(
-                egui::DragValue::new(&mut self.properties.size)
-                    .speed(0.5)
-                    .clamp_range(1.0..=256.0)
-                    .suffix("px"),
-            )
-            .on_hover_text(t!("ctx.size_drag_tooltip"));
-            if ui.button("+").clicked() {
-                self.properties.size = (self.properties.size + 1.0).min(256.0);
-            }
-        });
+        self.show_size_widget(ui, "ctx_line_size", assets);
 
         ui.separator();
 
@@ -2848,6 +3235,43 @@ impl ToolsPanel {
                     }
                 }
             });
+
+        ui.separator();
+
+        // End Shape
+        ui.label(t!("ctx.ends"));
+        let current_end_shape = self.line_state.line_tool.options.end_shape;
+        egui::ComboBox::from_id_source("ctx_line_end_shape")
+            .selected_text(current_end_shape.label())
+            .width(60.0)
+            .show_ui(ui, |ui| {
+                for &shape in LineEndShape::all() {
+                    if ui
+                        .selectable_label(shape == current_end_shape, shape.label())
+                        .clicked()
+                    {
+                        self.line_state.line_tool.options.end_shape = shape;
+                    }
+                }
+            });
+
+        // Arrow Side (only visible when Arrow is selected)
+        if self.line_state.line_tool.options.end_shape == LineEndShape::Arrow {
+            let current_arrow_side = self.line_state.line_tool.options.arrow_side;
+            egui::ComboBox::from_id_source("ctx_line_arrow_side")
+                .selected_text(current_arrow_side.label())
+                .width(55.0)
+                .show_ui(ui, |ui| {
+                    for &side in ArrowSide::all() {
+                        if ui
+                            .selectable_label(side == current_arrow_side, side.label())
+                            .clicked()
+                        {
+                            self.line_state.line_tool.options.arrow_side = side;
+                        }
+                    }
+                });
+        }
 
         ui.separator();
 
@@ -2876,29 +3300,7 @@ impl ToolsPanel {
         ui.separator();
 
         // Size
-        ui.label(t!("ctx.size"));
-        let size_text = format!("{:.0}px", self.properties.size);
-        egui::ComboBox::from_id_source("ctx_eraser_size")
-            .selected_text(&size_text)
-            .width(65.0)
-            .show_ui(ui, |ui| {
-                for &preset in BRUSH_SIZE_PRESETS.iter() {
-                    let label = format!("{:.0}px", preset);
-                    if ui
-                        .selectable_label((self.properties.size - preset).abs() < 0.1, &label)
-                        .clicked()
-                    {
-                        self.properties.size = preset;
-                    }
-                }
-            });
-        ui.add(
-            egui::DragValue::new(&mut self.properties.size)
-                .speed(0.5)
-                .clamp_range(1.0..=256.0)
-                .suffix("px"),
-        )
-        .on_hover_text(t!("ctx.size_drag_tooltip"));
+        self.show_size_widget(ui, "ctx_eraser_size", assets);
 
         ui.separator();
 
@@ -3420,34 +3822,9 @@ impl ToolsPanel {
         }
     }
 
-    pub fn show_properties_toolbar(&mut self, ui: &mut egui::Ui, _assets: &Assets) {
-        // Size ComboBox with presets
-        ui.label(t!("ctx.size"));
-
-        let size_text = format!("{:.0}px", self.properties.size);
-        egui::ComboBox::from_id_source("brush_size_presets")
-            .selected_text(&size_text)
-            .width(65.0)
-            .show_ui(ui, |ui| {
-                for &preset in BRUSH_SIZE_PRESETS.iter() {
-                    let label = format!("{:.0}px", preset);
-                    if ui
-                        .selectable_label((self.properties.size - preset).abs() < 0.1, &label)
-                        .clicked()
-                    {
-                        self.properties.size = preset;
-                    }
-                }
-            });
-
-        // Fine-tune with drag value
-        ui.add(
-            egui::DragValue::new(&mut self.properties.size)
-                .speed(0.5)
-                .clamp_range(1.0..=256.0)
-                .suffix("px"),
-        )
-        .on_hover_text(t!("ctx.size_drag_tooltip"));
+    pub fn show_properties_toolbar(&mut self, ui: &mut egui::Ui, assets: &Assets) {
+        // Size
+        self.show_size_widget(ui, "brush_size_presets", assets);
 
         ui.separator();
 
@@ -3565,7 +3942,9 @@ impl ToolsPanel {
                     self.text_state.commit_pending_frame = 0;
                 } else {
                     self.text_state.is_editing = false;
+                    self.text_state.editing_text_layer = false;
                     self.text_state.origin = None;
+                    canvas_state.text_editing_layer = None;
                     canvas_state.clear_preview_state();
                 }
             }
@@ -3583,6 +3962,10 @@ impl ToolsPanel {
             if self.active_tool == Tool::Shapes && self.shapes_state.placed.is_some() {
                 self.commit_shape(canvas_state);
             }
+
+            // Auto-switch tool for text layers (also called from app.rs
+            // immediately after layers panel for zero-delay switching).
+            self.auto_switch_tool_for_layer(canvas_state);
         }
 
         // -- Deferred gradient commit --
@@ -3709,7 +4092,9 @@ impl ToolsPanel {
                 self.commit_text(canvas_state);
             } else {
                 self.text_state.is_editing = false;
+                self.text_state.editing_text_layer = false;
                 self.text_state.origin = None;
+                canvas_state.text_editing_layer = None;
                 canvas_state.clear_preview_state();
             }
         }
@@ -3767,6 +4152,16 @@ impl ToolsPanel {
 
         match self.active_tool {
             Tool::Brush | Tool::Eraser | Tool::Pencil => {
+                // Guard: auto-rasterize text layers before destructive drawing
+                if (is_primary_pressed || is_secondary_down)
+                    && let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                    && layer.is_text_layer()
+                {
+                    self.pending_auto_rasterize = Some(canvas_state.active_layer_index);
+                    // Return early — app.rs will rasterize and we'll continue next frame
+                    return;
+                }
+
                 let is_painting = is_primary_down || is_secondary_down;
 
                 // TASK 2: Shift+Click straight line
@@ -4130,6 +4525,15 @@ impl ToolsPanel {
                 }
             }
             Tool::Line => {
+                // Guard: auto-rasterize text layers before destructive line tool
+                if is_primary_pressed
+                    && let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                    && layer.is_text_layer()
+                {
+                    self.pending_auto_rasterize = Some(canvas_state.active_layer_index);
+                    return;
+                }
+
                 // TASK 1: Advanced Bézier Line Tool
                 match self.line_state.line_tool.stage {
                     LineStage::Idle => {
@@ -4243,6 +4647,10 @@ impl ToolsPanel {
                                 self.line_state.line_tool.options.pattern;
                             self.line_state.line_tool.last_cap_style =
                                 self.line_state.line_tool.options.cap_style;
+                            self.line_state.line_tool.last_end_shape =
+                                self.line_state.line_tool.options.end_shape;
+                            self.line_state.line_tool.last_arrow_side =
+                                self.line_state.line_tool.options.arrow_side;
 
                             // Start stroke tracking (line uses preview layer like Brush)
                             self.stroke_tracker
@@ -4262,7 +4670,11 @@ impl ToolsPanel {
                                 || self.line_state.line_tool.options.pattern
                                     != self.line_state.line_tool.last_pattern
                                 || self.line_state.line_tool.options.cap_style
-                                    != self.line_state.line_tool.last_cap_style;
+                                    != self.line_state.line_tool.last_cap_style
+                                || self.line_state.line_tool.options.end_shape
+                                    != self.line_state.line_tool.last_end_shape
+                                || self.line_state.line_tool.options.arrow_side
+                                    != self.line_state.line_tool.last_arrow_side;
 
                         if settings_changed {
                             // Update tracked values
@@ -4271,6 +4683,10 @@ impl ToolsPanel {
                                 self.line_state.line_tool.options.pattern;
                             self.line_state.line_tool.last_cap_style =
                                 self.line_state.line_tool.options.cap_style;
+                            self.line_state.line_tool.last_end_shape =
+                                self.line_state.line_tool.options.end_shape;
+                            self.line_state.line_tool.last_arrow_side =
+                                self.line_state.line_tool.options.arrow_side;
 
                             // Re-calculate bounds
                             let current_bounds = self.get_bezier_bounds(
@@ -4722,6 +5138,15 @@ impl ToolsPanel {
             Tool::Fill => {
                 let esc_pressed = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
+                // Guard: auto-rasterize text layers before destructive fill
+                if (is_primary_clicked || is_secondary_clicked)
+                    && let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                    && layer.is_text_layer()
+                {
+                    self.pending_auto_rasterize = Some(canvas_state.active_layer_index);
+                    return;
+                }
+
                 // Commit on Enter or cancel on Escape
                 if enter_pressed || esc_pressed {
                     if self.fill_state.active_fill.is_some() && !esc_pressed {
@@ -4800,13 +5225,108 @@ impl ToolsPanel {
                 let ctrl_enter =
                     ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.command);
 
+                // Apply context bar style changes to selection (text layer mode)
+                if self.text_state.ctx_bar_style_dirty
+                    && self.text_state.editing_text_layer
+                    && self.text_state.selection.has_selection()
+                {
+                    self.text_state.ctx_bar_style_dirty = false;
+                    let bold = self.text_state.bold;
+                    let italic = self.text_state.italic;
+                    let underline = self.text_state.underline;
+                    let strikethrough = self.text_state.strikethrough;
+                    let weight = if bold {
+                        if self.text_state.font_weight < 600 {
+                            700u16
+                        } else {
+                            self.text_state.font_weight
+                        }
+                    } else {
+                        self.text_state.font_weight
+                    };
+                    let font_family = self.text_state.font_family.clone();
+                    let font_size = self.text_state.font_size;
+                    self.text_layer_toggle_style(canvas_state, move |s| {
+                        s.font_weight = weight;
+                        s.italic = italic;
+                        s.underline = underline;
+                        s.strikethrough = strikethrough;
+                        s.font_family = font_family.clone();
+                        s.font_size = font_size;
+                    });
+                } else {
+                    self.text_state.ctx_bar_style_dirty = false;
+                }
+
+                // Sync effects changes from UI panel to the text layer
+                if self.text_state.text_effects_dirty && self.text_state.editing_text_layer {
+                    self.text_state.text_effects_dirty = false;
+                    if let Some(layer) =
+                        canvas_state.layers.get_mut(canvas_state.active_layer_index)
+                        && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
+                    {
+                        td.effects = self.text_state.text_effects.clone();
+                        td.mark_effects_dirty();
+                    }
+                    // Force-rasterize the editing layer so the change is visible immediately
+                    let idx = canvas_state.active_layer_index;
+                    canvas_state.force_rasterize_text_layer(idx);
+                    canvas_state.mark_dirty(None);
+                }
+
+                // Sync warp changes from UI panel to the text layer block
+                if self.text_state.text_warp_dirty && self.text_state.editing_text_layer {
+                    self.text_state.text_warp_dirty = false;
+                    if let Some(layer) =
+                        canvas_state.layers.get_mut(canvas_state.active_layer_index)
+                        && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
+                    {
+                        if let Some(bid) = self.text_state.active_block_id
+                            && let Some(block) = td.blocks.iter_mut().find(|b| b.id == bid)
+                        {
+                            block.warp = self.text_state.text_warp.clone();
+                        }
+                        td.mark_dirty();
+                    }
+                    // Force-rasterize the editing layer so the change is visible immediately
+                    let idx = canvas_state.active_layer_index;
+                    canvas_state.force_rasterize_text_layer(idx);
+                    canvas_state.mark_dirty(None);
+                }
+
+                // Sync glyph overrides from glyph edit mode to the text layer block
+                if self.text_state.glyph_overrides_dirty && self.text_state.editing_text_layer {
+                    self.text_state.glyph_overrides_dirty = false;
+                    if let Some(layer) =
+                        canvas_state.layers.get_mut(canvas_state.active_layer_index)
+                        && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
+                    {
+                        if let Some(bid) = self.text_state.active_block_id
+                            && let Some(block) = td.blocks.iter_mut().find(|b| b.id == bid)
+                        {
+                            block.glyph_overrides = self.text_state.glyph_overrides.clone();
+                            block.cleanup_glyph_overrides();
+                        }
+                        td.mark_dirty();
+                    }
+                    // Force-rasterize the editing layer so the change is visible immediately
+                    let idx = canvas_state.active_layer_index;
+                    canvas_state.force_rasterize_text_layer(idx);
+                    canvas_state.mark_dirty(None);
+                    self.text_state.preview_dirty = true;
+                }
+
                 // Escape: cancel editing
                 if escape_pressed && self.text_state.is_editing {
                     self.text_state.text.clear();
                     self.text_state.cursor_pos = 0;
                     self.text_state.is_editing = false;
+                    self.text_state.editing_text_layer = false;
+                    self.text_state.active_block_id = None;
+                    self.text_state.selection = crate::ops::text_layer::TextSelection::default();
                     self.text_state.origin = None;
                     self.text_state.dragging_handle = false;
+                    canvas_state.text_editing_layer = None;
                     canvas_state.clear_preview_state();
                     canvas_state.mark_dirty(None);
                 }
@@ -4822,11 +5342,16 @@ impl ToolsPanel {
 
                 // Enter (without Ctrl): insert newline
                 if enter_pressed && !ctrl_enter && self.text_state.is_editing {
-                    self.text_state
-                        .text
-                        .insert(self.text_state.cursor_pos, '\n');
-                    self.text_state.cursor_pos += 1;
-                    self.text_state.preview_dirty = true;
+                    if self.text_state.editing_text_layer {
+                        // Text layer mode: insert into the active block's runs
+                        self.text_layer_insert_text(canvas_state, "\n");
+                    } else {
+                        self.text_state
+                            .text
+                            .insert(self.text_state.cursor_pos, '\n');
+                        self.text_state.cursor_pos += 1;
+                        self.text_state.preview_dirty = true;
+                    }
                 }
 
                 // Compute move handle position — alignment-aware
@@ -4869,9 +5394,91 @@ impl ToolsPanel {
                     false
                 };
 
+                // Detect hover over rotation handle (for rotate cursor icon)
+                self.text_state.hovering_rotation_handle = false;
+                if self.text_state.is_editing
+                    && self.text_state.editing_text_layer
+                    && !self.text_state.dragging_handle
+                    && self.text_state.text_box_drag.is_none()
+                    && let Some(pos_f) = canvas_pos_unclamped
+                    && let Some(origin) = self.text_state.origin
+                {
+                    let font_size = self.text_state.font_size;
+                    let display_width = if let Some(mw) = self.text_state.active_block_max_width {
+                        mw.max(font_size * 2.0)
+                    } else if let Some(ref font) = self.text_state.loaded_font {
+                        use ab_glyph::{Font as _, ScaleFont as _};
+                        let scaled = font.as_scaled(font_size);
+                        let lines: Vec<&str> = self.text_state.text.split('\n').collect();
+                        let mut max_w = font_size * 2.0;
+                        for line in &lines {
+                            let mut w = 0.0f32;
+                            let mut prev = None;
+                            for ch in line.chars() {
+                                let gid = font.glyph_id(ch);
+                                if let Some(prev_id) = prev {
+                                    w += scaled.kern(prev_id, gid);
+                                }
+                                w += scaled.h_advance(gid);
+                                prev = Some(gid);
+                            }
+                            max_w = max_w.max(w);
+                        }
+                        max_w
+                    } else {
+                        font_size * 2.0
+                    };
+                    let text_h = self.text_state.active_block_height;
+                    let visual_h = if let Some(mh) = self.text_state.active_block_max_height {
+                        mh.max(text_h)
+                    } else {
+                        text_h
+                    };
+                    let pad = 4.0;
+                    let bx = {
+                        use crate::ops::text::TextAlignment;
+                        match self.text_state.alignment {
+                            TextAlignment::Left => origin[0] - pad,
+                            TextAlignment::Center => origin[0] - display_width * 0.5 - pad,
+                            TextAlignment::Right => origin[0] - display_width - pad,
+                        }
+                    };
+                    let by = origin[1] - pad;
+                    let bw = display_width + pad * 2.0;
+                    let _bh = visual_h + pad * 2.0;
+                    let s_left = canvas_rect.min.x + bx * zoom;
+                    let s_top = canvas_rect.min.y + by * zoom;
+                    let s_right = s_left + bw * zoom;
+
+                    let mx = pos_f.0 * zoom + canvas_rect.min.x;
+                    let my = pos_f.1 * zoom + canvas_rect.min.y;
+
+                    // Get block rotation and inverse-rotate the mouse to axis-aligned space
+                    let blk_rot = if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                        && let crate::canvas::LayerContent::Text(ref td) = layer.content
+                        && let Some(bid) = self.text_state.active_block_id
+                        && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
+                    { block.rotation } else { 0.0 };
+
+                    let s_bottom = s_top + (visual_h + pad * 2.0) * zoom;
+                    let pivot = Pos2::new((s_left + s_right) * 0.5, (s_top + s_bottom) * 0.5);
+                    let mp = rotate_screen_point(Pos2::new(mx, my), pivot, -blk_rot);
+                    let sx = mp.x;
+                    let sy = mp.y;
+
+                    let rot_handle_offset = 20.0;
+                    let rot_cx = (s_left + s_right) * 0.5;
+                    let rot_cy = s_top - rot_handle_offset;
+                    let rot_dist = ((sx - rot_cx).powi(2) + (sy - rot_cy).powi(2)).sqrt();
+                    if rot_dist < 10.0 {
+                        self.text_state.hovering_rotation_handle = true;
+                    }
+                }
+
                 // Handle dragging the move handle
                 if is_primary_pressed
                     && self.text_state.is_editing
+                    && self.text_state.text_box_drag.is_none()
                     && let (Some(pos_f), Some(hp)) = (canvas_pos_f32, handle_canvas_pos)
                 {
                     let dx = (pos_f.0 - hp.0) * zoom;
@@ -4886,76 +5493,423 @@ impl ToolsPanel {
                     }
                 }
 
+                // --- Resize / Rotate / Delete handle interactions ---
+                // Use canvas_pos_unclamped because handles (rotation, delete) can be outside image bounds
+                if is_primary_pressed
+                    && self.text_state.is_editing
+                    && !self.text_state.dragging_handle
+                    && self.text_state.text_box_drag.is_none()
+                    && self.text_state.editing_text_layer
+                    && let Some(pos_f) = canvas_pos_unclamped
+                    && let Some(origin) = self.text_state.origin
+                {
+                    let font_size = self.text_state.font_size;
+                    let display_width = if let Some(mw) = self.text_state.active_block_max_width {
+                        mw.max(font_size * 2.0)
+                    } else {
+                        // Compute natural width for handle positioning
+                        if let Some(ref font) = self.text_state.loaded_font {
+                            use ab_glyph::{Font as _, ScaleFont as _};
+                            let scaled = font.as_scaled(font_size);
+                            let lines: Vec<&str> = self.text_state.text.split('\n').collect();
+                            let mut max_w = font_size * 2.0;
+                            for line in &lines {
+                                let mut w = 0.0f32;
+                                let mut prev = None;
+                                for ch in line.chars() {
+                                    let gid = font.glyph_id(ch);
+                                    if let Some(prev_id) = prev {
+                                        w += scaled.kern(prev_id, gid);
+                                    }
+                                    w += scaled.h_advance(gid);
+                                    prev = Some(gid);
+                                }
+                                max_w = max_w.max(w);
+                            }
+                            max_w
+                        } else {
+                            font_size * 2.0
+                        }
+                    };
+                    let text_h = self.text_state.active_block_height;
+                    let visual_h = if let Some(mh) = self.text_state.active_block_max_height {
+                        mh.max(text_h)
+                    } else {
+                        text_h
+                    };
+                    let pad = 4.0;
+                    let bx = {
+                        use crate::ops::text::TextAlignment;
+                        match self.text_state.alignment {
+                            TextAlignment::Left => origin[0] - pad,
+                            TextAlignment::Center => origin[0] - display_width * 0.5 - pad,
+                            TextAlignment::Right => origin[0] - display_width - pad,
+                        }
+                    };
+                    let by = origin[1] - pad;
+                    let bw = display_width + pad * 2.0;
+                    let bh = visual_h + pad * 2.0;
+
+                    // Screen-space corners
+                    let s_left = canvas_rect.min.x + bx * zoom;
+                    let s_top = canvas_rect.min.y + by * zoom;
+                    let s_right = s_left + bw * zoom;
+                    let s_bottom = s_top + bh * zoom;
+
+                    // Inverse-rotate mouse position into axis-aligned space
+                    let blk_rot = if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                        && let crate::canvas::LayerContent::Text(ref td) = layer.content
+                        && let Some(bid) = self.text_state.active_block_id
+                        && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
+                    { block.rotation } else { 0.0 };
+                    let pivot = Pos2::new(
+                        (s_left + s_right) * 0.5,
+                        (s_top + s_bottom) * 0.5,
+                    );
+                    let raw_sx = pos_f.0 * zoom + canvas_rect.min.x;
+                    let raw_sy = pos_f.1 * zoom + canvas_rect.min.y;
+                    let mp = rotate_screen_point(Pos2::new(raw_sx, raw_sy), pivot, -blk_rot);
+                    let sx = mp.x;
+                    let sy = mp.y;
+                    let hit_r = 8.0; // screen pixel hit radius
+
+                    // Check delete button first (top-right outside)
+                    let del_offset = 14.0;
+                    let del_cx = s_right + del_offset;
+                    let del_cy = s_top - del_offset;
+                    let del_dist = ((sx - del_cx).powi(2) + (sy - del_cy).powi(2)).sqrt();
+                    if del_dist < 12.0 {
+                        // Delete this block
+                        self.text_state.text_box_click_guard = true;
+                        if let Some(bid) = self.text_state.active_block_id {
+                            if let Some(layer) = canvas_state.layers.get_mut(canvas_state.active_layer_index)
+                                && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
+                            {
+                                td.blocks.retain(|b| b.id != bid);
+                                td.mark_dirty();
+                            }
+                            self.text_state.text.clear();
+                            self.text_state.cursor_pos = 0;
+                            self.text_state.is_editing = false;
+                            self.text_state.editing_text_layer = false;
+                            self.text_state.active_block_id = None;
+                            self.text_state.origin = None;
+                            self.text_state.active_block_max_width = None;
+                            self.text_state.active_block_max_height = None;
+                            canvas_state.text_editing_layer = None;
+                            canvas_state.clear_preview_state();
+                            let idx = canvas_state.active_layer_index;
+                            canvas_state.force_rasterize_text_layer(idx);
+                            canvas_state.mark_dirty(None);
+                        }
+                    }
+                    // Check rotation handle (above top-center)
+                    else {
+                        let rot_handle_offset = 20.0;
+                        let rot_cx = (s_left + s_right) * 0.5;
+                        let rot_cy = s_top - rot_handle_offset;
+                        let rot_dist = ((sx - rot_cx).powi(2) + (sy - rot_cy).powi(2)).sqrt();
+                        if rot_dist < 10.0 {
+                            self.text_state.text_box_click_guard = true;
+                            self.text_state.text_box_drag = Some(TextBoxDragType::Rotate);
+                            self.text_state.text_box_drag_start_mouse = [pos_f.0, pos_f.1];
+                            // Get current block rotation
+                            let cur_rot = if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                                && let crate::canvas::LayerContent::Text(ref td) = layer.content
+                                && let Some(bid) = self.text_state.active_block_id
+                                && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
+                            {
+                                block.rotation
+                            } else {
+                                0.0
+                            };
+                            self.text_state.text_box_drag_start_rotation = cur_rot;
+                            self.text_state.text_box_drag_start_origin = origin;
+                        } else {
+                            // Check corner resize handles
+                            let corners_canvas = [
+                                (bx, by, TextBoxDragType::ResizeTopLeft),
+                                (bx + bw, by, TextBoxDragType::ResizeTopRight),
+                                (bx, by + bh, TextBoxDragType::ResizeBottomLeft),
+                                (bx + bw, by + bh, TextBoxDragType::ResizeBottomRight),
+                            ];
+                            for &(cx, cy, drag_type) in &corners_canvas {
+                                let scx = canvas_rect.min.x + cx * zoom;
+                                let scy = canvas_rect.min.y + cy * zoom;
+                                if (sx - scx).abs() < hit_r && (sy - scy).abs() < hit_r {
+                                    self.text_state.text_box_click_guard = true;
+                                    self.text_state.text_box_drag = Some(drag_type);
+                                    self.text_state.text_box_drag_start_mouse = [pos_f.0, pos_f.1];
+                                    self.text_state.text_box_drag_start_width = self.text_state.active_block_max_width;
+                                    self.text_state.text_box_drag_start_height = Some(
+                                        self.text_state.active_block_max_height
+                                            .map(|mh| mh.max(self.text_state.active_block_height))
+                                            .unwrap_or(self.text_state.active_block_height)
+                                    );
+                                    self.text_state.text_box_drag_start_origin = origin;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Process text box drag (resize / rotate)
+                if let Some(drag_type) = self.text_state.text_box_drag {
+                    if is_primary_down
+                        && let Some(pos_f) = canvas_pos_unclamped
+                    {
+                            let raw_dx = pos_f.0 - self.text_state.text_box_drag_start_mouse[0];
+                            let raw_dy = pos_f.1 - self.text_state.text_box_drag_start_mouse[1];
+                            let start_origin = self.text_state.text_box_drag_start_origin;
+                            let font_size = self.text_state.font_size;
+
+                            // Project drag delta onto the box's local axes (rotation-aware)
+                            let blk_rot = if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                                && let crate::canvas::LayerContent::Text(ref td) = layer.content
+                                && let Some(bid) = self.text_state.active_block_id
+                                && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
+                            { block.rotation } else { 0.0 };
+                            let cos_r = blk_rot.cos();
+                            let sin_r = blk_rot.sin();
+                            // Local-X and local-Y components of the drag delta
+                            let dx = raw_dx * cos_r + raw_dy * sin_r;
+                            let dy = -raw_dx * sin_r + raw_dy * cos_r;
+
+                            let content_height = self.text_state.active_block_height;
+
+                            // Helper closure: compute natural text width from font metrics
+                            let compute_natural_width = || -> f32 {
+                                if let Some(ref font) = self.text_state.loaded_font {
+                                    use ab_glyph::{Font as _, ScaleFont as _};
+                                    let scaled = font.as_scaled(font_size);
+                                    let ls = self.text_state.letter_spacing;
+                                    let lines: Vec<&str> = self.text_state.text.split('\n').collect();
+                                    let mut max_w = font_size * 2.0;
+                                    for line in &lines {
+                                        let mut w = 0.0f32;
+                                        let mut prev = None;
+                                        for ch in line.chars() {
+                                            let gid = font.glyph_id(ch);
+                                            if let Some(prev_id) = prev {
+                                                w += scaled.kern(prev_id, gid);
+                                                w += ls;
+                                            }
+                                            w += scaled.h_advance(gid);
+                                            prev = Some(gid);
+                                        }
+                                        max_w = max_w.max(w);
+                                    }
+                                    max_w
+                                } else {
+                                    font_size * 2.0
+                                }
+                            };
+
+                            // Determine width change
+                            let is_right = matches!(drag_type,
+                                TextBoxDragType::ResizeRight | TextBoxDragType::ResizeTopRight | TextBoxDragType::ResizeBottomRight);
+                            let is_left = matches!(drag_type,
+                                TextBoxDragType::ResizeLeft | TextBoxDragType::ResizeTopLeft | TextBoxDragType::ResizeBottomLeft);
+                            let is_top = matches!(drag_type,
+                                TextBoxDragType::ResizeTopLeft | TextBoxDragType::ResizeTopRight);
+                            let is_bottom = matches!(drag_type,
+                                TextBoxDragType::ResizeBottomLeft | TextBoxDragType::ResizeBottomRight);
+
+                            if is_right || is_left {
+                                let start_w = self.text_state.text_box_drag_start_width.unwrap_or_else(&compute_natural_width);
+                                let new_w = if is_right {
+                                    (start_w + dx).max(font_size * 2.0)
+                                } else {
+                                    (start_w - dx).max(font_size * 2.0)
+                                };
+                                self.text_state.active_block_max_width = Some(new_w);
+
+                                // For left-side handles, shift origin along local-X to keep right edge fixed
+                                let mut new_origin_x = start_origin[0];
+                                let mut new_origin_y = start_origin[1];
+                                if is_left {
+                                    let width_delta = start_w - new_w;
+                                    new_origin_x += width_delta * cos_r;
+                                    new_origin_y += width_delta * sin_r;
+                                }
+
+                                // For top handles, shift origin along local-Y to keep bottom edge fixed
+                                if is_top {
+                                    let start_h = self.text_state.text_box_drag_start_height.unwrap_or(content_height);
+                                    let new_h = (start_h - dy).max(font_size);
+                                    let h_delta = start_h - new_h;
+                                    // Shift origin along local-Y direction
+                                    new_origin_x += h_delta * (-sin_r);
+                                    new_origin_y += h_delta * cos_r;
+                                    self.text_state.active_block_max_height = Some(new_h);
+                                }
+
+                                // For bottom handles, set max_height from drag
+                                if is_bottom {
+                                    let start_h = self.text_state.text_box_drag_start_height.unwrap_or(content_height);
+                                    let new_h = (start_h + dy).max(font_size);
+                                    self.text_state.active_block_max_height = Some(new_h);
+                                }
+
+                                if is_left || is_top {
+                                    self.text_state.origin = Some([new_origin_x, new_origin_y]);
+                                }
+
+                                // Write to TextBlock immediately
+                                if let Some(layer) = canvas_state.layers.get_mut(canvas_state.active_layer_index)
+                                    && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
+                                    && let Some(bid) = self.text_state.active_block_id
+                                    && let Some(block) = td.blocks.iter_mut().find(|b| b.id == bid)
+                                {
+                                    block.max_width = Some(new_w);
+                                    if is_top || is_bottom {
+                                        block.max_height = self.text_state.active_block_max_height;
+                                    }
+                                    if is_left || is_top {
+                                        block.position = [new_origin_x, new_origin_y];
+                                    }
+                                    td.mark_dirty();
+                                }
+                                let idx = canvas_state.active_layer_index;
+                                canvas_state.force_rasterize_text_layer(idx);
+                                canvas_state.mark_dirty(None);
+                            }
+
+                            if matches!(drag_type, TextBoxDragType::Rotate) {
+                                    // Compute rotation angle from mouse position relative to box center
+                                    // Box center must match the overlay rotation pivot
+                                    let display_w = self.text_state.active_block_max_width.unwrap_or(font_size * 2.0).max(font_size * 2.0);
+                                    let text_h = self.text_state.active_block_height;
+                                    let visual_h = self.text_state.active_block_max_height
+                                        .map(|mh| mh.max(text_h))
+                                        .unwrap_or(text_h);
+                                    let box_center_x = {
+                                        use crate::ops::text::TextAlignment;
+                                        match self.text_state.alignment {
+                                            TextAlignment::Left => start_origin[0] + display_w * 0.5,
+                                            TextAlignment::Center => start_origin[0],
+                                            TextAlignment::Right => start_origin[0] - display_w * 0.5,
+                                        }
+                                    };
+                                    let box_center_y = start_origin[1] + visual_h * 0.5;
+                                    let start_angle = (self.text_state.text_box_drag_start_mouse[1] - box_center_y)
+                                        .atan2(self.text_state.text_box_drag_start_mouse[0] - box_center_x);
+                                    let current_angle = (pos_f.1 - box_center_y).atan2(pos_f.0 - box_center_x);
+                                    let delta = current_angle - start_angle;
+                                    let new_rotation = self.text_state.text_box_drag_start_rotation + delta;
+                                    // Write rotation to TextBlock
+                                    if let Some(layer) = canvas_state.layers.get_mut(canvas_state.active_layer_index)
+                                        && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
+                                        && let Some(bid) = self.text_state.active_block_id
+                                        && let Some(block) = td.blocks.iter_mut().find(|b| b.id == bid)
+                                    {
+                                        block.rotation = new_rotation;
+                                        td.mark_dirty();
+                                    }
+                                    let idx = canvas_state.active_layer_index;
+                                    canvas_state.force_rasterize_text_layer(idx);
+                                    canvas_state.mark_dirty(None);
+                            }
+                    }
+                    if is_primary_released {
+                        self.text_state.text_box_drag = None;
+                    }
+                }
+
                 if self.text_state.dragging_handle
                     && is_primary_down
-                    && let Some(pos_f) = canvas_pos_f32
+                    && let Some(pos_f) = canvas_pos_unclamped
                 {
                     let new_x = pos_f.0 - self.text_state.drag_offset[0];
                     let new_y = pos_f.1 - self.text_state.drag_offset[1];
                     self.text_state.origin = Some([new_x, new_y]);
-                    // During drag, skip full re-rasterization: reuse cached raster buffer
-                    // and just re-blit at new origin offset.
-                    if self.text_state.cached_raster_w > 0 && self.text_state.cached_raster_h > 0 {
-                        if let Some(cached_origin) = self.text_state.cached_raster_origin {
-                            let dx = new_x - cached_origin[0];
-                            let dy = new_y - cached_origin[1];
-                            let off_x = self.text_state.cached_raster_off_x + dx as i32;
-                            let off_y = self.text_state.cached_raster_off_y + dy as i32;
-                            let buf_w = self.text_state.cached_raster_w;
-                            let buf_h = self.text_state.cached_raster_h;
 
-                            let mut preview =
-                                TiledImage::new(canvas_state.width, canvas_state.height);
-                            preview.blit_rgba_at(
-                                off_x,
-                                off_y,
-                                buf_w,
-                                buf_h,
-                                &self.text_state.cached_raster_buf,
-                            );
+                    if self.text_state.editing_text_layer {
+                        // Text layer: update block position directly and force-rasterize.
+                        // Using the cached raster overlay would leave a ghost at the old position
+                        // because the layer's own rasterized pixels aren't cleared.
+                        if let Some(layer) = canvas_state.layers.get_mut(canvas_state.active_layer_index)
+                            && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
+                            && let Some(bid) = self.text_state.active_block_id
+                            && let Some(block) = td.blocks.iter_mut().find(|b| b.id == bid)
+                        {
+                            block.position = [new_x, new_y];
+                            td.mark_dirty();
+                        }
+                        let idx = canvas_state.active_layer_index;
+                        canvas_state.force_rasterize_text_layer(idx);
+                        canvas_state.mark_dirty(None);
+                        self.text_state.preview_dirty = false;
+                    } else {
+                        // Raster text: reuse cached raster buffer and re-blit at new origin offset.
+                        if self.text_state.cached_raster_w > 0 && self.text_state.cached_raster_h > 0 {
+                            if let Some(cached_origin) = self.text_state.cached_raster_origin {
+                                let dx = new_x - cached_origin[0];
+                                let dy = new_y - cached_origin[1];
+                                let off_x = self.text_state.cached_raster_off_x + dx as i32;
+                                let off_y = self.text_state.cached_raster_off_y + dy as i32;
+                                let buf_w = self.text_state.cached_raster_w;
+                                let buf_h = self.text_state.cached_raster_h;
 
-                            canvas_state.preview_layer = Some(preview);
-                            canvas_state.preview_blend_mode = self.properties.blending_mode;
-                            canvas_state.preview_force_composite =
-                                self.properties.blending_mode != BlendMode::Normal;
-                            canvas_state.preview_is_eraser = false;
-                            canvas_state.preview_downscale = 1;
-                            canvas_state.preview_flat_ready = false;
-                            canvas_state.preview_stroke_bounds = Some(egui::Rect::from_min_max(
-                                egui::pos2(off_x as f32, off_y as f32),
-                                egui::pos2(
-                                    (off_x + buf_w as i32) as f32,
-                                    (off_y + buf_h as i32) as f32,
-                                ),
-                            ));
-                            if canvas_state.preview_texture_cache.is_some() {
-                                canvas_state.preview_dirty_rect = Some(egui::Rect::from_min_max(
+                                let mut preview =
+                                    TiledImage::new(canvas_state.width, canvas_state.height);
+                                preview.blit_rgba_at(
+                                    off_x,
+                                    off_y,
+                                    buf_w,
+                                    buf_h,
+                                    &self.text_state.cached_raster_buf,
+                                );
+
+                                canvas_state.preview_layer = Some(preview);
+                                canvas_state.preview_blend_mode = self.properties.blending_mode;
+                                canvas_state.preview_force_composite =
+                                    self.properties.blending_mode != BlendMode::Normal;
+                                canvas_state.preview_is_eraser = false;
+                                canvas_state.preview_downscale = 1;
+                                canvas_state.preview_flat_ready = false;
+                                canvas_state.preview_stroke_bounds = Some(egui::Rect::from_min_max(
                                     egui::pos2(off_x as f32, off_y as f32),
                                     egui::pos2(
                                         (off_x + buf_w as i32) as f32,
                                         (off_y + buf_h as i32) as f32,
                                     ),
                                 ));
+                                if canvas_state.preview_texture_cache.is_some() {
+                                    canvas_state.preview_dirty_rect = Some(egui::Rect::from_min_max(
+                                        egui::pos2(off_x as f32, off_y as f32),
+                                        egui::pos2(
+                                            (off_x + buf_w as i32) as f32,
+                                            (off_y + buf_h as i32) as f32,
+                                        ),
+                                    ));
+                                } else {
+                                    canvas_state.preview_texture_cache = None;
+                                }
+                                canvas_state.mark_dirty(None);
+                                self.text_state.preview_dirty = false;
                             } else {
-                                canvas_state.preview_texture_cache = None;
+                                self.text_state.preview_dirty = true;
                             }
-                            canvas_state.mark_dirty(None);
-                            self.text_state.preview_dirty = false;
                         } else {
                             self.text_state.preview_dirty = true;
                         }
-                    } else {
-                        self.text_state.preview_dirty = true;
                     }
                 }
 
                 if is_primary_released {
                     self.text_state.dragging_handle = false;
+                    // Finish glyph drag
+                    if self.text_state.glyph_drag.is_some() {
+                        self.text_state.glyph_drag = None;
+                    }
                 }
 
                 // Click to place origin (or commit existing + start new)
                 // Only if not dragging the handle
-                if is_primary_clicked && !self.text_state.dragging_handle {
+                let any_popup_open = ui.ctx().memory(|m| m.any_popup_open());
+                if is_primary_clicked && !self.text_state.dragging_handle && !self.text_state.text_box_click_guard && !any_popup_open {
                     // Check if click is on the handle — if so, skip placement
                     let on_handle =
                         if let (Some(pos_f), Some(hp)) = (canvas_pos_f32, handle_canvas_pos) {
@@ -4968,25 +5922,239 @@ impl ToolsPanel {
 
                     if !on_handle && let Some(pos_f) = canvas_pos_f32 {
                         if self.text_state.is_editing && !self.text_state.text.is_empty() {
-                            // Commit current text first
-                            self.stroke_tracker
-                                .start_preview_tool(canvas_state.active_layer_index, "Text");
-                            self.commit_text(canvas_state);
-                            if self.pending_stroke_event.is_none()
-                                && let Some(evt) = stroke_event.take()
-                            {
-                                self.pending_stroke_event = Some(evt);
+                            if self.text_state.editing_text_layer {
+                                // Text layer mode: check if clicking on the same vs different block
+                                let is_text_layer = canvas_state
+                                    .layers
+                                    .get(canvas_state.active_layer_index)
+                                    .is_some_and(|l| l.is_text_layer());
+                                if is_text_layer {
+                                    // Hit-test to find which block the click is on
+                                    let clicked_block_id = if let Some(layer) =
+                                        canvas_state.layers.get(canvas_state.active_layer_index)
+                                        && let crate::canvas::LayerContent::Text(ref td) =
+                                            layer.content
+                                    {
+                                        crate::ops::text_layer::hit_test_blocks(
+                                            td, pos_f.0, pos_f.1,
+                                        )
+                                        .map(|idx| td.blocks[idx].id)
+                                    } else {
+                                        None
+                                    };
+
+                                    let same_block = self.text_state.active_block_id.is_some()
+                                        && clicked_block_id == self.text_state.active_block_id;
+
+                                    if same_block {
+                                        // Click in the same block — move cursor, don't commit
+                                        // Use cached line advances and preview origin for position→cursor mapping
+                                        if let Some(origin) = self.text_state.origin {
+                                            let rel_x = pos_f.0 - origin[0];
+                                            let rel_y = pos_f.1 - origin[1];
+                                            let lh = self.text_state.cached_line_height.max(1.0);
+
+                                            // Compute visual lines (word-wrapped) for correct mapping
+                                            let visual_line_count = if let (Some(mw), Some(font)) = (
+                                                self.text_state.active_block_max_width,
+                                                &self.text_state.loaded_font,
+                                            ) {
+                                                let ls = self.text_state.letter_spacing;
+                                                let vlines: Vec<String> = self
+                                                    .text_state
+                                                    .text
+                                                    .split('\n')
+                                                    .flat_map(|line| {
+                                                        crate::ops::text::word_wrap_line(line, font, self.text_state.font_size, mw, ls)
+                                                    })
+                                                    .collect();
+                                                vlines.len()
+                                            } else {
+                                                self.text_state.text.split('\n').count()
+                                            };
+                                            let line_idx = ((rel_y / lh).floor() as usize)
+                                                .min(visual_line_count.saturating_sub(1));
+
+                                            // Find approximate char position within visual line using cached_line_advances
+                                            let mut best_pos = 0;
+                                            if !self.text_state.cached_line_advances.is_empty()
+                                                && line_idx
+                                                    < self.text_state.cached_line_advances.len()
+                                            {
+                                                let advances =
+                                                    &self.text_state.cached_line_advances[line_idx];
+                                                let mut best_dist = f32::MAX;
+                                                for (ci, &adv) in advances.iter().enumerate() {
+                                                    let dist = (adv - rel_x).abs();
+                                                    if dist < best_dist {
+                                                        best_dist = dist;
+                                                        best_pos = ci;
+                                                    }
+                                                }
+                                                // Clamp to visual line char count
+                                                let max_chars = advances.len().saturating_sub(1);
+                                                best_pos = best_pos.min(max_chars);
+                                            }
+
+                                            // Convert (visual_line, char_in_line) back to byte offset
+                                            let byte_pos = if let (Some(mw), Some(font)) = (
+                                                self.text_state.active_block_max_width,
+                                                &self.text_state.loaded_font,
+                                            ) {
+                                                let ls = self.text_state.letter_spacing;
+                                                Self::visual_to_byte_pos(
+                                                    &self.text_state.text,
+                                                    line_idx,
+                                                    best_pos,
+                                                    font,
+                                                    self.text_state.font_size,
+                                                    mw,
+                                                    ls,
+                                                )
+                                            } else {
+                                                // No wrapping — use logical line mapping
+                                                let lines: Vec<&str> =
+                                                    self.text_state.text.split('\n').collect();
+                                                let clamped = line_idx.min(lines.len().saturating_sub(1));
+                                                let line_start: usize = lines
+                                                    .iter()
+                                                    .take(clamped)
+                                                    .map(|l| l.len() + 1)
+                                                    .sum();
+                                                let line_text = lines[clamped];
+                                                let clamped_pos = best_pos.min(line_text.chars().count());
+                                                let byte_offset: usize = line_text
+                                                    .chars()
+                                                    .take(clamped_pos)
+                                                    .map(|c| c.len_utf8())
+                                                    .sum();
+                                                line_start + byte_offset
+                                            };
+                                            self.text_state.cursor_pos = byte_pos;
+                                            // Update selection
+                                            let shift_held = ui.input(|i| i.modifiers.shift);
+                                            self.text_layer_update_selection(
+                                                canvas_state,
+                                                shift_held,
+                                            );
+                                            self.text_state.preview_dirty = true;
+                                        }
+                                    } else {
+                                        // Different block or empty area — commit and load new
+                                        self.stroke_tracker.start_preview_tool(
+                                            canvas_state.active_layer_index,
+                                            "Text",
+                                        );
+                                        self.commit_text(canvas_state);
+                                        if self.pending_stroke_event.is_none()
+                                            && let Some(evt) = stroke_event.take()
+                                        {
+                                            self.pending_stroke_event = Some(evt);
+                                        }
+                                        // Load block at click position (or create new)
+                                        self.load_text_layer_block(
+                                            canvas_state,
+                                            None,
+                                            Some([pos_f.0, pos_f.1]),
+                                        );
+                                    }
+                                    // Skip the default click-to-place behavior
+                                } else {
+                                    // Commit raster text and start new
+                                    self.stroke_tracker.start_preview_tool(
+                                        canvas_state.active_layer_index,
+                                        "Text",
+                                    );
+                                    self.commit_text(canvas_state);
+                                    if self.pending_stroke_event.is_none()
+                                        && let Some(evt) = stroke_event.take()
+                                    {
+                                        self.pending_stroke_event = Some(evt);
+                                    }
+                                    self.text_state.origin = Some([pos_f.0, pos_f.1]);
+                                    self.text_state.is_editing = true;
+                                    self.text_state.editing_text_layer = false;
+                                    self.text_state.active_block_id = None;
+                                    self.text_state.text.clear();
+                                    self.text_state.cursor_pos = 0;
+                                    self.text_state.preview_dirty = true;
+                                    self.stroke_tracker.start_preview_tool(
+                                        canvas_state.active_layer_index,
+                                        "Text",
+                                    );
+                                }
+                            } else {
+                                // Raster text mode: commit current text first
+                                self.stroke_tracker
+                                    .start_preview_tool(canvas_state.active_layer_index, "Text");
+                                self.commit_text(canvas_state);
+                                if self.pending_stroke_event.is_none()
+                                    && let Some(evt) = stroke_event.take()
+                                {
+                                    self.pending_stroke_event = Some(evt);
+                                }
+                                self.text_state.origin = Some([pos_f.0, pos_f.1]);
+                                self.text_state.is_editing = true;
+                                self.text_state.editing_text_layer = false;
+                                self.text_state.active_block_id = None;
+                                self.text_state.text.clear();
+                                self.text_state.cursor_pos = 0;
+                                self.text_state.preview_dirty = true;
+                                self.stroke_tracker
+                                    .start_preview_tool(canvas_state.active_layer_index, "Text");
+                            }
+                        } else if self.text_state.is_editing && self.text_state.text.is_empty() {
+                            // Already editing but empty — for text layers, switch block
+                            if self.text_state.editing_text_layer {
+                                self.commit_text(canvas_state);
+                                if self.pending_stroke_event.is_none()
+                                    && let Some(evt) = stroke_event.take()
+                                {
+                                    self.pending_stroke_event = Some(evt);
+                                }
+                                self.load_text_layer_block(
+                                    canvas_state,
+                                    None,
+                                    Some([pos_f.0, pos_f.1]),
+                                );
+                            } else {
+                                // Move the empty text origin
+                                self.text_state.origin = Some([pos_f.0, pos_f.1]);
+                                self.text_state.preview_dirty = true;
+                            }
+                        } else {
+                            // Check if active layer is a text layer
+                            let is_text_layer = canvas_state
+                                .layers
+                                .get(canvas_state.active_layer_index)
+                                .is_some_and(|l| l.is_text_layer());
+
+                            if is_text_layer {
+                                // Load text layer data with hit-test at click position
+                                self.load_text_layer_block(
+                                    canvas_state,
+                                    None,
+                                    Some([pos_f.0, pos_f.1]),
+                                );
+                            } else {
+                                // Start new text at this position (raster stamp mode)
+                                self.text_state.origin = Some([pos_f.0, pos_f.1]);
+                                self.text_state.is_editing = true;
+                                self.text_state.editing_text_layer = false;
+                                self.text_state.active_block_id = None;
+                                self.text_state.text.clear();
+                                self.text_state.cursor_pos = 0;
+                                self.text_state.preview_dirty = true;
+                                self.stroke_tracker
+                                    .start_preview_tool(canvas_state.active_layer_index, "Text");
                             }
                         }
-                        // Start new text at this position
-                        self.text_state.origin = Some([pos_f.0, pos_f.1]);
-                        self.text_state.is_editing = true;
-                        self.text_state.text.clear();
-                        self.text_state.cursor_pos = 0;
-                        self.text_state.preview_dirty = true;
-                        self.stroke_tracker
-                            .start_preview_tool(canvas_state.active_layer_index, "Text");
                     }
+                }
+
+                // Clear the click guard on mouse release (after the click handler above)
+                if is_primary_released {
+                    self.text_state.text_box_click_guard = false;
                 }
 
                 // Detect color changes from the color widget
@@ -5001,24 +6169,98 @@ impl ToolsPanel {
                     self.text_state.preview_dirty = true;
                 }
 
-                // Capture text input
-                if self.text_state.is_editing {
+                // Capture text input — but only when the canvas widget has
+                // focus.  When a DragValue or other UI widget is focused the
+                // same keystrokes would otherwise leak into the text layer.
+                let canvas_has_focus = ui.ctx().memory(|m| {
+                    match m.focus() {
+                        Some(id) => canvas_state.canvas_widget_id == Some(id),
+                        None => true, // no widget focused — canvas owns input
+                    }
+                });
+                if self.text_state.is_editing && canvas_has_focus {
                     let events: Vec<egui::Event> = ui.input(|i| i.events.clone());
+                    let shift_held = ui.input(|i| i.modifiers.shift);
+                    let ctrl_held = ui.input(|i| i.modifiers.command);
+
+                    // Ctrl+B / Ctrl+I / Ctrl+U formatting shortcuts (text layer only)
+                    if self.text_state.editing_text_layer && ctrl_held {
+                        let b_pressed = ui.input(|i| i.key_pressed(egui::Key::B));
+                        let i_pressed = ui.input(|i| i.key_pressed(egui::Key::I));
+                        let u_pressed = ui.input(|i| i.key_pressed(egui::Key::U));
+                        let a_pressed = ui.input(|i| i.key_pressed(egui::Key::A));
+
+                        if b_pressed {
+                            self.text_layer_toggle_style(canvas_state, |s| {
+                                s.font_weight = if s.font_weight >= 700 { 400 } else { 700 }
+                            });
+                        }
+                        if i_pressed {
+                            self.text_layer_toggle_style(canvas_state, |s| s.italic = !s.italic);
+                        }
+                        if u_pressed {
+                            self.text_layer_toggle_style(canvas_state, |s| {
+                                s.underline = !s.underline
+                            });
+                        }
+                        if a_pressed {
+                            // Select all text in active block
+                            self.text_state.selection.anchor =
+                                crate::ops::text_layer::RunPosition {
+                                    run_index: 0,
+                                    byte_offset: 0,
+                                };
+                            let len = self.text_state.text.len();
+                            self.text_state.cursor_pos = len;
+                            // Get run position for end of text
+                            if let Some(layer) =
+                                canvas_state.layers.get(canvas_state.active_layer_index)
+                                && let crate::canvas::LayerContent::Text(ref td) = layer.content
+                                && let Some(bid) = self.text_state.active_block_id
+                                && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
+                            {
+                                self.text_state.selection.cursor =
+                                    block.flat_offset_to_run_pos(len);
+                            } else {
+                                self.text_state.selection.cursor =
+                                    crate::ops::text_layer::RunPosition {
+                                        run_index: 0,
+                                        byte_offset: len,
+                                    };
+                            }
+                        }
+                    }
+
+                    // Tab: cycle between blocks (text layer only)
+                    if self.text_state.editing_text_layer {
+                        let tab_pressed = ui.input(|i| i.key_pressed(egui::Key::Tab));
+                        if tab_pressed {
+                            self.text_layer_cycle_block(canvas_state, shift_held);
+                        }
+                    }
+
                     for event in &events {
                         match event {
                             egui::Event::Text(t) => {
-                                self.text_state
-                                    .text
-                                    .insert_str(self.text_state.cursor_pos, t);
-                                self.text_state.cursor_pos += t.len();
-                                self.text_state.preview_dirty = true;
+                                if self.text_state.editing_text_layer {
+                                    self.text_layer_insert_text(canvas_state, t);
+                                } else {
+                                    // Delete selection first if any
+                                    self.text_state
+                                        .text
+                                        .insert_str(self.text_state.cursor_pos, t);
+                                    self.text_state.cursor_pos += t.len();
+                                    self.text_state.preview_dirty = true;
+                                }
                             }
                             egui::Event::Key {
                                 key: egui::Key::Backspace,
                                 pressed: true,
                                 ..
                             } => {
-                                if self.text_state.cursor_pos > 0 {
+                                if self.text_state.editing_text_layer {
+                                    self.text_layer_backspace(canvas_state);
+                                } else if self.text_state.cursor_pos > 0 {
                                     // Remove one char before cursor
                                     let mut chars: Vec<char> =
                                         self.text_state.text.chars().collect();
@@ -5030,7 +6272,6 @@ impl ToolsPanel {
                                         let remove_idx = char_idx - 1;
                                         chars.remove(remove_idx);
                                         self.text_state.text = chars.into_iter().collect();
-                                        // Adjust cursor
                                         let new_char_pos = remove_idx;
                                         self.text_state.cursor_pos = self
                                             .text_state
@@ -5057,6 +6298,10 @@ impl ToolsPanel {
                                         self.text_state.cursor_pos -= last.len_utf8();
                                     }
                                 }
+                                // Selection: update or collapse
+                                if self.text_state.editing_text_layer {
+                                    self.text_layer_update_selection(canvas_state, shift_held);
+                                }
                             }
                             egui::Event::Key {
                                 key: egui::Key::ArrowRight,
@@ -5071,13 +6316,38 @@ impl ToolsPanel {
                                 {
                                     self.text_state.cursor_pos += c.len_utf8();
                                 }
+                                if self.text_state.editing_text_layer {
+                                    self.text_layer_update_selection(canvas_state, shift_held);
+                                }
+                            }
+                            egui::Event::Key {
+                                key: egui::Key::ArrowUp,
+                                pressed: true,
+                                ..
+                            } => {
+                                // Move cursor to same x-position on the previous visual line
+                                self.text_move_cursor_vertical(
+                                    -1, shift_held, canvas_state,
+                                );
+                            }
+                            egui::Event::Key {
+                                key: egui::Key::ArrowDown,
+                                pressed: true,
+                                ..
+                            } => {
+                                // Move cursor to same x-position on the next visual line
+                                self.text_move_cursor_vertical(
+                                    1, shift_held, canvas_state,
+                                );
                             }
                             egui::Event::Key {
                                 key: egui::Key::Delete,
                                 pressed: true,
                                 ..
                             } => {
-                                if self.text_state.cursor_pos < self.text_state.text.len() {
+                                if self.text_state.editing_text_layer {
+                                    self.text_layer_delete(canvas_state);
+                                } else if self.text_state.cursor_pos < self.text_state.text.len() {
                                     let mut chars: Vec<char> =
                                         self.text_state.text.chars().collect();
                                     let char_idx = self.text_state.text
@@ -5096,7 +6366,6 @@ impl ToolsPanel {
                                 pressed: true,
                                 ..
                             } => {
-                                // Move cursor to start of current line
                                 let text_before =
                                     &self.text_state.text[..self.text_state.cursor_pos];
                                 if let Some(nl) = text_before.rfind('\n') {
@@ -5104,13 +6373,15 @@ impl ToolsPanel {
                                 } else {
                                     self.text_state.cursor_pos = 0;
                                 }
+                                if self.text_state.editing_text_layer {
+                                    self.text_layer_update_selection(canvas_state, shift_held);
+                                }
                             }
                             egui::Event::Key {
                                 key: egui::Key::End,
                                 pressed: true,
                                 ..
                             } => {
-                                // Move cursor to end of current line
                                 let text_after =
                                     &self.text_state.text[self.text_state.cursor_pos..];
                                 if let Some(nl) = text_after.find('\n') {
@@ -5118,19 +6389,25 @@ impl ToolsPanel {
                                 } else {
                                     self.text_state.cursor_pos = self.text_state.text.len();
                                 }
+                                if self.text_state.editing_text_layer {
+                                    self.text_layer_update_selection(canvas_state, shift_held);
+                                }
                             }
                             egui::Event::Paste(t) => {
-                                // Filter out any non-printable chars except newlines
                                 let filtered: String = t
                                     .chars()
                                     .filter(|c| !c.is_control() || *c == '\n')
                                     .collect();
                                 if !filtered.is_empty() {
-                                    self.text_state
-                                        .text
-                                        .insert_str(self.text_state.cursor_pos, &filtered);
-                                    self.text_state.cursor_pos += filtered.len();
-                                    self.text_state.preview_dirty = true;
+                                    if self.text_state.editing_text_layer {
+                                        self.text_layer_insert_text(canvas_state, &filtered);
+                                    } else {
+                                        self.text_state
+                                            .text
+                                            .insert_str(self.text_state.cursor_pos, &filtered);
+                                        self.text_state.cursor_pos += filtered.len();
+                                        self.text_state.preview_dirty = true;
+                                    }
                                 }
                             }
                             _ => {}
@@ -5142,287 +6419,7 @@ impl ToolsPanel {
                         self.render_text_preview(canvas_state, primary_color_f32);
                     }
 
-                    // Draw text overlay: outline border, move handle, blinking cursor
-                    if let Some(origin) = self.text_state.origin {
-                        let time = ui.input(|i| i.time);
-                        self.text_state.cursor_blink_timer = time;
-
-                        // Compute text bounds for border outline
-                        let font_size = self.text_state.font_size;
-                        self.ensure_text_font_loaded();
-                        let line_height = if let Some(ref font) = self.text_state.loaded_font {
-                            use ab_glyph::{Font as _, ScaleFont as _};
-                            font.as_scaled(font_size).height()
-                        } else {
-                            font_size * 1.2
-                        };
-
-                        let lines: Vec<&str> = self.text_state.text.split('\n').collect();
-                        let num_lines = lines.len().max(1);
-
-                        // Compute max line width
-                        let max_width = if let Some(ref font) = self.text_state.loaded_font {
-                            use ab_glyph::{Font as _, ScaleFont as _};
-                            let scaled = font.as_scaled(font_size);
-                            let mut max_w = font_size * 2.0; // minimum width
-                            for line in &lines {
-                                let mut w = 0.0f32;
-                                let mut prev = None;
-                                for ch in line.chars() {
-                                    let gid = font.glyph_id(ch);
-                                    if let Some(prev_id) = prev {
-                                        w += scaled.kern(prev_id, gid);
-                                    }
-                                    w += scaled.h_advance(gid);
-                                    prev = Some(gid);
-                                }
-                                max_w = max_w.max(w);
-                            }
-                            max_w
-                        } else {
-                            font_size * 2.0
-                        };
-
-                        let text_h = num_lines as f32 * line_height;
-                        let pad = 4.0; // canvas pixels of padding
-
-                        // Border rect in canvas coords — alignment-aware
-                        let border_x = {
-                            use crate::ops::text::TextAlignment;
-                            match self.text_state.alignment {
-                                TextAlignment::Left => origin[0] - pad,
-                                TextAlignment::Center => origin[0] - max_width * 0.5 - pad,
-                                TextAlignment::Right => origin[0] - max_width - pad,
-                            }
-                        };
-                        let border_y = origin[1] - pad;
-                        let border_w = max_width + pad * 2.0;
-                        let border_h = text_h + pad * 2.0;
-
-                        // Convert to screen
-                        let sx = canvas_rect.min.x + border_x * zoom;
-                        let sy = canvas_rect.min.y + border_y * zoom;
-                        let sw = border_w * zoom;
-                        let sh = border_h * zoom;
-
-                        let border_rect =
-                            egui::Rect::from_min_size(Pos2::new(sx, sy), egui::vec2(sw, sh));
-
-                        // Use theme accent color for border/handle
-                        let accent = ui.visuals().selection.bg_fill;
-                        let accent_semi = Color32::from_rgba_unmultiplied(
-                            accent.r(),
-                            accent.g(),
-                            accent.b(),
-                            180,
-                        );
-                        let accent_fill = Color32::from_rgba_unmultiplied(
-                            accent.r(),
-                            accent.g(),
-                            accent.b(),
-                            200,
-                        );
-                        let accent_faint = Color32::from_rgba_unmultiplied(
-                            accent.r(),
-                            accent.g(),
-                            accent.b(),
-                            120,
-                        );
-
-                        // Draw dashed border outline
-                        let border_stroke = egui::Stroke::new(1.0, accent_semi);
-                        painter.rect_stroke(border_rect, 0.0, border_stroke);
-
-                        // Draw move handle — alignment-aware position
-                        let (handle_screen_x, handle_screen_y) = {
-                            use crate::ops::text::TextAlignment;
-                            match self.text_state.alignment {
-                                TextAlignment::Left => {
-                                    let hx = canvas_rect.min.x
-                                        + (origin[0] - handle_offset_canvas) * zoom;
-                                    let hy =
-                                        canvas_rect.min.y + (origin[1] + font_size * 0.5) * zoom;
-                                    (hx, hy)
-                                }
-                                TextAlignment::Center => {
-                                    let hx = canvas_rect.min.x + origin[0] * zoom;
-                                    let hy = canvas_rect.min.y
-                                        + (origin[1] - handle_offset_canvas) * zoom;
-                                    (hx, hy)
-                                }
-                                TextAlignment::Right => {
-                                    let hx = canvas_rect.min.x
-                                        + (origin[0] + handle_offset_canvas) * zoom;
-                                    let hy =
-                                        canvas_rect.min.y + (origin[1] + font_size * 0.5) * zoom;
-                                    (hx, hy)
-                                }
-                            }
-                        };
-                        let handle_pos = Pos2::new(handle_screen_x, handle_screen_y);
-
-                        painter.circle_filled(handle_pos, handle_radius_screen, accent_fill);
-                        painter.circle_stroke(
-                            handle_pos,
-                            handle_radius_screen,
-                            egui::Stroke::new(1.5, Color32::WHITE),
-                        );
-                        // Draw crosshair inside handle
-                        let hs = 3.0;
-                        let cross_stroke = egui::Stroke::new(1.0, Color32::WHITE);
-                        painter.line_segment(
-                            [
-                                Pos2::new(handle_pos.x - hs, handle_pos.y),
-                                Pos2::new(handle_pos.x + hs, handle_pos.y),
-                            ],
-                            cross_stroke,
-                        );
-                        painter.line_segment(
-                            [
-                                Pos2::new(handle_pos.x, handle_pos.y - hs),
-                                Pos2::new(handle_pos.x, handle_pos.y + hs),
-                            ],
-                            cross_stroke,
-                        );
-                        // Line from handle to nearest edge of the border rect
-                        let connector_target = {
-                            use crate::ops::text::TextAlignment;
-                            match self.text_state.alignment {
-                                TextAlignment::Left => {
-                                    // Connect to left edge midpoint
-                                    Pos2::new(
-                                        border_rect.min.x,
-                                        canvas_rect.min.y + (origin[1] + font_size * 0.5) * zoom,
-                                    )
-                                }
-                                TextAlignment::Center => {
-                                    // Connect to top edge midpoint
-                                    Pos2::new(
-                                        canvas_rect.min.x + origin[0] * zoom,
-                                        border_rect.min.y,
-                                    )
-                                }
-                                TextAlignment::Right => {
-                                    // Connect to right edge midpoint
-                                    Pos2::new(
-                                        border_rect.max.x,
-                                        canvas_rect.min.y + (origin[1] + font_size * 0.5) * zoom,
-                                    )
-                                }
-                            }
-                        };
-                        painter.line_segment(
-                            [handle_pos, connector_target],
-                            egui::Stroke::new(1.0, accent_faint),
-                        );
-
-                        // Draw blinking cursor
-                        let blink_on = ((time * 2.0) as i32) % 2 == 0;
-                        if blink_on {
-                            // Opt 7: Use cached line advances from rasterization instead of recomputing
-                            let (cursor_x_offset, cursor_line) = if !self.text_state.text.is_empty()
-                                && self.text_state.cursor_pos > 0
-                            {
-                                let text_before =
-                                    &self.text_state.text[..self.text_state.cursor_pos];
-                                let newlines_before = text_before.matches('\n').count();
-                                let last_line =
-                                    text_before.rsplit('\n').next().unwrap_or(text_before);
-                                let char_count = last_line.chars().count();
-
-                                let x_off = if !self.text_state.cached_line_advances.is_empty() {
-                                    self.text_state
-                                        .cached_line_advances
-                                        .get(newlines_before)
-                                        .and_then(|advances| advances.get(char_count).copied())
-                                        .unwrap_or(0.0)
-                                } else if let Some(ref font) = self.text_state.loaded_font {
-                                    // Fallback if cache empty
-                                    use ab_glyph::{Font as _, ScaleFont as _};
-                                    let scaled = font.as_scaled(font_size);
-                                    let mut x = 0.0f32;
-                                    let mut prev_glyph_id = None;
-                                    for ch in last_line.chars() {
-                                        let glyph_id = font.glyph_id(ch);
-                                        if let Some(prev) = prev_glyph_id {
-                                            x += scaled.kern(prev, glyph_id);
-                                        }
-                                        x += scaled.h_advance(glyph_id);
-                                        prev_glyph_id = Some(glyph_id);
-                                    }
-                                    x
-                                } else {
-                                    0.0
-                                };
-                                (x_off, newlines_before)
-                            } else {
-                                (0.0, 0)
-                            };
-
-                            let cached_lh = if self.text_state.cached_line_height > 0.0 {
-                                self.text_state.cached_line_height
-                            } else {
-                                line_height
-                            };
-                            let cursor_y_offset = cursor_line as f32 * cached_lh;
-
-                            // Apply alignment offset to cursor position
-                            let align_offset = {
-                                use crate::ops::text::TextAlignment;
-                                if self.text_state.alignment == TextAlignment::Left {
-                                    0.0
-                                } else {
-                                    // Get the full width of the current line
-                                    let current_line_text = lines.get(cursor_line).unwrap_or(&"");
-                                    let line_w = if let Some(ref font) = self.text_state.loaded_font
-                                    {
-                                        use ab_glyph::{Font as _, ScaleFont as _};
-                                        let scaled = font.as_scaled(font_size);
-                                        let mut w = 0.0f32;
-                                        let mut prev = None;
-                                        for ch in current_line_text.chars() {
-                                            let gid = font.glyph_id(ch);
-                                            if let Some(prev_id) = prev {
-                                                w += scaled.kern(prev_id, gid);
-                                            }
-                                            w += scaled.h_advance(gid);
-                                            prev = Some(gid);
-                                        }
-                                        w
-                                    } else {
-                                        0.0
-                                    };
-                                    match self.text_state.alignment {
-                                        TextAlignment::Center => -line_w * 0.5,
-                                        TextAlignment::Right => -line_w,
-                                        _ => 0.0,
-                                    }
-                                }
-                            };
-
-                            let cx = origin[0] + cursor_x_offset + align_offset;
-                            let cy = origin[1] + cursor_y_offset;
-
-                            let csx = canvas_rect.min.x + cx * zoom;
-                            let csy = canvas_rect.min.y + cy * zoom;
-                            let cursor_h = font_size * zoom;
-
-                            painter.line_segment(
-                                [Pos2::new(csx, csy), Pos2::new(csx, csy + cursor_h)],
-                                egui::Stroke::new(1.5, Color32::BLACK),
-                            );
-                            painter.line_segment(
-                                [
-                                    Pos2::new(csx + 1.0, csy),
-                                    Pos2::new(csx + 1.0, csy + cursor_h),
-                                ],
-                                egui::Stroke::new(0.5, Color32::WHITE),
-                            );
-                        }
-                        // Opt 6: Throttle repaint to cursor blink rate (2Hz) instead of 60fps
-                        ui.ctx()
-                            .request_repaint_after(std::time::Duration::from_millis(500));
-                    }
+                    // Text overlay drawn by canvas.rs after handle_input returns
                 }
             }
 
@@ -5430,6 +6427,15 @@ impl ToolsPanel {
             // LIQUIFY TOOL — click+drag to push/pull pixels
             // ================================================================
             Tool::Liquify => {
+                // Guard: auto-rasterize text layers before destructive liquify
+                if is_primary_pressed
+                    && let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                    && layer.is_text_layer()
+                {
+                    self.pending_auto_rasterize = Some(canvas_state.active_layer_index);
+                    return;
+                }
+
                 let escape_pressed = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
                 // Escape: reset
@@ -5562,6 +6568,14 @@ impl ToolsPanel {
             // MESH WARP TOOL — drag control points to warp image
             // ================================================================
             Tool::MeshWarp => {
+                // Guard: auto-rasterize text layers before destructive mesh warp
+                if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                    && layer.is_text_layer()
+                {
+                    self.pending_auto_rasterize = Some(canvas_state.active_layer_index);
+                    return;
+                }
+
                 let escape_pressed = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
                 // Escape: reset to original
@@ -5654,6 +6668,14 @@ impl ToolsPanel {
             // COLOR REMOVER TOOL — click to remove color
             // ================================================================
             Tool::ColorRemover => {
+                // Guard: auto-rasterize text layers before destructive color removal
+                if is_primary_clicked
+                    && let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                    && layer.is_text_layer()
+                {
+                    self.pending_auto_rasterize = Some(canvas_state.active_layer_index);
+                    return;
+                }
                 if is_primary_clicked && let Some(pos) = canvas_pos {
                     self.commit_color_removal(canvas_state, pos.0, pos.1);
                 }
@@ -5664,6 +6686,14 @@ impl ToolsPanel {
             // ================================================================
             Tool::Smudge => {
                 if is_primary_pressed {
+                    // Guard: auto-rasterize text layers before destructive smudge
+                    if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                        && layer.is_text_layer()
+                    {
+                        self.pending_auto_rasterize = Some(canvas_state.active_layer_index);
+                        return;
+                    }
+
                     // Stroke start: pick up the color at the start position
                     if let Some(pos) = canvas_pos {
                         if let Some(layer) =
@@ -5718,6 +6748,15 @@ impl ToolsPanel {
             // SHAPES TOOL — click+drag to draw, then adjust
             // ================================================================
             Tool::Shapes => {
+                // Guard: auto-rasterize text layers before destructive shape drawing
+                if is_primary_pressed
+                    && let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                    && layer.is_text_layer()
+                {
+                    self.pending_auto_rasterize = Some(canvas_state.active_layer_index);
+                    return;
+                }
+
                 let escape_pressed = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
                 // Escape: cancel
@@ -6047,6 +7086,15 @@ impl ToolsPanel {
             Tool::Gradient => {
                 let escape_pressed = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
+                // Guard: auto-rasterize text layers before destructive gradient
+                if is_primary_pressed
+                    && let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                    && layer.is_text_layer()
+                {
+                    self.pending_auto_rasterize = Some(canvas_state.active_layer_index);
+                    return;
+                }
+
                 // Escape cancels active gradient
                 if escape_pressed && self.gradient_state.drag_start.is_some() {
                     self.cancel_gradient(canvas_state);
@@ -6211,6 +7259,15 @@ impl ToolsPanel {
             // CLONE STAMP — Alt+click to set source, then paint from offset
             // ================================================================
             Tool::CloneStamp => {
+                // Guard: auto-rasterize text layers before destructive clone stamp
+                if (is_primary_pressed || is_secondary_down)
+                    && let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                    && layer.is_text_layer()
+                {
+                    self.pending_auto_rasterize = Some(canvas_state.active_layer_index);
+                    return;
+                }
+
                 let is_painting = is_primary_down || is_secondary_down;
                 let alt_held = ui.input(|i| i.modifiers.alt);
 
@@ -6356,6 +7413,15 @@ impl ToolsPanel {
             // CONTENT AWARE BRUSH — healing brush, samples surrounding texture
             // ================================================================
             Tool::ContentAwareBrush => {
+                // Auto-rasterize guard: if active layer is a text layer, rasterize first
+                if (is_primary_pressed || is_secondary_down)
+                    && canvas_state.active_layer_index < canvas_state.layers.len()
+                    && canvas_state.layers[canvas_state.active_layer_index].is_text_layer()
+                {
+                    self.pending_auto_rasterize = Some(canvas_state.active_layer_index);
+                    return;
+                }
+
                 let is_painting = is_primary_down || is_secondary_down;
                 if is_painting {
                     let current_f32 =
@@ -8580,8 +9646,13 @@ impl ToolsPanel {
             max_y = max_y.max(point.y);
         }
 
-        // Expand by brush size + padding
-        let padding = self.properties.size / 2.0 + 2.0;
+        // Padding includes brush radius plus extra space for arrowheads
+        let arrow_extra = if self.line_state.line_tool.options.end_shape == LineEndShape::Arrow {
+            (self.properties.size * 3.0).max(8.0) + (self.properties.size * 1.5).max(4.0)
+        } else {
+            0.0
+        };
+        let padding = self.properties.size / 2.0 + 2.0 + arrow_extra;
         min_x = (min_x - padding).max(0.0);
         min_y = (min_y - padding).max(0.0);
         max_x = (max_x + padding).min(canvas_width as f32);
@@ -8694,17 +9765,142 @@ impl ToolsPanel {
                 }
             }
 
+            // Determine which endpoints have arrows (skip dot drawing there)
+            let end_shape = self.line_state.line_tool.options.end_shape;
+            let arrow_side = self.line_state.line_tool.options.arrow_side;
+
             // Draw all points
             for &(fx, fy, is_start, is_end) in &line_points {
                 // For flat caps, skip drawing circles at the very endpoints
-                // This creates a clean, flat termination of the line
                 if cap_style == CapStyle::Flat && (is_start || is_end) {
-                    // Skip the endpoint entirely for flat caps - line just stops
                     continue;
                 }
 
                 // Normal drawing for round caps or middle points
                 self.draw_bezier_dot(preview, (fx, fy), color_f32);
+            }
+
+            // Draw arrowheads if enabled
+            if end_shape == LineEndShape::Arrow {
+                let arrow_length = (self.properties.size * 3.0).max(8.0);
+                let arrow_half_width = (self.properties.size * 1.5).max(4.0);
+                // Push tip forward so the triangle fully covers the line endpoint
+                let tip_advance = self.properties.size + self.properties.size / 2.0;
+
+                // End arrow
+                if arrow_side == ArrowSide::End || arrow_side == ArrowSide::Both {
+                    // Tangent at t=1: B'(1) = 3(P3 - P2)
+                    let tx = 3.0 * (p3.x - p2.x);
+                    let ty = 3.0 * (p3.y - p2.y);
+                    let len = (tx * tx + ty * ty).sqrt().max(0.001);
+                    let dx = tx / len;
+                    let dy = ty / len;
+                    let tip = Pos2::new(p3.x + dx * tip_advance, p3.y + dy * tip_advance);
+                    let base_center = Pos2::new(tip.x - dx * arrow_length, tip.y - dy * arrow_length);
+                    let px = -dy;
+                    let py = dx;
+                    let wing1 = Pos2::new(base_center.x + px * arrow_half_width, base_center.y + py * arrow_half_width);
+                    let wing2 = Pos2::new(base_center.x - px * arrow_half_width, base_center.y - py * arrow_half_width);
+                    self.draw_filled_triangle(preview, tip, wing1, wing2, color_f32, canvas_state.width, canvas_state.height);
+                }
+
+                // Start arrow (points backward along the curve)
+                if arrow_side == ArrowSide::Start || arrow_side == ArrowSide::Both {
+                    // Tangent at t=0: B'(0) = 3(P1 - P0)
+                    let tx = 3.0 * (p1.x - p0.x);
+                    let ty = 3.0 * (p1.y - p0.y);
+                    let len = (tx * tx + ty * ty).sqrt().max(0.001);
+                    let dx = tx / len;
+                    let dy = ty / len;
+                    let tip = Pos2::new(p0.x - dx * tip_advance, p0.y - dy * tip_advance);
+                    let base_center = Pos2::new(tip.x + dx * arrow_length, tip.y + dy * arrow_length);
+                    let px = -dy;
+                    let py = dx;
+                    let wing1 = Pos2::new(base_center.x + px * arrow_half_width, base_center.y + py * arrow_half_width);
+                    let wing2 = Pos2::new(base_center.x - px * arrow_half_width, base_center.y - py * arrow_half_width);
+                    self.draw_filled_triangle(preview, tip, wing1, wing2, color_f32, canvas_state.width, canvas_state.height);
+                }
+            }
+        }
+    }
+
+    /// Draw a filled anti-aliased triangle on the preview layer (for arrowheads).
+    fn draw_filled_triangle(
+        &self,
+        preview: &mut TiledImage,
+        a: Pos2,
+        b: Pos2,
+        c: Pos2,
+        color_f32: [f32; 4],
+        canvas_w: u32,
+        canvas_h: u32,
+    ) {
+        // 1px AA fade for crisp edges
+        let fade_px = 1.0_f32;
+
+        // Bounding box expanded by fade zone
+        let min_x = (a.x.min(b.x).min(c.x) - fade_px).floor().max(0.0) as u32;
+        let max_x = ((a.x.max(b.x).max(c.x) + fade_px).ceil() as u32).min(canvas_w.saturating_sub(1));
+        let min_y = (a.y.min(b.y).min(c.y) - fade_px).floor().max(0.0) as u32;
+        let max_y = ((a.y.max(b.y).max(c.y) + fade_px).ceil() as u32).min(canvas_h.saturating_sub(1));
+
+        let [src_r, src_g, src_b, src_a] = color_f32;
+
+        // Signed pixel distance from point to edge (positive = inside)
+        #[inline]
+        fn edge_dist(v0: Pos2, v1: Pos2, px: f32, py: f32) -> f32 {
+            let ex = v1.x - v0.x;
+            let ey = v1.y - v0.y;
+            let len = (ex * ex + ey * ey).sqrt().max(0.001);
+            ((ex) * (py - v0.y) - (ey) * (px - v0.x)) / len
+        }
+
+        // Determine winding direction
+        let area_sign = {
+            let ex = b.x - a.x;
+            let ey = b.y - a.y;
+            let cross = ex * (c.y - a.y) - ey * (c.x - a.x);
+            if cross >= 0.0 { 1.0f32 } else { -1.0f32 }
+        };
+
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                let px = x as f32 + 0.5;
+                let py = y as f32 + 0.5;
+
+                let d0 = edge_dist(a, b, px, py) * area_sign;
+                let d1 = edge_dist(b, c, px, py) * area_sign;
+                let d2 = edge_dist(c, a, px, py) * area_sign;
+
+                let min_dist = d0.min(d1).min(d2);
+
+                if min_dist < -fade_px {
+                    continue;
+                }
+
+                // Smoothstep AA fade
+                let alpha = if min_dist >= fade_px {
+                    src_a
+                } else {
+                    let t = ((min_dist + fade_px) / (2.0 * fade_px)).clamp(0.0, 1.0);
+                    let smooth = t * t * (3.0 - 2.0 * t);
+                    smooth * src_a
+                };
+
+                if alpha <= 0.0 {
+                    continue;
+                }
+
+                let pixel = preview.get_pixel_mut(x, y);
+                let base_a = pixel[3] as f32 / 255.0;
+                if alpha > base_a {
+                    *pixel = image::Rgba([
+                        (src_r * 255.0) as u8,
+                        (src_g * 255.0) as u8,
+                        (src_b * 255.0) as u8,
+                        (alpha * 255.0) as u8,
+                    ]);
+                }
             }
         }
     }
@@ -8732,7 +9928,7 @@ impl ToolsPanel {
         // If distance is too small, just draw one circle
         if distance < 0.1 {
             if (start.0 as u32) < preview.width() && (start.1 as u32) < preview.height() {
-                self.draw_bezier_circle_with_hardness(preview, start, color_f32, radius, 0.3);
+                self.draw_bezier_circle_with_hardness(preview, start, color_f32, radius, 0.95);
             }
             return;
         }
@@ -8747,7 +9943,7 @@ impl ToolsPanel {
             let y = y0 + dy * t;
 
             if (x as u32) < preview.width() && (y as u32) < preview.height() {
-                self.draw_bezier_circle_with_hardness(preview, (x, y), color_f32, radius, 0.3);
+                self.draw_bezier_circle_with_hardness(preview, (x, y), color_f32, radius, 0.95);
             }
         }
 
@@ -8757,8 +9953,8 @@ impl ToolsPanel {
     /// Draw a single dot for Bézier curve (sub-pixel position for smooth AA)
     fn draw_bezier_dot(&self, preview: &mut TiledImage, pos: (f32, f32), color_f32: [f32; 4]) {
         let radius = (self.properties.size / 2.0).max(1.0);
-        // Force softer rendering for line tool by using low hardness (0.3 = very soft edges)
-        self.draw_bezier_circle_with_hardness(preview, pos, color_f32, radius, 0.3);
+        // High hardness for crisp edges with ~2px AA fade (matching arrow sharpness)
+        self.draw_bezier_circle_with_hardness(preview, pos, color_f32, radius, 0.95);
     }
 
     /// Draw a circle on the preview layer for Bézier curves with custom hardness override
@@ -9808,6 +11004,15 @@ impl ToolsPanel {
             canvas_state,
         );
 
+        // Rasterize and convert text layers to raster before warping —
+        // perspective warp destroys vector editability
+        canvas_state.ensure_text_layers_rasterized();
+        for layer in &mut canvas_state.layers {
+            if layer.is_text_layer() {
+                layer.content = crate::canvas::LayerContent::Raster;
+            }
+        }
+
         let src_w = canvas_state.width;
         let src_h = canvas_state.height;
 
@@ -10322,6 +11527,871 @@ impl ToolsPanel {
         }
     }
 
+    /// Map a char offset within a logical line to (visual_line_index, char_in_visual_line)
+    /// when the text has been word-wrapped.
+    /// `logical_line` is the original text (one logical line, no `\n`).
+    /// `char_pos` is the char position within that logical line.
+    /// `visual_lines` are the output of `word_wrap_line`.
+    fn map_char_to_visual_line(
+        logical_line: &str,
+        char_pos: usize,
+        visual_lines: &[String],
+    ) -> (usize, usize) {
+        if visual_lines.is_empty() {
+            return (0, 0);
+        }
+        if visual_lines.len() == 1 {
+            return (0, char_pos.min(visual_lines[0].chars().count()));
+        }
+        let logical_chars: Vec<char> = logical_line.chars().collect();
+        let mut consumed = 0usize;
+        for (vi, vline) in visual_lines.iter().enumerate() {
+            let vlen = vline.chars().count();
+            let line_end = consumed + vlen;
+            if char_pos >= consumed && char_pos < line_end {
+                return (vi, char_pos - consumed);
+            }
+            // Count whitespace gap consumed between this visual line and next
+            let mut next_start = line_end;
+            if vi < visual_lines.len() - 1 {
+                while next_start < logical_chars.len()
+                    && logical_chars[next_start].is_whitespace()
+                {
+                    next_start += 1;
+                }
+            }
+            // Cursor in trimmed whitespace → end of this visual line
+            if char_pos >= line_end && char_pos < next_start {
+                return (vi, vlen);
+            }
+            consumed = next_start.max(line_end);
+        }
+        let last = visual_lines.len() - 1;
+        (last, visual_lines[last].chars().count())
+    }
+
+    /// Inverse of `map_char_to_visual_line`: given a visual line index and char offset,
+    /// return the char position within the original logical line.
+    fn map_visual_line_to_char(
+        logical_line: &str,
+        visual_lines: &[String],
+        visual_line: usize,
+        char_in_line: usize,
+    ) -> usize {
+        if visual_lines.is_empty() {
+            return 0;
+        }
+        let logical_chars: Vec<char> = logical_line.chars().collect();
+        let mut consumed = 0usize;
+        for (vi, vline) in visual_lines.iter().enumerate() {
+            let vlen = vline.chars().count();
+            if vi == visual_line {
+                return consumed + char_in_line.min(vlen);
+            }
+            let line_end = consumed + vlen;
+            let mut next_start = line_end;
+            while next_start < logical_chars.len()
+                && logical_chars[next_start].is_whitespace()
+            {
+                next_start += 1;
+            }
+            consumed = next_start.max(line_end);
+        }
+        logical_chars.len()
+    }
+
+    /// Given the full text (with `\n`), a byte position, and wrap parameters,
+    /// return `(visual_line_index, char_in_visual_line)` accounting for word wrapping.
+    fn byte_pos_to_visual(
+        text: &str,
+        byte_pos: usize,
+        font: &ab_glyph::FontArc,
+        font_size: f32,
+        max_width: f32,
+        letter_spacing: f32,
+    ) -> (usize, usize) {
+        let logical_lines: Vec<&str> = text.split('\n').collect();
+        let mut logical_byte_start = 0usize;
+        let mut visual_line_offset = 0usize;
+        for logical_line in &logical_lines {
+            let logical_byte_end = logical_byte_start + logical_line.len();
+            if byte_pos <= logical_byte_end {
+                let char_in_logical =
+                    text[logical_byte_start..byte_pos].chars().count();
+                let visual =
+                    crate::ops::text::word_wrap_line(logical_line, font, font_size, max_width, letter_spacing);
+                let (vl, vc) = Self::map_char_to_visual_line(logical_line, char_in_logical, &visual);
+                return (visual_line_offset + vl, vc);
+            }
+            let visual =
+                crate::ops::text::word_wrap_line(logical_line, font, font_size, max_width, letter_spacing);
+            visual_line_offset += visual.len();
+            logical_byte_start = logical_byte_end + 1;
+        }
+        (visual_line_offset.saturating_sub(1), 0)
+    }
+
+    /// Given a visual line index and char offset, return the byte position in the original text.
+    /// The inverse of `byte_pos_to_visual`.
+    fn visual_to_byte_pos(
+        text: &str,
+        visual_line: usize,
+        char_in_line: usize,
+        font: &ab_glyph::FontArc,
+        font_size: f32,
+        max_width: f32,
+        letter_spacing: f32,
+    ) -> usize {
+        let logical_lines: Vec<&str> = text.split('\n').collect();
+        let mut logical_byte_start = 0usize;
+        let mut visual_line_offset = 0usize;
+        for logical_line in &logical_lines {
+            let visual =
+                crate::ops::text::word_wrap_line(logical_line, font, font_size, max_width, letter_spacing);
+            let visual_count = visual.len();
+            if visual_line < visual_line_offset + visual_count {
+                let local_visual = visual_line - visual_line_offset;
+                let char_in_logical =
+                    Self::map_visual_line_to_char(logical_line, &visual, local_visual, char_in_line);
+                // Convert char offset to byte offset within logical line
+                let byte_in_logical: usize = logical_line
+                    .chars()
+                    .take(char_in_logical)
+                    .map(|c| c.len_utf8())
+                    .sum();
+                return logical_byte_start + byte_in_logical;
+            }
+            visual_line_offset += visual_count;
+            logical_byte_start += logical_line.len() + 1;
+        }
+        text.len()
+    }
+
+    /// Compute visual lines for the full text (with `\n`) using word wrapping.
+    /// Returns `Vec<(String, usize)>` where each entry is `(visual_line_text, byte_start_in_original)`.
+    fn compute_visual_lines_with_byte_offsets(
+        text: &str,
+        font: &ab_glyph::FontArc,
+        font_size: f32,
+        max_width: f32,
+        letter_spacing: f32,
+    ) -> Vec<(String, usize)> {
+        let mut result = Vec::new();
+        let logical_lines: Vec<&str> = text.split('\n').collect();
+        let mut byte_start = 0usize;
+        for logical_line in &logical_lines {
+            let visual =
+                crate::ops::text::word_wrap_line(logical_line, font, font_size, max_width, letter_spacing);
+            let logical_chars: Vec<char> = logical_line.chars().collect();
+            let mut char_consumed = 0usize;
+            for (vi, vline) in visual.iter().enumerate() {
+                // byte_start + char_consumed chars converted to bytes
+                let byte_off: usize = logical_chars
+                    .iter()
+                    .take(char_consumed)
+                    .map(|c| c.len_utf8())
+                    .sum();
+                result.push((vline.clone(), byte_start + byte_off));
+                let vlen = vline.chars().count();
+                let line_end = char_consumed + vlen;
+                // Skip whitespace gap
+                let mut next = line_end;
+                if vi < visual.len() - 1 {
+                    while next < logical_chars.len()
+                        && logical_chars[next].is_whitespace()
+                    {
+                        next += 1;
+                    }
+                }
+                char_consumed = next.max(line_end);
+            }
+            byte_start += logical_line.len() + 1;
+        }
+        result
+    }
+
+    /// Draw the text tool overlay (border, move handle, blinking cursor, selection
+    /// highlight, glyph overlay) when text editing is active.
+    /// Also draws faint dotted outlines for non-active text blocks on text layers.
+    /// Called outside the `allow_input` gate so it persists when the pointer leaves
+    /// the canvas (e.g. while interacting with UI panels).
+    pub fn draw_text_overlay(
+        &mut self,
+        ui: &egui::Ui,
+        canvas_state: &CanvasState,
+        painter: &egui::Painter,
+        canvas_rect: Rect,
+        zoom: f32,
+    ) {
+        let accent = ui.visuals().selection.bg_fill;
+
+        // --- Phase 1: Draw dotted outlines for non-active blocks on text layers ---
+        // Show whenever the Text tool is active on a text layer (not just when editing)
+        if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+            && let crate::canvas::LayerContent::Text(ref td) = layer.content
+        {
+                let dotted_color = Color32::from_rgba_unmultiplied(
+                    accent.r(),
+                    accent.g(),
+                    accent.b(),
+                    70,
+                );
+                for block in &td.blocks {
+                    if Some(block.id) == self.text_state.active_block_id {
+                        continue; // Active block gets full overlay below
+                    }
+                    // Skip truly empty blocks that have no explicit box size
+                    // (freshly created via click, not yet typed into or resized)
+                    let has_text = block.runs.iter().any(|r| !r.text.is_empty());
+                    if !has_text && block.max_width.is_none() {
+                        continue;
+                    }
+                    let layout = crate::ops::text_layer::compute_block_layout(block);
+                    let bx = block.position[0];
+                    let by = block.position[1];
+                    let bw = if let Some(mw) = block.max_width {
+                        mw
+                    } else {
+                        layout.total_width
+                    };
+                    let bh = if let Some(mh) = block.max_height {
+                        mh.max(layout.total_height)
+                    } else {
+                        layout.total_height
+                    };
+                    if bw < 1.0 && bh < 1.0 {
+                        continue;
+                    }
+                    let pad = 4.0;
+                    let sx = canvas_rect.min.x + (bx - pad) * zoom;
+                    let sy = canvas_rect.min.y + (by - pad) * zoom;
+                    let sw = (bw + pad * 2.0) * zoom;
+                    let sh = (bh + pad * 2.0) * zoom;
+                    let r = egui::Rect::from_min_size(Pos2::new(sx, sy), egui::vec2(sw, sh));
+                    if block.rotation.abs() > 0.001 {
+                        let center = r.center();
+                        let corners = [
+                            rotate_screen_point(r.left_top(), center, block.rotation),
+                            rotate_screen_point(r.right_top(), center, block.rotation),
+                            rotate_screen_point(r.right_bottom(), center, block.rotation),
+                            rotate_screen_point(r.left_bottom(), center, block.rotation),
+                        ];
+                        draw_dotted_quad(painter, corners, dotted_color, 1.0, 4.0, 3.0);
+                    } else {
+                        // Draw dotted outline
+                        draw_dotted_rect(painter, r, dotted_color, 1.0, 4.0, 3.0);
+                    }
+                }
+        }
+
+        // --- Phase 2: Active block overlay (full handles, cursor, etc.) ---
+        if !self.text_state.is_editing {
+            return;
+        }
+        let origin = match self.text_state.origin {
+            Some(o) => o,
+            None => return,
+        };
+
+        let time = ui.input(|i| i.time);
+        self.text_state.cursor_blink_timer = time;
+
+        let font_size = self.text_state.font_size;
+        self.ensure_text_font_loaded();
+        let ls = self.text_state.letter_spacing;
+        let line_height = if let Some(ref font) = self.text_state.loaded_font {
+            use ab_glyph::{Font as _, ScaleFont as _};
+            font.as_scaled(font_size).height() * self.text_state.line_spacing
+        } else {
+            font_size * 1.2 * self.text_state.line_spacing
+        };
+
+        let lines: Vec<&str> = self.text_state.text.split('\n').collect();
+        let num_lines = lines.len().max(1);
+
+        // Compute natural text width (from font metrics)
+        let natural_width = if let Some(ref font) = self.text_state.loaded_font {
+            use ab_glyph::{Font as _, ScaleFont as _};
+            let scaled = font.as_scaled(font_size);
+            // If max_width is set, word-wrap to compute visual lines
+            if let Some(mw) = self.text_state.active_block_max_width {
+                let visual_lines: Vec<String> = lines
+                    .iter()
+                    .flat_map(|line| crate::ops::text::word_wrap_line(line, font, font_size, mw, ls))
+                    .collect();
+                let mut max_w = font_size * 2.0;
+                for line in &visual_lines {
+                    let mut w = 0.0f32;
+                    let mut prev = None;
+                    for ch in line.chars() {
+                        let gid = font.glyph_id(ch);
+                        if let Some(prev_id) = prev {
+                            w += scaled.kern(prev_id, gid);
+                            w += ls;
+                        }
+                        w += scaled.h_advance(gid);
+                        prev = Some(gid);
+                    }
+                    max_w = max_w.max(w);
+                }
+                max_w
+            } else {
+                let mut max_w = font_size * 2.0;
+                for line in &lines {
+                    let mut w = 0.0f32;
+                    let mut prev = None;
+                    for ch in line.chars() {
+                        let gid = font.glyph_id(ch);
+                        if let Some(prev_id) = prev {
+                            w += scaled.kern(prev_id, gid);
+                            w += ls;
+                        }
+                        w += scaled.h_advance(gid);
+                        prev = Some(gid);
+                    }
+                    max_w = max_w.max(w);
+                }
+                max_w
+            }
+        } else {
+            font_size * 2.0
+        };
+
+        // Display width: use max_width if set, otherwise natural width
+        let display_width = if let Some(mw) = self.text_state.active_block_max_width {
+            mw.max(font_size * 2.0)
+        } else {
+            natural_width
+        };
+
+        // Compute visual line count (considering word wrap)
+        let visual_num_lines = if let (Some(mw), Some(font)) = (
+            self.text_state.active_block_max_width,
+            &self.text_state.loaded_font,
+        ) {
+            let visual_lines: Vec<String> = lines
+                .iter()
+                .flat_map(|line| crate::ops::text::word_wrap_line(line, font, font_size, mw, ls))
+                .collect();
+            visual_lines.len().max(1)
+        } else {
+            num_lines
+        };
+
+        let text_h = visual_num_lines as f32 * line_height;
+        // Cache the active block height for input handling
+        self.text_state.active_block_height = text_h;
+        // Visual box height: use max_height if set (but never smaller than content)
+        let visual_h = if let Some(mh) = self.text_state.active_block_max_height {
+            mh.max(text_h)
+        } else {
+            text_h
+        };
+        let pad = 4.0;
+
+        let border_x = {
+            use crate::ops::text::TextAlignment;
+            match self.text_state.alignment {
+                TextAlignment::Left => origin[0] - pad,
+                TextAlignment::Center => origin[0] - display_width * 0.5 - pad,
+                TextAlignment::Right => origin[0] - display_width - pad,
+            }
+        };
+        let border_y = origin[1] - pad;
+        let border_w = display_width + pad * 2.0;
+        let border_h = visual_h + pad * 2.0;
+
+        let sx = canvas_rect.min.x + border_x * zoom;
+        let sy = canvas_rect.min.y + border_y * zoom;
+        let sw = border_w * zoom;
+        let sh = border_h * zoom;
+
+        let border_rect = egui::Rect::from_min_size(Pos2::new(sx, sy), egui::vec2(sw, sh));
+
+        // Get block rotation for transforming the overlay
+        let block_rotation = if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+            && let crate::canvas::LayerContent::Text(ref td) = layer.content
+            && let Some(bid) = self.text_state.active_block_id
+            && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
+        {
+            block.rotation
+        } else {
+            0.0
+        };
+        let has_rot = block_rotation.abs() > 0.001;
+        let rot_pivot = border_rect.center(); // screen-space rotation center
+
+        let accent_semi = Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 180);
+        let accent_fill = Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 200);
+        let accent_faint = Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 120);
+
+        // Border outline (rotated if needed)
+        if has_rot {
+            let c = [
+                rotate_screen_point(border_rect.left_top(), rot_pivot, block_rotation),
+                rotate_screen_point(border_rect.right_top(), rot_pivot, block_rotation),
+                rotate_screen_point(border_rect.right_bottom(), rot_pivot, block_rotation),
+                rotate_screen_point(border_rect.left_bottom(), rot_pivot, block_rotation),
+            ];
+            let stroke = egui::Stroke::new(1.0, accent_semi);
+            painter.line_segment([c[0], c[1]], stroke);
+            painter.line_segment([c[1], c[2]], stroke);
+            painter.line_segment([c[2], c[3]], stroke);
+            painter.line_segment([c[3], c[0]], stroke);
+        } else {
+            painter.rect_stroke(border_rect, 0.0, egui::Stroke::new(1.0, accent_semi));
+        }
+
+        // --- Resize handles, rotation handle, delete button (text layer only) ---
+        if self.text_state.editing_text_layer {
+        // --- Resize handles (4 corners) ---
+        let handle_size = 5.0; // screen pixels
+        let handle_stroke = egui::Stroke::new(1.0, Color32::WHITE);
+        let corners_raw = [
+            border_rect.left_top(),
+            border_rect.right_top(),
+            border_rect.left_bottom(),
+            border_rect.right_bottom(),
+        ];
+        for &corner in &corners_raw {
+            let c = if has_rot { rotate_screen_point(corner, rot_pivot, block_rotation) } else { corner };
+            let hr = egui::Rect::from_center_size(c, egui::vec2(handle_size * 2.0, handle_size * 2.0));
+            painter.rect_filled(hr, 1.0, accent_fill);
+            painter.rect_stroke(hr, 1.0, handle_stroke);
+        }
+
+        // --- Rotation handle (circle above top-center with connector line) ---
+        let rot_handle_offset = 20.0; // screen pixels above the box
+        let rot_handle_base = border_rect.center_top();
+        let rot_center_raw = Pos2::new(rot_handle_base.x, rot_handle_base.y - rot_handle_offset);
+        let rot_center = if has_rot { rotate_screen_point(rot_center_raw, rot_pivot, block_rotation) } else { rot_center_raw };
+        let rot_base = if has_rot { rotate_screen_point(rot_handle_base, rot_pivot, block_rotation) } else { rot_handle_base };
+        painter.line_segment(
+            [rot_base, rot_center],
+            egui::Stroke::new(1.0, accent_faint),
+        );
+        painter.circle_filled(rot_center, 5.0, accent_fill);
+        painter.circle_stroke(rot_center, 5.0, egui::Stroke::new(1.0, Color32::WHITE));
+        // Small rotation icon (curved arrow hint)
+        let arc_r = 3.0;
+        painter.line_segment(
+            [
+                Pos2::new(rot_center.x - arc_r, rot_center.y - 1.0),
+                Pos2::new(rot_center.x + arc_r, rot_center.y - 1.0),
+            ],
+            egui::Stroke::new(1.0, Color32::WHITE),
+        );
+
+        // --- Delete button (× at top-right corner, outside the box) ---
+        let del_offset = 14.0; // screen pixels outside top-right
+        let del_center_raw = Pos2::new(
+            border_rect.max.x + del_offset,
+            border_rect.min.y - del_offset,
+        );
+        let del_center = if has_rot { rotate_screen_point(del_center_raw, rot_pivot, block_rotation) } else { del_center_raw };
+        let del_radius = 8.0;
+        let del_bg = Color32::from_rgba_unmultiplied(200, 60, 60, 220);
+        painter.circle_filled(del_center, del_radius, del_bg);
+        painter.circle_stroke(del_center, del_radius, egui::Stroke::new(1.0, Color32::WHITE));
+        let xr = 3.5;
+        let x_stroke = egui::Stroke::new(1.5, Color32::WHITE);
+        painter.line_segment(
+            [
+                Pos2::new(del_center.x - xr, del_center.y - xr),
+                Pos2::new(del_center.x + xr, del_center.y + xr),
+            ],
+            x_stroke,
+        );
+        painter.line_segment(
+            [
+                Pos2::new(del_center.x + xr, del_center.y - xr),
+                Pos2::new(del_center.x - xr, del_center.y + xr),
+            ],
+            x_stroke,
+        );
+        } // end editing_text_layer handles
+
+        // Move handle (cross circle — existing)
+        let handle_radius_screen = 6.0;
+        let handle_offset_canvas = 10.0 / zoom;
+        let (handle_screen_x, handle_screen_y) = {
+            use crate::ops::text::TextAlignment;
+            match self.text_state.alignment {
+                TextAlignment::Left => (
+                    canvas_rect.min.x + (origin[0] - handle_offset_canvas) * zoom,
+                    canvas_rect.min.y + (origin[1] + font_size * 0.5) * zoom,
+                ),
+                TextAlignment::Center => (
+                    canvas_rect.min.x + origin[0] * zoom,
+                    canvas_rect.min.y + (origin[1] - handle_offset_canvas) * zoom,
+                ),
+                TextAlignment::Right => (
+                    canvas_rect.min.x + (origin[0] + handle_offset_canvas) * zoom,
+                    canvas_rect.min.y + (origin[1] + font_size * 0.5) * zoom,
+                ),
+            }
+        };
+        let handle_pos_raw = Pos2::new(handle_screen_x, handle_screen_y);
+        let handle_pos = if has_rot { rotate_screen_point(handle_pos_raw, rot_pivot, block_rotation) } else { handle_pos_raw };
+
+        painter.circle_filled(handle_pos, handle_radius_screen, accent_fill);
+        painter.circle_stroke(
+            handle_pos,
+            handle_radius_screen,
+            egui::Stroke::new(1.5, Color32::WHITE),
+        );
+        let hs = 3.0;
+        let cross_stroke = egui::Stroke::new(1.0, Color32::WHITE);
+        painter.line_segment(
+            [
+                Pos2::new(handle_pos.x - hs, handle_pos.y),
+                Pos2::new(handle_pos.x + hs, handle_pos.y),
+            ],
+            cross_stroke,
+        );
+        painter.line_segment(
+            [
+                Pos2::new(handle_pos.x, handle_pos.y - hs),
+                Pos2::new(handle_pos.x, handle_pos.y + hs),
+            ],
+            cross_stroke,
+        );
+
+        // Connector line from handle to border edge
+        let connector_target_raw = {
+            use crate::ops::text::TextAlignment;
+            match self.text_state.alignment {
+                TextAlignment::Left => Pos2::new(
+                    border_rect.min.x,
+                    canvas_rect.min.y + (origin[1] + font_size * 0.5) * zoom,
+                ),
+                TextAlignment::Center => {
+                    Pos2::new(canvas_rect.min.x + origin[0] * zoom, border_rect.min.y)
+                }
+                TextAlignment::Right => Pos2::new(
+                    border_rect.max.x,
+                    canvas_rect.min.y + (origin[1] + font_size * 0.5) * zoom,
+                ),
+            }
+        };
+        let connector_target = if has_rot { rotate_screen_point(connector_target_raw, rot_pivot, block_rotation) } else { connector_target_raw };
+        painter.line_segment(
+            [handle_pos, connector_target],
+            egui::Stroke::new(1.0, accent_faint),
+        );
+
+        // Selection highlight (text layer only)
+        if self.text_state.editing_text_layer && self.text_state.selection.has_selection() {
+            let sel_anchor_flat = {
+                let a = self.text_state.selection.anchor;
+                let mut off = 0usize;
+                if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+                    && let crate::canvas::LayerContent::Text(ref td) = layer.content
+                    && let Some(bid) = self.text_state.active_block_id
+                    && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
+                {
+                    off = block.run_pos_to_flat_offset(a);
+                }
+                off
+            };
+            let sel_cursor_flat = self.text_state.cursor_pos;
+            let (sel_start, sel_end) = if sel_anchor_flat <= sel_cursor_flat {
+                (sel_anchor_flat, sel_cursor_flat)
+            } else {
+                (sel_cursor_flat, sel_anchor_flat)
+            };
+
+            let full_text = &self.text_state.text;
+            let cached_lh_sel = if self.text_state.cached_line_height > 0.0 {
+                self.text_state.cached_line_height
+            } else {
+                line_height
+            };
+            let sel_color = Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 80);
+
+            // Compute visual lines with byte offsets for wrap-aware selection
+            let visual_with_offsets: Vec<(String, usize)> = if let (Some(mw), Some(font)) = (
+                self.text_state.active_block_max_width,
+                &self.text_state.loaded_font,
+            ) {
+                Self::compute_visual_lines_with_byte_offsets(
+                    full_text, font, font_size, mw, ls,
+                )
+            } else {
+                // No wrapping — one visual line per logical line
+                let mut result = Vec::new();
+                let mut byte_start = 0usize;
+                for line_text in full_text.split('\n') {
+                    result.push((line_text.to_string(), byte_start));
+                    byte_start += line_text.len() + 1;
+                }
+                result
+            };
+
+            for (line_idx, (line_text, line_byte_start)) in visual_with_offsets.iter().enumerate() {
+                let line_byte_end = line_byte_start + line_text.len();
+
+                let hl_start = sel_start.max(*line_byte_start);
+                let hl_end = sel_end.min(line_byte_end);
+
+                if hl_start < hl_end {
+                    let compute_x = |byte_in_line: usize| -> f32 {
+                        let chars_before = line_text[..byte_in_line].chars().count();
+                        if !self.text_state.cached_line_advances.is_empty() {
+                            self.text_state
+                                .cached_line_advances
+                                .get(line_idx)
+                                .and_then(|a| a.get(chars_before).copied())
+                                .unwrap_or(0.0)
+                        } else if let Some(ref font) = self.text_state.loaded_font {
+                            use ab_glyph::{Font as _, ScaleFont as _};
+                            let scaled = font.as_scaled(font_size);
+                            let mut x = 0.0f32;
+                            let mut prev = None;
+                            for ch in line_text[..byte_in_line].chars() {
+                                let gid = font.glyph_id(ch);
+                                if let Some(p) = prev {
+                                    x += scaled.kern(p, gid);
+                                }
+                                x += scaled.h_advance(gid);
+                                prev = Some(gid);
+                            }
+                            x
+                        } else {
+                            0.0
+                        }
+                    };
+
+                    let x1 = compute_x(hl_start - line_byte_start);
+                    let x2 = compute_x(hl_end - line_byte_start);
+
+                    let line_align = {
+                        use crate::ops::text::TextAlignment;
+                        if self.text_state.alignment == TextAlignment::Left {
+                            0.0
+                        } else {
+                            let line_w = if let Some(ref font) = self.text_state.loaded_font {
+                                use ab_glyph::{Font as _, ScaleFont as _};
+                                let scaled = font.as_scaled(font_size);
+                                let mut w = 0.0f32;
+                                let mut prev = None;
+                                for ch in line_text.chars() {
+                                    let gid = font.glyph_id(ch);
+                                    if let Some(p) = prev {
+                                        w += scaled.kern(p, gid);
+                                    }
+                                    w += scaled.h_advance(gid);
+                                    prev = Some(gid);
+                                }
+                                w
+                            } else {
+                                0.0
+                            };
+                            match self.text_state.alignment {
+                                TextAlignment::Center => -line_w * 0.5,
+                                TextAlignment::Right => -line_w,
+                                _ => 0.0,
+                            }
+                        }
+                    };
+
+                    let y_off = line_idx as f32 * cached_lh_sel;
+                    let r = egui::Rect::from_min_max(
+                        Pos2::new(
+                            canvas_rect.min.x + (origin[0] + x1 + line_align) * zoom,
+                            canvas_rect.min.y + (origin[1] + y_off) * zoom,
+                        ),
+                        Pos2::new(
+                            canvas_rect.min.x + (origin[0] + x2 + line_align) * zoom,
+                            canvas_rect.min.y + (origin[1] + y_off + cached_lh_sel) * zoom,
+                        ),
+                    );
+                    if has_rot {
+                        // Draw rotated selection quad
+                        let corners = [
+                            rotate_screen_point(r.left_top(), rot_pivot, block_rotation),
+                            rotate_screen_point(r.right_top(), rot_pivot, block_rotation),
+                            rotate_screen_point(r.right_bottom(), rot_pivot, block_rotation),
+                            rotate_screen_point(r.left_bottom(), rot_pivot, block_rotation),
+                        ];
+                        let mesh = egui::Mesh::with_texture(egui::TextureId::Managed(0));
+                        let mut mesh = mesh;
+                        let uv = Pos2::ZERO;
+                        for &c in &corners {
+                            mesh.vertices.push(egui::epaint::Vertex {
+                                pos: c,
+                                uv,
+                                color: sel_color,
+                            });
+                        }
+                        mesh.indices.extend_from_slice(&[0, 1, 2, 0, 2, 3]);
+                        painter.add(egui::Shape::mesh(mesh));
+                    } else {
+                        painter.rect_filled(r, 0.0, sel_color);
+                    }
+                }
+            }
+        }
+
+        // Blinking cursor
+        let blink_on = ((time * 2.0) as i32) % 2 == 0;
+        if blink_on {
+            let (cursor_x_offset, cursor_line) =
+                if !self.text_state.text.is_empty() && self.text_state.cursor_pos > 0 {
+                    // Use visual (word-wrapped) line mapping when max_width is set
+                    let (vis_line, vis_char) = if let (Some(mw), Some(font)) = (
+                        self.text_state.active_block_max_width,
+                        &self.text_state.loaded_font,
+                    ) {
+                        Self::byte_pos_to_visual(
+                            &self.text_state.text,
+                            self.text_state.cursor_pos,
+                            font,
+                            font_size,
+                            mw,
+                            ls,
+                        )
+                    } else {
+                        // No wrapping — use logical line mapping
+                        let text_before =
+                            &self.text_state.text[..self.text_state.cursor_pos];
+                        let newlines_before = text_before.matches('\n').count();
+                        let last_line =
+                            text_before.rsplit('\n').next().unwrap_or(text_before);
+                        (newlines_before, last_line.chars().count())
+                    };
+
+                    let x_off = if !self.text_state.cached_line_advances.is_empty() {
+                        self.text_state
+                            .cached_line_advances
+                            .get(vis_line)
+                            .and_then(|advances| advances.get(vis_char).copied())
+                            .unwrap_or(0.0)
+                    } else if let Some(ref font) = self.text_state.loaded_font {
+                        // Fallback: compute from font metrics for the visual line text
+                        use ab_glyph::{Font as _, ScaleFont as _};
+                        let scaled = font.as_scaled(font_size);
+                        // Get the visual line text to measure
+                        let text_before =
+                            &self.text_state.text[..self.text_state.cursor_pos];
+                        let last_line =
+                            text_before.rsplit('\n').next().unwrap_or(text_before);
+                        let mut x = 0.0f32;
+                        let mut prev_glyph_id = None;
+                        for ch in last_line.chars() {
+                            let glyph_id = font.glyph_id(ch);
+                            if let Some(prev) = prev_glyph_id {
+                                x += scaled.kern(prev, glyph_id);
+                            }
+                            x += scaled.h_advance(glyph_id);
+                            prev_glyph_id = Some(glyph_id);
+                        }
+                        x
+                    } else {
+                        0.0
+                    };
+                    (x_off, vis_line)
+                } else {
+                    (0.0, 0)
+                };
+
+            let cached_lh = if self.text_state.cached_line_height > 0.0 {
+                self.text_state.cached_line_height
+            } else {
+                line_height
+            };
+            let cursor_y_offset = cursor_line as f32 * cached_lh;
+
+            let align_offset = {
+                use crate::ops::text::TextAlignment;
+                if self.text_state.alignment == TextAlignment::Left {
+                    0.0
+                } else {
+                    // Get current visual line text for alignment measurement
+                    let current_line_text: String = if let (Some(mw), Some(font)) = (
+                        self.text_state.active_block_max_width,
+                        &self.text_state.loaded_font,
+                    ) {
+                        let all_visual: Vec<String> = self
+                            .text_state
+                            .text
+                            .split('\n')
+                            .flat_map(|line| {
+                                crate::ops::text::word_wrap_line(line, font, font_size, mw, ls)
+                            })
+                            .collect();
+                        all_visual
+                            .get(cursor_line)
+                            .cloned()
+                            .unwrap_or_default()
+                    } else {
+                        lines
+                            .get(cursor_line)
+                            .unwrap_or(&"")
+                            .to_string()
+                    };
+                    let line_w = if let Some(ref font) = self.text_state.loaded_font {
+                        use ab_glyph::{Font as _, ScaleFont as _};
+                        let scaled = font.as_scaled(font_size);
+                        let mut w = 0.0f32;
+                        let mut prev = None;
+                        for ch in current_line_text.chars() {
+                            let gid = font.glyph_id(ch);
+                            if let Some(prev_id) = prev {
+                                w += scaled.kern(prev_id, gid);
+                            }
+                            w += scaled.h_advance(gid);
+                            prev = Some(gid);
+                        }
+                        w
+                    } else {
+                        0.0
+                    };
+                    match self.text_state.alignment {
+                        TextAlignment::Center => -line_w * 0.5,
+                        TextAlignment::Right => -line_w,
+                        _ => 0.0,
+                    }
+                }
+            };
+
+            let cx = origin[0] + cursor_x_offset + align_offset;
+            let cy = origin[1] + cursor_y_offset;
+
+            let csx = canvas_rect.min.x + cx * zoom;
+            let csy = canvas_rect.min.y + cy * zoom;
+            let cursor_h = font_size * zoom;
+
+            let cursor_top = Pos2::new(csx, csy);
+            let cursor_bot = Pos2::new(csx, csy + cursor_h);
+            let cursor_top2 = Pos2::new(csx + 1.0, csy);
+            let cursor_bot2 = Pos2::new(csx + 1.0, csy + cursor_h);
+
+            let (ct, cb, ct2, cb2) = if has_rot {
+                (
+                    rotate_screen_point(cursor_top, rot_pivot, block_rotation),
+                    rotate_screen_point(cursor_bot, rot_pivot, block_rotation),
+                    rotate_screen_point(cursor_top2, rot_pivot, block_rotation),
+                    rotate_screen_point(cursor_bot2, rot_pivot, block_rotation),
+                )
+            } else {
+                (cursor_top, cursor_bot, cursor_top2, cursor_bot2)
+            };
+
+            painter.line_segment(
+                [ct, cb],
+                egui::Stroke::new(1.5, Color32::BLACK),
+            );
+            painter.line_segment(
+                [ct2, cb2],
+                egui::Stroke::new(0.5, Color32::WHITE),
+            );
+        }
+        // Throttle repaint to cursor blink rate (2Hz)
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(500));
+    }
+
     /// Re-render shape preview if context bar / color widget changed properties.
     /// Called outside the allow_input gate so it works when interacting with UI.
     pub fn update_shape_if_dirty(
@@ -10644,19 +12714,16 @@ impl ToolsPanel {
     /// Draw the interactive gradient bar with draggable color stops.
     fn show_gradient_bar(&mut self, ui: &mut egui::Ui, assets: &Assets) {
         let bar_width = 200.0f32;
-        let bar_height = 18.0f32;
-        let stop_radius = 5.0f32;
+        let bar_height = 12.0f32;
+        let stop_radius = 4.0f32;
         let h_pad = stop_radius + 2.0; // horizontal padding so edge handles aren't clipped
 
         let (response, painter) = ui.allocate_painter(
-            egui::vec2(
-                bar_width + h_pad * 2.0,
-                bar_height + stop_radius * 2.0 + 4.0,
-            ),
+            egui::vec2(bar_width + h_pad * 2.0, bar_height + stop_radius + 4.0),
             egui::Sense::click_and_drag(),
         );
         let bar_rect = egui::Rect::from_min_size(
-            response.rect.min + egui::vec2(h_pad, stop_radius + 2.0),
+            response.rect.min + egui::vec2(h_pad, 1.0),
             egui::vec2(bar_width, bar_height),
         );
 
@@ -10894,7 +12961,7 @@ impl ToolsPanel {
     // TEXT TOOL — context bar, preview, commit
     // ====================================================================
 
-    fn show_text_options(&mut self, ui: &mut egui::Ui) {
+    fn show_text_options(&mut self, ui: &mut egui::Ui, assets: &Assets) {
         // Async font loading: kick off background thread on first access
         if self.text_state.available_fonts.is_empty() && self.text_state.fonts_loading_rx.is_none()
         {
@@ -11211,37 +13278,8 @@ impl ToolsPanel {
         }
 
         ui.separator();
-        ui.label(t!("ctx.size"));
-        // Minus button for decrementing size
-        if ui
-            .add(egui::Button::new("−").min_size(egui::vec2(18.0, 18.0)))
-            .clicked()
-        {
-            self.text_state.font_size = (self.text_state.font_size - 1.0).max(6.0);
-            self.text_state.preview_dirty = true;
-            self.text_state.glyph_cache.clear();
-        }
-        if ui
-            .add(
-                egui::DragValue::new(&mut self.text_state.font_size)
-                    .speed(0.5)
-                    .clamp_range(6.0..=500.0)
-                    .suffix("px"),
-            )
-            .changed()
-        {
-            self.text_state.preview_dirty = true;
-            self.text_state.glyph_cache.clear();
-        }
-        // Plus button for incrementing size
-        if ui
-            .add(egui::Button::new("+").min_size(egui::vec2(18.0, 18.0)))
-            .clicked()
-        {
-            self.text_state.font_size = (self.text_state.font_size + 1.0).min(500.0);
-            self.text_state.preview_dirty = true;
-            self.text_state.glyph_cache.clear();
-        }
+        // Font size — merged DragValue + dropdown (same pattern as brush size widget)
+        self.show_text_size_widget(ui, "ctx_text_size", assets);
 
         ui.separator();
         if ui
@@ -11251,6 +13289,7 @@ impl ToolsPanel {
             self.text_state.bold = !self.text_state.bold;
             self.text_state.loaded_font = None;
             self.text_state.preview_dirty = true;
+            self.text_state.ctx_bar_style_dirty = true;
         }
         if ui
             .selectable_label(self.text_state.italic, t!("ctx.text.italic"))
@@ -11259,6 +13298,7 @@ impl ToolsPanel {
             self.text_state.italic = !self.text_state.italic;
             self.text_state.loaded_font = None;
             self.text_state.preview_dirty = true;
+            self.text_state.ctx_bar_style_dirty = true;
         }
         if ui
             .selectable_label(self.text_state.underline, t!("ctx.text.underline"))
@@ -11266,6 +13306,7 @@ impl ToolsPanel {
         {
             self.text_state.underline = !self.text_state.underline;
             self.text_state.preview_dirty = true;
+            self.text_state.ctx_bar_style_dirty = true;
         }
         if ui
             .selectable_label(self.text_state.strikethrough, t!("ctx.text.strikethrough"))
@@ -11273,6 +13314,7 @@ impl ToolsPanel {
         {
             self.text_state.strikethrough = !self.text_state.strikethrough;
             self.text_state.preview_dirty = true;
+            self.text_state.ctx_bar_style_dirty = true;
         }
 
         ui.separator();
@@ -11287,6 +13329,34 @@ impl ToolsPanel {
                 crate::ops::text::TextAlignment::Center => crate::ops::text::TextAlignment::Right,
                 crate::ops::text::TextAlignment::Right => crate::ops::text::TextAlignment::Left,
             };
+            self.text_state.preview_dirty = true;
+        }
+
+        ui.separator();
+        ui.label(t!("ctx.text.letter_spacing"));
+        if ui
+            .add(
+                egui::DragValue::new(&mut self.text_state.letter_spacing)
+                    .speed(0.1)
+                    .clamp_range(-20.0..=50.0)
+                    .suffix("px"),
+            )
+            .changed()
+        {
+            self.text_state.preview_dirty = true;
+        }
+
+        ui.separator();
+        ui.label(t!("ctx.text.line_spacing"));
+        if ui
+            .add(
+                egui::DragValue::new(&mut self.text_state.line_spacing)
+                    .speed(0.01)
+                    .clamp_range(0.5..=5.0)
+                    .suffix("×"),
+            )
+            .changed()
+        {
             self.text_state.preview_dirty = true;
         }
 
@@ -11343,6 +13413,69 @@ impl ToolsPanel {
         }
     }
 
+    /// Sync tool-state styling (color, font, etc.) to the active text block's
+    /// single run so that `force_rasterize_text_layer` renders with the
+    /// user-facing properties, not the stored defaults. Only applies to
+    /// single-run blocks; multi-run blocks maintain per-run formatting.
+    fn sync_text_layer_run_style(&self, canvas_state: &mut CanvasState) {
+        let bid = match self.text_state.active_block_id {
+            Some(id) => id,
+            None => return,
+        };
+        let aidx = canvas_state.active_layer_index;
+        if let Some(layer) = canvas_state.layers.get_mut(aidx)
+            && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
+            && let Some(block) = td.blocks.iter_mut().find(|b| b.id == bid)
+        {
+            let mut changed = false;
+            // Sync paragraph-level properties (line_spacing)
+            if block.paragraph.line_spacing.to_bits() != self.text_state.line_spacing.to_bits() {
+                block.paragraph.line_spacing = self.text_state.line_spacing;
+                changed = true;
+            }
+            // Sync run-level properties (single-run blocks only)
+            if block.runs.len() <= 1
+                && let Some(run) = block.runs.first_mut()
+            {
+                if run.style.color != self.text_state.last_color {
+                    run.style.color = self.text_state.last_color;
+                    changed = true;
+                }
+                if run.style.font_family != self.text_state.font_family {
+                    run.style.font_family = self.text_state.font_family.clone();
+                    changed = true;
+                }
+                if run.style.font_weight != self.text_state.font_weight {
+                    run.style.font_weight = self.text_state.font_weight;
+                    changed = true;
+                }
+                if run.style.font_size != self.text_state.font_size {
+                    run.style.font_size = self.text_state.font_size;
+                    changed = true;
+                }
+                if run.style.italic != self.text_state.italic {
+                    run.style.italic = self.text_state.italic;
+                    changed = true;
+                }
+                if run.style.underline != self.text_state.underline {
+                    run.style.underline = self.text_state.underline;
+                    changed = true;
+                }
+                if run.style.strikethrough != self.text_state.strikethrough {
+                    run.style.strikethrough = self.text_state.strikethrough;
+                    changed = true;
+                }
+                if run.style.letter_spacing.to_bits() != self.text_state.letter_spacing.to_bits() {
+                    run.style.letter_spacing = self.text_state.letter_spacing;
+                    changed = true;
+                }
+            }
+            if changed {
+                td.mark_dirty();
+            }
+        }
+    }
+
     fn render_text_preview(&mut self, canvas_state: &mut CanvasState, primary_color_f32: [f32; 4]) {
         let origin = match self.text_state.origin {
             Some(o) => o,
@@ -11350,6 +13483,15 @@ impl ToolsPanel {
         };
         if self.text_state.text.is_empty() {
             canvas_state.clear_preview_state();
+            // For text layers, force-rasterize so the layer reflects the empty state
+            // (e.g. after deleting all text the old pixels are cleared).
+            if self.text_state.editing_text_layer {
+                self.sync_text_layer_run_style(canvas_state);
+                let idx = canvas_state.active_layer_index;
+                canvas_state.force_rasterize_text_layer(idx);
+                canvas_state.mark_dirty(None);
+            }
+            self.text_state.preview_dirty = false;
             return;
         }
 
@@ -11359,6 +13501,31 @@ impl ToolsPanel {
             None => return,
         };
 
+        // For text layer editing: skip full pixel rasterization — only compute
+        // lightweight layout metrics for cursor/overlay, then force-rasterize
+        // the layer via TextLayerData pipeline. This avoids a double full
+        // rasterization per keystroke (was: rasterize_text + force_rasterize).
+        if self.text_state.editing_text_layer {
+            let active_max_width = self.text_state.active_block_max_width;
+            let metrics = crate::ops::text::compute_text_layout_metrics(
+                &font,
+                &self.text_state.text,
+                self.text_state.font_size,
+                active_max_width,
+                self.text_state.letter_spacing,
+                self.text_state.line_spacing,
+            );
+            self.text_state.cached_line_advances = metrics.line_advances;
+            self.text_state.cached_line_height = metrics.line_height;
+            canvas_state.clear_preview_state();
+            self.sync_text_layer_run_style(canvas_state);
+            let idx = canvas_state.active_layer_index;
+            canvas_state.force_rasterize_text_layer(idx);
+            canvas_state.mark_dirty(None);
+            self.text_state.preview_dirty = false;
+            return;
+        }
+
         let color = [
             (primary_color_f32[0] * 255.0) as u8,
             (primary_color_f32[1] * 255.0) as u8,
@@ -11366,6 +13533,12 @@ impl ToolsPanel {
             (primary_color_f32[3] * 255.0) as u8,
         ];
 
+        // Pass max_width for word wrapping when editing a text layer block
+        let active_max_width = if self.text_state.editing_text_layer {
+            self.text_state.active_block_max_width
+        } else {
+            None
+        };
         let result = crate::ops::text::rasterize_text(
             &font,
             &self.text_state.text,
@@ -11383,6 +13556,9 @@ impl ToolsPanel {
             canvas_state.height,
             &mut self.text_state.coverage_buf,
             &mut self.text_state.glyph_cache,
+            active_max_width,
+            self.text_state.letter_spacing,
+            self.text_state.line_spacing,
         );
 
         // Cache cursor metrics from rasterization (Opt 7)
@@ -11391,6 +13567,7 @@ impl ToolsPanel {
 
         if result.buf_w == 0 || result.buf_h == 0 {
             canvas_state.clear_preview_state();
+            self.text_state.preview_dirty = false;
             return;
         }
 
@@ -11407,7 +13584,8 @@ impl ToolsPanel {
         self.text_state.cached_raster_off_y = off_y;
         self.text_state.cached_raster_origin = self.text_state.origin;
 
-        // Opt 1: Build TiledImage efficiently using bulk chunk copies instead of per-pixel put_pixel.
+        // Raster-stamp text editing: build preview overlay for non-text-layer editing
+        // (text layer editing has already returned above via the lightweight metrics path)
         let mut preview = TiledImage::new(canvas_state.width, canvas_state.height);
         preview.blit_rgba_at(off_x, off_y, buf_w, buf_h, &result.buf);
 
@@ -11439,11 +13617,176 @@ impl ToolsPanel {
         self.text_state.preview_dirty = false;
     }
 
+    /// Load a text layer's data into the text tool state for editing.
+    fn load_text_layer_for_editing(&mut self, canvas_state: &mut CanvasState) {
+        self.load_text_layer_block(canvas_state, None, None);
+    }
+
+    /// Load a specific block from a text layer for editing.
+    /// If `block_id` is None, loads the first block.
+    /// If `click_pos` is provided, hit-tests blocks or creates a new one.
+    fn load_text_layer_block(
+        &mut self,
+        canvas_state: &mut CanvasState,
+        block_id: Option<u64>,
+        click_pos: Option<[f32; 2]>,
+    ) {
+        let layer_idx = canvas_state.active_layer_index;
+        let layer = match canvas_state.layers.get(layer_idx) {
+            Some(l) => l,
+            None => return,
+        };
+        let text_data = match &layer.content {
+            crate::canvas::LayerContent::Text(td) => td,
+            _ => return,
+        };
+
+        // Capture "before" snapshot for TextLayerEditCommand undo (only on first load per session).
+        // Subsequent block switches within the same text layer session keep the original snapshot.
+        if self.text_state.text_layer_before.is_none() {
+            self.text_state.text_layer_before = Some((layer_idx, text_data.clone()));
+        }
+
+        // Determine which block to edit
+        let target_block_id = if let Some(bid) = block_id {
+            Some(bid)
+        } else if let Some(pos) = click_pos {
+            // Hit-test: find block at click position
+            crate::ops::text_layer::hit_test_blocks(text_data, pos[0], pos[1])
+                .map(|idx| text_data.blocks[idx].id)
+        } else {
+            // Default: first block
+            text_data.blocks.first().map(|b| b.id)
+        };
+
+        // Get the block data (or create new block)
+        let (block_text, style, position, bid, alignment, block_max_width, block_max_height, block_line_spacing);
+        if let Some(bid_val) = target_block_id {
+            if let Some(block) = text_data.blocks.iter().find(|b| b.id == bid_val) {
+                block_text = block.flat_text();
+                style = block
+                    .runs
+                    .first()
+                    .map(|r| r.style.clone())
+                    .unwrap_or_default();
+                position = block.position;
+                bid = bid_val;
+                alignment = block.paragraph.alignment;
+                block_max_width = block.max_width;
+                block_max_height = block.max_height;
+                block_line_spacing = block.paragraph.line_spacing;
+            } else {
+                return;
+            }
+        } else if let Some(pos) = click_pos {
+            // Create a new block at click position — need mutable access
+            let layer_mut = match canvas_state.layers.get_mut(canvas_state.active_layer_index) {
+                Some(l) => l,
+                None => return,
+            };
+            let td = match &mut layer_mut.content {
+                crate::canvas::LayerContent::Text(td) => td,
+                _ => return,
+            };
+            let new_id = td.add_block(pos[0], pos[1]);
+            block_text = String::new();
+            style = td.primary_style().clone();
+            position = pos;
+            bid = new_id;
+            alignment = crate::ops::text_layer::TextAlignment::Left;
+            block_max_width = None;
+            block_max_height = None;
+            block_line_spacing = 1.0;
+        } else {
+            return;
+        };
+
+        self.text_state.origin = Some(position);
+        self.text_state.text = block_text.clone();
+        self.text_state.cursor_pos = block_text.len();
+        self.text_state.is_editing = true;
+        self.text_state.editing_text_layer = true;
+        self.text_state.active_block_id = Some(bid);
+        self.text_state.selection = crate::ops::text_layer::TextSelection::default();
+        self.text_state.font_family = style.font_family.clone();
+        self.text_state.font_size = style.font_size;
+        self.text_state.font_weight = style.font_weight;
+        self.text_state.bold = style.font_weight >= 700;
+        self.text_state.italic = style.italic;
+        self.text_state.underline = style.underline;
+        self.text_state.strikethrough = style.strikethrough;
+        self.text_state.last_color = style.color;
+        self.text_state.letter_spacing = style.letter_spacing;
+        self.text_state.line_spacing = block_line_spacing;
+        self.text_state.preview_dirty = true;
+        self.text_state.active_block_max_width = block_max_width;
+        self.text_state.active_block_max_height = block_max_height;
+        self.text_state.text_box_drag = None;
+        self.text_state.active_block_height = 0.0;
+
+        // Convert alignment
+        self.text_state.alignment = match alignment {
+            crate::ops::text_layer::TextAlignment::Left => crate::ops::text::TextAlignment::Left,
+            crate::ops::text_layer::TextAlignment::Center => {
+                crate::ops::text::TextAlignment::Center
+            }
+            crate::ops::text_layer::TextAlignment::Right => crate::ops::text::TextAlignment::Right,
+        };
+
+        // Force font re-load for the new family
+        self.text_state.loaded_font_key.clear();
+        self.text_state.loaded_font = None;
+
+        // Load layer effects into tool state for the effects panel
+        if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+            && let crate::canvas::LayerContent::Text(ref td) = layer.content
+        {
+            self.text_state.text_effects = td.effects.clone();
+            // Load warp from the active block
+            if let Some(bid) = self.text_state.active_block_id
+                && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
+            {
+                self.text_state.text_warp = block.warp.clone();
+                self.text_state.glyph_overrides = block.glyph_overrides.clone();
+            }
+        }
+        self.text_state.text_effects_dirty = false;
+        self.text_state.text_warp_dirty = false;
+        self.text_state.glyph_edit_mode = false;
+        self.text_state.selected_glyphs.clear();
+        self.text_state.cached_glyph_bounds.clear();
+        self.text_state.glyph_bounds_dirty = true;
+        self.text_state.glyph_drag = None;
+        self.text_state.glyph_overrides_dirty = false;
+
+        // Set the editing layer marker so ensure_text_layers_rasterized skips
+        // this layer (we handle rasterization explicitly via force_rasterize).
+        canvas_state.text_editing_layer = Some(canvas_state.active_layer_index);
+        // Force-rasterize so the layer pixels are up-to-date (e.g. after commit
+        // of a previous block, the committed text is visible).
+        let idx = canvas_state.active_layer_index;
+        canvas_state.force_rasterize_text_layer(idx);
+        canvas_state.mark_dirty(None);
+
+        self.stroke_tracker
+            .start_preview_tool(canvas_state.active_layer_index, "Text");
+    }
+
     fn commit_text(&mut self, canvas_state: &mut CanvasState) {
         if self.text_state.text.is_empty() || self.text_state.origin.is_none() {
             self.text_state.is_editing = false;
+            self.text_state.editing_text_layer = false;
+            self.text_state.active_block_id = None;
+            self.text_state.selection = crate::ops::text_layer::TextSelection::default();
             self.text_state.origin = None;
+            canvas_state.text_editing_layer = None;
             canvas_state.clear_preview_state();
+            return;
+        }
+
+        // Text layer mode: write back to TextLayerData instead of blending into pixels
+        if self.text_state.editing_text_layer {
+            self.commit_text_layer(canvas_state);
             return;
         }
 
@@ -11491,6 +13834,9 @@ impl ToolsPanel {
         self.text_state.text.clear();
         self.text_state.cursor_pos = 0;
         self.text_state.is_editing = false;
+        self.text_state.editing_text_layer = false;
+        self.text_state.active_block_id = None;
+        self.text_state.selection = crate::ops::text_layer::TextSelection::default();
         self.text_state.origin = None;
         canvas_state.clear_preview_state();
         canvas_state.mark_dirty(None);
@@ -11498,6 +13844,494 @@ impl ToolsPanel {
         if stroke_event.is_some() {
             self.pending_stroke_event = stroke_event;
         }
+    }
+
+    // ====================================================================
+    // TEXT LAYER EDITING HELPERS (Batch 3+4: multi-run, multi-block)
+    // ====================================================================
+
+    /// Insert text at cursor position in the active text layer block.
+    /// Handles selection deletion before insertion.
+    fn text_layer_insert_text(&mut self, canvas_state: &mut CanvasState, text: &str) {
+        let bid = match self.text_state.active_block_id {
+            Some(id) => id,
+            None => return,
+        };
+
+        // Delete selection first if any
+        if self.text_state.selection.has_selection() {
+            self.text_layer_delete_selection(canvas_state);
+        }
+
+        let cursor = self.text_state.cursor_pos;
+
+        if let Some(layer) = canvas_state.layers.get_mut(canvas_state.active_layer_index)
+            && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
+            && let Some(idx) = td.blocks.iter().position(|b| b.id == bid)
+        {
+            td.blocks[idx].insert_text_at(cursor, text);
+            td.mark_dirty();
+            self.text_state.text = td.blocks[idx].flat_text();
+            self.text_state.cursor_pos = cursor + text.len();
+        }
+
+        self.text_state.selection = crate::ops::text_layer::TextSelection::default();
+        self.text_state.preview_dirty = true;
+    }
+
+    /// Backspace in text layer mode: delete selection or char before cursor.
+    fn text_layer_backspace(&mut self, canvas_state: &mut CanvasState) {
+        if self.text_state.selection.has_selection() {
+            self.text_layer_delete_selection(canvas_state);
+            return;
+        }
+
+        let bid = match self.text_state.active_block_id {
+            Some(id) => id,
+            None => return,
+        };
+        let cursor = self.text_state.cursor_pos;
+        if cursor == 0 {
+            return;
+        }
+
+        // Find the byte length of the char before cursor
+        let prev_char_len = self.text_state.text[..cursor]
+            .chars()
+            .last()
+            .map(|c| c.len_utf8())
+            .unwrap_or(0);
+        if prev_char_len == 0 {
+            return;
+        }
+
+        let del_start = cursor - prev_char_len;
+        let del_end = cursor;
+
+        if let Some(layer) = canvas_state.layers.get_mut(canvas_state.active_layer_index)
+            && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
+            && let Some(idx) = td.blocks.iter().position(|b| b.id == bid)
+        {
+            td.blocks[idx].delete_range(del_start, del_end);
+            td.mark_dirty();
+            self.text_state.text = td.blocks[idx].flat_text();
+            self.text_state.cursor_pos = del_start;
+        }
+
+        self.text_state.selection = crate::ops::text_layer::TextSelection::default();
+        self.text_state.preview_dirty = true;
+    }
+
+    /// Delete key in text layer mode: delete selection or char after cursor.
+    fn text_layer_delete(&mut self, canvas_state: &mut CanvasState) {
+        if self.text_state.selection.has_selection() {
+            self.text_layer_delete_selection(canvas_state);
+            return;
+        }
+
+        let bid = match self.text_state.active_block_id {
+            Some(id) => id,
+            None => return,
+        };
+        let cursor = self.text_state.cursor_pos;
+        if cursor >= self.text_state.text.len() {
+            return;
+        }
+
+        let next_char_len = self.text_state.text[cursor..]
+            .chars()
+            .next()
+            .map(|c| c.len_utf8())
+            .unwrap_or(0);
+        if next_char_len == 0 {
+            return;
+        }
+
+        let del_start = cursor;
+        let del_end = cursor + next_char_len;
+
+        if let Some(layer) = canvas_state.layers.get_mut(canvas_state.active_layer_index)
+            && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
+            && let Some(idx) = td.blocks.iter().position(|b| b.id == bid)
+        {
+            td.blocks[idx].delete_range(del_start, del_end);
+            td.mark_dirty();
+            self.text_state.text = td.blocks[idx].flat_text();
+        }
+
+        self.text_state.selection = crate::ops::text_layer::TextSelection::default();
+        self.text_state.preview_dirty = true;
+    }
+
+    /// Move the text cursor up or down by `direction` visual lines (-1 = up, +1 = down).
+    /// Tries to preserve the x-position (character column) across lines.
+    fn text_move_cursor_vertical(
+        &mut self,
+        direction: i32,
+        shift_held: bool,
+        canvas_state: &mut CanvasState,
+    ) {
+        let text = &self.text_state.text;
+        if text.is_empty() {
+            return;
+        }
+        let font_size = self.text_state.font_size;
+        let ls = self.text_state.letter_spacing;
+
+        // Determine current visual line and char offset
+        let (cur_vis_line, cur_vis_char) =
+            if let (Some(mw), Some(font)) = (
+                self.text_state.active_block_max_width,
+                &self.text_state.loaded_font,
+            ) {
+                Self::byte_pos_to_visual(text, self.text_state.cursor_pos, font, font_size, mw, ls)
+            } else {
+                // No wrapping — use logical lines
+                let before = &text[..self.text_state.cursor_pos];
+                let line_idx = before.matches('\n').count();
+                let last_line = before.rsplit('\n').next().unwrap_or(before);
+                (line_idx, last_line.chars().count())
+            };
+
+        // Compute total visual line count
+        let total_visual_lines = if let (Some(mw), Some(font)) = (
+            self.text_state.active_block_max_width,
+            &self.text_state.loaded_font,
+        ) {
+            text.split('\n')
+                .flat_map(|line| crate::ops::text::word_wrap_line(line, font, font_size, mw, ls))
+                .count()
+        } else {
+            text.split('\n').count()
+        };
+
+        // Compute target visual line
+        let target_line = if direction < 0 {
+            if cur_vis_line == 0 {
+                // Already on first line — move cursor to start of text
+                self.text_state.cursor_pos = 0;
+                if self.text_state.editing_text_layer {
+                    self.text_layer_update_selection(canvas_state, shift_held);
+                }
+                return;
+            }
+            cur_vis_line - 1
+        } else {
+            if cur_vis_line >= total_visual_lines.saturating_sub(1) {
+                // Already on last line — move cursor to end of text
+                self.text_state.cursor_pos = text.len();
+                if self.text_state.editing_text_layer {
+                    self.text_layer_update_selection(canvas_state, shift_held);
+                }
+                return;
+            }
+            cur_vis_line + 1
+        };
+
+        // Get the x-position of the cursor on the current line (in pixels)
+        // to find the closest char on the target line
+        let cursor_x = self
+            .text_state
+            .cached_line_advances
+            .get(cur_vis_line)
+            .and_then(|adv| adv.get(cur_vis_char).copied())
+            .unwrap_or(0.0);
+
+        // Find the closest char position on the target line
+        let target_char = if let Some(advances) =
+            self.text_state.cached_line_advances.get(target_line)
+        {
+            let mut best = 0;
+            let mut best_dist = f32::MAX;
+            for (ci, &adv) in advances.iter().enumerate() {
+                let dist = (adv - cursor_x).abs();
+                if dist < best_dist {
+                    best_dist = dist;
+                    best = ci;
+                }
+            }
+            // Clamp to line char count (advances has count+1 entries)
+            best.min(advances.len().saturating_sub(1))
+        } else {
+            cur_vis_char
+        };
+
+        // Convert (target_line, target_char) back to byte position
+        let new_byte_pos = if let (Some(mw), Some(font)) = (
+            self.text_state.active_block_max_width,
+            &self.text_state.loaded_font,
+        ) {
+            Self::visual_to_byte_pos(text, target_line, target_char, font, font_size, mw, ls)
+        } else {
+            // No wrapping — use logical lines
+            let lines: Vec<&str> = text.split('\n').collect();
+            let clamped = target_line.min(lines.len().saturating_sub(1));
+            let line_start: usize = lines.iter().take(clamped).map(|l| l.len() + 1).sum();
+            let line_text = lines[clamped];
+            let clamped_char = target_char.min(line_text.chars().count());
+            let byte_offset: usize = line_text
+                .chars()
+                .take(clamped_char)
+                .map(|c| c.len_utf8())
+                .sum();
+            line_start + byte_offset
+        };
+
+        self.text_state.cursor_pos = new_byte_pos;
+        if self.text_state.editing_text_layer {
+            self.text_layer_update_selection(canvas_state, shift_held);
+        }
+    }
+
+    /// Delete the currently selected range in the active text layer block.
+    fn text_layer_delete_selection(&mut self, canvas_state: &mut CanvasState) {
+        let bid = match self.text_state.active_block_id {
+            Some(id) => id,
+            None => return,
+        };
+
+        if !self.text_state.selection.has_selection() {
+            return;
+        }
+
+        // Get ordered byte offsets
+        let (start, end) = if let Some(layer) =
+            canvas_state.layers.get(canvas_state.active_layer_index)
+            && let crate::canvas::LayerContent::Text(ref td) = layer.content
+            && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
+        {
+            self.text_state.selection.ordered_flat_offsets(block)
+        } else {
+            return;
+        };
+
+        if let Some(layer) = canvas_state.layers.get_mut(canvas_state.active_layer_index)
+            && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
+            && let Some(idx) = td.blocks.iter().position(|b| b.id == bid)
+        {
+            td.blocks[idx].delete_range(start, end);
+            td.mark_dirty();
+            self.text_state.text = td.blocks[idx].flat_text();
+            self.text_state.cursor_pos = start;
+        }
+
+        self.text_state.selection = crate::ops::text_layer::TextSelection::default();
+        self.text_state.preview_dirty = true;
+    }
+
+    /// Update selection after cursor movement.
+    /// If shift is held, extend selection; otherwise collapse.
+    fn text_layer_update_selection(&mut self, canvas_state: &mut CanvasState, shift_held: bool) {
+        let bid = match self.text_state.active_block_id {
+            Some(id) => id,
+            None => return,
+        };
+
+        if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+            && let crate::canvas::LayerContent::Text(ref td) = layer.content
+            && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
+        {
+            let new_pos = block.flat_offset_to_run_pos(self.text_state.cursor_pos);
+            self.text_state.selection.cursor = new_pos;
+            if !shift_held {
+                self.text_state.selection.anchor = new_pos;
+            }
+        }
+    }
+
+    /// Toggle a style property on the selection in a text layer block.
+    fn text_layer_toggle_style(
+        &mut self,
+        canvas_state: &mut CanvasState,
+        apply: impl Fn(&mut crate::ops::text_layer::TextStyle),
+    ) {
+        let bid = match self.text_state.active_block_id {
+            Some(id) => id,
+            None => return,
+        };
+
+        if !self.text_state.selection.has_selection() {
+            return;
+        }
+
+        // Get ordered byte offsets
+        let (start, end) = if let Some(layer) =
+            canvas_state.layers.get(canvas_state.active_layer_index)
+            && let crate::canvas::LayerContent::Text(ref td) = layer.content
+            && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
+        {
+            self.text_state.selection.ordered_flat_offsets(block)
+        } else {
+            return;
+        };
+
+        if let Some(layer) = canvas_state.layers.get_mut(canvas_state.active_layer_index)
+            && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
+            && let Some(idx) = td.blocks.iter().position(|b| b.id == bid)
+        {
+            td.blocks[idx].apply_style_to_range(start, end, apply);
+            td.mark_dirty();
+            // Refresh flat text (run splitting might have changed byte offsets)
+            self.text_state.text = td.blocks[idx].flat_text();
+        }
+
+        self.text_state.preview_dirty = true;
+    }
+
+    /// Cycle to the next/previous text block (Tab / Shift+Tab).
+    fn text_layer_cycle_block(&mut self, canvas_state: &mut CanvasState, reverse: bool) {
+        let bid = match self.text_state.active_block_id {
+            Some(id) => id,
+            None => return,
+        };
+
+        // First, sync the current block (commit position/text)
+        if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
+            && let crate::canvas::LayerContent::Text(ref td) = layer.content
+        {
+            let block_count = td.blocks.len();
+            if block_count <= 1 {
+                return;
+            }
+
+            let current_idx = td.blocks.iter().position(|b| b.id == bid).unwrap_or(0);
+            let next_idx = if reverse {
+                if current_idx == 0 {
+                    block_count - 1
+                } else {
+                    current_idx - 1
+                }
+            } else {
+                (current_idx + 1) % block_count
+            };
+            let next_id = td.blocks[next_idx].id;
+
+            // Load the next block
+            self.load_text_layer_block(canvas_state, Some(next_id), None);
+        }
+    }
+
+    /// Commit text edits back to the active text layer's `TextLayerData`.
+    fn commit_text_layer(&mut self, canvas_state: &mut CanvasState) {
+        use crate::ops::text_layer::{TextAlignment as TLA, TextStyle as TLS};
+
+        let origin = self.text_state.origin.unwrap_or([100.0, 100.0]);
+        let text = self.text_state.text.clone();
+        let color = self.text_state.last_color;
+
+        let alignment = match self.text_state.alignment {
+            crate::ops::text::TextAlignment::Left => TLA::Left,
+            crate::ops::text::TextAlignment::Center => TLA::Center,
+            crate::ops::text::TextAlignment::Right => TLA::Right,
+        };
+
+        let new_style = TLS {
+            font_family: self.text_state.font_family.clone(),
+            font_weight: self.text_state.font_weight,
+            font_size: self.text_state.font_size,
+            italic: self.text_state.italic,
+            underline: self.text_state.underline,
+            strikethrough: self.text_state.strikethrough,
+            color,
+            letter_spacing: self.text_state.letter_spacing,
+            baseline_offset: 0.0,
+        };
+
+        // Update the TextLayerData on the active layer
+        if let Some(layer) = canvas_state.layers.get_mut(canvas_state.active_layer_index)
+            && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
+        {
+            if let Some(block_id) = self.text_state.active_block_id {
+                // Multi-block mode: update the specific active block
+                if let Some(block) = td.blocks.iter_mut().find(|b| b.id == block_id) {
+                    block.position = origin;
+                    block.paragraph.alignment = alignment;
+                    block.paragraph.line_spacing = self.text_state.line_spacing;
+                    block.max_width = self.text_state.active_block_max_width;
+                    block.max_height = self.text_state.active_block_max_height;
+                    // If the block has only one run (no per-run formatting),
+                    // update its text and style directly
+                    if block.runs.len() <= 1
+                        && let Some(run) = block.runs.first_mut()
+                    {
+                        run.text = text;
+                        run.style = new_style;
+                    }
+                    // If multi-run: text is already synced during editing,
+                    // just update position and alignment
+                }
+            } else {
+                // Legacy path: update the first block
+                if let Some(block) = td.blocks.first_mut() {
+                    block.position = origin;
+                    block.paragraph.alignment = alignment;
+                    if let Some(run) = block.runs.first_mut() {
+                        run.text = text;
+                        run.style = new_style;
+                    }
+                }
+            }
+            // Empty blocks are kept as placeholders — use delete (×) button to remove
+            // td.remove_empty_blocks();
+            // Note: effects and warp are NOT overwritten here.
+            // The layer settings dialog writes directly to TextLayerData,
+            // so we must not clobber those values with stale tool-state copies.
+            // Write glyph overrides back to the active block
+            if let Some(block_id) = self.text_state.active_block_id
+                && let Some(block) = td.blocks.iter_mut().find(|b| b.id == block_id)
+            {
+                block.glyph_overrides = self.text_state.glyph_overrides.clone();
+                block.cleanup_glyph_overrides();
+            }
+            td.mark_dirty();
+        }
+
+        // --- Text Layer Undo via TextLayerEditCommand ---
+        // Use the captured "before" snapshot and current state for efficient vector-data undo.
+        // Cancel the stroke tracker (it was only used for preview positioning).
+        self.stroke_tracker.cancel();
+        if let Some((layer_idx, before_td)) = self.text_state.text_layer_before.take() {
+            // Capture "after" state
+            if let Some(layer) = canvas_state.layers.get(layer_idx)
+                && let crate::canvas::LayerContent::Text(ref after_td) = layer.content
+            {
+                let mut cmd = crate::components::history::TextLayerEditCommand::new_from(
+                    "Text Edit".to_string(),
+                    layer_idx,
+                    before_td,
+                );
+                cmd.set_after_from(after_td.clone());
+                self.pending_history_commands.push(Box::new(cmd));
+            }
+        }
+
+        // Clean up editing state
+        self.text_state.text.clear();
+        self.text_state.cursor_pos = 0;
+        self.text_state.is_editing = false;
+        self.text_state.editing_text_layer = false;
+        self.text_state.active_block_id = None;
+        self.text_state.selection = crate::ops::text_layer::TextSelection::default();
+        self.text_state.text_effects = crate::ops::text_layer::TextEffects::default();
+        self.text_state.text_effects_dirty = false;
+        self.text_state.text_warp = crate::ops::text_layer::TextWarp::None;
+        self.text_state.text_warp_dirty = false;
+        self.text_state.text_box_drag = None;
+        self.text_state.active_block_max_width = None;
+        self.text_state.active_block_max_height = None;
+        self.text_state.active_block_height = 0.0;
+        self.text_state.glyph_edit_mode = false;
+        self.text_state.selected_glyphs.clear();
+        self.text_state.cached_glyph_bounds.clear();
+        self.text_state.glyph_bounds_dirty = true;
+        self.text_state.glyph_drag = None;
+        self.text_state.glyph_overrides.clear();
+        self.text_state.glyph_overrides_dirty = false;
+        self.text_state.text_layer_before = None;
+        self.text_state.origin = None;
+        canvas_state.text_editing_layer = None;
+        canvas_state.clear_preview_state();
+        canvas_state.mark_dirty(None);
     }
 
     // ====================================================================
@@ -12386,4 +15220,79 @@ impl ToolsPanel {
         painter.circle_filled(rot_handle, 4.0, accent);
         painter.circle_stroke(rot_handle, 4.0, egui::Stroke::new(1.0, Color32::BLACK));
     }
+}
+
+// ---------------------------------------------------------------------------
+// Glyph Edit Mode Helpers (Phase 5 — Batch 9)
+// ---------------------------------------------------------------------------
+
+/// Draw a dotted rectangle outline.
+fn draw_dotted_rect(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    color: Color32,
+    thickness: f32,
+    dash_len: f32,
+    gap_len: f32,
+) {
+    draw_dotted_quad(
+        painter,
+        [rect.left_top(), rect.right_top(), rect.right_bottom(), rect.left_bottom()],
+        color,
+        thickness,
+        dash_len,
+        gap_len,
+    );
+}
+
+/// Draw a dotted outline connecting four screen-space corner points (a rotated rect).
+fn draw_dotted_quad(
+    painter: &egui::Painter,
+    corners: [Pos2; 4],
+    color: Color32,
+    thickness: f32,
+    dash_len: f32,
+    gap_len: f32,
+) {
+    let stroke = egui::Stroke::new(thickness, color);
+    let edges = [
+        (corners[0], corners[1]),
+        (corners[1], corners[2]),
+        (corners[2], corners[3]),
+        (corners[3], corners[0]),
+    ];
+    for (start, end) in edges {
+        let dx = end.x - start.x;
+        let dy = end.y - start.y;
+        let length = (dx * dx + dy * dy).sqrt();
+        if length < 0.1 {
+            continue;
+        }
+        let nx = dx / length;
+        let ny = dy / length;
+        let mut t = 0.0f32;
+        while t < length {
+            let seg_end = (t + dash_len).min(length);
+            painter.line_segment(
+                [
+                    Pos2::new(start.x + nx * t, start.y + ny * t),
+                    Pos2::new(start.x + nx * seg_end, start.y + ny * seg_end),
+                ],
+                stroke,
+            );
+            t = seg_end + gap_len;
+        }
+    }
+}
+
+/// Rotate a screen-space point around a center by the given angle (radians).
+fn rotate_screen_point(p: Pos2, center: Pos2, angle: f32) -> Pos2 {
+    let cos_a = angle.cos();
+    let sin_a = angle.sin();
+    let dx = p.x - center.x;
+    let dy = p.y - center.y;
+    Pos2::new(
+        center.x + dx * cos_a - dy * sin_a,
+        center.y + dx * sin_a + dy * cos_a,
+    )
 }

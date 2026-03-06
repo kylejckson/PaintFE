@@ -55,3 +55,29 @@ jobs:
 
       - name: Run cargo audit
         run: cargo audit
+
+  build-macos:
+    name: Build check (macOS)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: stable
+          components: clippy
+
+      - name: Cache cargo
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ci-macos-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ci-macos-
+
+      - name: Run Clippy
+        run: cargo clippy -- -D warnings

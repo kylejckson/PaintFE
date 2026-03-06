@@ -66,12 +66,7 @@ pub fn draw_gradient_divider(painter: &egui::Painter, rect: Rect, color: Color32
 /// `line_color` should be very low-alpha (e.g. `rgba(255,255,255,8)` dark mode).
 ///
 /// Only draws lines within the visible `clip_rect` for performance.
-pub fn draw_grid_texture(
-    painter: &egui::Painter,
-    rect: Rect,
-    cell_size: f32,
-    line_color: Color32,
-) {
+pub fn draw_grid_texture(painter: &egui::Painter, rect: Rect, cell_size: f32, line_color: Color32) {
     if cell_size < 2.0 {
         return;
     }

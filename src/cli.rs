@@ -265,6 +265,9 @@ fn run_one(
     }
 
     // -- Step 3: Save ----------------------------------------------------
+    // Ensure text layers are rasterized before compositing/saving
+    state.ensure_all_text_layers_rasterized();
+
     match format {
         SaveFormat::Pfe => {
             save_pfe(&state, output).map_err(|e| format!("PFE save failed: {:?}", e))?;

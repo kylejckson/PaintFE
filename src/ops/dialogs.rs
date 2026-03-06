@@ -199,11 +199,11 @@ pub(crate) fn section_label(ui: &mut egui::Ui, colors: &DialogColors, text: &str
     ui.add_space(2.0);
 }
 
-/// Thin separator line using accent color (very faint).
+/// Thin separator line (subtle monotone).
 pub(crate) fn accent_separator(ui: &mut egui::Ui, colors: &DialogColors) {
     let available_width = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(Vec2::new(available_width, 1.0), Sense::hover());
-    ui.painter().rect_filled(rect, 0.0, colors.accent_faint);
+    ui.painter().rect_filled(rect, 0.0, colors.separator);
 }
 
 /// Draw a numeric field with +/- buttons.  Returns true if the value changed.

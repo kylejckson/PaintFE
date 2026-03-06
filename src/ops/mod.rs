@@ -12,4 +12,5 @@ pub mod print;
 pub mod scripting;
 pub mod shapes;
 pub mod text;
+pub mod text_layer;
 pub mod transform;

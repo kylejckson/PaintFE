@@ -19,5 +19,6 @@ PaintFE.code-workspace
 # Local-only notes / submission guides
 NOTES.md
 TODO.md
+TextPlan.md
 visual_overhaul_plan.md
 *.local.html

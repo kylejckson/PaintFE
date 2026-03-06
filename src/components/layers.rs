@@ -1,6 +1,11 @@
 use crate::assets::{Assets, Icon};
-use crate::canvas::{BlendMode, CanvasState, Layer, TiledImage};
+use crate::canvas::{BlendMode, CanvasState, Layer, LayerContent, TiledImage};
 use crate::components::history::{HistoryManager, LayerOpCommand, LayerOperation, SnapshotCommand};
+use crate::ops::dialogs::DialogColors;
+use crate::ops::text_layer::{
+    EnvelopeWarp, InnerShadowEffect, OutlineEffect, OutlinePosition, ShadowEffect,
+    TextEffects, TextWarp, TextureFillEffect,
+};
 use eframe::egui;
 use egui::{
     Color32, ColorImage, CursorIcon, Id, Pos2, Rect, Sense, TextureHandle, TextureOptions, Vec2,
@@ -19,12 +24,28 @@ struct ThumbnailCache {
     last_update: Instant,
 }
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum LayerSettingsTab {
+    #[default]
+    General,
+    Effects,
+    Warp,
+}
+
 #[derive(Default)]
 pub struct LayerSettingsState {
     pub editing_layer: Option<usize>,
     pub editing_name: String,
     pub editing_opacity: f32,
     pub editing_blend_mode: BlendMode,
+    /// Active tab for the settings window.
+    pub tab: LayerSettingsTab,
+    /// Cloned text effects for editing (applied on "Apply").
+    pub text_effects: TextEffects,
+    /// Cloned text warp for editing (applied to ALL blocks live).
+    pub text_warp: TextWarp,
+    /// Receiver for async texture file loading.
+    pub texture_load_rx: Option<std::sync::mpsc::Receiver<Vec<u8>>>,
 }
 
 /// State for peek functionality
@@ -70,6 +91,8 @@ pub enum LayerAppAction {
     RotateScale,
     /// Merge the layer at `layer_idx` down as an alpha mask onto the layer below it.
     MergeDownAsMask(usize),
+    /// Rasterize the text layer at `layer_idx`, closing the settings dialog.
+    RasterizeTextLayer(usize),
 }
 
 #[derive(Default)]
@@ -328,8 +351,10 @@ impl LayersPanel {
                 let mut layer_to_merge: Option<usize> = None;
                 let mut layer_to_flatten = false;
                 let mut layer_to_add = false;
+                let mut layer_to_add_text = false;
                 let mut layer_to_duplicate: Option<usize> = None;
                 let mut layer_to_delete: Option<usize> = None;
+                let mut layer_to_rasterize: Option<usize> = None;
                 let mut new_active: Option<usize> = None;
                 let mut swap_layers: Option<(usize, usize)> = None;
 
@@ -444,13 +469,11 @@ impl LayersPanel {
                             ContextAction::Duplicate => layer_to_duplicate = Some(layer_idx),
                             ContextAction::Delete => layer_to_delete = Some(layer_idx),
                             ContextAction::OpenSettings => {
-                                self.settings_state.editing_layer = Some(layer_idx);
-                                self.settings_state.editing_name =
-                                    canvas_state.layers[layer_idx].name.clone();
-                                self.settings_state.editing_opacity =
-                                    canvas_state.layers[layer_idx].opacity;
-                                self.settings_state.editing_blend_mode =
-                                    canvas_state.layers[layer_idx].blend_mode;
+                                self.open_settings_for_layer(
+                                    layer_idx,
+                                    canvas_state,
+                                    LayerSettingsTab::General,
+                                );
                             }
                             ContextAction::MoveToTop => {
                                 let top = canvas_state.layers.len().saturating_sub(1);
@@ -502,6 +525,26 @@ impl LayersPanel {
                             ContextAction::ShowAll => {
                                 self.show_all_layers(canvas_state);
                             }
+                            ContextAction::AddNewTextLayer => {
+                                layer_to_add_text = true;
+                            }
+                            ContextAction::RasterizeTextLayer => {
+                                layer_to_rasterize = Some(layer_idx);
+                            }
+                            ContextAction::TextLayerEffects => {
+                                self.open_settings_for_layer(
+                                    layer_idx,
+                                    canvas_state,
+                                    LayerSettingsTab::Effects,
+                                );
+                            }
+                            ContextAction::TextLayerWarp => {
+                                self.open_settings_for_layer(
+                                    layer_idx,
+                                    canvas_state,
+                                    LayerSettingsTab::Warp,
+                                );
+                            }
                         }
                     }
                 }
@@ -535,11 +578,17 @@ impl LayersPanel {
                 if layer_to_add {
                     self.add_new_layer(canvas_state, history);
                 }
+                if layer_to_add_text {
+                    self.add_new_text_layer(canvas_state, history);
+                }
                 if let Some(dup_idx) = layer_to_duplicate {
                     self.duplicate_layer(dup_idx, canvas_state, history);
                 }
                 if let Some(del_idx) = layer_to_delete {
                     self.delete_layer(del_idx, canvas_state, history);
+                }
+                if let Some(rast_idx) = layer_to_rasterize {
+                    self.rasterize_text_layer(rast_idx, canvas_state, history);
                 }
                 if let Some((from, to)) = swap_layers {
                     self.move_layer(from, to, canvas_state, history);
@@ -631,10 +680,43 @@ impl LayersPanel {
             );
             x += thumb_size + 8.0;
 
+            let is_text_layer = matches!(
+                canvas_state.layers[layer_idx].content,
+                LayerContent::Text(_)
+            );
+            let gear_width = if is_text_layer { 20.0 } else { 0.0 };
             let name_rect = Rect::from_min_max(
                 Pos2::new(x, row_rect.top() + 4.0),
-                Pos2::new(row_rect.right() - 6.0, row_rect.bottom() - 4.0),
+                Pos2::new(row_rect.right() - 6.0 - gear_width, row_rect.bottom() - 4.0),
             );
+
+            // Small gear icon for text layer settings (right side of row)
+            if is_text_layer {
+                let gear_rect = Rect::from_center_size(
+                    Pos2::new(row_rect.right() - 6.0 - gear_width / 2.0, center_y),
+                    Vec2::splat(16.0),
+                );
+                let gear_color = if gear_rect
+                    .contains(ui.input(|i| i.pointer.hover_pos().unwrap_or_default()))
+                {
+                    ui.visuals().strong_text_color()
+                } else {
+                    ui.visuals().text_color()
+                };
+                ui.painter().text(
+                    gear_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "\u{2699}",
+                    egui::FontId::proportional(14.0),
+                    gear_color,
+                );
+                let gear_resp =
+                    ui.interact(gear_rect, Id::new(("text_gear", layer_idx)), Sense::click());
+                if gear_resp.clicked() {
+                    context_action = Some(ContextAction::TextLayerEffects);
+                }
+                gear_resp.on_hover_text(t!("layer.text_settings"));
+            }
 
             // Draw thumbnail (needs mutable self for cache)
             self.draw_thumbnail(ui, thumb_rect, layer_idx, canvas_state, 1.0);
@@ -709,17 +791,38 @@ impl LayersPanel {
                     }
                 }
             } else {
-                let name_text = egui::RichText::new(&layer_name)
-                    .size(13.0)
-                    .color(if is_active {
-                        ui.visuals().strong_text_color()
-                    } else {
-                        icon_color
-                    });
+                let is_text = matches!(
+                    canvas_state.layers[layer_idx].content,
+                    LayerContent::Text(_)
+                );
+                let mut name_text =
+                    egui::RichText::new(&layer_name)
+                        .size(13.0)
+                        .color(if is_active {
+                            ui.visuals().strong_text_color()
+                        } else {
+                            icon_color
+                        });
+                if is_text {
+                    name_text = name_text.strong();
+                }
 
                 let mut child_ui =
-                    ui.child_ui(name_rect, egui::Layout::left_to_right(egui::Align::Center));
+                    ui.child_ui(name_rect, egui::Layout::top_down(egui::Align::LEFT));
+                child_ui.spacing_mut().item_spacing.y = 0.0;
+                // Vertically center the content block within the row
+                let content_h = if is_text { 13.0 + 9.0 + 1.0 } else { 13.0 };
+                let pad = ((name_rect.height() - content_h) / 2.0).max(0.0);
+                if pad > 0.0 {
+                    child_ui.add_space(pad);
+                }
                 child_ui.add(egui::Label::new(name_text).truncate(true));
+                if is_text {
+                    let accent = child_ui.visuals().selection.stroke.color;
+                    child_ui.add(egui::Label::new(
+                        egui::RichText::new("TEXT LAYER").size(9.0).strong().color(accent),
+                    ));
+                }
             }
 
             // Now handle peek (after all layer borrows are done)
@@ -745,6 +848,13 @@ impl LayersPanel {
                 .clicked()
             {
                 context_action = Some(ContextAction::AddNew);
+                ui.close_menu();
+            }
+            if assets
+                .menu_item(ui, Icon::Rename, &t!("layer.add_text_layer"))
+                .clicked()
+            {
+                context_action = Some(ContextAction::AddNewTextLayer);
                 ui.close_menu();
             }
             if assets
@@ -900,6 +1010,35 @@ impl LayersPanel {
             {
                 context_action = Some(ContextAction::OpenSettings);
                 ui.close_menu();
+            }
+            // Rasterize option for text layers + effects/warp
+            if matches!(
+                canvas_state.layers[layer_idx].content,
+                LayerContent::Text(_)
+            ) {
+                ui.separator();
+                if assets
+                    .menu_item(ui, Icon::LayerProperties, &t!("layer.text_effects"))
+                    .clicked()
+                {
+                    context_action = Some(ContextAction::TextLayerEffects);
+                    ui.close_menu();
+                }
+                if assets
+                    .menu_item(ui, Icon::LayerProperties, &t!("layer.text_warp"))
+                    .clicked()
+                {
+                    context_action = Some(ContextAction::TextLayerWarp);
+                    ui.close_menu();
+                }
+                ui.separator();
+                if ui
+                    .add(egui::Button::new(t!("layer.rasterize_text_layer")))
+                    .clicked()
+                {
+                    context_action = Some(ContextAction::RasterizeTextLayer);
+                    ui.close_menu();
+                }
             }
         });
 
@@ -1224,15 +1363,46 @@ impl LayersPanel {
             // Layer Options (settings)
             if assets.small_icon_button(ui, Icon::Settings).clicked() {
                 let idx = canvas_state.active_layer_index;
-                self.settings_state.editing_layer = Some(idx);
-                self.settings_state.editing_name = canvas_state.layers[idx].name.clone();
-                self.settings_state.editing_opacity = canvas_state.layers[idx].opacity;
-                self.settings_state.editing_blend_mode = canvas_state.layers[idx].blend_mode;
+                self.open_settings_for_layer(idx, canvas_state, LayerSettingsTab::General);
             }
         });
     }
 
-    /// Show the layer settings popup window (Options menu)
+    /// Open the layer settings dialog for a given layer, starting on the given tab.
+    fn open_settings_for_layer(
+        &mut self,
+        idx: usize,
+        canvas_state: &CanvasState,
+        tab: LayerSettingsTab,
+    ) {
+        if idx >= canvas_state.layers.len() {
+            return;
+        }
+        let layer = &canvas_state.layers[idx];
+        self.settings_state.editing_layer = Some(idx);
+        self.settings_state.editing_name = layer.name.clone();
+        self.settings_state.editing_opacity = layer.opacity;
+        self.settings_state.editing_blend_mode = layer.blend_mode;
+        self.settings_state.tab = tab;
+        self.settings_state.texture_load_rx = None;
+
+        // Load text effects / warp if this is a text layer
+        if let LayerContent::Text(ref td) = layer.content {
+            self.settings_state.text_effects = td.effects.clone();
+            // Load warp from the first block (or default)
+            if let Some(block) = td.blocks.first() {
+                self.settings_state.text_warp = block.warp.clone();
+            } else {
+                self.settings_state.text_warp = TextWarp::None;
+            }
+        } else {
+            self.settings_state.text_effects = TextEffects::default();
+            self.settings_state.text_warp = TextWarp::None;
+        }
+    }
+
+    /// Show the layer settings popup window (Options menu).
+    /// For text layers this includes Effects and Warp tabs.
     fn show_layer_settings_popup(&mut self, ui: &mut egui::Ui, canvas_state: &mut CanvasState) {
         if let Some(layer_idx) = self.settings_state.editing_layer {
             if layer_idx >= canvas_state.layers.len() {
@@ -1240,78 +1410,786 @@ impl LayersPanel {
                 return;
             }
 
+            let is_text = matches!(
+                canvas_state.layers[layer_idx].content,
+                LayerContent::Text(_)
+            );
+
             let mut open = true;
+            let title = if is_text {
+                t!("layer.text_options_title")
+            } else {
+                t!("layer.options_title")
+            };
+            let win_width = if is_text { 340.0 } else { 280.0 };
 
-            egui::Window::new(t!("layer.options_title"))
+            egui::Window::new("layer_settings_popup_win")
                 .id(Id::new("layer_settings_popup"))
+                .title_bar(false)
                 .collapsible(false)
-                .resizable(false)
-                .default_width(280.0)
-                .open(&mut open)
+                .resizable(true)
+                .default_width(win_width)
                 .show(ui.ctx(), |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(t!("layer.name"));
-                        if ui
-                            .text_edit_singleline(&mut self.settings_state.editing_name)
-                            .changed()
-                            && !self.settings_state.editing_name.is_empty()
-                        {
-                            canvas_state.layers[layer_idx].name =
-                                self.settings_state.editing_name.clone();
+                    // Header with close button
+                    let colors = DialogColors::from_ctx(ui.ctx());
+                    let available_w = ui.available_width();
+                    let header_height = 32.0;
+                    let (header_rect, _) = ui.allocate_exact_size(
+                        Vec2::new(available_w, header_height),
+                        Sense::hover(),
+                    );
+                    let painter = ui.painter();
+                    painter.rect_filled(header_rect, egui::Rounding::same(4.0), colors.accent_faint);
+                    painter.rect_filled(
+                        Rect::from_min_size(header_rect.min, Vec2::new(3.0, header_height)),
+                        egui::Rounding::ZERO,
+                        colors.accent,
+                    );
+                    painter.text(
+                        Pos2::new(header_rect.min.x + 12.0, header_rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        format!("\u{2699} {title}"),
+                        egui::FontId::proportional(14.0),
+                        colors.accent_strong,
+                    );
+                    // Close button (×) — matches panel_header ghost-style
+                    let close_size = 18.0;
+                    let close_rect = Rect::from_center_size(
+                        Pos2::new(header_rect.right() - 14.0, header_rect.center().y),
+                        Vec2::splat(close_size),
+                    );
+                    let close_resp = ui.interact(
+                        close_rect,
+                        Id::new("ls_close_btn"),
+                        Sense::click(),
+                    );
+                    if ui.is_rect_visible(close_rect) {
+                        let hovered = close_resp.hovered();
+                        if hovered {
+                            painter.rect_filled(
+                                close_rect,
+                                egui::Rounding::same(4.0),
+                                colors.accent_faint,
+                            );
                         }
-                    });
-
-                    ui.add_space(8.0);
-
-                    // Opacity slider
-                    ui.horizontal(|ui| {
-                        ui.label(t!("layer.opacity"));
-                        if ui
-                            .add(
-                                egui::Slider::new(
-                                    &mut self.settings_state.editing_opacity,
-                                    0.0..=1.0,
+                        let color = if hovered {
+                            colors.accent_strong
+                        } else {
+                            colors.text_muted
+                        };
+                        let font = egui::FontId::proportional(13.0);
+                        let galley =
+                            painter.layout_no_wrap("\u{00D7}".to_string(), font, color);
+                        let gpos = close_rect.center() - galley.size() / 2.0;
+                        painter.galley(Pos2::new(gpos.x, gpos.y), galley);
+                    }
+                    if close_resp.clicked() {
+                        open = false;
+                    }
+                    ui.add_space(4.0);
+                    // --- Tab bar for text layers ---
+                    if is_text {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 0.0;
+                            let tabs = [
+                                (LayerSettingsTab::General, t!("layer.tab.general")),
+                                (LayerSettingsTab::Effects, t!("layer.tab.effects")),
+                                (LayerSettingsTab::Warp, t!("layer.tab.warp")),
+                            ];
+                            for (tab, label) in &tabs {
+                                let selected = self.settings_state.tab == *tab;
+                                let btn = egui::Button::new(
+                                    egui::RichText::new(label.as_str())
+                                        .strong()
+                                        .size(13.0)
+                                        .color(if selected {
+                                            ui.visuals().strong_text_color()
+                                        } else {
+                                            ui.visuals().text_color()
+                                        }),
                                 )
-                                .fixed_decimals(2)
-                                .show_value(true),
-                            )
-                            .changed()
-                        {
-                            canvas_state.layers[layer_idx].opacity =
-                                self.settings_state.editing_opacity;
-                            self.mark_full_dirty(canvas_state);
-                        }
-                    });
-
-                    ui.add_space(8.0);
-
-                    // Blend mode dropdown
-                    ui.horizontal(|ui| {
-                        ui.label(t!("layer.blend"));
-                        egui::ComboBox::from_id_source("blend_mode_combo")
-                            .selected_text(self.settings_state.editing_blend_mode.display_name())
-                            .width(120.0)
-                            .show_ui(ui, |ui: &mut egui::Ui| {
-                                for &mode in BlendMode::all() {
-                                    if ui
-                                        .selectable_label(
-                                            mode == self.settings_state.editing_blend_mode,
-                                            mode.display_name(),
-                                        )
-                                        .clicked()
-                                    {
-                                        self.settings_state.editing_blend_mode = mode;
-                                        canvas_state.layers[layer_idx].blend_mode = mode;
-                                        self.mark_full_dirty(canvas_state);
-                                    }
+                                .fill(if selected {
+                                    ui.visuals().selection.bg_fill
+                                } else {
+                                    Color32::TRANSPARENT
+                                })
+                                .rounding(egui::Rounding {
+                                    nw: 4.0,
+                                    ne: 4.0,
+                                    sw: 0.0,
+                                    se: 0.0,
+                                })
+                                .min_size(Vec2::new(80.0, 24.0));
+                                if ui.add(btn).clicked() {
+                                    self.settings_state.tab = *tab;
                                 }
-                            });
-                    });
+                            }
+                        });
+                        // Underline for current tab
+                        let accent = ui.visuals().selection.bg_fill;
+                        let r = ui.available_rect_before_wrap();
+                        ui.painter().line_segment(
+                            [Pos2::new(r.left(), r.top()), Pos2::new(r.right(), r.top())],
+                            egui::Stroke::new(1.0, accent.linear_multiply(0.3)),
+                        );
+                        ui.add_space(4.0);
+                    }
+
+                    match self.settings_state.tab {
+                        LayerSettingsTab::General => {
+                            self.show_settings_general_tab(ui, layer_idx, canvas_state);
+                        }
+                        LayerSettingsTab::Effects if is_text => {
+                            self.show_settings_effects_tab(ui, layer_idx, canvas_state);
+                        }
+                        LayerSettingsTab::Warp if is_text => {
+                            self.show_settings_warp_tab(ui, layer_idx, canvas_state);
+                        }
+                        _ => {
+                            // Non-text layers only have General
+                            self.show_settings_general_tab(ui, layer_idx, canvas_state);
+                        }
+                    }
+
+                    // Rasterize button for text layers
+                    if is_text {
+                        ui.add_space(8.0);
+                        ui.separator();
+                        ui.add_space(4.0);
+                        if ui
+                            .button(
+                                egui::RichText::new(t!("layer.rasterize_text_layer"))
+                                    .size(13.0),
+                            )
+                            .clicked()
+                        {
+                            self.pending_app_action =
+                                Some(LayerAppAction::RasterizeTextLayer(layer_idx));
+                            open = false;
+                        }
+                    }
                 });
 
             if !open {
                 self.settings_state.editing_layer = None;
             }
+        }
+    }
+
+    /// General tab: name, opacity, blend mode.
+    fn show_settings_general_tab(
+        &mut self,
+        ui: &mut egui::Ui,
+        layer_idx: usize,
+        canvas_state: &mut CanvasState,
+    ) {
+        ui.horizontal(|ui| {
+            ui.label(t!("layer.name"));
+            if ui
+                .text_edit_singleline(&mut self.settings_state.editing_name)
+                .changed()
+                && !self.settings_state.editing_name.is_empty()
+            {
+                canvas_state.layers[layer_idx].name = self.settings_state.editing_name.clone();
+            }
+        });
+
+        ui.add_space(8.0);
+
+        ui.horizontal(|ui| {
+            ui.label(t!("layer.opacity"));
+            if ui
+                .add(
+                    egui::Slider::new(&mut self.settings_state.editing_opacity, 0.0..=1.0)
+                        .fixed_decimals(2)
+                        .show_value(true),
+                )
+                .changed()
+            {
+                canvas_state.layers[layer_idx].opacity = self.settings_state.editing_opacity;
+                self.mark_full_dirty(canvas_state);
+            }
+        });
+
+        ui.add_space(8.0);
+
+        ui.horizontal(|ui| {
+            ui.label(t!("layer.blend"));
+            egui::ComboBox::from_id_source("blend_mode_combo_ls")
+                .selected_text(self.settings_state.editing_blend_mode.display_name())
+                .width(120.0)
+                .show_ui(ui, |ui: &mut egui::Ui| {
+                    for &mode in BlendMode::all() {
+                        if ui
+                            .selectable_label(
+                                mode == self.settings_state.editing_blend_mode,
+                                mode.display_name(),
+                            )
+                            .clicked()
+                        {
+                            self.settings_state.editing_blend_mode = mode;
+                            canvas_state.layers[layer_idx].blend_mode = mode;
+                            self.mark_full_dirty(canvas_state);
+                        }
+                    }
+                });
+        });
+    }
+
+    /// Effects tab (text layers only): outline, shadow, inner shadow, texture fill.
+    fn show_settings_effects_tab(
+        &mut self,
+        ui: &mut egui::Ui,
+        layer_idx: usize,
+        canvas_state: &mut CanvasState,
+    ) {
+        let mut changed = false;
+
+        // --- Outline ---
+        {
+            let has_outline = self.settings_state.text_effects.outline.is_some();
+            let mut outline_on = has_outline;
+            if ui
+                .checkbox(&mut outline_on, t!("ctx.text.effects.outline"))
+                .changed()
+            {
+                changed = true;
+            }
+            if outline_on && !has_outline {
+                self.settings_state.text_effects.outline = Some(OutlineEffect::default());
+                changed = true;
+            } else if !outline_on && has_outline {
+                self.settings_state.text_effects.outline = None;
+                changed = true;
+            }
+            if let Some(ref mut outline) = self.settings_state.text_effects.outline {
+                ui.indent("ls_outline", |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(t!("ctx.text.effects.outline.color"));
+                        let mut c = Color32::from_rgba_unmultiplied(
+                            outline.color[0],
+                            outline.color[1],
+                            outline.color[2],
+                            outline.color[3],
+                        );
+                        if ui.color_edit_button_srgba(&mut c).changed() {
+                            outline.color = [c.r(), c.g(), c.b(), c.a()];
+                            changed = true;
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label(t!("ctx.text.effects.outline.width"));
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut outline.width)
+                                    .speed(0.1)
+                                    .clamp_range(0.5..=50.0)
+                                    .suffix("px"),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label(t!("ctx.text.effects.outline.position"));
+                        let positions = [
+                            (
+                                OutlinePosition::Outside,
+                                t!("ctx.text.effects.outline.outside"),
+                            ),
+                            (
+                                OutlinePosition::Inside,
+                                t!("ctx.text.effects.outline.inside"),
+                            ),
+                            (
+                                OutlinePosition::Center,
+                                t!("ctx.text.effects.outline.center"),
+                            ),
+                        ];
+                        for (pos, label) in &positions {
+                            if ui
+                                .selectable_label(outline.position == *pos, label.as_str())
+                                .clicked()
+                            {
+                                outline.position = *pos;
+                                changed = true;
+                            }
+                        }
+                    });
+                });
+            }
+        }
+
+        ui.add_space(4.0);
+
+        // --- Drop Shadow ---
+        {
+            let has_shadow = self.settings_state.text_effects.shadow.is_some();
+            let mut shadow_on = has_shadow;
+            if ui
+                .checkbox(&mut shadow_on, t!("ctx.text.effects.shadow"))
+                .changed()
+            {
+                changed = true;
+            }
+            if shadow_on && !has_shadow {
+                self.settings_state.text_effects.shadow = Some(ShadowEffect::default());
+                changed = true;
+            } else if !shadow_on && has_shadow {
+                self.settings_state.text_effects.shadow = None;
+                changed = true;
+            }
+            if let Some(ref mut shadow) = self.settings_state.text_effects.shadow {
+                ui.indent("ls_shadow", |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(t!("ctx.text.effects.shadow.color"));
+                        let mut c = Color32::from_rgba_unmultiplied(
+                            shadow.color[0],
+                            shadow.color[1],
+                            shadow.color[2],
+                            shadow.color[3],
+                        );
+                        if ui.color_edit_button_srgba(&mut c).changed() {
+                            shadow.color = [c.r(), c.g(), c.b(), c.a()];
+                            changed = true;
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label(t!("ctx.text.effects.shadow.offset_x"));
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut shadow.offset_x)
+                                    .speed(0.5)
+                                    .clamp_range(-100.0..=100.0)
+                                    .suffix("px"),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                        ui.label(t!("ctx.text.effects.shadow.offset_y"));
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut shadow.offset_y)
+                                    .speed(0.5)
+                                    .clamp_range(-100.0..=100.0)
+                                    .suffix("px"),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label(t!("ctx.text.effects.shadow.blur"));
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut shadow.blur_radius)
+                                    .speed(0.2)
+                                    .clamp_range(0.0..=50.0)
+                                    .suffix("px"),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                        ui.label(t!("ctx.text.effects.shadow.spread"));
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut shadow.spread)
+                                    .speed(0.2)
+                                    .clamp_range(0.0..=30.0)
+                                    .suffix("px"),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    });
+                });
+            }
+        }
+
+        ui.add_space(4.0);
+
+        // --- Inner Shadow ---
+        {
+            let has_inner = self.settings_state.text_effects.inner_shadow.is_some();
+            let mut inner_on = has_inner;
+            if ui
+                .checkbox(&mut inner_on, t!("ctx.text.effects.inner_shadow"))
+                .changed()
+            {
+                changed = true;
+            }
+            if inner_on && !has_inner {
+                self.settings_state.text_effects.inner_shadow = Some(InnerShadowEffect::default());
+                changed = true;
+            } else if !inner_on && has_inner {
+                self.settings_state.text_effects.inner_shadow = None;
+                changed = true;
+            }
+            if let Some(ref mut inner) = self.settings_state.text_effects.inner_shadow {
+                ui.indent("ls_inner_shadow", |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(t!("ctx.text.effects.inner_shadow.color"));
+                        let mut c = Color32::from_rgba_unmultiplied(
+                            inner.color[0],
+                            inner.color[1],
+                            inner.color[2],
+                            inner.color[3],
+                        );
+                        if ui.color_edit_button_srgba(&mut c).changed() {
+                            inner.color = [c.r(), c.g(), c.b(), c.a()];
+                            changed = true;
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label(t!("ctx.text.effects.inner_shadow.offset_x"));
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut inner.offset_x)
+                                    .speed(0.5)
+                                    .clamp_range(-100.0..=100.0)
+                                    .suffix("px"),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                        ui.label(t!("ctx.text.effects.inner_shadow.offset_y"));
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut inner.offset_y)
+                                    .speed(0.5)
+                                    .clamp_range(-100.0..=100.0)
+                                    .suffix("px"),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label(t!("ctx.text.effects.inner_shadow.blur"));
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut inner.blur_radius)
+                                    .speed(0.2)
+                                    .clamp_range(0.0..=50.0)
+                                    .suffix("px"),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    });
+                });
+            }
+        }
+
+        ui.add_space(4.0);
+
+        // --- Texture Fill ---
+        {
+            let has_texture = self.settings_state.text_effects.texture_fill.is_some();
+            let mut texture_on = has_texture;
+            if ui
+                .checkbox(&mut texture_on, t!("ctx.text.effects.texture"))
+                .changed()
+            {
+                changed = true;
+            }
+            if texture_on && !has_texture {
+                self.settings_state.text_effects.texture_fill = Some(TextureFillEffect::default());
+                changed = true;
+            } else if !texture_on && has_texture {
+                self.settings_state.text_effects.texture_fill = None;
+                changed = true;
+            }
+
+            // Poll for async texture load
+            if let Some(ref rx) = self.settings_state.texture_load_rx
+                && let Ok(data) = rx.try_recv()
+            {
+                if let Ok(img) = image::load_from_memory(&data)
+                    && let Some(ref mut tex) = self.settings_state.text_effects.texture_fill
+                {
+                    tex.texture_data = data;
+                    tex.texture_width = img.width();
+                    tex.texture_height = img.height();
+                    changed = true;
+                }
+                self.settings_state.texture_load_rx = None;
+            }
+
+            let mut remove_texture = false;
+            let mut spawn_texture_dialog = false;
+            if let Some(ref mut tex) = self.settings_state.text_effects.texture_fill {
+                ui.indent("ls_texture", |ui| {
+                    ui.horizontal(|ui| {
+                        if ui.button(t!("ctx.text.effects.texture.load")).clicked() {
+                            spawn_texture_dialog = true;
+                        }
+                        if tex.texture_width > 0 {
+                            ui.label(format!("{}×{}", tex.texture_width, tex.texture_height));
+                        }
+                    });
+                    if tex.texture_width > 0 {
+                        ui.horizontal(|ui| {
+                            ui.label(t!("ctx.text.effects.texture.scale"));
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut tex.scale)
+                                        .speed(0.01)
+                                        .clamp_range(0.1..=10.0),
+                                )
+                                .changed()
+                            {
+                                changed = true;
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label(t!("ctx.text.effects.texture.offset_x"));
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut tex.offset[0])
+                                        .speed(0.5)
+                                        .clamp_range(-1000.0..=1000.0),
+                                )
+                                .changed()
+                            {
+                                changed = true;
+                            }
+                            ui.label(t!("ctx.text.effects.texture.offset_y"));
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut tex.offset[1])
+                                        .speed(0.5)
+                                        .clamp_range(-1000.0..=1000.0),
+                                )
+                                .changed()
+                            {
+                                changed = true;
+                            }
+                        });
+                        if ui.button(t!("ctx.text.effects.texture.remove")).clicked() {
+                            remove_texture = true;
+                            changed = true;
+                        }
+                    }
+                });
+            }
+            if remove_texture {
+                self.settings_state.text_effects.texture_fill = None;
+            }
+            if spawn_texture_dialog {
+                let (tx, rx) = std::sync::mpsc::channel();
+                self.settings_state.texture_load_rx = Some(rx);
+                std::thread::spawn(move || {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("Images", &["png", "jpg", "jpeg", "bmp", "webp"])
+                        .pick_file()
+                        && let Ok(data) = std::fs::read(&path)
+                    {
+                        let _ = tx.send(data);
+                    }
+                });
+            }
+        }
+
+        // Live-commit: write effects to TextLayerData and rasterize immediately
+        if changed {
+            if let Some(layer) = canvas_state.layers.get_mut(layer_idx)
+                && let LayerContent::Text(ref mut td) = layer.content
+            {
+                td.effects = self.settings_state.text_effects.clone();
+                td.mark_effects_dirty();
+            }
+            canvas_state.force_rasterize_text_layer(layer_idx);
+            canvas_state.mark_dirty(None);
+        }
+    }
+
+    /// Warp tab (text layers only): warp type selector and per-type controls.
+    fn show_settings_warp_tab(
+        &mut self,
+        ui: &mut egui::Ui,
+        layer_idx: usize,
+        canvas_state: &mut CanvasState,
+    ) {
+        let mut changed = false;
+
+        let current_name = self.settings_state.text_warp.name().to_string();
+        ui.horizontal(|ui| {
+            ui.label(t!("ctx.text.warp.type"));
+            egui::ComboBox::from_id_source("ls_text_warp_type")
+                .selected_text(&current_name)
+                .width(130.0)
+                .show_ui(ui, |ui| {
+                    for name in TextWarp::all_names() {
+                        if *name == "Path Follow" {
+                            continue; // hidden for now
+                        }
+                        if ui.selectable_label(current_name == *name, *name).clicked() {
+                            let new_warp = TextWarp::from_name(name);
+                            if self.settings_state.text_warp != new_warp {
+                                self.settings_state.text_warp = new_warp;
+                                changed = true;
+                            }
+                        }
+                    }
+                });
+        });
+
+        ui.add_space(4.0);
+
+        match &mut self.settings_state.text_warp {
+            TextWarp::None => {}
+            TextWarp::Arc(arc) => {
+                ui.horizontal(|ui| {
+                    ui.label(t!("ctx.text.warp.arc.bend"));
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut arc.bend)
+                                .speed(0.01)
+                                .clamp_range(-1.0..=1.0),
+                        )
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label(t!("ctx.text.warp.arc.hdist"));
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut arc.horizontal_distortion)
+                                .speed(0.01)
+                                .clamp_range(-1.0..=1.0),
+                        )
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label(t!("ctx.text.warp.arc.vdist"));
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut arc.vertical_distortion)
+                                .speed(0.01)
+                                .clamp_range(-1.0..=1.0),
+                        )
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                });
+            }
+            TextWarp::Circular(circ) => {
+                ui.horizontal(|ui| {
+                    ui.label(t!("ctx.text.warp.circular.radius"));
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut circ.radius)
+                                .speed(1.0)
+                                .clamp_range(20.0..=2000.0)
+                                .suffix("px"),
+                        )
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label(t!("ctx.text.warp.circular.start_angle"));
+                    let mut degrees = circ.start_angle.to_degrees();
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut degrees)
+                                .speed(1.0)
+                                .clamp_range(-360.0..=360.0)
+                                .suffix("°"),
+                        )
+                        .changed()
+                    {
+                        circ.start_angle = degrees.to_radians();
+                        changed = true;
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label(t!("ctx.text.warp.circular.clockwise"));
+                    if ui.checkbox(&mut circ.clockwise, "").changed() {
+                        changed = true;
+                    }
+                });
+            }
+            TextWarp::PathFollow(_) => {
+                // Hidden from UI for now; no controls shown.
+            }
+            TextWarp::Envelope(env) => {
+                ui.label(t!("ctx.text.warp.envelope.top"));
+                let mut any_changed = false;
+                for (i, pt) in env.top_curve.iter_mut().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label(format!("T{i}:"));
+                        if ui
+                            .add(egui::DragValue::new(&mut pt[0]).speed(1.0).prefix("x: "))
+                            .changed()
+                        {
+                            any_changed = true;
+                        }
+                        if ui
+                            .add(egui::DragValue::new(&mut pt[1]).speed(1.0).prefix("y: "))
+                            .changed()
+                        {
+                            any_changed = true;
+                        }
+                    });
+                }
+                ui.add_space(2.0);
+                ui.label(t!("ctx.text.warp.envelope.bottom"));
+                for (i, pt) in env.bottom_curve.iter_mut().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label(format!("B{i}:"));
+                        if ui
+                            .add(egui::DragValue::new(&mut pt[0]).speed(1.0).prefix("x: "))
+                            .changed()
+                        {
+                            any_changed = true;
+                        }
+                        if ui
+                            .add(egui::DragValue::new(&mut pt[1]).speed(1.0).prefix("y: "))
+                            .changed()
+                        {
+                            any_changed = true;
+                        }
+                    });
+                }
+                if any_changed {
+                    changed = true;
+                }
+                if ui.button(t!("ctx.text.warp.reset")).clicked() {
+                    *env = EnvelopeWarp::default();
+                    changed = true;
+                }
+            }
+        }
+
+        // Live-commit: write warp to ALL blocks and rasterize immediately
+        if changed {
+            if let Some(layer) = canvas_state.layers.get_mut(layer_idx)
+                && let LayerContent::Text(ref mut td) = layer.content
+            {
+                for block in &mut td.blocks {
+                    block.warp = self.settings_state.text_warp.clone();
+                }
+                td.mark_dirty();
+            }
+            canvas_state.force_rasterize_text_layer(layer_idx);
+            canvas_state.mark_dirty(None);
         }
     }
 
@@ -1345,6 +2223,77 @@ impl LayersPanel {
         self.mark_full_dirty(canvas_state);
     }
 
+    fn add_new_text_layer(&mut self, canvas_state: &mut CanvasState, history: &mut HistoryManager) {
+        let layer_num = canvas_state.layers.len() + 1;
+        let layer_name = format!("Text Layer {}", layer_num);
+        let new_layer =
+            Layer::new_text(layer_name.clone(), canvas_state.width, canvas_state.height);
+
+        let insert_idx = canvas_state.active_layer_index + 1;
+        canvas_state.layers.insert(insert_idx, new_layer);
+        canvas_state.active_layer_index = insert_idx;
+
+        history.push(Box::new(LayerOpCommand::new(LayerOperation::Add {
+            index: insert_idx,
+            name: layer_name,
+            width: canvas_state.width,
+            height: canvas_state.height,
+        })));
+
+        self.thumbnail_cache.clear();
+        self.mark_full_dirty(canvas_state);
+    }
+
+    /// Rasterize a text layer — converts it to a regular raster layer,
+    /// losing editability but preserving the current pixel appearance.
+    fn rasterize_text_layer(
+        &mut self,
+        layer_idx: usize,
+        canvas_state: &mut CanvasState,
+        history: &mut HistoryManager,
+    ) {
+        if layer_idx >= canvas_state.layers.len() {
+            return;
+        }
+        if !matches!(
+            canvas_state.layers[layer_idx].content,
+            LayerContent::Text(_)
+        ) {
+            return;
+        }
+
+        // Snapshot before
+        let mut snap = crate::components::history::SingleLayerSnapshotCommand::new_for_layer(
+            t!("layer.rasterize_text_layer"),
+            canvas_state,
+            layer_idx,
+        );
+
+        // Ensure rasterized pixels are up to date
+        canvas_state.ensure_all_text_layers_rasterized();
+
+        // Convert to raster by simply changing content to Raster.
+        // The pixels are already up-to-date from the rasterize call above.
+        canvas_state.layers[layer_idx].content = LayerContent::Raster;
+
+        snap.set_after(canvas_state);
+        history.push(Box::new(snap));
+
+        self.thumbnail_cache.clear();
+        self.mark_full_dirty(canvas_state);
+    }
+
+    /// Public entry point for rasterizing a text layer from app-level code
+    /// (e.g. via `LayerAppAction::RasterizeTextLayer`).
+    pub fn rasterize_text_layer_from_app(
+        &mut self,
+        layer_idx: usize,
+        canvas_state: &mut CanvasState,
+        history: &mut HistoryManager,
+    ) {
+        self.rasterize_text_layer(layer_idx, canvas_state, history);
+    }
+
     fn delete_active_layer(
         &mut self,
         canvas_state: &mut CanvasState,
@@ -1369,6 +2318,7 @@ impl LayersPanel {
         let name = layer.name.clone();
         let visible = layer.visible;
         let opacity = layer.opacity;
+        let content = layer.content.clone();
 
         canvas_state.layers.remove(layer_idx);
 
@@ -1388,6 +2338,7 @@ impl LayersPanel {
             name,
             visible,
             opacity,
+            content,
         })));
 
         self.thumbnail_cache.clear();
@@ -1416,6 +2367,7 @@ impl LayersPanel {
         new_layer.visible = source.visible;
         new_layer.opacity = source.opacity;
         new_layer.blend_mode = source.blend_mode;
+        new_layer.content = source.content.clone();
 
         let new_index = layer_idx + 1;
 
@@ -1423,6 +2375,7 @@ impl LayersPanel {
         let pixels = new_layer.pixels.clone();
         let visible = new_layer.visible;
         let opacity = new_layer.opacity;
+        let content = new_layer.content.clone();
 
         // Insert above the duplicated layer
         canvas_state.layers.insert(new_index, new_layer);
@@ -1436,6 +2389,7 @@ impl LayersPanel {
             name: new_name,
             visible,
             opacity,
+            content,
         })));
 
         self.thumbnail_cache.clear();
@@ -1607,6 +2561,14 @@ impl LayersPanel {
         // Snapshot before merge for undo (multi-layer op requires full snapshot)
         let mut snap_cmd = SnapshotCommand::new("Merge Down".to_string(), canvas_state);
 
+        // Auto-rasterize text layers before merge (pixels must be up-to-date)
+        for idx in [layer_idx, layer_idx - 1] {
+            if canvas_state.layers[idx].is_text_layer() {
+                canvas_state.ensure_all_text_layers_rasterized();
+                canvas_state.layers[idx].content = LayerContent::Raster;
+            }
+        }
+
         let width = canvas_state.width;
         let height = canvas_state.height;
 
@@ -1670,6 +2632,7 @@ impl LayersPanel {
         // Snapshot before flatten for undo (multi-layer op requires full snapshot)
         let mut snap_cmd = SnapshotCommand::new("Flatten Image".to_string(), canvas_state);
 
+        canvas_state.ensure_all_text_layers_rasterized();
         let flattened = canvas_state.composite();
 
         let mut new_layer = Layer::new(
@@ -1713,6 +2676,7 @@ enum LayerAction {
 /// Actions from context menu
 enum ContextAction {
     AddNew,
+    AddNewTextLayer,
     MergeDown,
     MergeDownAsMask,
     FlattenImage,
@@ -1731,4 +2695,7 @@ enum ContextAction {
     SoloLayer,
     HideAll,
     ShowAll,
+    RasterizeTextLayer,
+    TextLayerEffects,
+    TextLayerWarp,
 }

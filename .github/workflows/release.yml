@@ -139,6 +139,88 @@ jobs:
           name: PaintFE-appimage
           path: PaintFE-x86_64.AppImage
 
+  # ── macOS build (Apple Silicon — aarch64) ────────────────────────────────────
+  build-macos-arm:
+    name: Build (macOS Apple Silicon)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macos-arm-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: macos-arm-cargo-
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Create .dmg
+        run: |
+          mkdir -p dmg_staging
+          cp target/release/PaintFE dmg_staging/
+          chmod +x dmg_staging/PaintFE
+          hdiutil create -volname "PaintFE" \
+            -srcfolder dmg_staging \
+            -ov -format UDZO \
+            PaintFE-macOS-arm64.dmg
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaintFE-macos-arm64
+          path: PaintFE-macOS-arm64.dmg
+
+  # ── macOS build (Intel — x86_64) ──────────────────────────────────────────
+  build-macos-x86:
+    name: Build (macOS Intel)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macos-x86-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: macos-x86-cargo-
+
+      - name: Build release (cross-compile for Intel)
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Create .dmg
+        run: |
+          mkdir -p dmg_staging
+          cp target/x86_64-apple-darwin/release/PaintFE dmg_staging/
+          chmod +x dmg_staging/PaintFE
+          hdiutil create -volname "PaintFE" \
+            -srcfolder dmg_staging \
+            -ov -format UDZO \
+            PaintFE-macOS-x86_64.dmg
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaintFE-macos-x86_64
+          path: PaintFE-macOS-x86_64.dmg
+
   # ── MSIX build (Microsoft Store submission package) ────────────────────────
   # NOTE: The MSIX is NOT attached to the GitHub Release — it contains
   #       placeholder Publisher info and must be submitted manually via
@@ -221,7 +303,7 @@ jobs:
   # ── Create GitHub Release ──────────────────────────────────────────────────
   release:
     name: Publish Release
-    needs: [build-windows, build-linux, build-appimage]
+    needs: [build-windows, build-linux, build-appimage, build-macos-arm, build-macos-x86]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -244,6 +326,18 @@ jobs:
           name: PaintFE-appimage
           path: dist/linux
 
+      - name: Download macOS ARM binary
+        uses: actions/download-artifact@v4
+        with:
+          name: PaintFE-macos-arm64
+          path: dist/macos
+
+      - name: Download macOS Intel binary
+        uses: actions/download-artifact@v4
+        with:
+          name: PaintFE-macos-x86_64
+          path: dist/macos
+
       - name: Make binaries executable
         run: |
           chmod +x dist/linux/PaintFE
@@ -253,7 +347,8 @@ jobs:
         run: |
           cd dist
           sha256sum windows/PaintFE.exe linux/PaintFE linux/PaintFE-x86_64.AppImage \
-            | sed 's|windows/||; s|linux/||' \
+            macos/PaintFE-macOS-arm64.dmg macos/PaintFE-macOS-x86_64.dmg \
+            | sed 's|windows/||; s|linux/||; s|macos/||' \
             > checksums-SHA256.txt
           cat checksums-SHA256.txt
 
@@ -267,4 +362,6 @@ jobs:
             dist/windows/PaintFE.exe
             dist/linux/PaintFE
             dist/linux/PaintFE-x86_64.AppImage
+            dist/macos/PaintFE-macOS-arm64.dmg
+            dist/macos/PaintFE-macOS-x86_64.dmg
             dist/checksums-SHA256.txt

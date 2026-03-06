@@ -155,7 +155,12 @@ impl ScriptEditorPanel {
         let time = ui.input(|i| i.time);
 
         // -- Signal Grid panel header --
-        if crate::signal_widgets::panel_header(ui, theme, &crate::t!("script.title"), Some(("SCRIPT", accent))) {
+        if crate::signal_widgets::panel_header(
+            ui,
+            theme,
+            &crate::t!("script.title"),
+            Some(("SCRIPT", accent)),
+        ) {
             self.close_requested = true;
         }
 
@@ -673,18 +678,12 @@ impl ScriptEditorPanel {
                 let bar_resp = ui.add(bar);
                 // Accent glow behind progress bar (Phase 9)
                 let glow_rect = bar_resp.rect.expand(3.0);
-                let glow_color = egui::Color32::from_rgba_unmultiplied(
-                    accent.r(),
-                    accent.g(),
-                    accent.b(),
-                    20,
-                );
-                let bg_painter = ui.ctx().layer_painter(
-                    egui::LayerId::new(
-                        egui::Order::Background,
-                        egui::Id::new("progress_glow"),
-                    ),
-                );
+                let glow_color =
+                    egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 20);
+                let bg_painter = ui.ctx().layer_painter(egui::LayerId::new(
+                    egui::Order::Background,
+                    egui::Id::new("progress_glow"),
+                ));
                 bg_painter.rect_filled(glow_rect, 4.0, glow_color);
             } else {
                 ui.horizontal(|ui| {

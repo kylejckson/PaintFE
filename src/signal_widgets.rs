@@ -34,13 +34,12 @@ impl<'a> SignalBadge<'a> {
     /// Render the badge into the UI and return the response.
     pub fn show(self, ui: &mut Ui, theme: &Theme) -> Response {
         let is_light = matches!(theme.mode, crate::theme::ThemeMode::Light);
-        // In light mode, darken badge text for better contrast
+        // In light mode, darken badge text significantly for readable contrast
         let text_color = if is_light {
-            // Shift toward a darker version of the badge color for readability
             Color32::from_rgb(
-                (self.color.r() as u16 * 3 / 5) as u8,
-                (self.color.g() as u16 * 3 / 5) as u8,
-                (self.color.b() as u16 * 3 / 5) as u8,
+                (self.color.r() as u16 / 3) as u8,
+                (self.color.g() as u16 / 3) as u8,
+                (self.color.b() as u16 / 3) as u8,
             )
         } else {
             self.color
@@ -55,7 +54,7 @@ impl<'a> SignalBadge<'a> {
 
         if ui.is_rect_visible(rect) {
             let (fill_alpha, stroke_alpha) = if is_light {
-                (30u8, 90u8) // stronger fill + border in light mode for contrast
+                (60u8, 180u8) // strong fill + border in light mode for contrast
             } else {
                 (20u8, 64u8) // original dark mode values
             };
@@ -146,9 +145,9 @@ impl<'a> SignalButton<'a> {
     /// Render the button and return the response.
     pub fn show(self, ui: &mut Ui, theme: &Theme) -> Response {
         let font = egui::FontId::proportional(Theme::FONT_BODY);
-        let text_galley =
-            ui.painter()
-                .layout_no_wrap(self.text.to_string(), font, Color32::WHITE);
+        let text_galley = ui
+            .painter()
+            .layout_no_wrap(self.text.to_string(), font, Color32::WHITE);
 
         let padding = Vec2::new(16.0, 6.0);
         let desired = text_galley.size() + padding * 2.0;
@@ -190,9 +189,9 @@ impl<'a> SignalButton<'a> {
             };
 
             let font = egui::FontId::proportional(Theme::FONT_BODY);
-            let galley =
-                ui.painter()
-                    .layout_no_wrap(self.text.to_string(), font, text_color);
+            let galley = ui
+                .painter()
+                .layout_no_wrap(self.text.to_string(), font, text_color);
             let text_pos = rect.center() - galley.size() / 2.0;
             ui.painter()
                 .galley(egui::pos2(text_pos.x, text_pos.y), galley);
@@ -201,14 +200,7 @@ impl<'a> SignalButton<'a> {
         response
     }
 
-    fn paint_primary(
-        &self,
-        ui: &Ui,
-        rect: Rect,
-        theme: &Theme,
-        hovered: bool,
-        active: bool,
-    ) {
+    fn paint_primary(&self, ui: &Ui, rect: Rect, theme: &Theme, hovered: bool, active: bool) {
         let fill = if active {
             darken(theme.accent, 15)
         } else if hovered {
@@ -222,8 +214,7 @@ impl<'a> SignalButton<'a> {
             signal_draw::draw_glow_rect(ui.painter(), rect, theme.glow_accent, 8.0, 8.0);
         }
 
-        ui.painter()
-            .rect_filled(rect, Rounding::same(8.0), fill);
+        ui.painter().rect_filled(rect, Rounding::same(8.0), fill);
     }
 
     fn paint_ghost(&self, ui: &Ui, rect: Rect, theme: &Theme, hovered: bool, active: bool) {
@@ -301,8 +292,36 @@ pub fn gradient_divider(ui: &mut Ui, theme: &Theme) {
     let width = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 1.0), Sense::hover());
     if ui.is_rect_visible(rect) {
-        signal_draw::draw_gradient_divider(ui.painter(), rect, theme.separator_color);
+        let y = rect.center().y;
+        ui.painter().line_segment(
+            [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
+            Stroke::new(1.0, theme.separator_color),
+        );
     }
+}
+
+/// Tool shelf tag badge — a small monospace uppercase label with a colored border,
+/// matching the website's `.section-tag` / `.badge` pattern.
+///
+/// Example: `[BRUSH]` in accent color with rounded border and tinted background.
+pub fn tool_shelf_tag(ui: &mut Ui, label: &str, color: Color32) {
+    let fill = Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 18);
+    let stroke_color = Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 80);
+
+    let text = egui::RichText::new(label)
+        .font(egui::FontId::monospace(10.0))
+        .color(color)
+        .strong();
+
+    egui::Frame::none()
+        .fill(fill)
+        .rounding(egui::Rounding::same(4.0))
+        .stroke(Stroke::new(1.0, stroke_color))
+        .inner_margin(egui::Margin::symmetric(8.0, 3.0))
+        .show(ui, |ui| {
+            ui.set_height(14.0); // Fixed inner height so badge doesn't shift between tools
+            ui.label(text);
+        });
 }
 
 // ============================================================================
@@ -376,7 +395,8 @@ impl<'a> PillTabBar<'a> {
 
         // Lay out tabs inside the container
         let inner_rect = container_rect.shrink(container_padding);
-        let mut child_ui = ui.child_ui(inner_rect, egui::Layout::left_to_right(egui::Align::Center));
+        let mut child_ui =
+            ui.child_ui(inner_rect, egui::Layout::left_to_right(egui::Align::Center));
 
         for (i, tab) in self.tabs.iter().enumerate() {
             let is_active = i == self.active;
@@ -396,13 +416,7 @@ impl<'a> PillTabBar<'a> {
         }
     }
 
-    fn paint_tab(
-        &self,
-        ui: &mut Ui,
-        theme: &Theme,
-        tab: &PillTab,
-        is_active: bool,
-    ) -> TabResponse {
+    fn paint_tab(&self, ui: &mut Ui, theme: &Theme, tab: &PillTab, is_active: bool) -> TabResponse {
         let font = egui::FontId::proportional(Theme::FONT_BODY);
         let text_color = if is_active {
             theme.text_color
@@ -410,9 +424,9 @@ impl<'a> PillTabBar<'a> {
             theme.text_muted
         };
 
-        let galley =
-            ui.painter()
-                .layout_no_wrap(tab.label.clone(), font.clone(), text_color);
+        let galley = ui
+            .painter()
+            .layout_no_wrap(tab.label.clone(), font.clone(), text_color);
 
         let text_width = galley.size().x;
         let close_width = if tab.closable { 18.0 } else { 0.0 };
@@ -430,17 +444,11 @@ impl<'a> PillTabBar<'a> {
 
             // Tab background
             if is_active {
-                ui.painter().rect(
-                    tab_rect,
-                    Rounding::same(7.0),
-                    theme.bg3,
-                    Stroke::NONE,
-                );
+                ui.painter()
+                    .rect(tab_rect, Rounding::same(7.0), theme.bg3, Stroke::NONE);
                 // Subtle inset shadow for active tab
-                let shadow_rect = Rect::from_min_size(
-                    tab_rect.min,
-                    Vec2::new(tab_rect.width(), 2.0),
-                );
+                let shadow_rect =
+                    Rect::from_min_size(tab_rect.min, Vec2::new(tab_rect.width(), 2.0));
                 ui.painter().rect_filled(
                     shadow_rect,
                     Rounding::same(1.0),
@@ -472,7 +480,8 @@ impl<'a> PillTabBar<'a> {
                     egui::pos2(tab_rect.right() - h_pad - 12.0, tab_rect.center().y - 6.0),
                     Vec2::splat(12.0),
                 );
-                let close_response = ui.interact(close_rect, response.id.with("close"), Sense::click());
+                let close_response =
+                    ui.interact(close_rect, response.id.with("close"), Sense::click());
 
                 let close_color = if close_response.hovered() {
                     theme.accent
@@ -484,16 +493,12 @@ impl<'a> PillTabBar<'a> {
 
                 // Draw × symbol
                 let close_font = egui::FontId::proportional(10.0);
-                let close_galley = ui.painter().layout_no_wrap(
-                    "×".to_string(),
-                    close_font,
-                    close_color,
-                );
+                let close_galley =
+                    ui.painter()
+                        .layout_no_wrap("×".to_string(), close_font, close_color);
                 let close_text_pos = close_rect.center() - close_galley.size() / 2.0;
-                ui.painter().galley(
-                    egui::pos2(close_text_pos.x, close_text_pos.y),
-                    close_galley,
-                );
+                ui.painter()
+                    .galley(egui::pos2(close_text_pos.x, close_text_pos.y), close_galley);
 
                 if close_response.clicked() {
                     close_clicked = true;
@@ -549,9 +554,7 @@ pub fn card_frame_interactive<R>(
     theme: &Theme,
     add_contents: impl FnOnce(&mut Ui) -> R,
 ) -> egui::InnerResponse<R> {
-    let hover_t = ui
-        .ctx()
-        .animate_bool(id.with("card_hover"), false);
+    let hover_t = ui.ctx().animate_bool(id.with("card_hover"), false);
 
     let border = lerp_color(theme.border_color, theme.border_lit, hover_t);
 
@@ -569,8 +572,7 @@ pub fn card_frame_interactive<R>(
 
     // Update hover animation state for next frame
     let hovered = ui.rect_contains_pointer(resp.response.rect);
-    ui.ctx()
-        .animate_bool(id.with("card_hover"), hovered);
+    ui.ctx().animate_bool(id.with("card_hover"), hovered);
 
     resp
 }
@@ -585,13 +587,21 @@ pub fn card_frame_interactive<R>(
 /// When no badge is given, the title string is displayed as a heading instead.
 ///
 /// Returns `true` if the close button was clicked.
-pub fn panel_header(ui: &mut Ui, theme: &Theme, title: &str, badge: Option<(&str, Color32)>) -> bool {
+pub fn panel_header(
+    ui: &mut Ui,
+    theme: &Theme,
+    title: &str,
+    badge: Option<(&str, Color32)>,
+) -> bool {
     let mut close_clicked = false;
     ui.horizontal(|ui| {
         // Fill the parent's width so the close button aligns to the right edge.
-        // Cap at 400 to avoid bloating auto-sized windows on the first frame.
+        // Only set min_width for wider panels; skip for narrow ones (e.g. Tools)
+        // to avoid inflating the window beyond the grid content width.
         let w = ui.available_width().min(400.0);
-        ui.set_min_width(w);
+        if w > 130.0 {
+            ui.set_min_width(w);
+        }
 
         if let Some((badge_text, badge_color)) = badge {
             SignalBadge::new(badge_text, badge_color).show(ui, theme);
@@ -610,17 +620,16 @@ pub fn panel_header(ui: &mut Ui, theme: &Theme, title: &str, badge: Option<(&str
             if ui.is_rect_visible(close_rect) {
                 let hovered = close_resp.hovered();
                 if hovered {
-                    ui.painter().rect_filled(
-                        close_rect,
-                        Rounding::same(4.0),
-                        theme.bg3,
-                    );
-                }
-                let color = if hovered { theme.accent } else { theme.text_muted };
-                let font = egui::FontId::proportional(13.0);
-                let galley =
                     ui.painter()
-                        .layout_no_wrap("×".to_string(), font, color);
+                        .rect_filled(close_rect, Rounding::same(4.0), theme.bg3);
+                }
+                let color = if hovered {
+                    theme.accent
+                } else {
+                    theme.text_muted
+                };
+                let font = egui::FontId::proportional(13.0);
+                let galley = ui.painter().layout_no_wrap("×".to_string(), font, color);
                 let pos = close_rect.center() - galley.size() / 2.0;
                 ui.painter().galley(egui::pos2(pos.x, pos.y), galley);
             }
@@ -656,7 +665,13 @@ pub fn section_header(ui: &mut Ui, theme: &Theme, label: &str) {
 ///
 /// The badge shows a monospace uppercase tag (e.g. "TOOLS", "LAYERS")
 /// above the section title.
-pub fn section_header_with_badge(ui: &mut Ui, theme: &Theme, badge: &str, badge_color: Color32, label: &str) {
+pub fn section_header_with_badge(
+    ui: &mut Ui,
+    theme: &Theme,
+    badge: &str,
+    badge_color: Color32,
+    label: &str,
+) {
     ui.add_space(Theme::SPACE_SM);
     SignalBadge::new(badge, badge_color).show(ui, theme);
     ui.add_space(2.0);

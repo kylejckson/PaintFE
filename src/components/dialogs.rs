@@ -872,13 +872,6 @@ impl SaveFileDialog {
             self.frame_thumbnails.push(thumb);
             self.frame_textures.push(None);
         }
-
-        // Set the composite preview to the first frame
-        if let Some(first) = frame_images.first() {
-            self.source_dimensions = (first.width(), first.height());
-            self.source_thumbnail = Some(create_thumbnail(first, PREVIEW_MAX_SIZE));
-            self.needs_preview_update = true;
-        }
     }
 
     /// Set filename from an existing path (for re-saves)
