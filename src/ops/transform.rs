@@ -120,6 +120,24 @@ pub fn resize_image(state: &mut CanvasState, new_w: u32, new_h: u32, interp: Int
     state.mark_dirty(None);
 }
 
+/// Resize layers without a `CanvasState` — used by async resize pipeline.
+/// Takes a vec of flat `RgbaImage` layers and returns resized `TiledImage` layers.
+pub fn resize_layers(
+    flat_layers: Vec<RgbaImage>,
+    new_w: u32,
+    new_h: u32,
+    interp: Interpolation,
+) -> Vec<TiledImage> {
+    let filter = interp.to_filter();
+    flat_layers
+        .into_par_iter()
+        .map(|flat| {
+            let resized = imageops::resize(&flat, new_w, new_h, filter);
+            TiledImage::from_rgba_image(&resized)
+        })
+        .collect()
+}
+
 /// Resize the canvas (change dimensions), placing the old content at an anchor position.
 /// `anchor` is (ax, ay) each in {0, 1, 2} mapping to start/center/end.
 /// `fill` is the colour used to fill new empty space.
@@ -165,6 +183,46 @@ pub fn resize_canvas(
     state.composite_cache = None;
     state.clear_preview_state();
     state.mark_dirty(None);
+}
+
+/// Resize canvas for layers without a `CanvasState` — used by async resize pipeline.
+/// Takes a vec of flat `RgbaImage` layers and returns repositioned `TiledImage` layers.
+pub fn resize_canvas_layers(
+    flat_layers: Vec<RgbaImage>,
+    old_w: u32,
+    old_h: u32,
+    new_w: u32,
+    new_h: u32,
+    anchor: (u32, u32),
+    fill: Rgba<u8>,
+) -> Vec<TiledImage> {
+    let offset_x: i32 = match anchor.0 {
+        0 => 0,
+        1 => ((new_w as i32) - (old_w as i32)) / 2,
+        _ => (new_w as i32) - (old_w as i32),
+    };
+    let offset_y: i32 = match anchor.1 {
+        0 => 0,
+        1 => ((new_h as i32) - (old_h as i32)) / 2,
+        _ => (new_h as i32) - (old_h as i32),
+    };
+
+    flat_layers
+        .into_par_iter()
+        .map(|old_flat| {
+            let mut new_img = RgbaImage::from_pixel(new_w, new_h, fill);
+            for y in 0..old_h {
+                for x in 0..old_w {
+                    let nx = x as i32 + offset_x;
+                    let ny = y as i32 + offset_y;
+                    if nx >= 0 && ny >= 0 && (nx as u32) < new_w && (ny as u32) < new_h {
+                        new_img.put_pixel(nx as u32, ny as u32, *old_flat.get_pixel(x, y));
+                    }
+                }
+            }
+            TiledImage::from_rgba_image(&new_img)
+        })
+        .collect()
 }
 
 /// Flatten all visible layers into a single "Background" layer.

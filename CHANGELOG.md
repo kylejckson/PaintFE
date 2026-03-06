@@ -6,6 +6,21 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.0.12] - 2026-03-03
+
+### Added
+- Async resize: Resize Image and Resize Canvas now run in a background thread with a loading spinner, keeping the UI responsive during large canvas operations.
+- Exit dialog Save As flow: clicking "Save" in the exit confirmation dialog now opens sequential Save As dialogs for each unsaved untitled project before exiting.
+- Auto-focus: Resize Image and Resize Canvas dialogs now auto-focus the width field when opened via keyboard shortcut.
+- Reusable `open_save_as_for_project(idx)` helper, eliminating duplicated Save As setup code across handle_save and close-tab flows.
+
+### Changed
+- Exit dialog redesigned with three centered, same-size buttons: Save, Exit Without (red), and Cancel.
+- Close-tab unsaved changes dialog buttons now use uniform sizing.
+- Layers panel context menu reorganized: added separator between layer management and property toggle groups.
+
+---
+
 ## [1.0.11] - 2026-02-28
 
 ### Added

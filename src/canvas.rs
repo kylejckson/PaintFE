@@ -5179,13 +5179,20 @@ impl Canvas {
         // rebuilt only when the selection mask changes or the animation offset
         // ticks forward.  The GPU handles zoom/display for free.
         if !tool_active {
-            // Animation: slowly scroll pattern.  One pixel of scroll every ~150ms.
+            // Animation: smoothly scroll pattern at ~1.5 canvas-pixels per second.
+            // Using a float modulo (no integer cast) so the offset is continuous and
+            // the texture rebuilds in small sub-pixel increments instead of whole-pixel
+            // jumps, eliminating the jitter visible at high zoom levels.
             let band_period = 8u32; // canvas-pixel diagonal period
-            let anim_offset = ((time * 6.5) as u32 % band_period) as f32;
+            let period_f = (band_period * 2) as f32;
+            let anim_offset = ((time * 3.0) % (period_f as f64)) as f32;
 
             let generation_changed =
                 state.selection_overlay_built_generation != state.selection_overlay_generation;
-            let anim_changed = (anim_offset - state.selection_overlay_anim_offset).abs() > 0.01;
+            // Rebuild when the fractional offset shifts by ≥0.15 canvas pixels
+            // (~10 rebuilds/sec at 1.5 px/s) — enough for smooth motion without
+            // rebuilding a potentially large texture on every single frame.
+            let anim_changed = (anim_offset - state.selection_overlay_anim_offset).abs() > 0.15;
             let needs_rebuild =
                 state.selection_overlay_texture.is_none() || generation_changed || anim_changed;
 
@@ -5194,9 +5201,11 @@ impl Canvas {
                 let bh = (max_y - min_y + 1) as usize;
                 let buf_len = bw * bh * 4;
 
-                // Build RGBA buffer with crosshatch pattern
+                // Build RGBA buffer with diagonal-stripe pattern.
+                // Low alpha values keep the image behind clearly readable; the slight
+                // alpha difference between the two bands creates a very gentle stripe
+                // without harsh contrast.
                 let mut buf = vec![0u8; buf_len];
-                let anim_i = anim_offset as i32;
                 for dy in 0..bh {
                     let cy = min_y + dy as u32; // canvas y
                     let row_off = dy * bw * 4;
@@ -5205,25 +5214,22 @@ impl Canvas {
                         if mask_raw[(cy as usize) * stride + (cx as usize)] == 0 {
                             continue; // transparent (unselected)
                         }
-                        // Diagonal coordinate in canvas pixels, with animation offset
-                        let diag = (cx as i32 + cy as i32 + anim_i) % (band_period as i32 * 2);
-                        let diag = if diag < 0 {
-                            diag + (band_period as i32 * 2)
-                        } else {
-                            diag
-                        };
-                        let is_dark = diag < band_period as i32;
+                        // Continuous float diagonal coordinate with smooth animation offset
+                        let diag = (cx as f32 + cy as f32 + anim_offset).rem_euclid(period_f);
+                        let is_dark = diag < band_period as f32;
                         let px = row_off + dx * 4;
                         if is_dark {
+                            // Very subtle dark band — low alpha, near-black
                             buf[px] = 0;
                             buf[px + 1] = 0;
                             buf[px + 2] = 0;
-                            buf[px + 3] = 40;
+                            buf[px + 3] = 22;
                         } else {
+                            // Barely-visible light band — even lower alpha, near-white
                             buf[px] = 255;
                             buf[px + 1] = 255;
                             buf[px + 2] = 255;
-                            buf[px + 3] = 40;
+                            buf[px + 3] = 10;
                         }
                     }
                 }

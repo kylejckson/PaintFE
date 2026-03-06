@@ -37,6 +37,9 @@ pub struct PeekState {
     pub is_soloed: bool,
     pub solo_layer_index: Option<usize>,
     pub solo_saved_visibility: Vec<bool>,
+    /// Set for one frame after a peek ends, so the `secondary_clicked` event
+    /// on the same release frame doesn't accidentally toggle solo.
+    peek_just_ended: bool,
 }
 
 /// State for inline rename
@@ -417,16 +420,6 @@ impl LayersPanel {
                                 )));
                                 self.mark_full_dirty(canvas_state);
                             }
-                            LayerAction::MoveUp => {
-                                if layer_idx + 1 < canvas_state.layers.len() {
-                                    swap_layers = Some((layer_idx, layer_idx + 1));
-                                }
-                            }
-                            LayerAction::MoveDown => {
-                                if layer_idx > 0 {
-                                    swap_layers = Some((layer_idx, layer_idx - 1));
-                                }
-                            }
                             LayerAction::BeginDrag => {
                                 self.drag_state.dragging_display_idx = Some(display_idx);
                                 self.drag_state.origin_display_idx = display_idx;
@@ -623,17 +616,12 @@ impl LayersPanel {
                 painter.rect_filled(bg_rect, 4.0, row_bg);
             }
 
-            // Layout: [Eye] [Peek] [Thumbnail] [Name] [▲] [▼]
+            // Layout: [Eye] [Thumbnail] [Name]
             let mut x = row_rect.left() + 4.0;
             let center_y = row_rect.center().y;
-            let layer_count = canvas_state.layers.len();
 
             // Pre-calculate all rects
             let eye_rect = Rect::from_center_size(Pos2::new(x + 10.0, center_y), Vec2::splat(20.0));
-            x += 24.0;
-
-            let peek_rect =
-                Rect::from_center_size(Pos2::new(x + 10.0, center_y), Vec2::splat(20.0));
             x += 24.0;
 
             let thumb_size = 36.0;
@@ -645,31 +633,25 @@ impl LayersPanel {
 
             let name_rect = Rect::from_min_max(
                 Pos2::new(x, row_rect.top() + 4.0),
-                Pos2::new(row_rect.right() - 42.0, row_rect.bottom() - 4.0),
-            );
-
-            let move_up_rect = Rect::from_center_size(
-                Pos2::new(row_rect.right() - 28.0, center_y),
-                Vec2::splat(16.0),
-            );
-
-            let move_down_rect = Rect::from_center_size(
-                Pos2::new(row_rect.right() - 12.0, center_y),
-                Vec2::splat(16.0),
+                Pos2::new(row_rect.right() - 6.0, row_rect.bottom() - 4.0),
             );
 
             // Draw thumbnail (needs mutable self for cache)
             self.draw_thumbnail(ui, thumb_rect, layer_idx, canvas_state, 1.0);
 
-            // Draw eye icon (visibility toggle)
+            // Draw eye icon (left-click: toggle visibility, right-click hold: peek layer)
             let icon_color = ui.visuals().strong_text_color();
             let muted_color = ui.visuals().text_color();
+            let is_this_soloed =
+                self.peek_state.is_soloed && self.peek_state.solo_layer_index == Some(layer_idx);
             let eye_icon = if layer_visible {
                 Icon::Visible
             } else {
                 Icon::Hidden
             };
-            let eye_tint = if layer_visible {
+            let eye_tint = if is_this_soloed {
+                Color32::from_rgb(255, 180, 60) // Orange tint when soloed
+            } else if layer_visible {
                 icon_color
             } else {
                 muted_color
@@ -678,38 +660,30 @@ impl LayersPanel {
             if eye_response.clicked() {
                 action = Some(LayerAction::ToggleVisibility);
             }
-            eye_response.on_hover_text(if layer_visible {
-                "Hide layer"
-            } else {
-                "Show layer"
-            });
-
-            // Draw peek icon (hold to preview only this layer, right-click to solo)
-            let is_this_soloed =
-                self.peek_state.is_soloed && self.peek_state.solo_layer_index == Some(layer_idx);
-            let peek_icon_color = if is_this_soloed {
-                Color32::from_rgb(255, 180, 60) // Orange tint when soloed
-            } else {
-                icon_color
-            };
-            let peek_response = assets.icon_in_rect(ui, Icon::Peek, peek_rect, peek_icon_color);
-            // Left-click hold: temporary peek
-            if peek_response.is_pointer_button_down_on() && !peek_response.secondary_clicked() {
+            // Right-click hold: temporary peek (show only this layer while held)
+            if eye_response.is_pointer_button_down_on()
+                && ui.input(|i| i.pointer.button_down(egui::PointerButton::Secondary))
+            {
                 should_peek = true;
             }
-            // Right-click: toggle solo (permanent)
-            if peek_response.secondary_clicked() {
+            // Right-click release (secondary_clicked): toggle solo —
+            // but only if we weren't just peeking (peek_just_ended suppresses
+            // the solo toggle on the same frame the hold was released).
+            if eye_response.secondary_clicked() && !self.peek_state.peek_just_ended {
                 if is_this_soloed {
-                    // Unsolo — restore all layers
                     context_action = Some(ContextAction::ShowAll);
                 } else {
                     context_action = Some(ContextAction::SoloLayer);
                 }
             }
             if is_this_soloed {
-                peek_response.on_hover_text("Soloed — right-click to unsolo");
+                eye_response.on_hover_text("Soloed — right-click to unsolo");
             } else {
-                peek_response.on_hover_text("Hold to peek · Right-click to solo");
+                eye_response.on_hover_text(if layer_visible {
+                    "Hide layer · Right-click hold to peek"
+                } else {
+                    "Show layer · Right-click hold to peek"
+                });
             }
 
             // Draw name or rename field
@@ -743,63 +717,8 @@ impl LayersPanel {
                         icon_color
                     });
 
-                ui.put(name_rect, egui::Label::new(name_text).truncate(true));
-            }
-
-            // Draw move up arrow (moves layer up in stack = higher index)
-            if !is_any_dragging {
-                {
-                    let can_move_up = layer_idx + 1 < layer_count;
-                    let arrow_color = if can_move_up {
-                        icon_color
-                    } else {
-                        Color32::from_gray(80)
-                    };
-                    let c = move_up_rect.center();
-                    let half = 3.0;
-                    let pts = vec![
-                        Pos2::new(c.x, c.y - half),
-                        Pos2::new(c.x + half, c.y + half),
-                        Pos2::new(c.x - half, c.y + half),
-                    ];
-                    painter.add(egui::Shape::closed_line(
-                        pts,
-                        egui::Stroke::new(1.0, arrow_color),
-                    ));
-
-                    let up_response = ui.allocate_rect(move_up_rect, Sense::click());
-                    if can_move_up && up_response.clicked() {
-                        action = Some(LayerAction::MoveUp);
-                    }
-                    up_response.on_hover_text("Move layer up");
-                }
-
-                // Draw move down arrow (moves layer down in stack = lower index)
-                {
-                    let can_move_down = layer_idx > 0;
-                    let arrow_color = if can_move_down {
-                        icon_color
-                    } else {
-                        Color32::from_gray(80)
-                    };
-                    let c = move_down_rect.center();
-                    let half = 3.0;
-                    let pts = vec![
-                        Pos2::new(c.x, c.y + half),
-                        Pos2::new(c.x + half, c.y - half),
-                        Pos2::new(c.x - half, c.y - half),
-                    ];
-                    painter.add(egui::Shape::closed_line(
-                        pts,
-                        egui::Stroke::new(1.0, arrow_color),
-                    ));
-
-                    let down_response = ui.allocate_rect(move_down_rect, Sense::click());
-                    if can_move_down && down_response.clicked() {
-                        action = Some(LayerAction::MoveDown);
-                    }
-                    down_response.on_hover_text("Move layer down");
-                }
+                let mut child_ui = ui.child_ui(name_rect, egui::Layout::left_to_right(egui::Align::Center));
+                child_ui.add(egui::Label::new(name_text).truncate(true));
             }
 
             // Now handle peek (after all layer borrows are done)
@@ -1310,15 +1229,7 @@ impl LayersPanel {
                 self.settings_state.editing_blend_mode = canvas_state.layers[idx].blend_mode;
             }
 
-            // Layer count on the right
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let count_text = format!("{}", canvas_state.layers.len());
-                ui.label(
-                    egui::RichText::new(count_text)
-                        .size(11.0)
-                        .color(Color32::GRAY),
-                );
-            });
+
         });
     }
 
@@ -1595,6 +1506,9 @@ impl LayersPanel {
     }
 
     fn update_peek_state(&mut self, ui: &egui::Ui, canvas_state: &mut CanvasState) {
+        // Clear the one-frame suppression flag from the previous frame.
+        self.peek_state.peek_just_ended = false;
+
         if self.peek_state.is_peeking {
             let any_button_held = ui.input(|i| i.pointer.any_down());
             if !any_button_held {
@@ -1615,6 +1529,7 @@ impl LayersPanel {
                 self.peek_state.is_peeking = false;
                 self.peek_state.peek_layer_index = None;
                 self.peek_state.saved_visibility.clear();
+                self.peek_state.peek_just_ended = true;
                 self.mark_full_dirty(canvas_state);
             }
         }
@@ -1793,8 +1708,6 @@ enum LayerAction {
     FinishRename,
     CancelRename,
     ToggleVisibility,
-    MoveUp,
-    MoveDown,
     BeginDrag,
 }
 
