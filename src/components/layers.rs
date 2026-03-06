@@ -717,7 +717,8 @@ impl LayersPanel {
                         icon_color
                     });
 
-                let mut child_ui = ui.child_ui(name_rect, egui::Layout::left_to_right(egui::Align::Center));
+                let mut child_ui =
+                    ui.child_ui(name_rect, egui::Layout::left_to_right(egui::Align::Center));
                 child_ui.add(egui::Label::new(name_text).truncate(true));
             }
 
@@ -1228,8 +1229,6 @@ impl LayersPanel {
                 self.settings_state.editing_opacity = canvas_state.layers[idx].opacity;
                 self.settings_state.editing_blend_mode = canvas_state.layers[idx].blend_mode;
             }
-
-
         });
     }
 

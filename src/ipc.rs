@@ -86,10 +86,7 @@ mod platform {
             lpSecurityAttributes: *const std::ffi::c_void,
         ) -> isize;
 
-        fn ConnectNamedPipe(
-            hNamedPipe: isize,
-            lpOverlapped: *const std::ffi::c_void,
-        ) -> i32;
+        fn ConnectNamedPipe(hNamedPipe: isize, lpOverlapped: *const std::ffi::c_void) -> i32;
 
         fn DisconnectNamedPipe(hNamedPipe: isize) -> i32;
         fn CloseHandle(hObject: isize) -> i32;
@@ -270,10 +267,7 @@ mod platform {
     /// sending files via pipe. Uses `FindWindowW` + `SetForegroundWindow`.
     pub fn focus_existing_window() {
         unsafe extern "system" {
-            fn FindWindowW(
-                lpClassName: *const u16,
-                lpWindowName: *const u16,
-            ) -> isize;
+            fn FindWindowW(lpClassName: *const u16, lpWindowName: *const u16) -> isize;
             fn SetForegroundWindow(hWnd: isize) -> i32;
             fn ShowWindow(hWnd: isize, nCmdShow: i32) -> i32;
             fn IsIconic(hWnd: isize) -> i32;

@@ -2367,13 +2367,21 @@ impl KeyCombo {
     pub fn display(&self) -> String {
         let mut parts = Vec::new();
         if self.ctrl {
-            parts.push("Ctrl");
+            if cfg!(target_os = "macos") {
+                parts.push("\u{2318}");
+            } else {
+                parts.push("Ctrl");
+            }
         }
         if self.shift {
             parts.push("Shift");
         }
         if self.alt {
-            parts.push("Alt");
+            if cfg!(target_os = "macos") {
+                parts.push("\u{2325}");
+            } else {
+                parts.push("Alt");
+            }
         }
         if let Some(ref k) = self.key {
             parts.push(key_name(*k));
@@ -2787,9 +2795,17 @@ impl KeyBindings {
         } else if let Some(key) = combo.key {
             let mods = egui::Modifiers {
                 alt: combo.alt,
-                ctrl: combo.ctrl,
+                ctrl: if cfg!(target_os = "macos") {
+                    false
+                } else {
+                    combo.ctrl
+                },
                 shift: combo.shift,
-                mac_cmd: false,
+                mac_cmd: if cfg!(target_os = "macos") {
+                    combo.ctrl
+                } else {
+                    false
+                },
                 command: combo.ctrl,
             };
             ctx.input_mut(|i| i.consume_key(mods, key))
@@ -3138,7 +3154,7 @@ impl AppSettings {
                 })
                 .join("paintfe");
             let _ = std::fs::create_dir_all(&config_dir);
-            return Some(config_dir.join("paintfe_settings.cfg"));
+            Some(config_dir.join("paintfe_settings.cfg"))
         }
         #[cfg(target_os = "windows")]
         {
@@ -3164,7 +3180,7 @@ impl AppSettings {
                 .join("Application Support")
                 .join("PaintFE");
             let _ = std::fs::create_dir_all(&config_dir);
-            return Some(config_dir.join("paintfe_settings.cfg"));
+            Some(config_dir.join("paintfe_settings.cfg"))
         }
         #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
         {

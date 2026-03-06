@@ -3985,7 +3985,7 @@ impl Canvas {
                         // For fixed rotation, pass angle to cursor; for random, 0 (no preview)
                         let cursor_rotation = t.active_tip_rotation_deg;
                         Some((
-                            t.properties.size,
+                            t.pressure_size(),
                             clone_source,
                             is_circle_tip,
                             mask_info,
@@ -4020,8 +4020,8 @@ impl Canvas {
             let canvas_pos_f32_clamped = mouse_pos
                 .and_then(|pos| self.screen_to_canvas_f32_clamped(pos, canvas_rect, state, 16.0));
             // Unclamped version for selection/gradient: always returns coords even outside canvas
-            let canvas_pos_unclamped = mouse_pos
-                .map(|pos| self.screen_to_canvas_unclamped(pos, canvas_rect, state));
+            let canvas_pos_unclamped =
+                mouse_pos.map(|pos| self.screen_to_canvas_unclamped(pos, canvas_rect, state));
 
             // Check if we're in the middle of a stroke (mouse button is held)
             let is_painting = ui.input(|i| i.pointer.primary_down() || i.pointer.secondary_down());
