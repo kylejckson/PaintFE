@@ -19,6 +19,10 @@ Free, open-source raster image editor built in Rust. Single portable binary, no 
 
 ---
 
+![PaintFE screenshot](screenshot/main_screenshot.png)
+
+---
+
 ## Tools
 
 **Paint** -- Brush, Pencil, Eraser, Line, Fill, Gradient. Brush tip library with variable spacing, soft/hard edges, Dodge/Burn/Sponge modes.
