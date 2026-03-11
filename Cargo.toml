@@ -10,7 +10,7 @@ image = { version = "0.24.7", features = ["jpeg", "png", "webp", "bmp", "tga", "
 tiff = "0.9"         # Direct dependency for TIFF compression options
 rfd = "0.12"         # Native file dialogs (Open/Save)
 rayon = "1.7"        # Parallel processing for faster compositing
-uuid = { version = "1.0", features = ["v4"] }  # Unique identifiers for projects
+uuid = { version = "1.22", features = ["v4"] }  # Unique identifiers for projects
 serde = { version = "1", features = ["derive"] }  # Serialization framework
 bincode = "1"        # Binary serialization for .pfe files
 
