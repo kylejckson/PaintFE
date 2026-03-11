@@ -30,7 +30,7 @@ imagepipe = "0.5"                                # RAW demosaicing + color pipel
 rhai = { version = "1.24", features = ["sync"] } # Embedded scripting engine (sandboxed)
 clap = { version = "4", features = ["derive"] } # CLI argument parsing for headless batch mode
 glob = "0.3"                                     # Glob pattern expansion for batch file inputs
-winit = "0.28"                                   # Event loop hook for suppressing Windows keyboard dings
+winit = "0.30"                                   # Event loop hook for suppressing Windows keyboard dings
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "windef", "shellapi", "dwmapi"] }
