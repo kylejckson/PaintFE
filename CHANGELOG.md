@@ -6,6 +6,18 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.1.5] - 2026-03-16
+
+### Added
+- **Wrap preview (seamless tiling preview)**: New toolbar toggle (next to mirror mode) renders ghost copies of the canvas in all 8 surrounding positions so pixel artists can see how a texture tiles seamlessly. Live-updated during drawing. Off by default.
+
+### Improved
+- **New File dialog**: Width field is focused and selectable on open; aspect ratio lock is now a checkbox and defaults to on; width/height fields accept math expressions (`800/2`, `1920+100`, `512*3`, etc.); values round to integers on commit; expressions commit on Enter, Tab, or focus loss.
+- **Resize Image dialog**: Same math-capable text fields as New File — expressions, integer rounding, commit on Enter/Tab/focus loss, width focused first. Aspect ratio lock converted from a selectable label to a proper checkbox (default on).
+- **Resize Canvas dialog**: Same math-capable text fields and focus behavior as New File and Resize Image. Aspect ratio lock checkbox added (default on).
+
+---
+
 ## [1.1.4] - 2026-03-15
 
 ### Improved

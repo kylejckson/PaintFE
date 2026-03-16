@@ -49,6 +49,8 @@ pub enum Icon {
     MirrorH,
     MirrorV,
     MirrorQ,
+    WrapPreviewOff,
+    WrapPreviewOn,
     Settings,
     Layers,
     Visible,
@@ -238,6 +240,8 @@ impl Icon {
             Icon::MirrorH => "[|]",
             Icon::MirrorV => "[-]",
             Icon::MirrorQ => "[+]",
+            Icon::WrapPreviewOff => "[<>]",
+            Icon::WrapPreviewOn => "{<>}",
             Icon::Settings => "\u{2699}",
             Icon::Layers => "[=]",
             Icon::Visible => "\u{1F441}",
@@ -417,6 +421,8 @@ impl Icon {
             Icon::MirrorH => "Mirror: Horizontal",
             Icon::MirrorV => "Mirror: Vertical",
             Icon::MirrorQ => "Mirror: Quarters",
+            Icon::WrapPreviewOff => "Seamless Edge Preview Off",
+            Icon::WrapPreviewOn => "Seamless Edge Preview On",
             Icon::Settings => "Settings",
             Icon::Layers => "Layers",
             Icon::Visible => "Visible",
@@ -760,6 +766,16 @@ impl Assets {
             ctx,
             Icon::MirrorQ,
             include_bytes!("../assets/icons/ui/mirror_q.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::WrapPreviewOff,
+            include_bytes!("../assets/icons/ui/wrap_preview_off.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::WrapPreviewOn,
+            include_bytes!("../assets/icons/ui/wrap_preview_on.png"),
         );
         self.load_icon(
             ctx,

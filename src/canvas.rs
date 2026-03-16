@@ -1422,6 +1422,7 @@ pub struct CanvasState {
     pub show_pixel_grid: bool,             // Toggle for pixel grid overlay
     pub show_guidelines: bool,             // Toggle for center/thirds guidelines overlay
     pub mirror_mode: MirrorMode,           // Symmetry mirror mode
+    pub show_wrap_preview: bool,           // Toggle for 4-side seamless edge preview
     pub preview_layer: Option<TiledImage>, // For non-destructive tool previews (e.g., Bézier curves)
     pub preview_blend_mode: BlendMode,     // Blend mode for the preview layer
     /// When true, forces the blend-aware composite path for the preview overlay,
@@ -1542,6 +1543,7 @@ impl CanvasState {
             show_pixel_grid: true,  // Enable by default
             show_guidelines: false, // Disabled by default
             mirror_mode: MirrorMode::None,
+            show_wrap_preview: false,
             preview_layer: None,
             preview_blend_mode: BlendMode::Normal,
             preview_force_composite: false,
@@ -3483,11 +3485,7 @@ impl Canvas {
             ui.ctx(),
         );
 
-        // Draw the composite image
-        let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-        if let Some(texture) = &state.composite_cache {
-            painter.image(texture.id(), image_rect, uv, Color32::WHITE);
-        }
+        self.paint_composite_texture(&painter, image_rect, canvas_rect, state, Color32::WHITE);
 
         // ====================================================================
         // CPU PREVIEW OVERLAY  (brush / line / eraser strokes in progress)
@@ -3838,100 +3836,23 @@ impl Canvas {
                 state.preview_dirty_rect = None;
             }
 
-            // Paint the cropped preview at the correct position.
-            // Use image_rect-derived proportional positioning so the preview
-            // aligns exactly with the GPU composite.  image_rect is
-            // independently rounded from temp_rect, so its effective zoom
-            // (image_rect.width / state.width) can differ slightly from
-            // self.zoom.  Using fractional offsets ensures pixel-perfect
-            // registration between the preview overlay and the base
-            // composite texture.
-            if let Some(ref tex) = state.preview_texture_cache {
-                if let Some(sb) = state.preview_stroke_bounds {
-                    let off_x = sb.min.x.max(0.0).floor();
-                    let off_y = sb.min.y.max(0.0).floor();
-                    let sw = (sb.max.x.ceil().min(state.width as f32) - off_x).max(1.0);
-                    let sh = (sb.max.y.ceil().min(state.height as f32) - off_y).max(1.0);
-                    let canvas_w = state.width as f32;
-                    let canvas_h = state.height as f32;
-                    let sub_rect = Rect::from_min_size(
-                        Pos2::new(
-                            image_rect.min.x + off_x / canvas_w * image_rect.width(),
-                            image_rect.min.y + off_y / canvas_h * image_rect.height(),
-                        ),
-                        Vec2::new(
-                            sw / canvas_w * image_rect.width(),
-                            sh / canvas_h * image_rect.height(),
-                        ),
-                    );
-                    // For eraser: draw the existing checkerboard texture
-                    // underneath so erased (semi-transparent) areas reveal
-                    // the correct screen-space pattern through alpha blending.
-                    // This avoids baking a canvas-resolution checkerboard
-                    // into the texture which causes moiré at non-100% zooms.
-                    if state.preview_is_eraser
-                        && let Some(ref checker_tex) = self.checkerboard_texture
-                    {
-                        let cell = 10.0_f32;
-                        let (cols, rows) = self.checkerboard_cached_size;
-                        let grid_ox = (canvas_rect.min.x / cell).floor() * cell;
-                        let grid_oy = (canvas_rect.min.y / cell).floor() * cell;
-                        let tex_w = cols as f32 * cell;
-                        let tex_h = rows as f32 * cell;
-                        let checker_uv = Rect::from_min_max(
-                            Pos2::new(
-                                (sub_rect.min.x - grid_ox) / tex_w,
-                                (sub_rect.min.y - grid_oy) / tex_h,
-                            ),
-                            Pos2::new(
-                                (sub_rect.max.x - grid_ox) / tex_w,
-                                (sub_rect.max.y - grid_oy) / tex_h,
-                            ),
-                        );
-                        painter.image(
-                            checker_tex.id(),
-                            sub_rect,
-                            checker_uv,
-                            Color32::WHITE,
-                        );
-                    }
-                    painter.image(tex.id(), sub_rect, uv, Color32::WHITE);
-                } else {
-                    // For eraser on full-image preview, draw checkerboard underneath
-                    if state.preview_is_eraser
-                        && let Some(ref checker_tex) = self.checkerboard_texture
-                    {
-                        let cell = 10.0_f32;
-                        let (cols, rows) = self.checkerboard_cached_size;
-                        let grid_ox = (canvas_rect.min.x / cell).floor() * cell;
-                        let grid_oy = (canvas_rect.min.y / cell).floor() * cell;
-                        let tex_w = cols as f32 * cell;
-                        let tex_h = rows as f32 * cell;
-                        let checker_uv = Rect::from_min_max(
-                            Pos2::new(
-                                (image_rect.min.x - grid_ox) / tex_w,
-                                (image_rect.min.y - grid_oy) / tex_h,
-                            ),
-                            Pos2::new(
-                                (image_rect.max.x - grid_ox) / tex_w,
-                                (image_rect.max.y - grid_oy) / tex_h,
-                            ),
-                        );
-                        painter.image(
-                            checker_tex.id(),
-                            image_rect,
-                            checker_uv,
-                            Color32::WHITE,
-                        );
-                    }
-                    painter.image(tex.id(), image_rect, uv, Color32::WHITE);
-                }
-            }
+            self.paint_preview_texture(
+                &painter,
+                image_rect,
+                canvas_rect,
+                state,
+                Color32::WHITE,
+                true,
+            );
         } else {
             // No preview layer — drop cached texture and buffer.
             state.preview_texture_cache = None;
             // Don't clear preview_flat_buffer here to avoid dealloc; it will
             // be reused on the next stroke.
+        }
+
+        if state.show_wrap_preview {
+            self.draw_wrap_preview(&painter, image_rect, canvas_rect, state);
         }
 
         // Draw pixel grid overlay when zoomed in
@@ -5383,6 +5304,162 @@ impl Canvas {
         draw_h(h * 2.0 / 3.0);
         draw_v(w / 3.0);
         draw_v(w * 2.0 / 3.0);
+    }
+
+    fn paint_composite_texture(
+        &self,
+        painter: &egui::Painter,
+        image_rect: Rect,
+        viewport: Rect,
+        state: &CanvasState,
+        tint: Color32,
+    ) {
+        if tint.a() == 0 {
+            return;
+        }
+        let visible = image_rect.intersect(viewport);
+        if visible.width() <= 0.0 || visible.height() <= 0.0 {
+            return;
+        }
+
+        let clipped_painter = painter.with_clip_rect(viewport);
+        let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+        if let Some(texture) = &state.composite_cache {
+            clipped_painter.image(texture.id(), image_rect, uv, tint);
+        }
+    }
+
+    fn paint_preview_texture(
+        &self,
+        painter: &egui::Painter,
+        image_rect: Rect,
+        viewport: Rect,
+        state: &CanvasState,
+        tint: Color32,
+        draw_eraser_checkerboard: bool,
+    ) {
+        if tint.a() == 0 {
+            return;
+        }
+        let visible = image_rect.intersect(viewport);
+        if visible.width() <= 0.0 || visible.height() <= 0.0 {
+            return;
+        }
+
+        let Some(tex) = state.preview_texture_cache.as_ref() else {
+            return;
+        };
+
+        let clipped_painter = painter.with_clip_rect(viewport);
+        let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+
+        // Use image_rect-derived proportional positioning so the preview
+        // aligns exactly with the GPU composite. image_rect is independently
+        // rounded from temp_rect, so its effective zoom can differ slightly.
+        if let Some(sb) = state.preview_stroke_bounds {
+            let off_x = sb.min.x.max(0.0).floor();
+            let off_y = sb.min.y.max(0.0).floor();
+            let sw = (sb.max.x.ceil().min(state.width as f32) - off_x).max(1.0);
+            let sh = (sb.max.y.ceil().min(state.height as f32) - off_y).max(1.0);
+            let canvas_w = state.width as f32;
+            let canvas_h = state.height as f32;
+            let sub_rect = Rect::from_min_size(
+                Pos2::new(
+                    image_rect.min.x + off_x / canvas_w * image_rect.width(),
+                    image_rect.min.y + off_y / canvas_h * image_rect.height(),
+                ),
+                Vec2::new(
+                    sw / canvas_w * image_rect.width(),
+                    sh / canvas_h * image_rect.height(),
+                ),
+            );
+
+            if draw_eraser_checkerboard
+                && state.preview_is_eraser
+                && let Some(ref checker_tex) = self.checkerboard_texture
+            {
+                let cell = 10.0_f32;
+                let (cols, rows) = self.checkerboard_cached_size;
+                let grid_ox = (viewport.min.x / cell).floor() * cell;
+                let grid_oy = (viewport.min.y / cell).floor() * cell;
+                let tex_w = cols as f32 * cell;
+                let tex_h = rows as f32 * cell;
+                let checker_uv = Rect::from_min_max(
+                    Pos2::new(
+                        (sub_rect.min.x - grid_ox) / tex_w,
+                        (sub_rect.min.y - grid_oy) / tex_h,
+                    ),
+                    Pos2::new(
+                        (sub_rect.max.x - grid_ox) / tex_w,
+                        (sub_rect.max.y - grid_oy) / tex_h,
+                    ),
+                );
+                clipped_painter.image(checker_tex.id(), sub_rect, checker_uv, tint);
+            }
+
+            clipped_painter.image(tex.id(), sub_rect, uv, tint);
+        } else {
+            if draw_eraser_checkerboard
+                && state.preview_is_eraser
+                && let Some(ref checker_tex) = self.checkerboard_texture
+            {
+                let cell = 10.0_f32;
+                let (cols, rows) = self.checkerboard_cached_size;
+                let grid_ox = (viewport.min.x / cell).floor() * cell;
+                let grid_oy = (viewport.min.y / cell).floor() * cell;
+                let tex_w = cols as f32 * cell;
+                let tex_h = rows as f32 * cell;
+                let checker_uv = Rect::from_min_max(
+                    Pos2::new(
+                        (image_rect.min.x - grid_ox) / tex_w,
+                        (image_rect.min.y - grid_oy) / tex_h,
+                    ),
+                    Pos2::new(
+                        (image_rect.max.x - grid_ox) / tex_w,
+                        (image_rect.max.y - grid_oy) / tex_h,
+                    ),
+                );
+                clipped_painter.image(checker_tex.id(), image_rect, checker_uv, tint);
+            }
+
+            clipped_painter.image(tex.id(), image_rect, uv, tint);
+        }
+    }
+
+    fn draw_wrap_preview(
+        &self,
+        painter: &egui::Painter,
+        image_rect: Rect,
+        viewport: Rect,
+        state: &CanvasState,
+    ) {
+        let tint = Color32::from_white_alpha(112);
+        let clipped_painter = painter.with_clip_rect(viewport);
+        let border_outer = egui::Stroke::new(1.5, Color32::from_black_alpha(72));
+        let border_inner = egui::Stroke::new(0.75, Color32::from_white_alpha(52));
+        let offsets = [
+            Vec2::new(-image_rect.width(), 0.0),
+            Vec2::new(image_rect.width(), 0.0),
+            Vec2::new(0.0, -image_rect.height()),
+            Vec2::new(0.0, image_rect.height()),
+            Vec2::new(-image_rect.width(), -image_rect.height()),
+            Vec2::new(image_rect.width(), -image_rect.height()),
+            Vec2::new(-image_rect.width(), image_rect.height()),
+            Vec2::new(image_rect.width(), image_rect.height()),
+        ];
+
+        for offset in offsets {
+            let ghost_rect = image_rect.translate(offset);
+            let visible = ghost_rect.intersect(viewport);
+            if visible.width() <= 0.0 || visible.height() <= 0.0 {
+                continue;
+            }
+
+            self.paint_composite_texture(painter, ghost_rect, viewport, state, tint);
+            self.paint_preview_texture(painter, ghost_rect, viewport, state, tint, false);
+            clipped_painter.rect_stroke(ghost_rect, 0.0, border_outer);
+            clipped_painter.rect_stroke(ghost_rect.shrink(0.5), 0.0, border_inner);
+        }
     }
 
     // ========================================================================

@@ -104,11 +104,15 @@ pub struct NewFileDialog {
     pub open: bool,
     width: f32,
     height: f32,
+    width_input: String,
+    height_input: String,
     unit: SizeUnit,
     ppi: f32,
     lock_aspect_ratio: bool,
     aspect_ratio: f32,
     preset: SizePreset,
+    focus_width_on_open: bool,
+    replace_width_on_first_edit: bool,
 }
 
 impl Default for NewFileDialog {
@@ -117,16 +121,27 @@ impl Default for NewFileDialog {
             open: false,
             width: 800.0,
             height: 600.0,
+            width_input: "800".to_string(),
+            height_input: "600".to_string(),
             unit: SizeUnit::Pixels,
             ppi: 72.0,
-            lock_aspect_ratio: false,
+            lock_aspect_ratio: true,
             aspect_ratio: 800.0 / 600.0,
             preset: SizePreset::Size800x600,
+            focus_width_on_open: false,
+            replace_width_on_first_edit: false,
         }
     }
 }
 
 impl NewFileDialog {
+    pub fn open_dialog(&mut self) {
+        self.sync_inputs_from_values();
+        self.open = true;
+        self.focus_width_on_open = true;
+        self.replace_width_on_first_edit = true;
+    }
+
     /// Pre-populate width and height from a clipboard image if available.
     /// Called when the dialog opens so newly-created canvases match the
     /// clipboard image dimensions by default.
@@ -137,7 +152,74 @@ impl NewFileDialog {
             self.aspect_ratio = self.width / self.height.max(1.0);
             self.preset = SizePreset::Custom;
             self.unit = SizeUnit::Pixels;
+            self.sync_inputs_from_values();
         }
+    }
+
+    fn sync_inputs_from_values(&mut self) {
+        self.width_input = format_dimension_value(self.width);
+        self.height_input = format_dimension_value(self.height);
+    }
+
+    fn preview_values(&self) -> (f32, f32) {
+        let width = evaluate_dimension_expression(&self.width_input).unwrap_or(self.width);
+        let height = evaluate_dimension_expression(&self.height_input).unwrap_or(self.height);
+        (width.max(1.0), height.max(1.0))
+    }
+
+    fn preview_pixels(&self) -> (u32, u32) {
+        let (width, height) = self.preview_values();
+        let (w, h) = match self.unit {
+            SizeUnit::Pixels => (width, height),
+            SizeUnit::Inches => (width * self.ppi, height * self.ppi),
+            SizeUnit::Centimeters => {
+                let inches_w = width / 2.54;
+                let inches_h = height / 2.54;
+                (inches_w * self.ppi, inches_h * self.ppi)
+            }
+        };
+        (w.round().max(1.0) as u32, h.round().max(1.0) as u32)
+    }
+
+    fn commit_width_input(&mut self) {
+        let old_width = self.width;
+        if let Some(new_width) = evaluate_dimension_expression(&self.width_input) {
+            let new_width = new_width.round().clamp(1.0, 20000.0);
+            self.width = new_width;
+            self.width_input = format_dimension_value(self.width);
+            self.preset = SizePreset::Custom;
+            if self.lock_aspect_ratio && old_width > 0.0 {
+                self.height = (self.width / self.aspect_ratio).round().clamp(1.0, 20000.0);
+                self.height_input = format_dimension_value(self.height);
+            } else {
+                self.aspect_ratio = self.width / self.height.max(1.0);
+            }
+        } else {
+            self.width_input = format_dimension_value(self.width);
+        }
+    }
+
+    fn commit_height_input(&mut self) {
+        let old_height = self.height;
+        if let Some(new_height) = evaluate_dimension_expression(&self.height_input) {
+            let new_height = new_height.round().clamp(1.0, 20000.0);
+            self.height = new_height;
+            self.height_input = format_dimension_value(self.height);
+            self.preset = SizePreset::Custom;
+            if self.lock_aspect_ratio && old_height > 0.0 {
+                self.width = (self.height * self.aspect_ratio).round().clamp(1.0, 20000.0);
+                self.width_input = format_dimension_value(self.width);
+            } else {
+                self.aspect_ratio = self.width / self.height.max(1.0);
+            }
+        } else {
+            self.height_input = format_dimension_value(self.height);
+        }
+    }
+
+    fn commit_inputs(&mut self) {
+        self.commit_width_input();
+        self.commit_height_input();
     }
 
     /// Convert current width/height from current unit to pixels
@@ -169,6 +251,7 @@ impl NewFileDialog {
             let enter = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
             let esc = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
             if enter {
+                self.commit_inputs();
                 result = Some(self.to_pixels());
                 should_close = true;
             }
@@ -215,6 +298,7 @@ impl NewFileDialog {
                                             self.ppi = ppi;
                                             self.unit = SizeUnit::Pixels;
                                             self.aspect_ratio = self.width / self.height;
+                                                self.sync_inputs_from_values();
                                         }
                                     }
                                 });
@@ -226,71 +310,73 @@ impl NewFileDialog {
                     section_label(ui, &colors, &t!("dialog.resize_image.dimensions"));
 
                     egui::Grid::new("new_file_dims_grid")
-                        .num_columns(3)
+                        .num_columns(2)
                         .min_col_width(80.0)
                         .spacing([8.0, 6.0])
                         .show(ui, |ui| {
                             // Width row
                             ui.label(t!("common.width"));
-                            let old_width = self.width;
-                            if ui
-                                .add(
-                                    egui::DragValue::new(&mut self.width)
-                                        .speed(1.0)
-                                        .clamp_range(1.0..=20000.0),
-                                )
-                                .changed()
-                            {
-                                self.preset = SizePreset::Custom;
-                                if self.lock_aspect_ratio && old_width > 0.0 {
-                                    self.height = self.width / self.aspect_ratio;
-                                } else {
-                                    self.aspect_ratio = self.width / self.height.max(1.0);
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 4.0;
+                                let previous_input = self.width_input.clone();
+                                let width_response = ui.add(
+                                    egui::TextEdit::singleline(&mut self.width_input)
+                                        .desired_width(96.0),
+                                );
+                                if self.focus_width_on_open {
+                                    width_response.request_focus();
+                                    self.focus_width_on_open = false;
                                 }
-                            }
-                            ui.label(self.unit.label());
+                                if self.replace_width_on_first_edit && width_response.changed() {
+                                    if self.width_input.starts_with(&previous_input)
+                                        && self.width_input.len() > previous_input.len()
+                                    {
+                                        let suffix = &self.width_input[previous_input.len()..];
+                                        let suffix_trimmed = suffix.trim_start();
+                                        if !matches!(
+                                            suffix_trimmed.chars().next(),
+                                            Some('+') | Some('-') | Some('*') | Some('/')
+                                        ) {
+                                            self.width_input = suffix.to_string();
+                                        }
+                                    }
+                                    self.replace_width_on_first_edit = false;
+                                }
+                                let width_commit = width_response.lost_focus()
+                                    || (width_response.has_focus()
+                                        && ui.input(|i| i.key_pressed(egui::Key::Tab)));
+                                if width_commit {
+                                    self.commit_width_input();
+                                }
+                                ui.label(self.unit.label());
+                            });
                             ui.end_row();
 
                             // Height row
                             ui.label(t!("common.height"));
-                            let old_height = self.height;
-                            if ui
-                                .add(
-                                    egui::DragValue::new(&mut self.height)
-                                        .speed(1.0)
-                                        .clamp_range(1.0..=20000.0),
-                                )
-                                .changed()
-                            {
-                                self.preset = SizePreset::Custom;
-                                if self.lock_aspect_ratio && old_height > 0.0 {
-                                    self.width = self.height * self.aspect_ratio;
-                                } else {
-                                    self.aspect_ratio = self.width / self.height.max(1.0);
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 4.0;
+                                let height_response = ui.add(
+                                    egui::TextEdit::singleline(&mut self.height_input)
+                                        .desired_width(96.0),
+                                );
+                                let height_commit = height_response.lost_focus()
+                                    || (height_response.has_focus()
+                                        && ui.input(|i| i.key_pressed(egui::Key::Tab)));
+                                if height_commit {
+                                    self.commit_height_input();
                                 }
-                            }
-                            ui.label(self.unit.label());
+                                ui.label(self.unit.label());
+                            });
                             ui.end_row();
 
                             // Lock aspect ratio (below Height)
                             ui.label("");
-                            let lock_icon = if self.lock_aspect_ratio {
-                                "\u{1F517}"
-                            } else {
-                                "\u{25CB}"
-                            };
-                            let lock_text =
-                                format!("{} {}", lock_icon, t!("common.lock_aspect_ratio"));
-                            if ui
-                                .selectable_label(self.lock_aspect_ratio, lock_text)
-                                .clicked()
-                            {
-                                self.lock_aspect_ratio = !self.lock_aspect_ratio;
-                                if self.lock_aspect_ratio {
-                                    self.aspect_ratio = self.width / self.height.max(1.0);
-                                }
+                            let checkbox_resp =
+                                ui.checkbox(&mut self.lock_aspect_ratio, t!("common.lock_aspect_ratio"));
+                            if checkbox_resp.changed() && self.lock_aspect_ratio {
+                                self.aspect_ratio = self.width / self.height.max(1.0);
                             }
-                            ui.label("");
                             ui.end_row();
                         });
 
@@ -363,7 +449,7 @@ impl NewFileDialog {
 
                     // ── Final pixel size info ────────────────────────────────
                     ui.add_space(4.0);
-                    let (px_w, px_h) = self.to_pixels();
+                    let (px_w, px_h) = self.preview_pixels();
                     ui.horizontal(|ui| {
                         ui.add_space(4.0);
                         ui.label(
@@ -393,6 +479,7 @@ impl NewFileDialog {
                             )
                             .fill(colors.accent);
                             if ui.add(create_btn).clicked() {
+                                self.commit_inputs();
                                 result = Some(self.to_pixels());
                                 should_close = true;
                             }
@@ -436,9 +523,149 @@ impl NewFileDialog {
             }
         };
 
-        self.width = new_w;
-        self.height = new_h;
+        self.width = new_w.round().max(1.0);
+        self.height = new_h.round().max(1.0);
+        self.sync_inputs_from_values();
     }
+}
+
+fn format_dimension_value(value: f32) -> String {
+    if (value.round() - value).abs() < 0.0001 {
+        format!("{}", value.round() as i64)
+    } else {
+        let mut s = format!("{value:.4}");
+        while s.contains('.') && s.ends_with('0') {
+            s.pop();
+        }
+        if s.ends_with('.') {
+            s.pop();
+        }
+        s
+    }
+}
+
+fn evaluate_dimension_expression(input: &str) -> Option<f32> {
+    #[derive(Clone, Copy)]
+    struct Parser<'a> {
+        bytes: &'a [u8],
+        pos: usize,
+    }
+
+    impl<'a> Parser<'a> {
+        fn new(src: &'a str) -> Self {
+            Self {
+                bytes: src.as_bytes(),
+                pos: 0,
+            }
+        }
+
+        fn skip_ws(&mut self) {
+            while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_whitespace() {
+                self.pos += 1;
+            }
+        }
+
+        fn parse_expr(&mut self) -> Option<f32> {
+            let mut value = self.parse_term()?;
+            loop {
+                self.skip_ws();
+                let Some(&op) = self.bytes.get(self.pos) else {
+                    break;
+                };
+                if op != b'+' && op != b'-' {
+                    break;
+                }
+                self.pos += 1;
+                let rhs = self.parse_term()?;
+                value = if op == b'+' { value + rhs } else { value - rhs };
+            }
+            Some(value)
+        }
+
+        fn parse_term(&mut self) -> Option<f32> {
+            let mut value = self.parse_factor()?;
+            loop {
+                self.skip_ws();
+                let Some(&op) = self.bytes.get(self.pos) else {
+                    break;
+                };
+                if op != b'*' && op != b'/' {
+                    break;
+                }
+                self.pos += 1;
+                let rhs = self.parse_factor()?;
+                value = if op == b'*' {
+                    value * rhs
+                } else {
+                    if rhs.abs() < f32::EPSILON {
+                        return None;
+                    }
+                    value / rhs
+                };
+            }
+            Some(value)
+        }
+
+        fn parse_factor(&mut self) -> Option<f32> {
+            self.skip_ws();
+            if let Some(&b'+') = self.bytes.get(self.pos) {
+                self.pos += 1;
+                return self.parse_factor();
+            }
+            if let Some(&b'-') = self.bytes.get(self.pos) {
+                self.pos += 1;
+                return self.parse_factor().map(|v| -v);
+            }
+            if let Some(&b'(') = self.bytes.get(self.pos) {
+                self.pos += 1;
+                let value = self.parse_expr()?;
+                self.skip_ws();
+                if self.bytes.get(self.pos) == Some(&b')') {
+                    self.pos += 1;
+                    return Some(value);
+                }
+                return None;
+            }
+            self.parse_number()
+        }
+
+        fn parse_number(&mut self) -> Option<f32> {
+            self.skip_ws();
+            let start = self.pos;
+            let mut seen_digit = false;
+            let mut seen_dot = false;
+            while let Some(&ch) = self.bytes.get(self.pos) {
+                if ch.is_ascii_digit() {
+                    seen_digit = true;
+                    self.pos += 1;
+                } else if ch == b'.' && !seen_dot {
+                    seen_dot = true;
+                    self.pos += 1;
+                } else {
+                    break;
+                }
+            }
+            if !seen_digit {
+                return None;
+            }
+            std::str::from_utf8(&self.bytes[start..self.pos])
+                .ok()?
+                .parse::<f32>()
+                .ok()
+        }
+    }
+
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut parser = Parser::new(trimmed);
+    let value = parser.parse_expr()?;
+    parser.skip_ws();
+    if parser.pos != parser.bytes.len() || !value.is_finite() {
+        return None;
+    }
+    Some(value)
 }
 
 // ============================================================================

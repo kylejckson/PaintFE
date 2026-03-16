@@ -1317,7 +1317,7 @@ impl eframe::App for PaintFEApp {
             // Ctrl+N — New File
             if kb.is_pressed(ctx, BindableAction::NewFile) {
                 self.new_file_dialog.load_clipboard_dimensions();
-                self.new_file_dialog.open = true;
+                self.new_file_dialog.open_dialog();
             }
 
             // Ctrl+O — Open File
@@ -2290,7 +2290,7 @@ impl eframe::App for PaintFEApp {
                             .clicked()
                         {
                             self.new_file_dialog.load_clipboard_dimensions();
-                            self.new_file_dialog.open = true;
+                            self.new_file_dialog.open_dialog();
                             ui.close_menu();
                         }
                         if self
@@ -3936,7 +3936,7 @@ impl eframe::App for PaintFEApp {
                     // === File Actions ===
                     if self.assets.small_icon_button(ui, Icon::New).clicked() {
                         self.new_file_dialog.load_clipboard_dimensions();
-                        self.new_file_dialog.open = true;
+                        self.new_file_dialog.open_dialog();
                     }
                     if self.assets.small_icon_button(ui, Icon::Open).clicked() {
                         self.handle_open_file(ctx.input(|i| i.time));
@@ -4074,6 +4074,25 @@ impl eframe::App for PaintFEApp {
                         {
                             project.canvas_state.mirror_mode =
                                 project.canvas_state.mirror_mode.next();
+                        }
+                    }
+
+                    // Four-side seamless edge preview toggle
+                    {
+                        let show_wrap_preview = self
+                            .active_project()
+                            .map(|p| p.canvas_state.show_wrap_preview)
+                            .unwrap_or(false);
+                        let wrap_icon = if show_wrap_preview {
+                            Icon::WrapPreviewOn
+                        } else {
+                            Icon::WrapPreviewOff
+                        };
+                        if self.assets.small_icon_button(ui, wrap_icon).clicked()
+                            && let Some(project) = self.active_project_mut()
+                        {
+                            project.canvas_state.show_wrap_preview =
+                                !project.canvas_state.show_wrap_preview;
                         }
                     }
 
@@ -4459,7 +4478,7 @@ impl eframe::App for PaintFEApp {
                                 }
                                 if plus_resp.inner.clicked() {
                                     self.new_file_dialog.load_clipboard_dimensions();
-                                    self.new_file_dialog.open = true;
+                                    self.new_file_dialog.open_dialog();
                                 }
                             });
                         });
