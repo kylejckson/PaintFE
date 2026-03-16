@@ -6,6 +6,17 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.1.6] - 2026-03-16
+
+### Added
+- **GPU-accelerated Fill and Magic Wand tools**: Distance maps for flood fill and Magic Wand selection are now computed on the GPU using a dedicated compute pipeline (wave-function BFS on GPU), giving near-instant response on large canvases. GPU fill preview dirty regions are also rendered on GPU. CPU fallback retained for non-GPU environments.
+
+### Fixed
+- **Rectangle outline sharp corners**: Plain (non-rounded) rectangles drawn in Outline or Both (fill + outline) mode now produce sharp axis-aligned corners instead of the previous rounded artefact caused by the SDF-band approach. Rounded Rectangle still uses smooth corners as expected.
+- **Windows error sound on every keypress**: A hook inside the Windows message loop was manually calling `DispatchMessageW` for `WM_KEYDOWN` events and marking them consumed, which broke winit's normal input routing and triggered `MessageBeep(0)` on every key press across the entire app (including resize dialogs). The intercept has been removed; only harmless control-character `WM_CHAR` suppression remains.
+
+---
+
 ## [1.1.5] - 2026-03-16
 
 ### Added

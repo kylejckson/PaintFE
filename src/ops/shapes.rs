@@ -527,6 +527,30 @@ pub fn shape_sdf(kind: ShapeKind, px: f32, py: f32, hx: f32, hy: f32, corner_rad
     }
 }
 
+#[inline]
+fn coverage_from_sdf(distance: f32, anti_alias: bool) -> f32 {
+    if anti_alias {
+        smoothstep(0.5, -0.5, distance)
+    } else if distance < 0.0 {
+        1.0
+    } else {
+        0.0
+    }
+}
+
+#[inline]
+fn rectangle_outline_coverage(px: f32, py: f32, hx: f32, hy: f32, outline_half: f32, anti_alias: bool) -> f32 {
+    let outer_cov = coverage_from_sdf(sdf_box(px, py, hx + outline_half, hy + outline_half), anti_alias);
+    let inner_hx = (hx - outline_half).max(0.0);
+    let inner_hy = (hy - outline_half).max(0.0);
+    let inner_cov = if inner_hx > 0.0 && inner_hy > 0.0 {
+        coverage_from_sdf(sdf_box(px, py, inner_hx, inner_hy), anti_alias)
+    } else {
+        0.0
+    };
+    (outer_cov - inner_cov).clamp(0.0, 1.0)
+}
+
 /// Rasterize a shape into an RGBA buffer.
 ///
 /// Returns `(buf, buf_w, buf_h, offset_x, offset_y)` where offset is the
@@ -612,42 +636,26 @@ pub fn rasterize_shape(
 
                 let (color, coverage) = match fill_mode {
                     ShapeFillMode::Filled => {
-                        let cov = if aa {
-                            smoothstep(0.5, -0.5, d)
-                        } else if d < 0.0 {
-                            1.0
-                        } else {
-                            0.0
-                        };
+                        let cov = coverage_from_sdf(d, aa);
                         (primary, cov)
                     }
                     ShapeFillMode::Outline => {
-                        let band = d.abs() - outline_half;
-                        let cov = if aa {
-                            smoothstep(0.5, -0.5, band)
-                        } else if band < 0.0 {
-                            1.0
+                        let cov = if kind == ShapeKind::Rectangle {
+                            rectangle_outline_coverage(lx, ly, hx, hy, outline_half, aa)
                         } else {
-                            0.0
+                            let band = d.abs() - outline_half;
+                            coverage_from_sdf(band, aa)
                         };
                         (primary, cov)
                     }
                     ShapeFillMode::Both => {
                         // Fill interior with secondary, outline with primary
-                        let fill_cov = if aa {
-                            smoothstep(0.5, -0.5, d)
-                        } else if d < 0.0 {
-                            1.0
+                        let fill_cov = coverage_from_sdf(d, aa);
+                        let outline_cov = if kind == ShapeKind::Rectangle {
+                            rectangle_outline_coverage(lx, ly, hx, hy, outline_half, aa)
                         } else {
-                            0.0
-                        };
-                        let band = d.abs() - outline_half;
-                        let outline_cov = if aa {
-                            smoothstep(0.5, -0.5, band)
-                        } else if band < 0.0 {
-                            1.0
-                        } else {
-                            0.0
+                            let band = d.abs() - outline_half;
+                            coverage_from_sdf(band, aa)
                         };
 
                         if outline_cov > 0.001 {
@@ -769,41 +777,25 @@ pub fn rasterize_shape_into(
 
                 let (color, coverage) = match fill_mode {
                     ShapeFillMode::Filled => {
-                        let cov = if aa {
-                            smoothstep(0.5, -0.5, d)
-                        } else if d < 0.0 {
-                            1.0
-                        } else {
-                            0.0
-                        };
+                        let cov = coverage_from_sdf(d, aa);
                         (primary, cov)
                     }
                     ShapeFillMode::Outline => {
-                        let band = d.abs() - outline_half;
-                        let cov = if aa {
-                            smoothstep(0.5, -0.5, band)
-                        } else if band < 0.0 {
-                            1.0
+                        let cov = if kind == ShapeKind::Rectangle {
+                            rectangle_outline_coverage(lx, ly, hx, hy, outline_half, aa)
                         } else {
-                            0.0
+                            let band = d.abs() - outline_half;
+                            coverage_from_sdf(band, aa)
                         };
                         (primary, cov)
                     }
                     ShapeFillMode::Both => {
-                        let fill_cov = if aa {
-                            smoothstep(0.5, -0.5, d)
-                        } else if d < 0.0 {
-                            1.0
+                        let fill_cov = coverage_from_sdf(d, aa);
+                        let outline_cov = if kind == ShapeKind::Rectangle {
+                            rectangle_outline_coverage(lx, ly, hx, hy, outline_half, aa)
                         } else {
-                            0.0
-                        };
-                        let band = d.abs() - outline_half;
-                        let outline_cov = if aa {
-                            smoothstep(0.5, -0.5, band)
-                        } else if band < 0.0 {
-                            1.0
-                        } else {
-                            0.0
+                            let band = d.abs() - outline_half;
+                            coverage_from_sdf(band, aa)
                         };
                         if outline_cov > 0.001 {
                             let oa = outline_cov;

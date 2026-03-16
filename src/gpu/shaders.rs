@@ -432,6 +432,358 @@ fn fs_blend(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 "#;
 
+// ============================================================================
+// GPU FLOOD FILL — per-pixel color distance + iterative minimax relaxation
+// ============================================================================
+
+/// Computes per-pixel Chebyshev color distance from the target color.
+/// Output goes into a storage buffer (u32 per pixel, value 0–255).
+pub const FLOOD_COLOR_DISTANCE_SHADER: &str = r#"
+struct ColorDistParams {
+    target_r: u32,
+    target_g: u32,
+    target_b: u32,
+    target_a: u32,
+    width: u32,
+    height: u32,
+    _pad0: u32,
+    _pad1: u32,
+};
+
+@group(0) @binding(0) var input_tex: texture_2d<f32>;
+@group(0) @binding(1) var<storage, read_write> color_dist: array<u32>;
+@group(0) @binding(2) var<uniform> params: ColorDistParams;
+
+@compute @workgroup_size(16, 16, 1)
+fn cs_color_distance(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x >= params.width || gid.y >= params.height) {
+        return;
+    }
+
+    let coord = vec2<i32>(i32(gid.x), i32(gid.y));
+    let pixel = textureLoad(input_tex, coord, 0);
+    let r = u32(round(pixel.r * 255.0));
+    let g = u32(round(pixel.g * 255.0));
+    let b = u32(round(pixel.b * 255.0));
+    let a = u32(round(pixel.a * 255.0));
+
+    var dist: u32;
+    if (params.target_a == 0u && a == 0u) {
+        dist = 0u;
+    } else {
+        let dr = max(r, params.target_r) - min(r, params.target_r);
+        let dg = max(g, params.target_g) - min(g, params.target_g);
+        let db = max(b, params.target_b) - min(b, params.target_b);
+        let da = max(a, params.target_a) - min(a, params.target_a);
+        dist = max(max(dr, dg), max(db, da));
+    }
+
+    let idx = gid.y * params.width + gid.x;
+    color_dist[idx] = dist;
+}
+"#;
+
+/// Initializes the flood distance buffer: seed pixel gets its color distance,
+/// all others get 255.
+pub const FLOOD_INIT_SHADER: &str = r#"
+struct FloodInitParams {
+    seed_x: u32,
+    seed_y: u32,
+    width: u32,
+    height: u32,
+};
+
+@group(0) @binding(0) var<storage, read> color_dist: array<u32>;
+@group(0) @binding(1) var<storage, read_write> flood_dist: array<u32>;
+@group(0) @binding(2) var<uniform> params: FloodInitParams;
+
+@compute @workgroup_size(16, 16, 1)
+fn cs_flood_init(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x >= params.width || gid.y >= params.height) {
+        return;
+    }
+
+    let idx = gid.y * params.width + gid.x;
+    if (gid.x == params.seed_x && gid.y == params.seed_y) {
+        flood_dist[idx] = color_dist[idx];
+    } else {
+        flood_dist[idx] = 255u;
+    }
+}
+"#;
+
+/// One relaxation pass of the flood-fill minimax distance computation.
+/// Checks 4-connected neighbors at `step_size` distance.
+/// Ping-pong: reads from flood_a, writes to flood_b (direction=0) or vice versa.
+pub const FLOOD_STEP_SHADER: &str = r#"
+struct FloodStepParams {
+    width: u32,
+    height: u32,
+    step_size: u32,
+    direction: u32,
+};
+
+@group(0) @binding(0) var<storage, read> color_dist: array<u32>;
+@group(0) @binding(1) var<storage, read_write> flood_a: array<u32>;
+@group(0) @binding(2) var<storage, read_write> flood_b: array<u32>;
+@group(0) @binding(3) var<uniform> params: FloodStepParams;
+
+@compute @workgroup_size(16, 16, 1)
+fn cs_flood_step(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x >= params.width || gid.y >= params.height) {
+        return;
+    }
+
+    let idx = gid.y * params.width + gid.x;
+    let my_color = color_dist[idx];
+
+    var my_dist: u32;
+    if (params.direction == 0u) {
+        my_dist = flood_a[idx];
+    } else {
+        my_dist = flood_b[idx];
+    }
+
+    var best = my_dist;
+
+    let step = i32(params.step_size);
+    let x = i32(gid.x);
+    let y = i32(gid.y);
+    let w = i32(params.width);
+    let h = i32(params.height);
+
+    // Left
+    if (x - step >= 0) {
+        let ni = u32(y) * params.width + u32(x - step);
+        var n_dist: u32;
+        if (params.direction == 0u) { n_dist = flood_a[ni]; } else { n_dist = flood_b[ni]; }
+        let candidate = max(n_dist, my_color);
+        best = min(best, candidate);
+    }
+    // Right
+    if (x + step < w) {
+        let ni = u32(y) * params.width + u32(x + step);
+        var n_dist: u32;
+        if (params.direction == 0u) { n_dist = flood_a[ni]; } else { n_dist = flood_b[ni]; }
+        let candidate = max(n_dist, my_color);
+        best = min(best, candidate);
+    }
+    // Up
+    if (y - step >= 0) {
+        let ni = u32(y - step) * params.width + u32(x);
+        var n_dist: u32;
+        if (params.direction == 0u) { n_dist = flood_a[ni]; } else { n_dist = flood_b[ni]; }
+        let candidate = max(n_dist, my_color);
+        best = min(best, candidate);
+    }
+    // Down
+    if (y + step < h) {
+        let ni = u32(y + step) * params.width + u32(x);
+        var n_dist: u32;
+        if (params.direction == 0u) { n_dist = flood_a[ni]; } else { n_dist = flood_b[ni]; }
+        let candidate = max(n_dist, my_color);
+        best = min(best, candidate);
+    }
+
+    if (params.direction == 0u) {
+        flood_b[idx] = best;
+    } else {
+        flood_a[idx] = best;
+    }
+}
+"#;
+
+// ============================================================================
+// MAGIC WAND MASK SHADER
+// ============================================================================
+
+pub const MAGIC_WAND_MASK_SHADER: &str = r#"
+struct MagicWandParams {
+    width: u32,
+    height: u32,
+    threshold: u32,
+    anti_aliased: u32,
+    mode: u32,
+    use_base: u32,
+    _pad0: u32,
+    _pad1: u32,
+};
+
+@group(0) @binding(0) var dist_tex: texture_2d<f32>;
+@group(0) @binding(1) var base_tex: texture_2d<f32>;
+@group(0) @binding(2) var out_tex: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(3) var<uniform> u: MagicWandParams;
+
+fn threshold_alpha(distance: u32) -> u32 {
+    if (distance <= u.threshold) {
+        return 255u;
+    }
+    if (u.anti_aliased == 0u) {
+        return 0u;
+    }
+    let aa_band = 5u;
+    if (distance <= u.threshold + aa_band) {
+        let delta = f32(distance - u.threshold);
+        let factor = max(0.0, 1.0 - delta / f32(aa_band));
+        return u32(round(factor * 255.0));
+    }
+    return 0u;
+}
+
+fn merge_value(base: u32, raw: u32) -> u32 {
+    switch u.mode {
+        case 1u: {
+            return max(base, raw);
+        }
+        case 2u: {
+            if (base > raw) {
+                return base - raw;
+            }
+            return 0u;
+        }
+        case 3u: {
+            return (base * raw) / 255u;
+        }
+        default: {
+            return raw;
+        }
+    }
+}
+
+@compute @workgroup_size(16, 16, 1)
+fn cs_magic_wand_mask(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x >= u.width || gid.y >= u.height) {
+        return;
+    }
+
+    let coord = vec2<i32>(i32(gid.x), i32(gid.y));
+    let distance = u32(round(textureLoad(dist_tex, coord, 0).x * 255.0));
+    let raw = threshold_alpha(distance);
+
+    var base = 0u;
+    if (u.use_base != 0u) {
+        base = u32(round(textureLoad(base_tex, coord, 0).x * 255.0));
+    }
+
+    let merged = merge_value(base, raw);
+    let value = f32(merged) / 255.0;
+    textureStore(out_tex, coord, vec4<f32>(value, value, value, value));
+}
+"#;
+
+// ============================================================================
+// FILL PREVIEW SHADER
+// ============================================================================
+
+pub const FILL_PREVIEW_SHADER: &str = r#"
+struct FillPreviewParams {
+    fill_color: vec4<f32>,
+    canvas_width: u32,
+    canvas_height: u32,
+    region_x: u32,
+    region_y: u32,
+    region_width: u32,
+    region_height: u32,
+    threshold: u32,
+    anti_aliased: u32,
+    use_selection: u32,
+    _pad0: u32,
+    _pad1: u32,
+    _pad2: u32,
+};
+
+@group(0) @binding(0) var dist_tex: texture_2d<f32>;
+@group(0) @binding(1) var bg_tex: texture_2d<f32>;
+@group(0) @binding(2) var sel_tex: texture_2d<f32>;
+@group(0) @binding(3) var out_tex: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(4) var<uniform> u: FillPreviewParams;
+
+fn selection_active(x: u32, y: u32) -> bool {
+    if (u.use_selection == 0u) {
+        return true;
+    }
+    let coord = vec2<i32>(i32(x), i32(y));
+    return textureLoad(sel_tex, coord, 0).x > 0.0;
+}
+
+fn fill_active(x: i32, y: i32) -> bool {
+    if (x < 0 || y < 0 || x >= i32(u.canvas_width) || y >= i32(u.canvas_height)) {
+        return false;
+    }
+    let ux = u32(x);
+    let uy = u32(y);
+    if (!selection_active(ux, uy)) {
+        return false;
+    }
+    let coord = vec2<i32>(x, y);
+    let distance = u32(round(textureLoad(dist_tex, coord, 0).x * 255.0));
+    return distance <= u.threshold;
+}
+
+@compute @workgroup_size(16, 16, 1)
+fn cs_fill_preview(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x >= u.region_width || gid.y >= u.region_height) {
+        return;
+    }
+
+    let x = u.region_x + gid.x;
+    let y = u.region_y + gid.y;
+    let out_coord = vec2<i32>(i32(gid.x), i32(gid.y));
+    let canvas_coord = vec2<i32>(i32(x), i32(y));
+
+    if (!fill_active(i32(x), i32(y))) {
+        textureStore(out_tex, out_coord, vec4<f32>(0.0, 0.0, 0.0, 0.0));
+        return;
+    }
+
+    if (u.anti_aliased == 0u) {
+        textureStore(out_tex, out_coord, u.fill_color);
+        return;
+    }
+
+    let left_active = fill_active(i32(x) - 1, i32(y));
+    let right_active = fill_active(i32(x) + 1, i32(y));
+    let up_active = fill_active(i32(x), i32(y) - 1);
+    let down_active = fill_active(i32(x), i32(y) + 1);
+    let boundary = !left_active || !right_active || !up_active || !down_active;
+
+    if (!boundary) {
+        textureStore(out_tex, out_coord, u.fill_color);
+        return;
+    }
+
+    var neighbor_fill_count = 0u;
+    var total_neighbors = 0u;
+    for (var dy = -1; dy <= 1; dy = dy + 1) {
+        for (var dx = -1; dx <= 1; dx = dx + 1) {
+            if (dx == 0 && dy == 0) {
+                continue;
+            }
+            let nx = i32(x) + dx;
+            let ny = i32(y) + dy;
+            if (nx >= 0 && ny >= 0 && nx < i32(u.canvas_width) && ny < i32(u.canvas_height)) {
+                total_neighbors = total_neighbors + 1u;
+                if (fill_active(nx, ny)) {
+                    neighbor_fill_count = neighbor_fill_count + 1u;
+                }
+            }
+        }
+    }
+
+    if (total_neighbors == 0u || neighbor_fill_count == total_neighbors) {
+        textureStore(out_tex, out_coord, u.fill_color);
+        return;
+    }
+
+    let ratio = f32(neighbor_fill_count) / f32(total_neighbors);
+    let t = ratio * ratio * (3.0 - 2.0 * ratio);
+    let bg = textureLoad(bg_tex, canvas_coord, 0);
+    let rgb = u.fill_color.rgb * t + bg.rgb * (1.0 - t);
+    let alpha = u.fill_color.a * t;
+    textureStore(out_tex, out_coord, vec4<f32>(rgb, alpha));
+}
+"#;
+
 /// Checkerboard shader — renders the transparency checkerboard pattern without
 /// uploading any texture data.  Pure math in the fragment shader.
 pub const CHECKERBOARD_SHADER: &str = r#"

@@ -187,8 +187,10 @@ impl AsyncReadback {
     }
 }
 use super::compute::{
-    GpuBlurPipeline, GpuBrightnessContrastPipeline, GpuGradientPipeline, GpuHslPipeline,
-    GpuInvertPipeline, GpuLiquifyPipeline, GpuMedianPipeline, GpuMeshWarpDisplacementPipeline,
+    GpuBlurPipeline, GpuBrightnessContrastPipeline, GpuFillPreviewPipeline,
+    GpuFloodFillPipeline, GpuGradientPipeline, GpuHslPipeline, GpuInvertPipeline,
+    GpuLiquifyPipeline, GpuMagicWandPipeline, GpuMedianPipeline,
+    GpuMeshWarpDisplacementPipeline,
 };
 use super::pool::TexturePool;
 use super::texture::{LayerTexture, MipmapPipeline};
@@ -218,6 +220,9 @@ pub struct GpuRenderer {
     pub invert_pipeline: GpuInvertPipeline,
     pub median_pipeline: GpuMedianPipeline,
     pub gradient_pipeline: GpuGradientPipeline,
+    pub magic_wand_pipeline: GpuMagicWandPipeline,
+    pub fill_preview_pipeline: GpuFillPreviewPipeline,
+    pub flood_fill_pipeline: GpuFloodFillPipeline,
     pub liquify_pipeline: GpuLiquifyPipeline,
     pub mesh_warp_disp_pipeline: GpuMeshWarpDisplacementPipeline,
     pub mipmap_pipeline: MipmapPipeline,
@@ -256,6 +261,9 @@ impl GpuRenderer {
         let invert_pipeline = GpuInvertPipeline::new(&ctx.device);
         let median_pipeline = GpuMedianPipeline::new(&ctx.device);
         let gradient_pipeline = GpuGradientPipeline::new(&ctx.device);
+        let magic_wand_pipeline = GpuMagicWandPipeline::new(&ctx.device);
+        let fill_preview_pipeline = GpuFillPreviewPipeline::new(&ctx.device);
+        let flood_fill_pipeline = GpuFloodFillPipeline::new(&ctx.device);
         let liquify_pipeline = GpuLiquifyPipeline::new(&ctx.device);
         let mesh_warp_disp_pipeline = GpuMeshWarpDisplacementPipeline::new(&ctx.device);
         let mipmap_pipeline = MipmapPipeline::new(&ctx.device);
@@ -269,6 +277,9 @@ impl GpuRenderer {
             invert_pipeline,
             median_pipeline,
             gradient_pipeline,
+            magic_wand_pipeline,
+            fill_preview_pipeline,
+            flood_fill_pipeline,
             liquify_pipeline,
             mesh_warp_disp_pipeline,
             mipmap_pipeline,

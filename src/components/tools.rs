@@ -7,6 +7,7 @@ use eframe::egui;
 use egui::{Color32, Pos2, Rect, Vec2};
 use image::{GrayImage, Rgba};
 use rayon::prelude::*;
+use std::sync::Arc;
 use std::time::Instant;
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -466,62 +467,152 @@ pub struct SelectionToolState {
     pub drag_effective_mode: SelectionMode,
 }
 
-/// Minimax (bottleneck) distance map computed once on click.
-/// `distances[y * width + x]` holds the minimum tolerance required to reach
-/// pixel (x,y) from the seed via any 4-connected path.
-/// Value f32::INFINITY means unreachable (disconnected by a zero-tolerance path).
 #[derive(Clone, Debug)]
-pub struct MagicWandDistanceMap {
-    pub seed: (u32, u32),
-    pub target_color: Rgba<u8>,
-    /// Per-pixel minimax distance to seed (0.0–255.0).
-    pub distances: Vec<f32>,
-    pub width: u32,
-    pub height: u32,
+struct FlatLayerCache {
+    layer_index: usize,
+    gpu_generation: u64,
+    width: u32,
+    height: u32,
+    data: Arc<[u8]>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ThresholdRegionIndex {
+    width: u32,
+    height: u32,
+    distances: Arc<[u8]>,
+    buckets: Arc<Vec<Vec<u32>>>,
+    cumulative_bboxes: Arc<Vec<Option<(u32, u32, u32, u32)>>>,
 }
 
 /// Async distance map result delivered from rayon background thread.
-pub enum MagicWandAsyncResult {
-    Flood(MagicWandDistanceMap),
-    Global(Rgba<u8>, Vec<f32>, u32, u32),
+enum MagicWandAsyncResult {
+    Flood(ThresholdRegionIndex),
+    Global(ThresholdRegionIndex),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ActiveFillRegion {
+    start_x: u32,
+    start_y: u32,
+    target_color: Rgba<u8>,
+    region_index: Option<ThresholdRegionIndex>,
+    fill_mask: Vec<u8>,
+    fill_bbox: Option<(u32, u32, u32, u32)>,
+    last_threshold: Option<u8>,
+}
+
+struct FillPreviewResult {
+    request_id: u64,
+    region_index: Option<ThresholdRegionIndex>,
+    start_x: u32,
+    start_y: u32,
+    target_color: Rgba<u8>,
+    threshold: u8,
+    fill_mask: Vec<u8>,
+    fill_bbox: Option<(u32, u32, u32, u32)>,
+    dirty_bbox: Option<(u32, u32, u32, u32)>,
+    preview_region: Vec<u8>,
+    preview_region_w: u32,
+    preview_region_h: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct FillPreviewSpan {
+    y: u32,
+    x0: u32,
+    x1: u32,
+}
+
+impl ThresholdRegionIndex {
+    fn from_distances(distances: Vec<u8>, width: u32, height: u32) -> Self {
+        let mut buckets = vec![Vec::new(); 256];
+        let mut per_distance_bbox: Vec<Option<(u32, u32, u32, u32)>> = vec![None; 256];
+
+        for (idx, &distance) in distances.iter().enumerate() {
+            buckets[distance as usize].push(idx as u32);
+
+            let x = (idx as u32) % width;
+            let y = (idx as u32) / width;
+            let bbox: &mut Option<(u32, u32, u32, u32)> = &mut per_distance_bbox[distance as usize];
+            *bbox = Some(match *bbox {
+                Some((x0, y0, x1, y1)) => (x0.min(x), y0.min(y), x1.max(x), y1.max(y)),
+                None => (x, y, x, y),
+            });
+        }
+
+        let mut cumulative_bboxes = vec![None; 256];
+        let mut cumulative: Option<(u32, u32, u32, u32)> = None;
+        for (distance, bbox) in per_distance_bbox.into_iter().enumerate() {
+            cumulative = match (cumulative, bbox) {
+                (Some((ax0, ay0, ax1, ay1)), Some((bx0, by0, bx1, by1))) => {
+                    Some((ax0.min(bx0), ay0.min(by0), ax1.max(bx1), ay1.max(by1)))
+                }
+                (Some(existing), None) => Some(existing),
+                (None, Some(new_bbox)) => Some(new_bbox),
+                (None, None) => None,
+            };
+            cumulative_bboxes[distance] = cumulative;
+        }
+
+        Self {
+            width,
+            height,
+            distances: Arc::from(distances.into_boxed_slice()),
+            buckets: Arc::new(buckets),
+            cumulative_bboxes: Arc::new(cumulative_bboxes),
+        }
+    }
+
+    fn threshold_bbox(&self, threshold: u8) -> Option<(u32, u32, u32, u32)> {
+        self.cumulative_bboxes[threshold as usize]
+    }
 }
 
 /// State for Magic Wand tool (color-based selection)
 #[derive(Debug)]
 pub struct MagicWandState {
     pub tolerance: f32,
-    /// Dijkstra minimax distance map computed once per click (flood mode).
-    pub flood_distance_map: Option<MagicWandDistanceMap>,
-    /// Per-pixel distance from seed color for global select (whole-canvas mode).
-    pub global_distance_map: Option<(Rgba<u8>, Vec<f32>, u32, u32)>,
+    /// Seeded threshold-query index computed once per click.
+    region_index: Option<ThresholdRegionIndex>,
     pub anti_aliased: bool,
     /// Effective selection mode for the current/pending click.
     pub effective_mode: SelectionMode,
     pub global_select: bool,
     pub base_selection_mask: Option<GrayImage>,
+    raw_mask: Option<Vec<u8>>,
+    final_mask: Option<Vec<u8>>,
     /// Tracks the last tolerance + anti-alias that was applied, to skip no-op updates.
     pub last_applied_tolerance: f32,
     pub last_applied_aa: bool,
     /// Channel receiver for async Dijkstra/global distance map computation.
-    pub async_rx: Option<std::sync::mpsc::Receiver<MagicWandAsyncResult>>,
+    async_rx: Option<std::sync::mpsc::Receiver<MagicWandAsyncResult>>,
     /// True while an async computation is in flight (blocks new clicks).
     pub computing: bool,
+    preview_pending: bool,
+    tolerance_changed_at: Option<Instant>,
+    /// Cached flat RGBA snapshot of the active layer, keyed by layer generation.
+    cached_flat_rgba: Option<FlatLayerCache>,
 }
 
 impl Clone for MagicWandState {
     fn clone(&self) -> Self {
         Self {
             tolerance: self.tolerance,
-            flood_distance_map: self.flood_distance_map.clone(),
-            global_distance_map: self.global_distance_map.clone(),
+            region_index: self.region_index.clone(),
             anti_aliased: self.anti_aliased,
             effective_mode: self.effective_mode,
             global_select: self.global_select,
             base_selection_mask: self.base_selection_mask.clone(),
+            raw_mask: self.raw_mask.clone(),
+            final_mask: self.final_mask.clone(),
             last_applied_tolerance: self.last_applied_tolerance,
             last_applied_aa: self.last_applied_aa,
             async_rx: None,
             computing: false,
+            preview_pending: false,
+            tolerance_changed_at: self.tolerance_changed_at,
+            cached_flat_rgba: self.cached_flat_rgba.clone(),
         }
     }
 }
@@ -530,35 +621,63 @@ impl Default for MagicWandState {
     fn default() -> Self {
         Self {
             tolerance: 5.0,
-            flood_distance_map: None,
-            global_distance_map: None,
+            region_index: None,
             anti_aliased: true,
             effective_mode: SelectionMode::Replace,
             global_select: false,
             base_selection_mask: None,
+            raw_mask: None,
+            final_mask: None,
             last_applied_tolerance: -1.0,
             last_applied_aa: false,
             async_rx: None,
             computing: false,
+            preview_pending: false,
+            tolerance_changed_at: None,
+            cached_flat_rgba: None,
         }
     }
 }
 
 /// State for Fill tool (flood fill)
-#[derive(Clone, Debug)]
 pub struct FillToolState {
     /// Tolerance for color matching (0 = exact, 100 = all).
     pub tolerance: f32,
     pub anti_aliased: bool,
-    /// (start_x, start_y, target_color, flat_fill_mask)
-    /// flat_fill_mask is width*height bytes: 255=filled, 0=not filled.
-    pub active_fill: Option<(u32, u32, Rgba<u8>, Vec<u8>)>,
+    pub active_fill: Option<ActiveFillRegion>,
     pub last_preview_tolerance: f32,
     pub fill_color_u8: Option<Rgba<u8>>,
     pub use_secondary_color: bool,
     pub tolerance_changed_at: Option<Instant>,
     pub recalc_pending: bool,
     pub last_preview_aa: bool,
+    async_rx: Option<std::sync::mpsc::Receiver<FillPreviewResult>>,
+    preview_request_id: u64,
+    preview_in_flight: bool,
+    /// Cached flat RGBA snapshot of the active layer for preview recalculation.
+    cached_flat_rgba: Option<FlatLayerCache>,
+    gpu_preview_region: Vec<u8>,
+}
+
+impl Clone for FillToolState {
+    fn clone(&self) -> Self {
+        Self {
+            tolerance: self.tolerance,
+            anti_aliased: self.anti_aliased,
+            active_fill: self.active_fill.clone(),
+            last_preview_tolerance: self.last_preview_tolerance,
+            fill_color_u8: self.fill_color_u8,
+            use_secondary_color: self.use_secondary_color,
+            tolerance_changed_at: self.tolerance_changed_at,
+            recalc_pending: self.recalc_pending,
+            last_preview_aa: self.last_preview_aa,
+            async_rx: None,
+            preview_request_id: self.preview_request_id,
+            preview_in_flight: false,
+            cached_flat_rgba: self.cached_flat_rgba.clone(),
+            gpu_preview_region: self.gpu_preview_region.clone(),
+        }
+    }
 }
 
 impl Default for FillToolState {
@@ -573,6 +692,11 @@ impl Default for FillToolState {
             tolerance_changed_at: None,
             recalc_pending: false,
             last_preview_aa: true,
+            async_rx: None,
+            preview_request_id: 0,
+            preview_in_flight: false,
+            cached_flat_rgba: None,
+            gpu_preview_region: Vec::new(),
         }
     }
 }
@@ -1442,6 +1566,8 @@ pub struct ToolsPanel {
     /// Tool usage hint — displayed at the bottom-left of the app window.
     /// Set each frame based on the active tool.
     pub tool_hint: String,
+    active_layer_rgba_prewarm_rx: Option<std::sync::mpsc::Receiver<FlatLayerCache>>,
+    active_layer_rgba_prewarm_key: Option<(usize, u64, u32, u32)>,
 }
 
 impl Default for ToolsPanel {
@@ -1486,6 +1612,8 @@ impl Default for ToolsPanel {
             sel_modify_radius: 5.0,
             pending_sel_modify: None,
             tool_hint: String::new(),
+            active_layer_rgba_prewarm_rx: None,
+            active_layer_rgba_prewarm_key: None,
         }
     }
 }
@@ -1692,6 +1820,22 @@ impl ToolsPanel {
         }
     }
 
+    pub fn debug_operation_label(&self) -> Option<String> {
+        if self.active_layer_rgba_prewarm_rx.is_some() {
+            return Some(match self.active_tool {
+                Tool::MagicWand => "Building: Magic Wand Map".to_string(),
+                Tool::Fill => "Building: Fill Map".to_string(),
+                _ => "Building: Tool Map".to_string(),
+            });
+        }
+
+        if self.active_tool == Tool::MagicWand && self.magic_wand_state.computing {
+            return Some("Building: Magic Wand Map".to_string());
+        }
+
+        None
+    }
+
     /// Cancel the current tool's in-progress operation without committing.
     /// Returns true if something was cancelled, false if there was nothing to cancel.
     pub fn cancel_active_tool(&mut self, canvas_state: &mut CanvasState) -> bool {
@@ -1769,8 +1913,7 @@ impl ToolsPanel {
             }
             Tool::Fill => {
                 if self.fill_state.active_fill.is_some() {
-                    self.fill_state.active_fill = None;
-                    self.fill_state.fill_color_u8 = None;
+                    self.clear_fill_preview_state();
                     canvas_state.clear_preview_state();
                     self.stroke_tracker.cancel();
                     true
@@ -3814,9 +3957,12 @@ impl ToolsPanel {
 
     fn show_magic_wand_options(&mut self, ui: &mut egui::Ui) {
         ui.label(t!("ctx.tolerance"));
-        if let Some(new_val) = Self::tolerance_slider(ui, "mw_tol", self.magic_wand_state.tolerance)
+        if let Some(new_tolerance) =
+            Self::tolerance_slider(ui, "mw_tol", self.magic_wand_state.tolerance)
         {
-            self.magic_wand_state.tolerance = new_val;
+            self.magic_wand_state.tolerance = new_tolerance;
+            self.magic_wand_state.tolerance_changed_at = Some(Instant::now());
+            self.magic_wand_state.preview_pending = true;
             // Instant re-threshold — no debounce needed with distance-map approach
             ui.ctx().request_repaint();
         }
@@ -3830,6 +3976,8 @@ impl ToolsPanel {
         }
         aa_resp.on_hover_text(t!("ctx.anti_alias_tooltip"));
         if self.magic_wand_state.anti_aliased != old_aa {
+            self.magic_wand_state.tolerance_changed_at = Some(Instant::now());
+            self.magic_wand_state.preview_pending = true;
             ui.ctx().request_repaint();
         }
 
@@ -3937,6 +4085,9 @@ impl ToolsPanel {
     ) {
         let mut stroke_event: Option<StrokeEvent> = None;
 
+        self.poll_active_layer_rgba_prewarm();
+        self.maybe_prewarm_active_layer_rgba(canvas_state);
+
         // -- Auto-commit on layer change ---------------------------
         // If the active layer index or layer count changed (user clicked a
         // different layer, reordered, deleted, etc.), commit any tool that
@@ -3979,8 +4130,7 @@ impl ToolsPanel {
             if self.active_tool == Tool::Fill && self.fill_state.active_fill.is_some() {
                 self.commit_fill_preview(canvas_state);
                 canvas_state.clear_preview_state();
-                self.fill_state.active_fill = None;
-                self.fill_state.fill_color_u8 = None;
+                self.clear_fill_preview_state();
                 canvas_state.mark_dirty(None);
             }
             // Gradient
@@ -4121,23 +4271,16 @@ impl ToolsPanel {
         if self.active_tool != Tool::Fill && self.fill_state.active_fill.is_some() {
             self.commit_fill_preview(canvas_state);
             canvas_state.clear_preview_state();
-            self.fill_state.active_fill = None;
-            self.fill_state.fill_color_u8 = None;
+            self.clear_fill_preview_state();
             canvas_state.mark_dirty(None);
         }
 
         // Auto-commit Magic Wand if tool changed away from Magic Wand tool
         if self.active_tool != Tool::MagicWand
-            && (self.magic_wand_state.flood_distance_map.is_some()
-                || self.magic_wand_state.global_distance_map.is_some()
-                || self.magic_wand_state.computing)
+            && (self.magic_wand_state.region_index.is_some() || self.magic_wand_state.computing)
         {
             // Selection is already in canvas_state.selection_mask, just clear state
-            self.magic_wand_state.flood_distance_map = None;
-            self.magic_wand_state.global_distance_map = None;
-            self.magic_wand_state.async_rx = None;
-            self.magic_wand_state.computing = false;
-            self.magic_wand_state.last_applied_tolerance = -1.0;
+            self.clear_magic_wand_async_state();
             canvas_state.mark_dirty(None);
         }
 
@@ -5165,21 +5308,19 @@ impl ToolsPanel {
                 if let Some(rx) = &self.magic_wand_state.async_rx {
                     if let Ok(result) = rx.try_recv() {
                         match result {
-                            MagicWandAsyncResult::Flood(map) => {
-                                self.magic_wand_state.flood_distance_map = Some(map);
-                                self.magic_wand_state.global_distance_map = None;
-                            }
-                            MagicWandAsyncResult::Global(tc, dists, w, h) => {
-                                self.magic_wand_state.global_distance_map =
-                                    Some((tc, dists, w, h));
-                                self.magic_wand_state.flood_distance_map = None;
+                            MagicWandAsyncResult::Flood(index)
+                            | MagicWandAsyncResult::Global(index) => {
+                                self.magic_wand_state.region_index = Some(index);
+                                self.magic_wand_state.raw_mask = None;
+                                self.magic_wand_state.final_mask = None;
                             }
                         }
                         self.magic_wand_state.async_rx = None;
                         self.magic_wand_state.computing = false;
-                        // Force initial threshold
                         self.magic_wand_state.last_applied_tolerance = -1.0;
-                        self.update_magic_wand_preview(canvas_state);
+                        self.magic_wand_state.last_applied_aa = !self.magic_wand_state.anti_aliased;
+                        self.magic_wand_state.preview_pending = true;
+                        self.magic_wand_state.tolerance_changed_at = None;
                         ui.ctx().request_repaint();
                     } else {
                         // Still computing — keep repainting to poll
@@ -5189,15 +5330,9 @@ impl ToolsPanel {
 
                 // Commit on Enter or cancel on Escape
                 if enter_pressed || esc_pressed {
-                    if self.magic_wand_state.flood_distance_map.is_some()
-                        || self.magic_wand_state.global_distance_map.is_some()
-                        || self.magic_wand_state.computing
+                    if self.magic_wand_state.region_index.is_some() || self.magic_wand_state.computing
                     {
-                        self.magic_wand_state.flood_distance_map = None;
-                        self.magic_wand_state.global_distance_map = None;
-                        self.magic_wand_state.async_rx = None;
-                        self.magic_wand_state.computing = false;
-                        self.magic_wand_state.last_applied_tolerance = -1.0;
+                        self.clear_magic_wand_async_state();
                         canvas_state.mark_dirty(None);
                         ui.ctx().request_repaint();
                     }
@@ -5212,28 +5347,33 @@ impl ToolsPanel {
                     && let Some(pos) = canvas_pos
                 {
                     // Clear any existing distance map before computing a new one
-                    self.magic_wand_state.flood_distance_map = None;
-                    self.magic_wand_state.global_distance_map = None;
-                    self.magic_wand_state.last_applied_tolerance = -1.0;
-                    // Perform new selection (async)
+                    self.clear_magic_wand_async_state();
+                    // Perform new selection (async, or sync on GPU)
                     self.magic_wand_state.global_select = global_select;
-                    self.perform_magic_wand_selection(canvas_state, pos, click_mode);
+                    self.perform_magic_wand_selection(
+                        canvas_state,
+                        pos,
+                        click_mode,
+                        gpu_renderer.as_deref_mut(),
+                    );
                     ui.ctx().request_repaint();
                 }
 
                 // Re-threshold the distance map only when tolerance or anti-alias changed
-                let has_map = self.magic_wand_state.flood_distance_map.is_some()
-                    || self.magic_wand_state.global_distance_map.is_some();
+                let has_map = self.magic_wand_state.region_index.is_some();
                 if has_map
                     && self.active_tool == Tool::MagicWand
-                    && ((self.magic_wand_state.tolerance
-                        - self.magic_wand_state.last_applied_tolerance)
-                        .abs()
-                        > 0.001
+                    && (self.magic_wand_state.preview_pending
+                        || (self.magic_wand_state.tolerance
+                            - self.magic_wand_state.last_applied_tolerance)
+                            .abs()
+                            > 0.001
                         || self.magic_wand_state.anti_aliased
                             != self.magic_wand_state.last_applied_aa)
                 {
-                    self.update_magic_wand_preview(canvas_state);
+                    self.magic_wand_state.preview_pending = true;
+                    self.maybe_spawn_magic_wand_preview(canvas_state, gpu_renderer.as_deref_mut());
+                    ui.ctx().request_repaint();
                 }
             }
 
@@ -5250,14 +5390,70 @@ impl ToolsPanel {
                     return;
                 }
 
+                if let Some(rx) = &self.fill_state.async_rx {
+                    if let Ok(result) = rx.try_recv() {
+                        self.fill_state.async_rx = None;
+                        self.fill_state.preview_in_flight = false;
+                        if result.request_id == self.fill_state.preview_request_id {
+                            if gpu_renderer.is_some() {
+                                // GPU path: don't set last_threshold before rendering.
+                                // render_fill_preview_gpu compares last_threshold to detect
+                                // the first render and computes the full dirty region.
+                                self.fill_state.active_fill = Some(ActiveFillRegion {
+                                    start_x: result.start_x,
+                                    start_y: result.start_y,
+                                    target_color: result.target_color,
+                                    region_index: result.region_index,
+                                    fill_mask: result.fill_mask,
+                                    fill_bbox: None,
+                                    last_threshold: None,
+                                });
+                                self.fill_state.tolerance_changed_at = None;
+                                self.render_fill_preview_gpu(
+                                    canvas_state,
+                                    gpu_renderer.as_deref_mut().unwrap(),
+                                );
+                            } else {
+                                self.fill_state.active_fill = Some(ActiveFillRegion {
+                                    start_x: result.start_x,
+                                    start_y: result.start_y,
+                                    target_color: result.target_color,
+                                    region_index: result.region_index,
+                                    fill_mask: result.fill_mask,
+                                    fill_bbox: result.fill_bbox,
+                                    last_threshold: Some(result.threshold),
+                                });
+                                self.fill_state.last_preview_tolerance =
+                                    self.fill_state.tolerance;
+                                self.fill_state.last_preview_aa =
+                                    self.fill_state.anti_aliased;
+                                self.fill_state.tolerance_changed_at = None;
+                                self.apply_fill_preview_patch(
+                                    canvas_state,
+                                    result.dirty_bbox,
+                                    result.fill_bbox,
+                                    &result.preview_region,
+                                    result.preview_region_w,
+                                    result.preview_region_h,
+                                );
+                            }
+                        }
+                        if self.fill_state.recalc_pending {
+                            self.maybe_spawn_fill_preview(canvas_state, gpu_renderer.as_deref_mut());
+                        }
+                        ui.ctx().request_repaint();
+                    } else if self.fill_state.preview_in_flight {
+                        ui.ctx().request_repaint();
+                    }
+                }
+
                 // Commit on Enter or cancel on Escape
                 if enter_pressed || esc_pressed {
                     if self.fill_state.active_fill.is_some() && !esc_pressed {
                         self.commit_fill_preview(canvas_state);
                     } else if self.fill_state.active_fill.is_some() {
                         // Cancel preview on Escape
-                        self.fill_state.active_fill = None;
-                        self.fill_state.fill_color_u8 = None;
+                        self.clear_fill_preview_state();
                         canvas_state.clear_preview_state();
                         self.stroke_tracker.cancel();
                     }
@@ -5279,6 +5475,7 @@ impl ToolsPanel {
                         use_secondary,
                         primary_color_f32,
                         secondary_color_f32,
+                        gpu_renderer.as_deref_mut(),
                     );
                 }
 
@@ -5302,9 +5499,9 @@ impl ToolsPanel {
                         self.fill_state.recalc_pending = true;
                     }
 
-                    self.update_fill_preview(canvas_state);
+                    self.maybe_spawn_fill_preview(canvas_state, gpu_renderer.as_deref_mut());
 
-                    if self.fill_state.recalc_pending {
+                    if self.fill_state.recalc_pending || self.fill_state.preview_in_flight {
                         ui.ctx().request_repaint();
                     }
                 }
@@ -10239,11 +10436,854 @@ impl ToolsPanel {
 
     /// Magic Wand selection — spawn async Dijkstra minimax distance map computation.
     /// Result arrives via channel; tolerance changes re-threshold instantly.
+    fn cached_active_layer_rgba(
+        cache: &mut Option<FlatLayerCache>,
+        canvas_state: &CanvasState,
+    ) -> Option<Arc<[u8]>> {
+        let layer_index = canvas_state.active_layer_index;
+        let layer = canvas_state.layers.get(layer_index)?;
+
+        let needs_refresh = cache.as_ref().is_none_or(|entry| {
+            entry.layer_index != layer_index
+                || entry.gpu_generation != layer.gpu_generation
+                || entry.width != canvas_state.width
+                || entry.height != canvas_state.height
+        });
+
+        if needs_refresh {
+            let data: Arc<[u8]> =
+                Arc::from(layer.pixels.to_rgba_image().into_raw().into_boxed_slice());
+            *cache = Some(FlatLayerCache {
+                layer_index,
+                gpu_generation: layer.gpu_generation,
+                width: canvas_state.width,
+                height: canvas_state.height,
+                data: data.clone(),
+            });
+            Some(data)
+        } else {
+            cache.as_ref().map(|entry| entry.data.clone())
+        }
+    }
+
+    fn clear_fill_preview_state(&mut self) {
+        self.fill_state.active_fill = None;
+        self.fill_state.fill_color_u8 = None;
+        self.fill_state.tolerance_changed_at = None;
+        self.fill_state.recalc_pending = false;
+        self.fill_state.async_rx = None;
+        self.fill_state.preview_in_flight = false;
+        self.fill_state.cached_flat_rgba = None;
+        self.fill_state.gpu_preview_region.clear();
+    }
+
+    fn clear_magic_wand_async_state(&mut self) {
+        self.magic_wand_state.region_index = None;
+        self.magic_wand_state.async_rx = None;
+        self.magic_wand_state.computing = false;
+        self.magic_wand_state.preview_pending = false;
+        self.magic_wand_state.tolerance_changed_at = None;
+        self.magic_wand_state.last_applied_tolerance = -1.0;
+        self.magic_wand_state.raw_mask = None;
+        self.magic_wand_state.final_mask = None;
+    }
+
+    #[inline]
+    fn tolerance_threshold_u8(tolerance: f32) -> u8 {
+        let normalized = (tolerance / 100.0).clamp(0.0, 1.0);
+        (normalized * normalized * 255.0).round().clamp(0.0, 255.0) as u8
+    }
+
+    #[inline]
+    fn selection_mode_to_gpu(mode: SelectionMode) -> u32 {
+        match mode {
+            SelectionMode::Replace => 0,
+            SelectionMode::Add => 1,
+            SelectionMode::Subtract => 2,
+            SelectionMode::Intersect => 3,
+        }
+    }
+
+    #[inline]
+    fn union_bbox(
+        a: Option<(u32, u32, u32, u32)>,
+        b: Option<(u32, u32, u32, u32)>,
+    ) -> Option<(u32, u32, u32, u32)> {
+        match (a, b) {
+            (Some((ax0, ay0, ax1, ay1)), Some((bx0, by0, bx1, by1))) => {
+                Some((ax0.min(bx0), ay0.min(by0), ax1.max(bx1), ay1.max(by1)))
+            }
+            (Some(bbox), None) | (None, Some(bbox)) => Some(bbox),
+            (None, None) => None,
+        }
+    }
+
+    fn apply_fill_preview_patch(
+        &mut self,
+        canvas_state: &mut CanvasState,
+        dirty_bbox: Option<(u32, u32, u32, u32)>,
+        fill_bbox: Option<(u32, u32, u32, u32)>,
+        preview_region: &[u8],
+        preview_region_w: u32,
+        preview_region_h: u32,
+    ) {
+        if let Some(dirty_bbox) = dirty_bbox {
+            if canvas_state.preview_layer.is_none() {
+                canvas_state.preview_layer =
+                    Some(TiledImage::new(canvas_state.width, canvas_state.height));
+            }
+            if let Some(preview) = canvas_state.preview_layer.as_mut() {
+                // Use blit_rgba_at_replace so that pixels becoming transparent
+                // (tolerance decreased, unfilled) properly clear the preview layer.
+                preview.blit_rgba_at_replace(
+                    dirty_bbox.0 as i32,
+                    dirty_bbox.1 as i32,
+                    preview_region_w,
+                    preview_region_h,
+                    preview_region,
+                );
+            }
+
+            let dirty_rect = egui::Rect::from_min_max(
+                egui::pos2(dirty_bbox.0 as f32, dirty_bbox.1 as f32),
+                egui::pos2(
+                    (dirty_bbox.2 + 1).min(canvas_state.width) as f32,
+                    (dirty_bbox.3 + 1).min(canvas_state.height) as f32,
+                ),
+            );
+            canvas_state.preview_dirty_rect = Some(match canvas_state.preview_dirty_rect {
+                Some(existing) => existing.union(dirty_rect),
+                None => dirty_rect,
+            });
+            canvas_state.preview_generation = canvas_state.preview_generation.wrapping_add(1);
+        }
+
+        if let Some(bbox) = fill_bbox {
+            let fill_bounds = egui::Rect::from_min_max(
+                egui::pos2(bbox.0 as f32, bbox.1 as f32),
+                egui::pos2(
+                    (bbox.2 + 1).min(canvas_state.width) as f32,
+                    (bbox.3 + 1).min(canvas_state.height) as f32,
+                ),
+            );
+            canvas_state.preview_stroke_bounds = Some(fill_bounds);
+            self.stroke_tracker.expand_bounds(fill_bounds);
+        } else {
+            canvas_state.preview_stroke_bounds = None;
+        }
+    }
+
+    fn render_fill_preview_gpu(
+        &mut self,
+        canvas_state: &mut CanvasState,
+        gpu_renderer: &mut crate::gpu::GpuRenderer,
+    ) {
+        let Some(active_fill) = self.fill_state.active_fill.as_mut() else {
+            return;
+        };
+        let Some(region_index) = active_fill.region_index.as_ref() else {
+            return;
+        };
+        let Some(fill_color_u8) = self.fill_state.fill_color_u8 else {
+            return;
+        };
+        let Some(flat_rgba) =
+            Self::cached_active_layer_rgba(&mut self.fill_state.cached_flat_rgba, canvas_state)
+        else {
+            return;
+        };
+
+        let threshold = Self::tolerance_threshold_u8(self.fill_state.tolerance);
+        let anti_aliased = self.fill_state.anti_aliased;
+        let color_or_aa_changed = self.fill_state.last_preview_aa != anti_aliased
+            || self.fill_state.last_preview_tolerance < 0.0
+            || self.fill_state.fill_color_u8 != Some(fill_color_u8);
+        let old_bbox = active_fill.fill_bbox;
+        let new_bbox = region_index.threshold_bbox(threshold);
+        let mut dirty_bbox = if active_fill.last_threshold != Some(threshold) || color_or_aa_changed {
+            Self::union_bbox(old_bbox, new_bbox)
+        } else {
+            None
+        };
+
+        if let Some((x0, y0, x1, y1)) = dirty_bbox {
+            let pad = if anti_aliased { 1 } else { 0 };
+            dirty_bbox = Some((
+                x0.saturating_sub(pad),
+                y0.saturating_sub(pad),
+                (x1 + pad).min(canvas_state.width.saturating_sub(1)),
+                (y1 + pad).min(canvas_state.height.saturating_sub(1)),
+            ));
+        }
+
+        active_fill.last_threshold = Some(threshold);
+        active_fill.fill_bbox = new_bbox;
+
+        if let Some((x0, y0, x1, y1)) = dirty_bbox {
+            let region_w = x1.saturating_sub(x0) + 1;
+            let region_h = y1.saturating_sub(y0) + 1;
+            let selection_mask = canvas_state.selection_mask.as_ref().map(|mask| {
+                (
+                    mask.as_raw().as_slice(),
+                    mask.as_raw().as_ptr() as usize,
+                )
+            });
+            let distance_key = region_index.distances.as_ref().as_ptr() as usize;
+            let background_key = flat_rgba.as_ref().as_ptr() as usize;
+
+            gpu_renderer.fill_preview_pipeline.generate_into(
+                &gpu_renderer.ctx,
+                region_index.distances.as_ref(),
+                distance_key,
+                flat_rgba.as_ref(),
+                background_key,
+                selection_mask,
+                canvas_state.width,
+                canvas_state.height,
+                x0,
+                y0,
+                region_w,
+                region_h,
+                threshold,
+                anti_aliased,
+                fill_color_u8.0,
+                &mut self.fill_state.gpu_preview_region,
+            );
+            let preview_region = std::mem::take(&mut self.fill_state.gpu_preview_region);
+
+            self.apply_fill_preview_patch(
+                canvas_state,
+                Some((x0, y0, x1, y1)),
+                new_bbox,
+                &preview_region,
+                region_w,
+                region_h,
+            );
+            self.fill_state.gpu_preview_region = preview_region;
+        } else {
+            canvas_state.preview_stroke_bounds = new_bbox.map(|bbox| {
+                egui::Rect::from_min_max(
+                    egui::pos2(bbox.0 as f32, bbox.1 as f32),
+                    egui::pos2(
+                        (bbox.2 + 1).min(canvas_state.width) as f32,
+                        (bbox.3 + 1).min(canvas_state.height) as f32,
+                    ),
+                )
+            });
+        }
+
+        self.fill_state.last_preview_tolerance = self.fill_state.tolerance;
+        self.fill_state.last_preview_aa = anti_aliased;
+        self.fill_state.tolerance_changed_at = None;
+        self.fill_state.recalc_pending = false;
+        self.fill_state.preview_in_flight = false;
+    }
+
+    fn poll_active_layer_rgba_prewarm(&mut self) {
+        let Some(rx) = &self.active_layer_rgba_prewarm_rx else {
+            return;
+        };
+        if let Ok(cache) = rx.try_recv() {
+            let key = (cache.layer_index, cache.gpu_generation, cache.width, cache.height);
+            self.magic_wand_state.cached_flat_rgba = Some(cache.clone());
+            self.fill_state.cached_flat_rgba = Some(cache);
+            self.active_layer_rgba_prewarm_rx = None;
+            self.active_layer_rgba_prewarm_key = Some(key);
+        }
+    }
+
+    fn maybe_prewarm_active_layer_rgba(&mut self, canvas_state: &CanvasState) {
+        if !matches!(self.active_tool, Tool::MagicWand | Tool::Fill) {
+            return;
+        }
+
+        let layer_index = canvas_state.active_layer_index;
+        let Some(layer) = canvas_state.layers.get(layer_index) else {
+            return;
+        };
+        let key = (
+            layer_index,
+            layer.gpu_generation,
+            canvas_state.width,
+            canvas_state.height,
+        );
+
+        let already_cached = self
+            .magic_wand_state
+            .cached_flat_rgba
+            .as_ref()
+            .is_some_and(|entry| {
+                (entry.layer_index, entry.gpu_generation, entry.width, entry.height) == key
+            })
+            || self
+                .fill_state
+                .cached_flat_rgba
+                .as_ref()
+                .is_some_and(|entry| {
+                    (entry.layer_index, entry.gpu_generation, entry.width, entry.height) == key
+                });
+        if already_cached || self.active_layer_rgba_prewarm_key == Some(key) {
+            return;
+        }
+
+        let pixels = layer.pixels.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.active_layer_rgba_prewarm_rx = Some(rx);
+        self.active_layer_rgba_prewarm_key = Some(key);
+
+        rayon::spawn(move || {
+            let data: Arc<[u8]> = Arc::from(pixels.to_rgba_image().into_raw().into_boxed_slice());
+            let _ = tx.send(FlatLayerCache {
+                layer_index: key.0,
+                gpu_generation: key.1,
+                width: key.2,
+                height: key.3,
+                data,
+            });
+        });
+    }
+
+    #[inline]
+    fn threshold_alpha(distance: u8, threshold: u8, anti_aliased: bool) -> u8 {
+        if !anti_aliased {
+            return if distance <= threshold { 255 } else { 0 };
+        }
+
+        let aa_band = 5u8;
+        if distance <= threshold {
+            255
+        } else if distance <= threshold.saturating_add(aa_band) {
+            let delta = distance.saturating_sub(threshold) as f32;
+            (255.0 * (1.0 - delta / aa_band as f32).max(0.0)) as u8
+        } else {
+            0
+        }
+    }
+
+    fn apply_threshold_delta<F>(
+        index: &ThresholdRegionIndex,
+        mask: &mut [u8],
+        old_threshold: Option<u8>,
+        old_anti_aliased: bool,
+        new_threshold: u8,
+        new_anti_aliased: bool,
+        mut on_change: F,
+    ) where
+        F: FnMut(usize, u8),
+    {
+        let aa_band = if old_anti_aliased || new_anti_aliased { 5u8 } else { 0u8 };
+        let (start_distance, end_distance) = match old_threshold {
+            Some(previous) => (
+                previous.min(new_threshold),
+                previous.max(new_threshold).saturating_add(aa_band),
+            ),
+            None => (0, new_threshold.saturating_add(aa_band)),
+        };
+
+        for distance in start_distance..=end_distance {
+            let old_alpha = old_threshold
+                .map(|threshold| Self::threshold_alpha(distance, threshold, old_anti_aliased))
+                .unwrap_or(0);
+            let new_alpha = Self::threshold_alpha(distance, new_threshold, new_anti_aliased);
+            if old_alpha == new_alpha {
+                continue;
+            }
+            for &idx in index.buckets[distance as usize].iter() {
+                let idx = idx as usize;
+                if mask[idx] != new_alpha {
+                    mask[idx] = new_alpha;
+                    on_change(idx, new_alpha);
+                }
+            }
+        }
+    }
+
+    fn build_threshold_mask(index: &ThresholdRegionIndex, threshold: u8, anti_aliased: bool) -> Vec<u8> {
+        let mut mask = vec![0u8; (index.width * index.height) as usize];
+        Self::apply_threshold_delta(index, &mut mask, None, false, threshold, anti_aliased, |_, _| {});
+        mask
+    }
+
+    #[inline]
+    fn merge_magic_wand_value(
+        effective_mode: SelectionMode,
+        base_mask: Option<&[u8]>,
+        idx: usize,
+        raw_value: u8,
+    ) -> u8 {
+        match effective_mode {
+            SelectionMode::Replace => raw_value,
+            SelectionMode::Add => base_mask
+                .map(|base| base[idx].max(raw_value))
+                .unwrap_or(raw_value),
+            SelectionMode::Subtract => base_mask
+                .map(|base| base[idx].saturating_sub(raw_value))
+                .unwrap_or(0),
+            SelectionMode::Intersect => base_mask
+                .map(|base| ((base[idx] as u16 * raw_value as u16) / 255) as u8)
+                .unwrap_or(0),
+        }
+    }
+
+    fn apply_magic_wand_preview(
+        &mut self,
+        canvas_state: &mut CanvasState,
+        gpu_renderer: Option<&mut crate::gpu::GpuRenderer>,
+    ) {
+        let Some(index) = self.magic_wand_state.region_index.as_ref() else {
+            return;
+        };
+        let threshold = Self::tolerance_threshold_u8(self.magic_wand_state.tolerance);
+        let previous_threshold = if self.magic_wand_state.last_applied_tolerance >= 0.0 {
+            Some(Self::tolerance_threshold_u8(
+                self.magic_wand_state.last_applied_tolerance,
+            ))
+        } else {
+            None
+        };
+        let n = (index.width * index.height) as usize;
+        let base_raw = self
+            .magic_wand_state
+            .base_selection_mask
+            .as_ref()
+            .map(|base| base.as_raw().as_slice());
+
+        if let Some(gpu) = gpu_renderer {
+            let n = (index.width * index.height) as usize;
+            let final_mask = self
+                .magic_wand_state
+                .final_mask
+                .get_or_insert_with(|| vec![0u8; n]);
+            let distance_key = index.distances.as_ref().as_ptr() as usize;
+            let base_key = self
+                .magic_wand_state
+                .base_selection_mask
+                .as_ref()
+                .map(|base| base.as_raw().as_ptr() as usize);
+
+            gpu.magic_wand_pipeline.generate_into(
+                &gpu.ctx,
+                index.distances.as_ref(),
+                distance_key,
+                base_raw,
+                base_key,
+                index.width,
+                index.height,
+                threshold,
+                self.magic_wand_state.anti_aliased,
+                Self::selection_mode_to_gpu(self.magic_wand_state.effective_mode),
+                final_mask,
+            );
+
+            canvas_state.selection_mask =
+                GrayImage::from_raw(index.width, index.height, final_mask.clone());
+            canvas_state.invalidate_selection_overlay();
+            canvas_state.mark_dirty(None);
+            self.magic_wand_state.last_applied_tolerance = self.magic_wand_state.tolerance;
+            self.magic_wand_state.last_applied_aa = self.magic_wand_state.anti_aliased;
+            self.magic_wand_state.preview_pending = false;
+            self.magic_wand_state.tolerance_changed_at = None;
+            self.magic_wand_state.raw_mask = None;
+            return;
+        }
+
+        let raw_mask = self
+            .magic_wand_state
+            .raw_mask
+            .get_or_insert_with(|| vec![0u8; n]);
+        let final_mask = self.magic_wand_state.final_mask.get_or_insert_with(|| {
+            match (self.magic_wand_state.effective_mode, base_raw) {
+                (SelectionMode::Add | SelectionMode::Subtract, Some(base)) => base.to_vec(),
+                _ => vec![0u8; n],
+            }
+        });
+
+        if previous_threshold.is_none() {
+            match (self.magic_wand_state.effective_mode, base_raw) {
+                (SelectionMode::Add | SelectionMode::Subtract, Some(base)) => {
+                    final_mask.copy_from_slice(base);
+                }
+                _ => final_mask.fill(0),
+            }
+        }
+
+        Self::apply_threshold_delta(
+            index,
+            raw_mask,
+            previous_threshold,
+            self.magic_wand_state.last_applied_aa,
+            threshold,
+            self.magic_wand_state.anti_aliased,
+            |idx, raw_value| {
+                final_mask[idx] = Self::merge_magic_wand_value(
+                    self.magic_wand_state.effective_mode,
+                    base_raw,
+                    idx,
+                    raw_value,
+                );
+            },
+        );
+
+        canvas_state.selection_mask = GrayImage::from_raw(index.width, index.height, final_mask.clone());
+        canvas_state.invalidate_selection_overlay();
+        canvas_state.mark_dirty(None);
+        self.magic_wand_state.last_applied_tolerance = self.magic_wand_state.tolerance;
+        self.magic_wand_state.last_applied_aa = self.magic_wand_state.anti_aliased;
+        self.magic_wand_state.preview_pending = false;
+        self.magic_wand_state.tolerance_changed_at = None;
+    }
+
+    fn maybe_spawn_magic_wand_preview(
+        &mut self,
+        canvas_state: &mut CanvasState,
+        gpu_renderer: Option<&mut crate::gpu::GpuRenderer>,
+    ) {
+        if !self.magic_wand_state.preview_pending {
+            return;
+        }
+        if let Some(changed_at) = self.magic_wand_state.tolerance_changed_at
+            && changed_at.elapsed().as_millis() < 20
+        {
+            return;
+        }
+        self.apply_magic_wand_preview(canvas_state, gpu_renderer);
+    }
+
+    fn build_fill_preview_region(
+        fill_mask: &[u8],
+        fill_bbox: (u32, u32, u32, u32),
+        fill_color: Rgba<u8>,
+        selection_mask: Option<&GrayImage>,
+        anti_aliased: bool,
+        width: u32,
+        height: u32,
+        background_rgba: &[u8],
+    ) -> Vec<u8> {
+        let (bx0, by0, bx1, by1) = fill_bbox;
+        let wu = width as usize;
+        let region_w = bx1.saturating_sub(bx0) + 1;
+        let region_h = by1.saturating_sub(by0) + 1;
+        let mut region_buf = vec![0u8; region_w as usize * region_h as usize * 4];
+
+        let spans = Self::collect_fill_preview_spans(
+            fill_mask,
+            fill_bbox,
+            selection_mask,
+            width,
+            height,
+        );
+
+        for span in spans {
+            let row_offset = (span.y - by0) as usize * region_w as usize * 4;
+            for x in span.x0..=span.x1 {
+                let local_idx = row_offset + (x - bx0) as usize * 4;
+                region_buf[local_idx..local_idx + 4].copy_from_slice(&fill_color.0);
+            }
+
+            if !anti_aliased {
+                continue;
+            }
+
+            for x in span.x0..=span.x1 {
+                let has_above = span.y > 0;
+                let has_below = span.y + 1 < height;
+                let touches_edge = x == span.x0
+                    || x == span.x1
+                    || !has_above
+                    || !has_below
+                    || !Self::fill_pixel_is_active(
+                        fill_mask,
+                        selection_mask,
+                        width,
+                        height,
+                        x,
+                        span.y - 1,
+                    )
+                    || !Self::fill_pixel_is_active(
+                        fill_mask,
+                        selection_mask,
+                        width,
+                        height,
+                        x,
+                        span.y + 1,
+                    );
+                if !touches_edge {
+                    continue;
+                }
+
+                let mut neighbor_fill_count = 0u8;
+                let mut total_neighbors = 0u8;
+                for dy in -1i32..=1 {
+                    for dx in -1i32..=1 {
+                        if dx == 0 && dy == 0 {
+                            continue;
+                        }
+                        let nx = x as i32 + dx;
+                        let ny = span.y as i32 + dy;
+                        if nx >= 0 && nx < width as i32 && ny >= 0 && ny < height as i32 {
+                            total_neighbors += 1;
+                            if Self::fill_pixel_is_active(
+                                fill_mask,
+                                selection_mask,
+                                width,
+                                height,
+                                nx as u32,
+                                ny as u32,
+                            ) {
+                                neighbor_fill_count += 1;
+                            }
+                        }
+                    }
+                }
+
+                if total_neighbors > 0 && neighbor_fill_count < total_neighbors {
+                    let idx = span.y as usize * wu + x as usize;
+                    let ratio = neighbor_fill_count as f32 / total_neighbors as f32;
+                    let t = ratio * ratio * (3.0 - 2.0 * ratio);
+                    let bg_base = idx * 4;
+                    let bg = [
+                        background_rgba[bg_base],
+                        background_rgba[bg_base + 1],
+                        background_rgba[bg_base + 2],
+                        background_rgba[bg_base + 3],
+                    ];
+                    let local_idx = row_offset + (x - bx0) as usize * 4;
+                    let blend = |fc: u8, bc: u8, factor: f32| -> u8 {
+                        (fc as f32 * factor + bc as f32 * (1.0 - factor)).round() as u8
+                    };
+                    region_buf[local_idx] = blend(fill_color.0[0], bg[0], t);
+                    region_buf[local_idx + 1] = blend(fill_color.0[1], bg[1], t);
+                    region_buf[local_idx + 2] = blend(fill_color.0[2], bg[2], t);
+                    region_buf[local_idx + 3] = (fill_color.0[3] as f32 * t).round() as u8;
+                }
+            }
+        }
+
+        region_buf
+    }
+
+
+    #[inline]
+    fn fill_pixel_is_active(
+        fill_mask: &[u8],
+        selection_mask: Option<&GrayImage>,
+        width: u32,
+        height: u32,
+        x: u32,
+        y: u32,
+    ) -> bool {
+        if x >= width || y >= height {
+            return false;
+        }
+        let idx = y as usize * width as usize + x as usize;
+        fill_mask[idx] != 0
+            && selection_mask
+                .map(|mask| mask.get_pixel(x, y).0[0] > 0)
+                .unwrap_or(true)
+    }
+
+    fn collect_fill_preview_spans(
+        fill_mask: &[u8],
+        fill_bbox: (u32, u32, u32, u32),
+        selection_mask: Option<&GrayImage>,
+        width: u32,
+        height: u32,
+    ) -> Vec<FillPreviewSpan> {
+        let (bx0, by0, bx1, by1) = fill_bbox;
+        let mut spans = Vec::new();
+        let row_width = width as usize;
+
+        for y in by0..=by1.min(height.saturating_sub(1)) {
+            let row_offset = y as usize * row_width;
+            let mut x = bx0;
+            while x <= bx1.min(width.saturating_sub(1)) {
+                let idx = row_offset + x as usize;
+                if fill_mask[idx] == 0
+                    || selection_mask
+                        .map(|mask| mask.get_pixel(x, y).0[0] == 0)
+                        .unwrap_or(false)
+                {
+                    x += 1;
+                    continue;
+                }
+
+                let x0 = x;
+                x += 1;
+                while x <= bx1.min(width.saturating_sub(1)) {
+                    let idx = row_offset + x as usize;
+                    if fill_mask[idx] == 0
+                        || selection_mask
+                            .map(|mask| mask.get_pixel(x, y).0[0] == 0)
+                            .unwrap_or(false)
+                    {
+                        break;
+                    }
+                    x += 1;
+                }
+
+                spans.push(FillPreviewSpan { y, x0, x1: x - 1 });
+            }
+        }
+
+        spans
+    }
+    fn maybe_spawn_fill_preview(
+        &mut self,
+        canvas_state: &mut CanvasState,
+        gpu_renderer: Option<&mut crate::gpu::GpuRenderer>,
+    ) {
+        if !self.fill_state.recalc_pending || self.fill_state.preview_in_flight {
+            return;
+        }
+        if let Some(changed_at) = self.fill_state.tolerance_changed_at
+            && changed_at.elapsed().as_millis() < 50
+        {
+            return;
+        }
+        let Some(mut active_fill) = self.fill_state.active_fill.clone() else {
+            return;
+        };
+        let Some(fill_color_u8) = self.fill_state.fill_color_u8 else {
+            return;
+        };
+        let Some(flat_rgba) = Self::cached_active_layer_rgba(&mut self.fill_state.cached_flat_rgba, canvas_state) else {
+            return;
+        };
+        let gpu_available = gpu_renderer.is_some();
+
+        if let Some(gpu) = gpu_renderer
+            && active_fill.region_index.is_some()
+        {
+            self.render_fill_preview_gpu(canvas_state, gpu);
+            return;
+        }
+
+        let tolerance = self.fill_state.tolerance;
+        let threshold = Self::tolerance_threshold_u8(tolerance);
+        let anti_aliased = self.fill_state.anti_aliased;
+        let selection_mask = canvas_state.selection_mask.clone();
+        let width = canvas_state.width;
+        let height = canvas_state.height;
+        let color_or_aa_changed = self.fill_state.last_preview_aa != anti_aliased
+            || self.fill_state.last_preview_tolerance < 0.0
+            || self.fill_state.fill_color_u8 != Some(fill_color_u8);
+        let mut dirty_bbox: Option<(u32, u32, u32, u32)> = None;
+
+        if let Some(region_index) = active_fill.region_index.as_ref() {
+            let previous_threshold = active_fill.last_threshold;
+            if previous_threshold != Some(threshold) || active_fill.fill_mask.is_empty() {
+                if active_fill.fill_mask.len() != (width * height) as usize {
+                    active_fill.fill_mask = vec![0u8; (width * height) as usize];
+                }
+                Self::apply_threshold_delta(
+                    region_index,
+                    &mut active_fill.fill_mask,
+                    previous_threshold,
+                    false,
+                    threshold,
+                    false,
+                    |idx, _| {
+                        let x = (idx as u32) % width;
+                        let y = (idx as u32) / width;
+                        dirty_bbox = Some(match dirty_bbox {
+                            Some((x0, y0, x1, y1)) => {
+                                (x0.min(x), y0.min(y), x1.max(x), y1.max(y))
+                            }
+                            None => (x, y, x, y),
+                        });
+                    },
+                );
+                active_fill.last_threshold = Some(threshold);
+                active_fill.fill_bbox = region_index.threshold_bbox(threshold);
+            }
+            self.fill_state.active_fill = Some(active_fill.clone());
+        }
+
+        if dirty_bbox.is_none() && color_or_aa_changed {
+            dirty_bbox = active_fill.fill_bbox;
+        }
+
+        if let Some((x0, y0, x1, y1)) = dirty_bbox {
+            let pad = if anti_aliased { 1 } else { 0 };
+            dirty_bbox = Some((
+                x0.saturating_sub(pad),
+                y0.saturating_sub(pad),
+                (x1 + pad).min(width.saturating_sub(1)),
+                (y1 + pad).min(height.saturating_sub(1)),
+            ));
+        }
+
+        let request_id = self.fill_state.preview_request_id.wrapping_add(1);
+        self.fill_state.preview_request_id = request_id;
+        self.fill_state.preview_in_flight = true;
+        self.fill_state.recalc_pending = false;
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.fill_state.async_rx = Some(rx);
+        rayon::spawn(move || {
+            let (region_index, fill_mask, fill_bbox) = if let Some(region_index) = active_fill.region_index.clone() {
+                (Some(region_index), active_fill.fill_mask.clone(), active_fill.fill_bbox)
+            } else {
+                let region_index = Self::compute_flood_distance_map(
+                    &flat_rgba,
+                    (active_fill.start_x, active_fill.start_y),
+                    &active_fill.target_color,
+                    width,
+                    height,
+                );
+                let fill_mask = Self::build_threshold_mask(&region_index, threshold, false);
+                let fill_bbox = region_index.threshold_bbox(threshold);
+                (Some(region_index), fill_mask, fill_bbox)
+            };
+
+            let dirty_bbox = dirty_bbox.or(fill_bbox);
+
+            let (preview_region, preview_region_w, preview_region_h) = if gpu_available {
+                (Vec::new(), 0, 0)
+            } else if let Some(bbox) = dirty_bbox {
+                let region_w = bbox.2.saturating_sub(bbox.0) + 1;
+                let region_h = bbox.3.saturating_sub(bbox.1) + 1;
+                (
+                    Self::build_fill_preview_region(
+                        &fill_mask,
+                        bbox,
+                        fill_color_u8,
+                        selection_mask.as_ref(),
+                        anti_aliased,
+                        width,
+                        height,
+                        &flat_rgba,
+                    ),
+                    region_w,
+                    region_h,
+                )
+            } else {
+                (Vec::new(), 0, 0)
+            };
+
+            let _ = tx.send(FillPreviewResult {
+                request_id,
+                region_index,
+                start_x: active_fill.start_x,
+                start_y: active_fill.start_y,
+                target_color: active_fill.target_color,
+                threshold,
+                fill_mask,
+                fill_bbox,
+                dirty_bbox,
+                preview_region,
+                preview_region_w,
+                preview_region_h,
+            });
+        });
+    }
+
     fn perform_magic_wand_selection(
         &mut self,
         canvas_state: &mut CanvasState,
         start_pos: (u32, u32),
         mode: SelectionMode,
+        gpu_renderer: Option<&mut crate::gpu::GpuRenderer>,
     ) {
         // Bounds check
         if start_pos.0 >= canvas_state.width || start_pos.1 >= canvas_state.height {
@@ -10266,14 +11306,59 @@ impl ToolsPanel {
             self.magic_wand_state.base_selection_mask = None;
         }
 
-        // Pre-extract layer as flat RGBA — avoids per-pixel TiledImage lookups during Dijkstra
-        let flat_rgba: Vec<u8> = active_layer.pixels.to_rgba_image().into_raw();
+        let Some(flat_rgba) =
+            Self::cached_active_layer_rgba(&mut self.magic_wand_state.cached_flat_rgba, canvas_state)
+        else {
+            return;
+        };
 
         let w = canvas_state.width;
         let h = canvas_state.height;
         let global = self.magic_wand_state.global_select;
 
-        // Spawn async computation
+        // GPU path: compute distances synchronously on GPU
+        if let Some(gpu) = gpu_renderer {
+            let input_key = flat_rgba.as_ref().as_ptr() as usize;
+            let mut distances = Vec::new();
+            let ok = if global {
+                gpu.flood_fill_pipeline.compute_global_distances(
+                    &gpu.ctx,
+                    flat_rgba.as_ref(),
+                    input_key,
+                    target_color.0,
+                    w,
+                    h,
+                    &mut distances,
+                )
+            } else {
+                gpu.flood_fill_pipeline.compute_flood_distances(
+                    &gpu.ctx,
+                    flat_rgba.as_ref(),
+                    input_key,
+                    target_color.0,
+                    start_pos.0,
+                    start_pos.1,
+                    w,
+                    h,
+                    &mut distances,
+                )
+            };
+            if ok {
+                let region_index =
+                    ThresholdRegionIndex::from_distances(distances, w, h);
+                self.magic_wand_state.region_index = Some(region_index);
+                self.magic_wand_state.computing = false;
+                self.magic_wand_state.preview_pending = true;
+                self.magic_wand_state.last_applied_tolerance = -1.0;
+                self.magic_wand_state.raw_mask = None;
+                self.magic_wand_state.final_mask = None;
+                self.apply_magic_wand_preview(canvas_state, Some(gpu));
+                return;
+            }
+            // GPU failed — fall through to CPU path
+        }
+
+        // CPU fallback: spawn async computation
         let (tx, rx) = std::sync::mpsc::channel();
         self.magic_wand_state.async_rx = Some(rx);
         self.magic_wand_state.computing = true;
@@ -10281,7 +11366,7 @@ impl ToolsPanel {
         rayon::spawn(move || {
             let result = if global {
                 let map = Self::compute_global_distance_map(&flat_rgba, &target_color, w, h);
-                MagicWandAsyncResult::Global(target_color, map, w, h)
+                MagicWandAsyncResult::Global(map)
             } else {
                 let map = Self::compute_flood_distance_map(
                     &flat_rgba,
@@ -10296,134 +11381,6 @@ impl ToolsPanel {
         });
     }
 
-    /// Re-threshold the pre-computed distance map with the current tolerance.
-    /// Only called when tolerance or anti-alias actually changed (cached check in caller).
-    /// Uses parallel threshold scan + direct raw buffer writes for speed.
-    fn update_magic_wand_preview(&mut self, canvas_state: &mut CanvasState) {
-        let w = canvas_state.width;
-        let h = canvas_state.height;
-        let n = (w as usize) * (h as usize);
-        let tolerance_threshold = (self.magic_wand_state.tolerance / 100.0) * 255.0;
-        let anti_aliased = self.magic_wand_state.anti_aliased;
-
-        // Pick the distance slice to threshold
-        let distances: &[f32] =
-            if let Some(ref map) = self.magic_wand_state.flood_distance_map {
-                &map.distances
-            } else if let Some((_, ref dists, _, _)) = self.magic_wand_state.global_distance_map {
-                dists
-            } else {
-                return;
-            };
-
-        // Parallel threshold: write directly into a raw Vec<u8> buffer
-        let mut mask_buf = vec![0u8; n];
-        if anti_aliased {
-            let aa_band = (255.0 * 0.02_f32).max(3.0);
-            mask_buf
-                .par_chunks_mut(4096)
-                .enumerate()
-                .for_each(|(chunk_idx, chunk)| {
-                    let base = chunk_idx * 4096;
-                    for (j, out) in chunk.iter_mut().enumerate() {
-                        let d = distances[base + j];
-                        *out = if d <= tolerance_threshold {
-                            255
-                        } else if d <= tolerance_threshold + aa_band {
-                            let t = (d - tolerance_threshold) / aa_band;
-                            (255.0 * (1.0 - t).max(0.0)) as u8
-                        } else {
-                            0
-                        };
-                    }
-                });
-        } else {
-            mask_buf
-                .par_chunks_mut(4096)
-                .enumerate()
-                .for_each(|(chunk_idx, chunk)| {
-                    let base = chunk_idx * 4096;
-                    for (j, out) in chunk.iter_mut().enumerate() {
-                        *out = if distances[base + j] <= tolerance_threshold {
-                            255
-                        } else {
-                            0
-                        };
-                    }
-                });
-        }
-
-        // Apply selection mode by merging with base mask (direct raw buffer ops)
-        let effective_mode = self.magic_wand_state.effective_mode;
-        let final_buf: Vec<u8> = match effective_mode {
-            SelectionMode::Replace => mask_buf,
-            SelectionMode::Add => {
-                if let Some(ref base) = self.magic_wand_state.base_selection_mask {
-                    let base_raw = base.as_raw();
-                    let mut out = base_raw.clone();
-                    out.par_chunks_mut(4096)
-                        .enumerate()
-                        .for_each(|(chunk_idx, chunk)| {
-                            let base_off = chunk_idx * 4096;
-                            for (j, px) in chunk.iter_mut().enumerate() {
-                                let wand = mask_buf[base_off + j];
-                                if wand > *px {
-                                    *px = wand;
-                                }
-                            }
-                        });
-                    out
-                } else {
-                    mask_buf
-                }
-            }
-            SelectionMode::Subtract => {
-                if let Some(ref base) = self.magic_wand_state.base_selection_mask {
-                    let base_raw = base.as_raw();
-                    let mut out = base_raw.clone();
-                    out.par_chunks_mut(4096)
-                        .enumerate()
-                        .for_each(|(chunk_idx, chunk)| {
-                            let base_off = chunk_idx * 4096;
-                            for (j, px) in chunk.iter_mut().enumerate() {
-                                *px = px.saturating_sub(mask_buf[base_off + j]);
-                            }
-                        });
-                    out
-                } else {
-                    vec![0u8; n]
-                }
-            }
-            SelectionMode::Intersect => {
-                if let Some(ref base) = self.magic_wand_state.base_selection_mask {
-                    let base_raw = base.as_raw();
-                    let mut out = vec![0u8; n];
-                    out.par_chunks_mut(4096)
-                        .enumerate()
-                        .for_each(|(chunk_idx, chunk)| {
-                            let base_off = chunk_idx * 4096;
-                            for (j, px) in chunk.iter_mut().enumerate() {
-                                let b = base_raw[base_off + j];
-                                let wand = mask_buf[base_off + j];
-                                *px = ((b as u16 * wand as u16) / 255) as u8;
-                            }
-                        });
-                    out
-                } else {
-                    vec![0u8; n]
-                }
-            }
-        };
-
-        let final_mask = GrayImage::from_raw(w, h, final_buf).unwrap();
-        canvas_state.selection_mask = Some(final_mask);
-        canvas_state.invalidate_selection_overlay();
-        canvas_state.mark_dirty(None);
-
-        self.magic_wand_state.last_applied_tolerance = self.magic_wand_state.tolerance;
-        self.magic_wand_state.last_applied_aa = self.magic_wand_state.anti_aliased;
-    }
-
     /// Dijkstra minimax (bottleneck) distance map.
     ///
     /// `distances[y*w + x]` = minimum possible *maximum* per-step color distance
@@ -10431,36 +11388,34 @@ impl ToolsPanel {
     /// selects all pixels reachable without any edge exceeding `t`, which is
     /// **monotone** — higher tolerances never remove already-selected pixels.
     ///
-    /// Uses a min-heap over (bottleneck_dist, pixel_index); total O(n log n).
+    /// Uses a 256-bucket queue because the bottleneck distance is bounded to 0..=255.
     fn compute_flood_distance_map(
         flat_rgba: &[u8],
         seed: (u32, u32),
         target_color: &Rgba<u8>,
         width: u32,
         height: u32,
-    ) -> MagicWandDistanceMap {
-        use std::cmp::Reverse;
-
+    ) -> ThresholdRegionIndex {
         let n = (width * height) as usize;
         let w = width as usize;
 
-        // Seed distance = direct color distance to target (usually 0 or very small)
         let seed_idx = seed.1 as usize * w + seed.0 as usize;
         let seed_dist = Self::pixel_color_distance(flat_rgba, seed_idx, target_color);
 
-        let mut distances = vec![f32::INFINITY; n];
+        let mut distances = vec![u8::MAX; n];
         distances[seed_idx] = seed_dist;
 
-        // Min-heap: (Reverse(distance_bits), pixel_index)
-        // We wrap f32 bits in an Ord newtype via u32 comparison (works for non-negative floats).
-        let mut heap: std::collections::BinaryHeap<(Reverse<u32>, usize)> =
-            std::collections::BinaryHeap::new();
-        heap.push((Reverse(seed_dist.to_bits()), seed_idx));
+        let mut buckets: Vec<Vec<usize>> = vec![Vec::new(); 256];
+        buckets[seed_dist as usize].push(seed_idx);
+        let mut current_bucket = seed_dist as usize;
 
-        while let Some((Reverse(cost_bits), idx)) = heap.pop() {
-            let cost = f32::from_bits(cost_bits);
-            // Skip stale entries
-            if cost > distances[idx] {
+        while current_bucket < 256 {
+            let Some(idx) = buckets[current_bucket].pop() else {
+                current_bucket += 1;
+                continue;
+            };
+            let cost = distances[idx] as usize;
+            if cost != current_bucket {
                 continue;
             }
 
@@ -10478,22 +11433,15 @@ impl ToolsPanel {
                 let ni = ny as usize * w + nx as usize;
                 let neighbor_dist =
                     Self::pixel_color_distance(flat_rgba, ni, target_color);
-                // Bottleneck cost: max of current path cost and this edge's cost
-                let new_cost = cost.max(neighbor_dist);
+                let new_cost = (cost as u8).max(neighbor_dist);
                 if new_cost < distances[ni] {
                     distances[ni] = new_cost;
-                    heap.push((Reverse(new_cost.to_bits()), ni));
+                    buckets[new_cost as usize].push(ni);
                 }
             }
         }
 
-        MagicWandDistanceMap {
-            seed,
-            target_color: *target_color,
-            distances,
-            width,
-            height,
-        }
+        ThresholdRegionIndex::from_distances(distances, width, height)
     }
 
     /// Global distance map: direct color distance from target for every pixel.
@@ -10504,9 +11452,9 @@ impl ToolsPanel {
         target_color: &Rgba<u8>,
         width: u32,
         height: u32,
-    ) -> Vec<f32> {
+    ) -> ThresholdRegionIndex {
         let n = (width * height) as usize;
-        let mut out = vec![0.0f32; n];
+        let mut out = vec![0u8; n];
         let tc = *target_color;
         out.par_chunks_mut(4096)
             .enumerate()
@@ -10516,13 +11464,13 @@ impl ToolsPanel {
                     *val = Self::pixel_color_distance(flat_rgba, base + j, &tc);
                 }
             });
-        out
+        ThresholdRegionIndex::from_distances(out, width, height)
     }
 
     /// Max-component color distance between a flat RGBA pixel at `idx` and `target`.
     /// Returns a value in [0.0, 255.0].
     #[inline]
-    fn pixel_color_distance(flat_rgba: &[u8], idx: usize, target: &Rgba<u8>) -> f32 {
+    fn pixel_color_distance(flat_rgba: &[u8], idx: usize, target: &Rgba<u8>) -> u8 {
         let base = idx * 4;
         let r = flat_rgba[base];
         let g = flat_rgba[base + 1];
@@ -10531,13 +11479,13 @@ impl ToolsPanel {
 
         // Both transparent → zero distance
         if target.0[3] == 0 && a == 0 {
-            return 0.0;
+            return 0;
         }
 
-        let dr = (r as f32 - target.0[0] as f32).abs();
-        let dg = (g as f32 - target.0[1] as f32).abs();
-        let db = (b as f32 - target.0[2] as f32).abs();
-        let da = (a as f32 - target.0[3] as f32).abs();
+        let dr = u8::abs_diff(r, target.0[0]);
+        let dg = u8::abs_diff(g, target.0[1]);
+        let db = u8::abs_diff(b, target.0[2]);
+        let da = u8::abs_diff(a, target.0[3]);
 
         dr.max(dg).max(db).max(da)
     }
@@ -10550,6 +11498,7 @@ impl ToolsPanel {
         use_secondary: bool,
         primary_color_f32: [f32; 4],
         secondary_color_f32: [f32; 4],
+        gpu_renderer: Option<&mut crate::gpu::GpuRenderer>,
     ) {
         // Bounds check
         if start_pos.0 >= canvas_state.width || start_pos.1 >= canvas_state.height {
@@ -10577,328 +11526,72 @@ impl ToolsPanel {
             (fill_color[3] * 255.0) as u8,
         ]);
 
-        let tolerance_threshold = (self.fill_state.tolerance / 100.0) * 255.0;
-
-        // Pre-extract layer as flat RGBA — avoids per-pixel TiledImage chunk lookups
-        let flat_rgba = active_layer.pixels.to_rgba_image();
-        let flat_slice = flat_rgba.as_raw();
-
-        let (fill_mask, bbox) = Self::flood_fill_fast(
-            flat_slice,
-            start_pos.0,
-            start_pos.1,
-            &target_color,
-            tolerance_threshold,
-            canvas_state.width,
-            canvas_state.height,
-        );
-
-        // Store active fill state for preview updates
-        self.fill_state.active_fill =
-            Some((start_pos.0, start_pos.1, target_color, fill_mask.clone()));
-        self.fill_state.last_preview_tolerance = self.fill_state.tolerance;
-        self.fill_state.last_preview_aa = self.fill_state.anti_aliased;
+        self.fill_state.active_fill = Some(ActiveFillRegion {
+            start_x: start_pos.0,
+            start_y: start_pos.1,
+            target_color,
+            region_index: None,
+            fill_mask: Vec::new(),
+            fill_bbox: None,
+            last_threshold: None,
+        });
+        self.fill_state.last_preview_tolerance = -1.0;
+        self.fill_state.last_preview_aa = !self.fill_state.anti_aliased;
         self.fill_state.fill_color_u8 = Some(fill_color_u8);
         self.fill_state.use_secondary_color = use_secondary;
-
-        // Initialize preview layer
-        if canvas_state.preview_layer.is_none()
-            || canvas_state.preview_layer.as_ref().unwrap().width() != canvas_state.width
-            || canvas_state.preview_layer.as_ref().unwrap().height() != canvas_state.height
-        {
-            canvas_state.preview_layer =
-                Some(TiledImage::new(canvas_state.width, canvas_state.height));
-        } else if let Some(ref mut preview) = canvas_state.preview_layer {
-            preview.clear();
-        }
-
-        let anti_aliased = self.fill_state.anti_aliased;
-        let active_layer_index = canvas_state.active_layer_index;
-
-        // Bbox already computed by flood_fill_fast
-        let fill_bounds = bbox.map(|(fx0, fy0, fx1, fy1)| {
-            let pad = if anti_aliased { 1u32 } else { 0 };
-            egui::Rect::from_min_max(
-                egui::pos2(
-                    fx0.saturating_sub(pad) as f32,
-                    fy0.saturating_sub(pad) as f32,
-                ),
-                egui::pos2(
-                    (fx1 + 1 + pad).min(canvas_state.width) as f32,
-                    (fy1 + 1 + pad).min(canvas_state.height) as f32,
-                ),
-            )
-        });
-
-        // Render preview: fill pixels on preview layer with optional AA
-        if let Some(ref mut preview) = canvas_state.preview_layer
-            && let Some(bbox) = bbox
-        {
-            self.render_fill_to_preview(
-                preview,
-                &fill_mask,
-                bbox,
-                fill_color_u8,
-                canvas_state.selection_mask.as_ref(),
-                anti_aliased,
-                canvas_state.width,
-                canvas_state.height,
-                Some(&canvas_state.layers),
-                active_layer_index,
-            );
-        }
+        self.fill_state.tolerance_changed_at = None;
+        self.fill_state.recalc_pending = true;
+        self.fill_state.preview_in_flight = false;
+        canvas_state.preview_layer = Some(TiledImage::new(canvas_state.width, canvas_state.height));
 
         // Start stroke tracking for undo/redo
         if let Some(_layer) = canvas_state.layers.get(canvas_state.active_layer_index) {
             self.stroke_tracker
                 .start_preview_tool(canvas_state.active_layer_index, "Fill");
-            // Track the fill bounds so that finish() produces a StrokeEvent for undo
-            if let Some(bounds) = fill_bounds {
-                self.stroke_tracker.expand_bounds(bounds);
-            }
         }
 
         canvas_state.preview_blend_mode = BlendMode::Normal;
-        // Force blend-aware composite when fill colour has transparency,
-        // so the preview accurately shows the semi-transparent fill on
-        // top of the layer data instead of on top of everything.
         canvas_state.preview_force_composite = fill_color_u8.0[3] < 255;
-        // Set stroke bounds to the fill area for efficient texture upload
-        canvas_state.preview_stroke_bounds = fill_bounds;
         canvas_state.mark_preview_changed();
-    }
 
-    /// Update fill preview if tolerance, anti-alias, or color changed (debounced)
-    fn update_fill_preview(&mut self, canvas_state: &mut CanvasState) {
-        // Only recalculate if a change is pending
-        if !self.fill_state.recalc_pending {
-            return;
-        }
-
-        // Debounce: wait 50ms after last change before recalculating
-        if let Some(changed_at) = self.fill_state.tolerance_changed_at
-            && changed_at.elapsed().as_millis() < 50
-        {
-            return; // Too soon, wait for the user to stop adjusting
-        }
-
-        // Check if tolerance, anti-alias, or color actually changed
-        let tol_changed =
-            (self.fill_state.last_preview_tolerance - self.fill_state.tolerance).abs() >= 0.1;
-        let aa_changed = self.fill_state.last_preview_aa != self.fill_state.anti_aliased;
-        // Color change is already detected in handle_input and sets recalc_pending,
-        // so if we reach here with recalc_pending=true and neither tol nor aa changed,
-        // it must be a color change — always proceed.
-        let color_only_change = !tol_changed && !aa_changed;
-        if color_only_change {
-            // Still proceed — color changed. Don't early-return.
-        }
-
-        if let Some((start_x, start_y, target_color, _original_mask)) =
-            &self.fill_state.active_fill.clone()
-        {
-            // Only re-run flood fill if tolerance actually changed
-            let (fill_mask, new_bbox) = if tol_changed {
-                let active_layer = match canvas_state.layers.get(canvas_state.active_layer_index) {
-                    Some(layer) => layer,
-                    None => return,
-                };
-                let tolerance_threshold = (self.fill_state.tolerance / 100.0) * 255.0;
-                let flat_rgba = active_layer.pixels.to_rgba_image();
-                Self::flood_fill_fast(
-                    flat_rgba.as_raw(),
-                    *start_x,
-                    *start_y,
-                    target_color,
-                    tolerance_threshold,
+        // GPU path: compute flood distances synchronously on GPU, build index, render preview
+        if let Some(gpu) = gpu_renderer {
+            let flat_rgba = Self::cached_active_layer_rgba(
+                &mut self.fill_state.cached_flat_rgba,
+                canvas_state,
+            );
+            if let Some(flat_rgba) = flat_rgba {
+                let input_key = flat_rgba.as_ref().as_ptr() as usize;
+                let mut distances = Vec::new();
+                let ok = gpu.flood_fill_pipeline.compute_flood_distances(
+                    &gpu.ctx,
+                    flat_rgba.as_ref(),
+                    input_key,
+                    target_color.0,
+                    start_pos.0,
+                    start_pos.1,
                     canvas_state.width,
                     canvas_state.height,
-                )
-            } else {
-                // Reuse existing mask — compute bbox from it so we don't need to store it
-                let mask = _original_mask.clone();
-                let mut bbox: Option<(u32, u32, u32, u32)> = None;
-                let w = canvas_state.width as usize;
-                for (i, &b) in mask.iter().enumerate() {
-                    if b != 0 {
-                        let x = (i % w) as u32;
-                        let y = (i / w) as u32;
-                        bbox = Some(match bbox {
-                            Some((x0, y0, x1, y1)) => (x0.min(x), y0.min(y), x1.max(x), y1.max(y)),
-                            None => (x, y, x, y),
-                        });
-                    }
-                }
-                (mask, bbox)
-            };
-
-            // Update stored fill state
-            self.fill_state.active_fill =
-                Some((*start_x, *start_y, *target_color, fill_mask.clone()));
-            self.fill_state.last_preview_tolerance = self.fill_state.tolerance;
-            self.fill_state.last_preview_aa = self.fill_state.anti_aliased;
-            self.fill_state.recalc_pending = false;
-            self.fill_state.tolerance_changed_at = None;
-
-            let anti_aliased = self.fill_state.anti_aliased;
-            let active_layer_index = canvas_state.active_layer_index;
-
-            let fill_bounds = new_bbox.map(|(fx0, fy0, fx1, fy1)| {
-                let pad = if anti_aliased { 1u32 } else { 0 };
-                egui::Rect::from_min_max(
-                    egui::pos2(
-                        fx0.saturating_sub(pad) as f32,
-                        fy0.saturating_sub(pad) as f32,
-                    ),
-                    egui::pos2(
-                        (fx1 + 1 + pad).min(canvas_state.width) as f32,
-                        (fy1 + 1 + pad).min(canvas_state.height) as f32,
-                    ),
-                )
-            });
-
-            // Update stroke tracker bounds to cover the new fill area for correct undo
-            if let Some(bounds) = fill_bounds {
-                self.stroke_tracker.expand_bounds(bounds);
-            }
-
-            // Update preview_force_composite based on current fill color alpha
-            if let Some(fill_color_u8) = self.fill_state.fill_color_u8 {
-                canvas_state.preview_force_composite = fill_color_u8.0[3] < 255;
-            }
-
-            // Clear and redraw preview layer with new tolerance/color
-            if let Some(ref mut preview) = canvas_state.preview_layer {
-                preview.clear();
-
-                if let Some(fill_color_u8) = self.fill_state.fill_color_u8
-                    && let Some(bbox) = new_bbox
-                {
-                    self.render_fill_to_preview(
-                        preview,
-                        &fill_mask,
-                        bbox,
-                        fill_color_u8,
-                        canvas_state.selection_mask.as_ref(),
-                        anti_aliased,
+                    &mut distances,
+                );
+                if ok {
+                    let region_index = ThresholdRegionIndex::from_distances(
+                        distances,
                         canvas_state.width,
                         canvas_state.height,
-                        Some(&canvas_state.layers),
-                        active_layer_index,
                     );
-                }
-            }
-
-            // Reset stroke bounds to the new fill area
-            canvas_state.preview_stroke_bounds = fill_bounds;
-            canvas_state.preview_texture_cache = None; // force full re-upload
-            canvas_state.mark_preview_changed();
-        }
-    }
-
-    /// Render filled pixels to preview layer, with optional anti-aliasing on edges
-    fn render_fill_to_preview(
-        &self,
-        preview: &mut TiledImage,
-        fill_mask: &[u8], // flat width*height bytes: 255=filled, 0=empty
-        fill_bbox: (u32, u32, u32, u32), // (min_x, min_y, max_x, max_y)
-        fill_color: Rgba<u8>,
-        selection_mask: Option<&GrayImage>,
-        anti_aliased: bool,
-        width: u32,
-        height: u32,
-        canvas_state_layers: Option<&[crate::canvas::Layer]>,
-        active_layer_index: usize,
-    ) {
-        let (bx0, by0, bx1, by1) = fill_bbox;
-        let wu = width as usize;
-        // Iterate only within the bounding box — avoids scanning entire canvas
-        for y in by0..=by1.min(height.saturating_sub(1)) {
-            for x in bx0..=bx1.min(width.saturating_sub(1)) {
-                let idx = y as usize * wu + x as usize;
-                if fill_mask[idx] == 0 {
-                    continue;
-                }
-
-                // Check if pixel is in selection mask (if one exists)
-                let should_fill = if let Some(mask) = selection_mask {
-                    mask.get_pixel(x, y).0[0] > 0
-                } else {
-                    true
-                };
-
-                if !should_fill {
-                    continue;
-                }
-
-                if anti_aliased {
-                    // Count how many of 8 neighbors are also in the fill mask
-                    let mut neighbor_fill_count = 0u8;
-                    let mut total_neighbors = 0u8;
-                    for dy in -1i32..=1 {
-                        for dx in -1i32..=1 {
-                            if dx == 0 && dy == 0 {
-                                continue;
-                            }
-                            let nx = x as i32 + dx;
-                            let ny = y as i32 + dy;
-                            if nx >= 0 && nx < width as i32 && ny >= 0 && ny < height as i32 {
-                                total_neighbors += 1;
-                                if fill_mask[ny as usize * wu + nx as usize] != 0 {
-                                    neighbor_fill_count += 1;
-                                }
-                            }
-                        }
+                    if let Some(active_fill) = self.fill_state.active_fill.as_mut() {
+                        active_fill.region_index = Some(region_index);
                     }
-
-                    // If pixel is on the boundary (not all neighbors are filled),
-                    // blend fill color with underlying pixel color for feathered edge
-                    if total_neighbors > 0 && neighbor_fill_count < total_neighbors {
-                        let ratio = neighbor_fill_count as f32 / total_neighbors as f32;
-                        // Smoothstep curve for nicer edge falloff
-                        let t = ratio * ratio * (3.0 - 2.0 * ratio);
-
-                        // Get the underlying pixel color from the active layer
-                        let bg_color = if let Some(layers) = canvas_state_layers {
-                            if let Some(layer) = layers.get(active_layer_index) {
-                                *layer.pixels.get_pixel(x, y)
-                            } else {
-                                Rgba([0, 0, 0, 0])
-                            }
-                        } else {
-                            Rgba([0, 0, 0, 0])
-                        };
-
-                        // Blend fill color with background color based on edge factor
-                        // t=1.0 means fully interior → full fill color
-                        // t=0.0 means fully edge → mostly background color
-                        let blend = |fc: u8, bc: u8, factor: f32| -> u8 {
-                            (fc as f32 * factor + bc as f32 * (1.0 - factor)).round() as u8
-                        };
-
-                        let blended = Rgba([
-                            blend(fill_color.0[0], bg_color.0[0], t),
-                            blend(fill_color.0[1], bg_color.0[1], t),
-                            blend(fill_color.0[2], bg_color.0[2], t),
-                            // Alpha: scale fill alpha by edge factor so AA edges
-                            // fade proportionally even for semi-transparent fills.
-                            // Previously blended fill_alpha with bg_alpha, which
-                            // made edges invisible when bg was fully transparent.
-                            (fill_color.0[3] as f32 * t).round() as u8,
-                        ]);
-
-                        let pixel = preview.get_pixel_mut(x, y);
-                        *pixel = blended;
-                    } else {
-                        let pixel = preview.get_pixel_mut(x, y);
-                        *pixel = fill_color;
-                    }
-                } else {
-                    let pixel = preview.get_pixel_mut(x, y);
-                    *pixel = fill_color;
+                    self.fill_state.recalc_pending = false;
+                    self.render_fill_preview_gpu(canvas_state, gpu);
+                    return;
                 }
             }
         }
+
+        // CPU fallback: spawn async rayon task for Dijkstra
+        self.maybe_spawn_fill_preview(canvas_state, None);
     }
 
     /// Commit the fill preview to the actual layer
@@ -10907,8 +11600,7 @@ impl ToolsPanel {
             return;
         }
 
-        // Clear active fill state
-        self.fill_state.active_fill = None;
+        self.clear_fill_preview_state();
 
         let blend_mode = self.properties.blending_mode;
 
@@ -11030,9 +11722,8 @@ impl ToolsPanel {
         canvas_h: u32,
     ) -> (Vec<u8>, Option<(u32, u32, u32, u32)>) {
         let wu = canvas_w as usize;
-        let hu = canvas_h as usize;
         // mask doubles as the visited array and the output
-        let mut mask = vec![0u8; wu * hu];
+        let mut mask = vec![0u8; wu * canvas_h as usize];
 
         if start_x >= canvas_w || start_y >= canvas_h {
             return (mask, None);
@@ -11076,61 +11767,65 @@ impl ToolsPanel {
         let mut max_x = start_x;
         let mut max_y = start_y;
 
-        // DFS stack stores packed flat indices to avoid (u32,u32) tuple overhead.
-        // A flat index = y * canvas_w + x, max value < 4K*4K = 16M < u32::MAX.
-        let mut stack: Vec<u32> = Vec::with_capacity(4096);
-        mask[seed_idx] = 255;
-        stack.push(seed_idx as u32);
+        // Scanline flood fill touches contiguous spans instead of individual pixels.
+        let mut stack: Vec<(u32, u32)> = Vec::with_capacity(1024);
+        stack.push((start_x, start_y));
 
-        while let Some(idx) = stack.pop() {
-            let x = (idx as usize % wu) as u32;
-            let y = (idx as usize / wu) as u32;
-
-            // Update bbox
-            if x < min_x {
-                min_x = x;
-            }
-            if x > max_x {
-                max_x = x;
-            }
-            if y < min_y {
-                min_y = y;
-            }
-            if y > max_y {
-                max_y = y;
+        while let Some((seed_x, y)) = stack.pop() {
+            let row = y as usize * wu;
+            let seed_flat = row + seed_x as usize;
+            if mask[seed_flat] != 0 || !matches(pix(flat_pixels, seed_flat), tc, tol) {
+                continue;
             }
 
-            // Check 4 neighbors, push unvisited matching ones
-            // Left
-            if x > 0 {
-                let ni = idx as usize - 1;
-                if mask[ni] == 0 && matches(pix(flat_pixels, ni), tc, tol) {
-                    mask[ni] = 255;
-                    stack.push(ni as u32);
+            let mut lx = seed_x;
+            while lx > 0 {
+                let ni = row + lx as usize - 1;
+                if mask[ni] != 0 || !matches(pix(flat_pixels, ni), tc, tol) {
+                    break;
                 }
+                lx -= 1;
             }
-            // Right
-            if x + 1 < canvas_w {
-                let ni = idx as usize + 1;
-                if mask[ni] == 0 && matches(pix(flat_pixels, ni), tc, tol) {
-                    mask[ni] = 255;
-                    stack.push(ni as u32);
+
+            let mut rx = seed_x;
+            while rx + 1 < canvas_w {
+                let ni = row + rx as usize + 1;
+                if mask[ni] != 0 || !matches(pix(flat_pixels, ni), tc, tol) {
+                    break;
                 }
+                rx += 1;
             }
-            // Up
-            if y > 0 {
-                let ni = idx as usize - wu;
-                if mask[ni] == 0 && matches(pix(flat_pixels, ni), tc, tol) {
-                    mask[ni] = 255;
-                    stack.push(ni as u32);
-                }
+
+            for x in lx..=rx {
+                mask[row + x as usize] = 255;
             }
-            // Down
-            if y + 1 < canvas_h {
-                let ni = idx as usize + wu;
-                if mask[ni] == 0 && matches(pix(flat_pixels, ni), tc, tol) {
-                    mask[ni] = 255;
-                    stack.push(ni as u32);
+
+            min_x = min_x.min(lx);
+            max_x = max_x.max(rx);
+            min_y = min_y.min(y);
+            max_y = max_y.max(y);
+
+            for ny in [y.checked_sub(1), (y + 1 < canvas_h).then_some(y + 1)]
+                .into_iter()
+                .flatten()
+            {
+                let nrow = ny as usize * wu;
+                let mut x = lx;
+                while x <= rx {
+                    let ni = nrow + x as usize;
+                    if mask[ni] == 0 && matches(pix(flat_pixels, ni), tc, tol) {
+                        stack.push((x, ny));
+                        x += 1;
+                        while x <= rx {
+                            let seg_idx = nrow + x as usize;
+                            if mask[seg_idx] != 0 || !matches(pix(flat_pixels, seg_idx), tc, tol) {
+                                break;
+                            }
+                            x += 1;
+                        }
+                    } else {
+                        x += 1;
+                    }
                 }
             }
         }

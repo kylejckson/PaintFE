@@ -74,6 +74,50 @@ fn upload_rgba(
     tex
 }
 
+fn upload_r8(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    data: &[u8],
+    w: u32,
+    h: u32,
+    label: &str,
+) -> wgpu::Texture {
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::R8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        wgpu::ImageCopyTexture {
+            texture: &tex,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        data,
+        wgpu::ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(w),
+            rows_per_image: Some(h),
+        },
+        wgpu::Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        },
+    );
+    tex
+}
+
 /// Standard bind group layout used by most filters: input tex, output storage tex, uniform buf.
 fn filter_bgl(device: &wgpu::Device, label: &str) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -781,6 +825,1465 @@ pub struct GpuGradientPipeline {
     cached_lut_buf: Option<wgpu::Buffer>,
     cached_w: u32,
     cached_h: u32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct MagicWandGpuParams {
+    pub width: u32,
+    pub height: u32,
+    pub threshold: u32,
+    pub anti_aliased: u32,
+    pub mode: u32,
+    pub use_base: u32,
+    pub _pad0: u32,
+    pub _pad1: u32,
+}
+
+pub struct GpuMagicWandPipeline {
+    pipeline: wgpu::ComputePipeline,
+    bgl: wgpu::BindGroupLayout,
+    cached_distance_tex: Option<wgpu::Texture>,
+    cached_base_tex: Option<wgpu::Texture>,
+    dummy_base_tex: Option<wgpu::Texture>,
+    cached_output_tex: Option<wgpu::Texture>,
+    cached_staging_buf: Option<wgpu::Buffer>,
+    cached_params_buf: Option<wgpu::Buffer>,
+    cached_w: u32,
+    cached_h: u32,
+    cached_distance_key: usize,
+    cached_base_key: Option<usize>,
+}
+
+impl GpuMagicWandPipeline {
+    pub fn new(device: &wgpu::Device) -> Self {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("magic_wand_mask_shader"),
+            source: wgpu::ShaderSource::Wgsl(super::shaders::MAGIC_WAND_MASK_SHADER.into()),
+        });
+
+        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("magic_wand_mask_bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("magic_wand_mask_pl"),
+            bind_group_layouts: &[&bgl],
+            push_constant_ranges: &[],
+        });
+
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("magic_wand_mask_pipeline"),
+            layout: Some(&layout),
+            module: &shader,
+            entry_point: "cs_magic_wand_mask",
+            compilation_options: Default::default(),
+        });
+
+        Self {
+            pipeline,
+            bgl,
+            cached_distance_tex: None,
+            cached_base_tex: None,
+            dummy_base_tex: None,
+            cached_output_tex: None,
+            cached_staging_buf: None,
+            cached_params_buf: None,
+            cached_w: 0,
+            cached_h: 0,
+            cached_distance_key: 0,
+            cached_base_key: None,
+        }
+    }
+
+    fn ensure_cache(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, w: u32, h: u32) {
+        if self.cached_w != w || self.cached_h != h {
+            self.cached_output_tex = Some(create_rw_texture(device, w, h, "magic_wand_mask_output"));
+
+            let bytes_per_row = super::compositor::Compositor::aligned_bytes_per_row(w);
+            let buffer_size = (bytes_per_row * h) as u64;
+            self.cached_staging_buf = Some(device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("magic_wand_mask_staging"),
+                size: buffer_size,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+
+            self.cached_distance_tex = None;
+            self.cached_base_tex = None;
+            self.cached_distance_key = 0;
+            self.cached_base_key = None;
+            self.cached_w = w;
+            self.cached_h = h;
+        }
+
+        if self.dummy_base_tex.is_none() {
+            self.dummy_base_tex = Some(upload_r8(device, queue, &[0], 1, 1, "magic_wand_base_dummy"));
+        }
+    }
+
+    pub fn generate_into(
+        &mut self,
+        ctx: &GpuContext,
+        distances: &[u8],
+        distance_key: usize,
+        base_mask: Option<&[u8]>,
+        base_key: Option<usize>,
+        w: u32,
+        h: u32,
+        threshold: u8,
+        anti_aliased: bool,
+        mode: u32,
+        out: &mut Vec<u8>,
+    ) {
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        self.ensure_cache(device, queue, w, h);
+
+        if self.cached_distance_tex.is_none() || self.cached_distance_key != distance_key {
+            self.cached_distance_tex = Some(upload_r8(
+                device,
+                queue,
+                distances,
+                w,
+                h,
+                "magic_wand_distances",
+            ));
+            self.cached_distance_key = distance_key;
+        }
+
+        if let Some(base_data) = base_mask {
+            if self.cached_base_tex.is_none() || self.cached_base_key != base_key {
+                self.cached_base_tex = Some(upload_r8(device, queue, base_data, w, h, "magic_wand_base_mask"));
+                self.cached_base_key = base_key;
+            }
+        } else {
+            self.cached_base_key = None;
+        }
+
+        let params = MagicWandGpuParams {
+            width: w,
+            height: h,
+            threshold: threshold as u32,
+            anti_aliased: if anti_aliased { 1 } else { 0 },
+            mode,
+            use_base: if base_mask.is_some() { 1 } else { 0 },
+            _pad0: 0,
+            _pad1: 0,
+        };
+        let params_bytes = bytemuck::bytes_of(&params);
+        let params_buf = self.cached_params_buf.get_or_insert_with(|| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("magic_wand_mask_params"),
+                contents: params_bytes,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            })
+        });
+        queue.write_buffer(params_buf, 0, params_bytes);
+
+        let dist_view = self
+            .cached_distance_tex
+            .as_ref()
+            .unwrap()
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let base_view = if let Some(base_tex) = self.cached_base_tex.as_ref() {
+            base_tex.create_view(&wgpu::TextureViewDescriptor::default())
+        } else {
+            self.dummy_base_tex
+                .as_ref()
+                .unwrap()
+                .create_view(&wgpu::TextureViewDescriptor::default())
+        };
+        let out_view = self
+            .cached_output_tex
+            .as_ref()
+            .unwrap()
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("magic_wand_mask_bg"),
+            layout: &self.bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&dist_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&base_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&out_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: params_buf.as_entire_binding(),
+                },
+            ],
+        });
+
+        let bytes_per_row = super::compositor::Compositor::aligned_bytes_per_row(w);
+        let staging = self.cached_staging_buf.as_ref().unwrap();
+        let out_tex = self.cached_output_tex.as_ref().unwrap();
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("magic_wand_mask_encoder"),
+        });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("magic_wand_mask_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &bg, &[]);
+            pass.dispatch_workgroups(w.div_ceil(16), h.div_ceil(16), 1);
+        }
+
+        encoder.copy_texture_to_buffer(
+            wgpu::ImageCopyTexture {
+                texture: out_tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::ImageCopyBuffer {
+                buffer: staging,
+                layout: wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: Some(h),
+                },
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        queue.submit(std::iter::once(encoder.finish()));
+
+        let slice = staging.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        device.poll(wgpu::Maintain::Wait);
+        match rx.recv() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                eprintln!("[GPU] GpuMagicWandPipeline readback map error: {:?}", e);
+                return;
+            }
+            Err(e) => {
+                eprintln!("[GPU] GpuMagicWandPipeline readback channel error: {:?}", e);
+                return;
+            }
+        }
+
+        let mapped = slice.get_mapped_range();
+        out.clear();
+        out.resize((w * h) as usize, 0);
+        for y in 0..h as usize {
+            let src_row = y * bytes_per_row as usize;
+            let dst_row = y * w as usize;
+            for x in 0..w as usize {
+                out[dst_row + x] = mapped[src_row + x * 4];
+            }
+        }
+
+        drop(mapped);
+        staging.unmap();
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct FillPreviewGpuParams {
+    pub fill_color: [f32; 4],
+    pub canvas_width: u32,
+    pub canvas_height: u32,
+    pub region_x: u32,
+    pub region_y: u32,
+    pub region_width: u32,
+    pub region_height: u32,
+    pub threshold: u32,
+    pub anti_aliased: u32,
+    pub use_selection: u32,
+    pub _pad0: u32,
+    pub _pad1: u32,
+    pub _pad2: u32,
+}
+
+pub struct GpuFillPreviewPipeline {
+    pipeline: wgpu::ComputePipeline,
+    bgl: wgpu::BindGroupLayout,
+    cached_distance_tex: Option<wgpu::Texture>,
+    cached_background_tex: Option<wgpu::Texture>,
+    cached_selection_tex: Option<wgpu::Texture>,
+    dummy_selection_tex: Option<wgpu::Texture>,
+    cached_output_tex: Option<wgpu::Texture>,
+    cached_staging_buf: Option<wgpu::Buffer>,
+    cached_params_buf: Option<wgpu::Buffer>,
+    cached_canvas_w: u32,
+    cached_canvas_h: u32,
+    cached_region_w: u32,
+    cached_region_h: u32,
+    cached_distance_key: usize,
+    cached_background_key: usize,
+    cached_selection_key: Option<usize>,
+}
+
+impl GpuFillPreviewPipeline {
+    pub fn new(device: &wgpu::Device) -> Self {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("fill_preview_shader"),
+            source: wgpu::ShaderSource::Wgsl(super::shaders::FILL_PREVIEW_SHADER.into()),
+        });
+
+        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("fill_preview_bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("fill_preview_pl"),
+            bind_group_layouts: &[&bgl],
+            push_constant_ranges: &[],
+        });
+
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("fill_preview_pipeline"),
+            layout: Some(&layout),
+            module: &shader,
+            entry_point: "cs_fill_preview",
+            compilation_options: Default::default(),
+        });
+
+        Self {
+            pipeline,
+            bgl,
+            cached_distance_tex: None,
+            cached_background_tex: None,
+            cached_selection_tex: None,
+            dummy_selection_tex: None,
+            cached_output_tex: None,
+            cached_staging_buf: None,
+            cached_params_buf: None,
+            cached_canvas_w: 0,
+            cached_canvas_h: 0,
+            cached_region_w: 0,
+            cached_region_h: 0,
+            cached_distance_key: 0,
+            cached_background_key: 0,
+            cached_selection_key: None,
+        }
+    }
+
+    fn ensure_cache(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        canvas_w: u32,
+        canvas_h: u32,
+        region_w: u32,
+        region_h: u32,
+    ) {
+        if self.cached_canvas_w != canvas_w || self.cached_canvas_h != canvas_h {
+            self.cached_distance_tex = None;
+            self.cached_background_tex = None;
+            self.cached_selection_tex = None;
+            self.cached_distance_key = 0;
+            self.cached_background_key = 0;
+            self.cached_selection_key = None;
+            self.cached_canvas_w = canvas_w;
+            self.cached_canvas_h = canvas_h;
+        }
+
+        if self.cached_region_w != region_w || self.cached_region_h != region_h {
+            self.cached_output_tex = Some(create_rw_texture(device, region_w, region_h, "fill_preview_output"));
+
+            let bytes_per_row = super::compositor::Compositor::aligned_bytes_per_row(region_w);
+            let buffer_size = (bytes_per_row * region_h) as u64;
+            self.cached_staging_buf = Some(device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("fill_preview_staging"),
+                size: buffer_size,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+
+            self.cached_region_w = region_w;
+            self.cached_region_h = region_h;
+        }
+
+        if self.dummy_selection_tex.is_none() {
+            self.dummy_selection_tex = Some(upload_r8(device, queue, &[255], 1, 1, "fill_preview_selection_dummy"));
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn generate_into(
+        &mut self,
+        ctx: &GpuContext,
+        distances: &[u8],
+        distance_key: usize,
+        background_rgba: &[u8],
+        background_key: usize,
+        selection_mask: Option<(&[u8], usize)>,
+        canvas_w: u32,
+        canvas_h: u32,
+        region_x: u32,
+        region_y: u32,
+        region_w: u32,
+        region_h: u32,
+        threshold: u8,
+        anti_aliased: bool,
+        fill_color: [u8; 4],
+        out: &mut Vec<u8>,
+    ) {
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        self.ensure_cache(device, queue, canvas_w, canvas_h, region_w, region_h);
+
+        if self.cached_distance_tex.is_none() || self.cached_distance_key != distance_key {
+            self.cached_distance_tex = Some(upload_r8(device, queue, distances, canvas_w, canvas_h, "fill_preview_distances"));
+            self.cached_distance_key = distance_key;
+        }
+
+        if self.cached_background_tex.is_none() || self.cached_background_key != background_key {
+            self.cached_background_tex = Some(upload_rgba(
+                device,
+                queue,
+                background_rgba,
+                canvas_w,
+                canvas_h,
+                "fill_preview_background",
+            ));
+            self.cached_background_key = background_key;
+        }
+
+        if let Some((selection_data, selection_key)) = selection_mask {
+            if self.cached_selection_tex.is_none() || self.cached_selection_key != Some(selection_key) {
+                self.cached_selection_tex = Some(upload_r8(
+                    device,
+                    queue,
+                    selection_data,
+                    canvas_w,
+                    canvas_h,
+                    "fill_preview_selection",
+                ));
+                self.cached_selection_key = Some(selection_key);
+            }
+        } else {
+            self.cached_selection_key = None;
+        }
+
+        let params = FillPreviewGpuParams {
+            fill_color: [
+                fill_color[0] as f32 / 255.0,
+                fill_color[1] as f32 / 255.0,
+                fill_color[2] as f32 / 255.0,
+                fill_color[3] as f32 / 255.0,
+            ],
+            canvas_width: canvas_w,
+            canvas_height: canvas_h,
+            region_x,
+            region_y,
+            region_width: region_w,
+            region_height: region_h,
+            threshold: threshold as u32,
+            anti_aliased: if anti_aliased { 1 } else { 0 },
+            use_selection: if selection_mask.is_some() { 1 } else { 0 },
+            _pad0: 0,
+            _pad1: 0,
+            _pad2: 0,
+        };
+
+        let params_bytes = bytemuck::bytes_of(&params);
+        let params_buf = self.cached_params_buf.get_or_insert_with(|| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("fill_preview_params"),
+                contents: params_bytes,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            })
+        });
+        queue.write_buffer(params_buf, 0, params_bytes);
+
+        let dist_view = self
+            .cached_distance_tex
+            .as_ref()
+            .unwrap()
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let bg_view = self
+            .cached_background_tex
+            .as_ref()
+            .unwrap()
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let sel_view = if let Some(selection_tex) = self.cached_selection_tex.as_ref() {
+            selection_tex.create_view(&wgpu::TextureViewDescriptor::default())
+        } else {
+            self.dummy_selection_tex
+                .as_ref()
+                .unwrap()
+                .create_view(&wgpu::TextureViewDescriptor::default())
+        };
+        let out_view = self
+            .cached_output_tex
+            .as_ref()
+            .unwrap()
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("fill_preview_bg"),
+            layout: &self.bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&dist_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&bg_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&sel_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&out_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: params_buf.as_entire_binding(),
+                },
+            ],
+        });
+
+        let bytes_per_row = super::compositor::Compositor::aligned_bytes_per_row(region_w);
+        let staging = self.cached_staging_buf.as_ref().unwrap();
+        let out_tex = self.cached_output_tex.as_ref().unwrap();
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("fill_preview_encoder"),
+        });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("fill_preview_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &bg, &[]);
+            pass.dispatch_workgroups(region_w.div_ceil(16), region_h.div_ceil(16), 1);
+        }
+
+        encoder.copy_texture_to_buffer(
+            wgpu::ImageCopyTexture {
+                texture: out_tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::ImageCopyBuffer {
+                buffer: staging,
+                layout: wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: Some(region_h),
+                },
+            },
+            wgpu::Extent3d {
+                width: region_w,
+                height: region_h,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        queue.submit(std::iter::once(encoder.finish()));
+
+        let slice = staging.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        device.poll(wgpu::Maintain::Wait);
+        match rx.recv() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                eprintln!("[GPU] GpuFillPreviewPipeline readback map error: {:?}", e);
+                return;
+            }
+            Err(e) => {
+                eprintln!("[GPU] GpuFillPreviewPipeline readback channel error: {:?}", e);
+                return;
+            }
+        }
+
+        let mapped = slice.get_mapped_range();
+        let actual_row = region_w as usize * 4;
+        out.clear();
+        out.resize(actual_row * region_h as usize, 0);
+        for y in 0..region_h as usize {
+            let src_row = y * bytes_per_row as usize;
+            let dst_row = y * actual_row;
+            out[dst_row..dst_row + actual_row]
+                .copy_from_slice(&mapped[src_row..src_row + actual_row]);
+        }
+
+        drop(mapped);
+        staging.unmap();
+    }
+}
+
+// ============================================================================
+// GPU FLOOD FILL PIPELINE — per-pixel color distance + iterative relaxation
+// ============================================================================
+
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+struct FloodColorDistGpuParams {
+    target_r: u32,
+    target_g: u32,
+    target_b: u32,
+    target_a: u32,
+    width: u32,
+    height: u32,
+    _pad0: u32,
+    _pad1: u32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+struct FloodInitGpuParams {
+    seed_x: u32,
+    seed_y: u32,
+    width: u32,
+    height: u32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+struct FloodStepGpuParams {
+    width: u32,
+    height: u32,
+    step_size: u32,
+    direction: u32,
+}
+
+pub struct GpuFloodFillPipeline {
+    color_dist_pipeline: wgpu::ComputePipeline,
+    color_dist_bgl: wgpu::BindGroupLayout,
+    flood_init_pipeline: wgpu::ComputePipeline,
+    flood_init_bgl: wgpu::BindGroupLayout,
+    flood_step_pipeline: wgpu::ComputePipeline,
+    flood_step_bgl: wgpu::BindGroupLayout,
+    // Cached GPU resources
+    cached_input_tex: Option<wgpu::Texture>,
+    cached_color_dist_buf: Option<wgpu::Buffer>,
+    cached_flood_a_buf: Option<wgpu::Buffer>,
+    cached_flood_b_buf: Option<wgpu::Buffer>,
+    cached_staging_buf: Option<wgpu::Buffer>,
+    cached_params_buf_cd: Option<wgpu::Buffer>,
+    cached_params_buf_init: Option<wgpu::Buffer>,
+    cached_w: u32,
+    cached_h: u32,
+    cached_input_key: usize,
+}
+
+impl GpuFloodFillPipeline {
+    pub fn new(device: &wgpu::Device) -> Self {
+        // --- Color Distance pipeline ---
+        let cd_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("flood_color_dist_shader"),
+            source: wgpu::ShaderSource::Wgsl(
+                super::shaders::FLOOD_COLOR_DISTANCE_SHADER.into(),
+            ),
+        });
+
+        let color_dist_bgl =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("flood_color_dist_bgl"),
+                entries: &[
+                    // binding 0: input RGBA texture
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float {
+                                filterable: false,
+                            },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    // binding 1: color_dist storage buffer (write)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // binding 2: uniform params
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        let cd_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("flood_color_dist_pl"),
+            bind_group_layouts: &[&color_dist_bgl],
+            push_constant_ranges: &[],
+        });
+
+        let color_dist_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("flood_color_dist_pipeline"),
+                layout: Some(&cd_layout),
+                module: &cd_shader,
+                entry_point: "cs_color_distance",
+                compilation_options: Default::default(),
+            });
+
+        // --- Flood Init pipeline ---
+        let init_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("flood_init_shader"),
+            source: wgpu::ShaderSource::Wgsl(super::shaders::FLOOD_INIT_SHADER.into()),
+        });
+
+        let flood_init_bgl =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("flood_init_bgl"),
+                entries: &[
+                    // binding 0: color_dist buffer (read)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // binding 1: flood_dist buffer (read_write)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // binding 2: uniform
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        let init_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("flood_init_pl"),
+            bind_group_layouts: &[&flood_init_bgl],
+            push_constant_ranges: &[],
+        });
+
+        let flood_init_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("flood_init_pipeline"),
+                layout: Some(&init_layout),
+                module: &init_shader,
+                entry_point: "cs_flood_init",
+                compilation_options: Default::default(),
+            });
+
+        // --- Flood Step pipeline ---
+        let step_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("flood_step_shader"),
+            source: wgpu::ShaderSource::Wgsl(super::shaders::FLOOD_STEP_SHADER.into()),
+        });
+
+        let flood_step_bgl =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("flood_step_bgl"),
+                entries: &[
+                    // binding 0: color_dist (read)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // binding 1: flood_a (read_write)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // binding 2: flood_b (read_write)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // binding 3: uniform
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        let step_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("flood_step_pl"),
+            bind_group_layouts: &[&flood_step_bgl],
+            push_constant_ranges: &[],
+        });
+
+        let flood_step_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("flood_step_pipeline"),
+                layout: Some(&step_layout),
+                module: &step_shader,
+                entry_point: "cs_flood_step",
+                compilation_options: Default::default(),
+            });
+
+        Self {
+            color_dist_pipeline,
+            color_dist_bgl,
+            flood_init_pipeline,
+            flood_init_bgl,
+            flood_step_pipeline,
+            flood_step_bgl,
+            cached_input_tex: None,
+            cached_color_dist_buf: None,
+            cached_flood_a_buf: None,
+            cached_flood_b_buf: None,
+            cached_staging_buf: None,
+            cached_params_buf_cd: None,
+            cached_params_buf_init: None,
+            cached_w: 0,
+            cached_h: 0,
+            cached_input_key: 0,
+        }
+    }
+
+    fn ensure_buffers(&mut self, device: &wgpu::Device, w: u32, h: u32) {
+        if self.cached_w == w && self.cached_h == h {
+            return;
+        }
+        let n = (w as u64) * (h as u64);
+        let buf_size = n * 4; // u32 per pixel
+
+        self.cached_color_dist_buf = Some(device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("flood_color_dist_buf"),
+            size: buf_size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        }));
+        self.cached_flood_a_buf = Some(device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("flood_a_buf"),
+            size: buf_size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        }));
+        self.cached_flood_b_buf = Some(device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("flood_b_buf"),
+            size: buf_size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        }));
+        self.cached_staging_buf = Some(device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("flood_staging_buf"),
+            size: buf_size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        }));
+
+        self.cached_input_tex = None;
+        self.cached_input_key = 0;
+        self.cached_w = w;
+        self.cached_h = h;
+    }
+
+    /// Compute the flood-fill minimax distance map on GPU.
+    /// Returns the distance map as `Vec<u8>` (one byte per pixel, 0–255).
+    /// This replaces the CPU `compute_flood_distance_map` Dijkstra.
+    pub fn compute_flood_distances(
+        &mut self,
+        ctx: &GpuContext,
+        flat_rgba: &[u8],
+        input_key: usize,
+        target_color: [u8; 4],
+        seed_x: u32,
+        seed_y: u32,
+        w: u32,
+        h: u32,
+        out: &mut Vec<u8>,
+    ) -> bool {
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        self.ensure_buffers(device, w, h);
+
+        // Upload input RGBA texture if changed
+        if self.cached_input_tex.is_none() || self.cached_input_key != input_key {
+            self.cached_input_tex = Some(upload_rgba(
+                device,
+                queue,
+                flat_rgba,
+                w,
+                h,
+                "flood_input_rgba",
+            ));
+            self.cached_input_key = input_key;
+        }
+
+        let wg_x = w.div_ceil(16);
+        let wg_y = h.div_ceil(16);
+
+        // === Phase 1: Compute per-pixel color distances ===
+        let cd_params = FloodColorDistGpuParams {
+            target_r: target_color[0] as u32,
+            target_g: target_color[1] as u32,
+            target_b: target_color[2] as u32,
+            target_a: target_color[3] as u32,
+            width: w,
+            height: h,
+            _pad0: 0,
+            _pad1: 0,
+        };
+        let cd_params_bytes = bytemuck::bytes_of(&cd_params);
+        let cd_params_buf = self.cached_params_buf_cd.get_or_insert_with(|| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("flood_cd_params"),
+                contents: cd_params_bytes,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            })
+        });
+        queue.write_buffer(cd_params_buf, 0, cd_params_bytes);
+
+        let input_view = self
+            .cached_input_tex
+            .as_ref()
+            .unwrap()
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let color_dist_buf = self.cached_color_dist_buf.as_ref().unwrap();
+        let flood_a_buf = self.cached_flood_a_buf.as_ref().unwrap();
+        let flood_b_buf = self.cached_flood_b_buf.as_ref().unwrap();
+
+        let cd_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("flood_cd_bg"),
+            layout: &self.color_dist_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&input_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: color_dist_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: cd_params_buf.as_entire_binding(),
+                },
+            ],
+        });
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("flood_cd_encoder"),
+        });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("flood_cd_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.color_dist_pipeline);
+            pass.set_bind_group(0, &cd_bg, &[]);
+            pass.dispatch_workgroups(wg_x, wg_y, 1);
+        }
+        queue.submit(std::iter::once(encoder.finish()));
+
+        // === Phase 2: Initialize flood distances ===
+        let init_params = FloodInitGpuParams {
+            seed_x,
+            seed_y,
+            width: w,
+            height: h,
+        };
+        let init_params_bytes = bytemuck::bytes_of(&init_params);
+        let init_params_buf = self.cached_params_buf_init.get_or_insert_with(|| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("flood_init_params"),
+                contents: init_params_bytes,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            })
+        });
+        queue.write_buffer(init_params_buf, 0, init_params_bytes);
+
+        let init_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("flood_init_bg"),
+            layout: &self.flood_init_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: color_dist_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: flood_a_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: init_params_buf.as_entire_binding(),
+                },
+            ],
+        });
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("flood_init_encoder"),
+        });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("flood_init_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.flood_init_pipeline);
+            pass.set_bind_group(0, &init_bg, &[]);
+            pass.dispatch_workgroups(wg_x, wg_y, 1);
+        }
+        queue.submit(std::iter::once(encoder.finish()));
+
+        // === Phase 3: Iterative relaxation with step_size=1 ONLY ===
+        // Must use step_size=1 for correct 4-connected flood fill.
+        // Large step sizes (JFA-style) jump over barriers, connecting
+        // disconnected regions and creating power-of-2. grid artifacts.
+        // Number of passes = w+h (upper bound on grid graph diameter).
+        let num_passes = (w + h) as usize;
+
+        // Pre-create param buffers for both ping-pong directions.
+        // These are immutable — no write_buffer needed between passes.
+        let params_buf_fwd =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("flood_step_params_fwd"),
+                contents: bytemuck::bytes_of(&FloodStepGpuParams {
+                    width: w,
+                    height: h,
+                    step_size: 1,
+                    direction: 0,
+                }),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+        let params_buf_bwd =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("flood_step_params_bwd"),
+                contents: bytemuck::bytes_of(&FloodStepGpuParams {
+                    width: w,
+                    height: h,
+                    step_size: 1,
+                    direction: 1,
+                }),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+        // Two bind groups sharing the same storage buffers but different uniform params.
+        let bg_fwd = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("flood_step_bg_fwd"),
+            layout: &self.flood_step_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: color_dist_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: flood_a_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: flood_b_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: params_buf_fwd.as_entire_binding(),
+                },
+            ],
+        });
+        let bg_bwd = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("flood_step_bg_bwd"),
+            layout: &self.flood_step_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: color_dist_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: flood_a_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: flood_b_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: params_buf_bwd.as_entire_binding(),
+                },
+            ],
+        });
+
+        // Batch passes into encoder submissions.
+        // Multiple compute passes per encoder are correct here — wgpu inserts
+        // implicit storage-buffer barriers at compute pass boundaries, and we
+        // use pre-built bind groups (no write_buffer between passes).
+        let batch_size = 1000;
+        let mut direction = 0u32;
+        for chunk_start in (0..num_passes).step_by(batch_size) {
+            let chunk_end = num_passes.min(chunk_start + batch_size);
+            let mut encoder =
+                device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("flood_step_batch"),
+                });
+            for _ in chunk_start..chunk_end {
+                {
+                    let mut pass =
+                        encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                            label: Some("flood_step_pass"),
+                            timestamp_writes: None,
+                        });
+                    pass.set_pipeline(&self.flood_step_pipeline);
+                    if direction == 0 {
+                        pass.set_bind_group(0, &bg_fwd, &[]);
+                    } else {
+                        pass.set_bind_group(0, &bg_bwd, &[]);
+                    }
+                    pass.dispatch_workgroups(wg_x, wg_y, 1);
+                }
+                direction ^= 1;
+            }
+            queue.submit(std::iter::once(encoder.finish()));
+        }
+
+        // === Phase 4: Read back result ===
+        // The final distances are in flood_a (if direction==0) or flood_b (if direction==1)
+        let result_buf = if direction == 0 {
+            flood_a_buf
+        } else {
+            flood_b_buf
+        };
+
+        let staging = self.cached_staging_buf.as_ref().unwrap();
+        let buf_size = (w as u64) * (h as u64) * 4;
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("flood_readback_encoder"),
+        });
+        encoder.copy_buffer_to_buffer(result_buf, 0, staging, 0, buf_size);
+        queue.submit(std::iter::once(encoder.finish()));
+
+        let slice = staging.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        device.poll(wgpu::Maintain::Wait);
+
+        match rx.recv() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                eprintln!("[GPU] GpuFloodFillPipeline readback map error: {:?}", e);
+                out.clear();
+                return false;
+            }
+            Err(e) => {
+                eprintln!("[GPU] GpuFloodFillPipeline readback channel error: {:?}", e);
+                out.clear();
+                return false;
+            }
+        }
+
+        let mapped = slice.get_mapped_range();
+        let n = (w * h) as usize;
+        out.clear();
+        out.resize(n, 0);
+        // Storage buffer contains u32 per pixel; extract low byte (0–255)
+        let src: &[u32] = bytemuck::cast_slice(&mapped[..n * 4]);
+        for (i, &val) in src.iter().enumerate() {
+            out[i] = val.min(255) as u8;
+        }
+
+        drop(mapped);
+        staging.unmap();
+        true
+    }
+
+    /// Compute per-pixel global distance map on GPU (no connectivity, no flood).
+    /// Used for Magic Wand global select mode (Ctrl+Shift).
+    pub fn compute_global_distances(
+        &mut self,
+        ctx: &GpuContext,
+        flat_rgba: &[u8],
+        input_key: usize,
+        target_color: [u8; 4],
+        w: u32,
+        h: u32,
+        out: &mut Vec<u8>,
+    ) -> bool {
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        self.ensure_buffers(device, w, h);
+
+        if self.cached_input_tex.is_none() || self.cached_input_key != input_key {
+            self.cached_input_tex = Some(upload_rgba(
+                device,
+                queue,
+                flat_rgba,
+                w,
+                h,
+                "flood_input_rgba",
+            ));
+            self.cached_input_key = input_key;
+        }
+
+        let cd_params = FloodColorDistGpuParams {
+            target_r: target_color[0] as u32,
+            target_g: target_color[1] as u32,
+            target_b: target_color[2] as u32,
+            target_a: target_color[3] as u32,
+            width: w,
+            height: h,
+            _pad0: 0,
+            _pad1: 0,
+        };
+        let cd_params_bytes = bytemuck::bytes_of(&cd_params);
+        let cd_params_buf = self.cached_params_buf_cd.get_or_insert_with(|| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("flood_cd_params"),
+                contents: cd_params_bytes,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            })
+        });
+        queue.write_buffer(cd_params_buf, 0, cd_params_bytes);
+
+        let input_view = self
+            .cached_input_tex
+            .as_ref()
+            .unwrap()
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let color_dist_buf = self.cached_color_dist_buf.as_ref().unwrap();
+
+        let cd_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("flood_cd_bg"),
+            layout: &self.color_dist_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&input_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: color_dist_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: cd_params_buf.as_entire_binding(),
+                },
+            ],
+        });
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("flood_global_cd_encoder"),
+        });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("flood_global_cd_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.color_dist_pipeline);
+            pass.set_bind_group(0, &cd_bg, &[]);
+            pass.dispatch_workgroups(w.div_ceil(16), h.div_ceil(16), 1);
+        }
+
+        // Copy color_dist to staging for readback
+        let staging = self.cached_staging_buf.as_ref().unwrap();
+        let buf_size = (w as u64) * (h as u64) * 4;
+        encoder.copy_buffer_to_buffer(color_dist_buf, 0, staging, 0, buf_size);
+        queue.submit(std::iter::once(encoder.finish()));
+
+        let slice = staging.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        device.poll(wgpu::Maintain::Wait);
+
+        match rx.recv() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                eprintln!("[GPU] GpuFloodFillPipeline global readback map error: {:?}", e);
+                out.clear();
+                return false;
+            }
+            Err(e) => {
+                eprintln!("[GPU] GpuFloodFillPipeline global readback channel error: {:?}", e);
+                out.clear();
+                return false;
+            }
+        }
+
+        let mapped = slice.get_mapped_range();
+        let n = (w * h) as usize;
+        out.clear();
+        out.resize(n, 0);
+        let src: &[u32] = bytemuck::cast_slice(&mapped[..n * 4]);
+        for (i, &val) in src.iter().enumerate() {
+            out[i] = val.min(255) as u8;
+        }
+
+        drop(mapped);
+        staging.unmap();
+        true
+    }
 }
 
 impl GpuGradientPipeline {

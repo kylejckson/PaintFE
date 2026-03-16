@@ -9,6 +9,9 @@ use crate::ops::text_layer::TextLayerData;
 
 /// Maximum longest-edge dimension for the LOD cache thumbnail.
 const LOD_MAX_EDGE: u32 = 1024;
+/// Above this many selected bbox pixels, freeze the interior hatch overlay and
+/// rely on the cached GPU texture + border only to keep panning responsive.
+const LARGE_SELECTION_STATIC_THRESHOLD: u32 = 1_048_576;
 
 // ============================================================================
 // SELECTION SYSTEM
@@ -45,6 +48,16 @@ impl SelectionMode {
             SelectionMode::Subtract,
             SelectionMode::Intersect,
         ]
+    }
+}
+
+fn selection_overlay_should_animate(bounds: Option<(u32, u32, u32, u32)>) -> bool {
+    if let Some((min_x, min_y, max_x, max_y)) = bounds {
+        let width = max_x.saturating_sub(min_x).saturating_add(1);
+        let height = max_y.saturating_sub(min_y).saturating_add(1);
+        width.saturating_mul(height) <= LARGE_SELECTION_STATIC_THRESHOLD
+    } else {
+        true
     }
 }
 
@@ -885,6 +898,83 @@ impl TiledImage {
                 if has_content {
                     let arc =
                         self.chunks[idx].get_or_insert_with(|| Arc::new(RgbaImage::new(cs, cs)));
+                    let chunk = Arc::make_mut(arc);
+                    let dst_off = (ly as usize * cs as usize + lx as usize) * 4;
+                    chunk.as_mut()[dst_off..dst_off + byte_len]
+                        .copy_from_slice(&data[src_off..src_off + byte_len]);
+                }
+
+                sx += run;
+            }
+        }
+    }
+
+    /// Blit RGBA data with full replacement including transparent pixels.
+    /// Unlike `blit_rgba_at`, this writes ALL pixels in the source region,
+    /// including fully-transparent ones. Used by fill preview GPU path where
+    /// the dirty region must be fully overwritten (unfilled pixels → transparent).
+    pub fn blit_rgba_at_replace(
+        &mut self,
+        dst_x: i32,
+        dst_y: i32,
+        src_w: u32,
+        src_h: u32,
+        data: &[u8],
+    ) {
+        debug_assert_eq!(data.len(), src_w as usize * src_h as usize * 4);
+        let cs = CHUNK_SIZE;
+
+        for sy in 0..src_h {
+            let gy = dst_y + sy as i32;
+            if gy < 0 || gy as u32 >= self.height {
+                continue;
+            }
+            let gy = gy as u32;
+
+            let src_row_start = sy as usize * src_w as usize * 4;
+
+            let mut sx = 0u32;
+            while sx < src_w {
+                let gx = dst_x + sx as i32;
+                if gx < 0 {
+                    sx += 1;
+                    continue;
+                }
+                let gx = gx as u32;
+                if gx >= self.width {
+                    break;
+                }
+
+                let (_cx, _cy) = Self::chunk_coord(gx, gy);
+                let (lx, ly) = Self::local(gx, gy);
+                let idx = self.flat_index(_cx, _cy);
+
+                let chunk_remaining = cs - lx;
+                let src_remaining = src_w - sx;
+                let canvas_remaining = self.width - gx;
+                let run = chunk_remaining.min(src_remaining).min(canvas_remaining);
+
+                let src_off = src_row_start + sx as usize * 4;
+                let byte_len = run as usize * 4;
+
+                // Check if entire run is transparent
+                let all_transparent = data[src_off..src_off + byte_len]
+                    .chunks_exact(4)
+                    .all(|px| px[3] == 0);
+
+                if all_transparent {
+                    // If chunk exists, clear these pixels to transparent
+                    if let Some(arc) = &mut self.chunks[idx] {
+                        let chunk = Arc::make_mut(arc);
+                        let dst_off = (ly as usize * cs as usize + lx as usize) * 4;
+                        for b in &mut chunk.as_mut()[dst_off..dst_off + byte_len] {
+                            *b = 0;
+                        }
+                    }
+                    // If chunk doesn't exist, already transparent — nothing to do
+                } else {
+                    let arc = self.chunks[idx]
+                        .get_or_insert_with(|| Arc::new(RgbaImage::new(cs, cs)));
                     let chunk = Arc::make_mut(arc);
                     let dst_off = (ly as usize * cs as usize + lx as usize) * 4;
                     chunk.as_mut()[dst_off..dst_off + byte_len]
@@ -2888,6 +2978,8 @@ pub struct Canvas {
     pub fps: f32,
     /// True while the fill tool is recalculating its preview (shown in loading bar).
     pub fill_recalc_active: bool,
+    /// Non-user-facing tool warmup/build operation shown in the debug loading bar.
+    pub tool_map_build_label: Option<String>,
     /// True while a gradient commit is in progress (shown in loading bar).
     pub gradient_commit_active: bool,
     /// Cached texture for layers above the active layer during paste preview.
@@ -2930,6 +3022,7 @@ impl Canvas {
             frame_times: VecDeque::with_capacity(60),
             fps: 0.0,
             fill_recalc_active: false,
+            tool_map_build_label: None,
             gradient_commit_active: false,
             paste_layers_above_cache: None,
             brush_tip_cursor_tex: None,
@@ -3879,7 +3972,10 @@ impl Canvas {
         // Keep repainting so marching ants stay animated even when mouse is idle.
         let has_selection_mask = state.selection_mask.is_some();
         let has_selection_drag = tools.as_ref().is_some_and(|t| t.selection_state.dragging);
-        if has_selection_mask || has_selection_drag {
+        let selection_needs_animation = has_selection_mask
+            && (state.selection_overlay_built_generation != state.selection_overlay_generation
+                || selection_overlay_should_animate(state.selection_overlay_bounds));
+        if selection_needs_animation || has_selection_drag {
             ui.ctx().request_repaint();
         }
 
@@ -4424,6 +4520,9 @@ impl Canvas {
             // Track fill recalculation state for the loading bar
             self.fill_recalc_active =
                 tools.fill_state.recalc_pending && tools.fill_state.active_fill.is_some();
+
+            // Track tool map warmup/build state for the loading bar
+            self.tool_map_build_label = tools.debug_operation_label();
 
             // Track gradient commit state for the loading bar
             self.gradient_commit_active = tools.gradient_state.commit_pending
@@ -5052,7 +5151,8 @@ impl Canvas {
             // show for fill/gradient only when debug panel is enabled.
             // ====================================================================
             let has_user_ops = pending_filter_jobs > 0 || pending_io_ops > 0;
-            let has_debug_ops = self.fill_recalc_active || self.gradient_commit_active;
+            let has_debug_ops =
+                self.fill_recalc_active || self.gradient_commit_active || self.tool_map_build_label.is_some();
             if has_user_ops || (debug_settings.debug_show_operations && has_debug_ops) {
                 let current_time = ui.input(|i| i.time);
                 let mut ops_parts = Vec::new();
@@ -5078,6 +5178,8 @@ impl Canvas {
                     ops_parts.push(format!("Processing: I/O ({})", elapsed));
                 } else if self.fill_recalc_active {
                     ops_parts.push("Updating: Fill Preview".to_string());
+                } else if let Some(label) = &self.tool_map_build_label {
+                    ops_parts.push(label.clone());
                 } else if self.gradient_commit_active {
                     ops_parts.push("Committing: Tool".to_string());
                 }
@@ -5591,6 +5693,9 @@ impl Canvas {
             return; // Nothing selected
         }
 
+        let should_animate_interior = selection_overlay_should_animate(Some((min_x, min_y, max_x, max_y)));
+        let clip_rect = painter.clip_rect();
+
         let sel = |x: u32, y: u32| -> bool { mask_raw[(y as usize) * stride + (x as usize)] > 0 };
 
         // --- 2. Selection interior overlay via GPU-cached texture. -----------
@@ -5612,7 +5717,8 @@ impl Canvas {
             // Rebuild when the fractional offset shifts by ≥0.15 canvas pixels
             // (~10 rebuilds/sec at 1.5 px/s) — enough for smooth motion without
             // rebuilding a potentially large texture on every single frame.
-            let anim_changed = (anim_offset - state.selection_overlay_anim_offset).abs() > 0.15;
+            let anim_changed = should_animate_interior
+                && (anim_offset - state.selection_overlay_anim_offset).abs() > 0.15;
             let needs_rebuild =
                 state.selection_overlay_texture.is_none() || generation_changed || anim_changed;
 
@@ -5660,13 +5766,21 @@ impl Canvas {
                     magnification: TextureFilter::Nearest,
                     minification: TextureFilter::Linear,
                 };
-                state.selection_overlay_texture = Some(ctx.load_texture(
-                    "selection_overlay",
-                    ImageData::Color(Arc::new(color_image)),
-                    tex_options,
-                ));
+                if let Some(ref mut tex) = state.selection_overlay_texture {
+                    tex.set(ImageData::Color(Arc::new(color_image)), tex_options);
+                } else {
+                    state.selection_overlay_texture = Some(ctx.load_texture(
+                        "selection_overlay",
+                        ImageData::Color(Arc::new(color_image)),
+                        tex_options,
+                    ));
+                }
                 state.selection_overlay_built_generation = state.selection_overlay_generation;
-                state.selection_overlay_anim_offset = anim_offset;
+                state.selection_overlay_anim_offset = if should_animate_interior {
+                    anim_offset
+                } else {
+                    0.0
+                };
                 state.selection_overlay_bounds = Some((min_x, min_y, max_x, max_y));
             }
 
@@ -5758,6 +5872,12 @@ impl Canvas {
             let sy = (image_rect.min.y + y_line as f32 * zoom).round();
             let sx0 = (image_rect.min.x + x0 as f32 * zoom).round();
             let sx1 = (image_rect.min.x + x1 as f32 * zoom).round();
+            if sy < clip_rect.min.y - glow_width || sy > clip_rect.max.y + glow_width {
+                continue;
+            }
+            if sx1 < clip_rect.min.x - glow_width || sx0 > clip_rect.max.x + glow_width {
+                continue;
+            }
             let a = Pos2::new(sx0, sy);
             let b = Pos2::new(sx1, sy);
             if !skip_glow {
@@ -5771,6 +5891,12 @@ impl Canvas {
             let sx = (image_rect.min.x + x_line as f32 * zoom).round();
             let sy0 = (image_rect.min.y + y0 as f32 * zoom).round();
             let sy1 = (image_rect.min.y + y1 as f32 * zoom).round();
+            if sx < clip_rect.min.x - glow_width || sx > clip_rect.max.x + glow_width {
+                continue;
+            }
+            if sy1 < clip_rect.min.y - glow_width || sy0 > clip_rect.max.y + glow_width {
+                continue;
+            }
             let a = Pos2::new(sx, sy0);
             let b = Pos2::new(sx, sy1);
             if !skip_glow {
