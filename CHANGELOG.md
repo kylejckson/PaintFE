@@ -6,6 +6,19 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.1.7] - 2026-03-20
+
+### Added
+- **Configurable startup canvas**: Settings > General now has a "Startup Canvas" section. The default canvas size (width × height) is configurable. A toggle lets users disable the startup canvas entirely so the app opens to an empty workspace — useful for users who always open existing files.
+- **Empty app state**: Closing the last project tab no longer auto-creates a replacement blank canvas. The app can now be fully empty; all tools and menus (Edit, Canvas, Color, Filter, Generate) are grayed out until a project is opened via File > New or File > Open.
+- **Integration test suite (260 tests)**: 14 test files covering visual filters, color adjustments, blend modes, transforms, shapes, tool strokes, layer ops, selection, text layers, scripting API, IO roundtrips, GPU pipelines, inpainting, and Catmull-Rom/affine math. Golden image reference system with per-channel tolerance support.
+
+### Fixed
+- Potential panic when using the Move Selection tool with no projects open.
+- Pre-existing clippy warnings in scripting host API (`map_or(true, …)` → `is_none_or`).
+
+---
+
 ## [1.1.6] - 2026-03-16
 
 ### Added
