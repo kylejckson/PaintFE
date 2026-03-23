@@ -33,8 +33,17 @@ impl GpuContext {
     }
 
     async fn new_async(preferred_gpu: &str, force_fallback: bool) -> Option<Self> {
+        // On Linux, exclude the GL/EGL backend — wgpu-hal's EGL initialisation
+        // panics (unwrap) on some X11 configurations (EGL_BAD_ACCESS).  Vulkan
+        // plus Mesa's lavapipe software renderer covers all modern Linux systems.
+        // On other platforms keep Backends::all() for maximum compatibility.
+        #[cfg(target_os = "linux")]
+        let backends = wgpu::Backends::VULKAN;
+        #[cfg(not(target_os = "linux"))]
+        let backends = wgpu::Backends::all();
+
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
+            backends,
             ..Default::default()
         });
 

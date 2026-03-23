@@ -248,8 +248,14 @@ impl GpuRenderer {
     /// Panics only if even the software rasterizer is unavailable (should not
     /// happen on any modern OS).
     pub fn new(preferred_gpu: &str) -> Self {
-        Self::try_new(preferred_gpu)
-            .expect("GpuRenderer: neither hardware nor software adapter available")
+        Self::try_new(preferred_gpu).unwrap_or_else(|| {
+            eprintln!(
+                "[GPU] Fatal: no wgpu adapter found. \
+                 On Linux, ensure Vulkan drivers are installed (Mesa / lavapipe). \
+                 You can also try setting WGPU_BACKEND=vulkan."
+            );
+            panic!("GpuRenderer: neither hardware nor software adapter available")
+        })
     }
 
     pub fn try_new(preferred_gpu: &str) -> Option<Self> {
