@@ -79,7 +79,9 @@ fn delete_last_layer_denied() {
 fn duplicate_layer_copies_pixels() {
     let mut state = CanvasState::new(32, 32);
     // Paint something on layer 0
-    state.layers[0].pixels.put_pixel(10, 10, Rgba([255, 0, 0, 255]));
+    state.layers[0]
+        .pixels
+        .put_pixel(10, 10, Rgba([255, 0, 0, 255]));
 
     let mut hist = history();
     state.active_layer_index = 0;
@@ -87,7 +89,11 @@ fn duplicate_layer_copies_pixels() {
 
     assert_eq!(state.layers.len(), 2);
     let dup_px = state.layers[1].pixels.get_pixel(10, 10);
-    assert_eq!(*dup_px, Rgba([255, 0, 0, 255]), "duplicated layer should have same pixels");
+    assert_eq!(
+        *dup_px,
+        Rgba([255, 0, 0, 255]),
+        "duplicated layer should have same pixels"
+    );
 }
 
 // =============================================================================
@@ -138,12 +144,14 @@ fn layer_reorder_changes_composite() {
 
     // Layer 1: full red
     let mut red = Layer::new("Red".into(), 32, 32, Rgba([0, 0, 0, 0]));
-    red.pixels = TiledImage::from_rgba_image(&RgbaImage::from_pixel(32, 32, Rgba([255, 0, 0, 255])));
+    red.pixels =
+        TiledImage::from_rgba_image(&RgbaImage::from_pixel(32, 32, Rgba([255, 0, 0, 255])));
     state.layers.push(red);
 
     // Layer 2: full blue
     let mut blue = Layer::new("Blue".into(), 32, 32, Rgba([0, 0, 0, 0]));
-    blue.pixels = TiledImage::from_rgba_image(&RgbaImage::from_pixel(32, 32, Rgba([0, 0, 255, 255])));
+    blue.pixels =
+        TiledImage::from_rgba_image(&RgbaImage::from_pixel(32, 32, Rgba([0, 0, 255, 255])));
     state.layers.push(blue);
 
     // Top layer (blue) should dominate
@@ -167,7 +175,8 @@ fn flatten_multiple_layers() {
     let mut state = CanvasState::new(32, 32);
 
     let mut red = Layer::new("Red".into(), 32, 32, Rgba([0, 0, 0, 0]));
-    red.pixels = TiledImage::from_rgba_image(&RgbaImage::from_pixel(32, 32, Rgba([255, 0, 0, 128])));
+    red.pixels =
+        TiledImage::from_rgba_image(&RgbaImage::from_pixel(32, 32, Rgba([255, 0, 0, 128])));
     state.layers.push(red);
 
     let before = state.composite();
@@ -183,7 +192,8 @@ fn flatten_preserves_hidden_layer_exclusion() {
     let mut state = CanvasState::new(32, 32);
 
     let mut green = Layer::new("Green".into(), 32, 32, Rgba([0, 0, 0, 0]));
-    green.pixels = TiledImage::from_rgba_image(&RgbaImage::from_pixel(32, 32, Rgba([0, 255, 0, 255])));
+    green.pixels =
+        TiledImage::from_rgba_image(&RgbaImage::from_pixel(32, 32, Rgba([0, 255, 0, 255])));
     green.visible = false;
     state.layers.push(green);
 

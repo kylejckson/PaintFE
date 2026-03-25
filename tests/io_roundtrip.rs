@@ -28,13 +28,7 @@ fn test_image() -> RgbaImage {
 }
 
 /// Helper: save an image, load it back, return the loaded composite.
-fn roundtrip_format(
-    img: &RgbaImage,
-    name: &str,
-    format: SaveFormat,
-    quality: u8,
-    tolerance: u8,
-) {
+fn roundtrip_format(img: &RgbaImage, name: &str, format: SaveFormat, quality: u8, tolerance: u8) {
     let path = temp_dir().join(name);
     encode_and_write(img, &path, format, quality, TiffCompression::None).unwrap();
 
@@ -125,7 +119,10 @@ fn roundtrip_pfe_single_layer() {
 
     let original_px = extract_layer(&state, 0);
     let loaded_px = extract_layer(&loaded, 0);
-    assert_eq!(original_px, loaded_px, "PFE single layer should be pixel-exact");
+    assert_eq!(
+        original_px, loaded_px,
+        "PFE single layer should be pixel-exact"
+    );
 
     let _ = std::fs::remove_file(&path);
 }
@@ -166,7 +163,10 @@ fn roundtrip_pfe_multi_layer() {
     // Composite should match
     let original_comp = state.composite();
     let loaded_comp = loaded.composite();
-    assert_eq!(original_comp, loaded_comp, "PFE composite should be pixel-exact");
+    assert_eq!(
+        original_comp, loaded_comp,
+        "PFE composite should be pixel-exact"
+    );
 
     let _ = std::fs::remove_file(&path);
 }

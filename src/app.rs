@@ -1,4 +1,6 @@
-use crate::assets::{AppSettings, Assets, BindableAction, Icon, PixelGridMode, SettingsWindow};
+use crate::assets::{
+    AppSettings, Assets, BindableAction, Icon, KeyCombo, PixelGridMode, SettingsWindow,
+};
 use crate::canvas::{BlendMode, Canvas, CanvasState, Layer, TiledImage};
 use crate::components::dialogs::{NewFileDialog, SaveFileDialog, SaveFormat, TiffCompression};
 use crate::components::history::{CanvasSnapshot, SingleLayerSnapshotCommand, SnapshotCommand};
@@ -1117,25 +1119,7 @@ impl eframe::App for PaintFEApp {
             let dropped: Vec<egui::DroppedFile> = ctx.input(|i| i.raw.dropped_files.clone());
             for file in dropped {
                 if let Some(path) = file.path {
-                    let ext = path
-                        .extension()
-                        .map(|e| e.to_string_lossy().to_lowercase())
-                        .unwrap_or_default();
-                    let supported = matches!(
-                        ext.as_str(),
-                        "png"
-                            | "jpg"
-                            | "jpeg"
-                            | "bmp"
-                            | "gif"
-                            | "webp"
-                            | "tiff"
-                            | "tif"
-                            | "tga"
-                            | "ico"
-                            | "pfe"
-                    );
-                    if supported {
+                    if path.is_file() {
                         self.open_file_by_path(path, ctx.input(|i| i.time));
                     }
                 }
@@ -1221,6 +1205,12 @@ impl eframe::App for PaintFEApp {
         // so egui will NOT forward consumed keys to text widgets.
         // Clone keybindings to avoid borrow conflicts with &mut self methods.
         if !modal_open {
+            self.tools_panel.brush_resize_drag_binding = self
+                .settings
+                .keybindings
+                .get(BindableAction::BrushResizeDragModifier)
+                .cloned()
+                .unwrap_or_else(|| KeyCombo::modifiers_only(false, true, false));
             use crate::assets::BindableAction;
             let ctrl = ctx.input(|i| i.modifiers.command);
             let kb = self.settings.keybindings.clone();
@@ -2412,7 +2402,12 @@ impl eframe::App for PaintFEApp {
                         ui.separator();
                         if self
                             .assets
-                            .menu_item_enabled(ui, Icon::MenuFilePrint, &t!("menu.file.print"), has_project)
+                            .menu_item_enabled(
+                                ui,
+                                Icon::MenuFilePrint,
+                                &t!("menu.file.print"),
+                                has_project,
+                            )
                             .clicked()
                         {
                             if let Some(project) = self.active_project_mut() {
@@ -9593,17 +9588,13 @@ impl PaintFEApp {
                 // If the layer being text-edited was rasterized inside show()
                 // (e.g. via right-click → "Rasterize Text Layer"), cancel any
                 // stale text editing state so tools don't remain locked.
-                if project
-                    .canvas_state
-                    .text_editing_layer
-                    .is_some_and(|idx| {
-                        project
-                            .canvas_state
-                            .layers
-                            .get(idx)
-                            .is_some_and(|l| !l.is_text_layer())
-                    })
-                {
+                if project.canvas_state.text_editing_layer.is_some_and(|idx| {
+                    project
+                        .canvas_state
+                        .layers
+                        .get(idx)
+                        .is_some_and(|l| !l.is_text_layer())
+                }) {
                     self.tools_panel
                         .cancel_text_editing(&mut project.canvas_state);
                 }

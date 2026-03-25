@@ -6,6 +6,21 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.1.9] - 2026-03-25
+
+### Added
+- **Hold Shift + drag to resize brush**: While any brush-based tool is active, holding Shift and dragging left/right now resizes the brush size interactively.
+- **Drag and drop support**: Files can now be opened by dragging and dropping them onto the canvas.
+- **Horizontal/vertical letter width modifiers for text layers**: Text layers now support per-axis character width scaling, enabling condensed or expanded type styles.
+
+### Fixed
+- **Text Layer rasterization**: Resolved issues with incorrect rendering when rasterizing vector text layers to pixel data.
+
+### Improved
+- **Text Layer drag performance**: Dragging/moving text at higher resolutions is significantly faster.
+
+---
+
 ## [1.1.7] - 2026-03-20
 
 ### Added

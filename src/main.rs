@@ -5,12 +5,12 @@
 //   route through the correct handles (necessary when SUBSYSTEM:WINDOWS is set).
 #![windows_subsystem = "windows"]
 
+use eframe::egui;
 use paintfe::app::PaintFEApp;
 use paintfe::cli;
 use paintfe::i18n;
 use paintfe::ipc;
 use paintfe::logger;
-use eframe::egui;
 
 fn main() -> Result<(), eframe::Error> {
     // -- Windows console management ------------------------------------

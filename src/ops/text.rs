@@ -42,7 +42,10 @@ pub fn layout_text(
     width_scale: f32,
     height_scale: f32,
 ) -> (Vec<(GlyphId, f32, f32)>, f32, f32, f32, f32) {
-    let scaled = font.as_scaled(ab_glyph::PxScale { x: font_size * width_scale, y: font_size * height_scale });
+    let scaled = font.as_scaled(ab_glyph::PxScale {
+        x: font_size * width_scale,
+        y: font_size * height_scale,
+    });
     let ascent = scaled.ascent();
     let descent = scaled.descent();
     let line_height = scaled.height();
@@ -112,7 +115,10 @@ pub fn compute_text_layout_metrics(
     height_scale: f32,
 ) -> TextLayoutMetrics {
     use ab_glyph::{Font as _, ScaleFont as _};
-    let scaled = font.as_scaled(ab_glyph::PxScale { x: font_size * width_scale, y: font_size * height_scale });
+    let scaled = font.as_scaled(ab_glyph::PxScale {
+        x: font_size * width_scale,
+        y: font_size * height_scale,
+    });
     let base_line_height = scaled.height();
     let line_height = base_line_height * line_spacing;
 
@@ -120,7 +126,17 @@ pub fn compute_text_layout_metrics(
     let visual_lines: Vec<String> = if let Some(mw) = max_width {
         explicit_lines
             .iter()
-            .flat_map(|line| word_wrap_line(line, font, font_size, mw, letter_spacing, width_scale, height_scale))
+            .flat_map(|line| {
+                word_wrap_line(
+                    line,
+                    font,
+                    font_size,
+                    mw,
+                    letter_spacing,
+                    width_scale,
+                    height_scale,
+                )
+            })
             .collect()
     } else {
         explicit_lines.iter().map(|s| s.to_string()).collect()
@@ -170,7 +186,10 @@ pub fn word_wrap_line(
     if line.is_empty() {
         return vec![String::new()];
     }
-    let scaled = font.as_scaled(ab_glyph::PxScale { x: font_size * width_scale, y: font_size * height_scale });
+    let scaled = font.as_scaled(ab_glyph::PxScale {
+        x: font_size * width_scale,
+        y: font_size * height_scale,
+    });
 
     // Measure the full line width first as a fast path
     let full_width = {
@@ -340,7 +359,10 @@ pub fn rasterize_text(
     width_scale: f32,
     height_scale: f32,
 ) -> RasterizedText {
-    let scaled = font.as_scaled(ab_glyph::PxScale { x: font_size * width_scale, y: font_size * height_scale });
+    let scaled = font.as_scaled(ab_glyph::PxScale {
+        x: font_size * width_scale,
+        y: font_size * height_scale,
+    });
     let ascent = scaled.ascent();
     let base_line_height = scaled.height();
     let line_height = base_line_height * line_spacing;
@@ -350,7 +372,17 @@ pub fn rasterize_text(
     let visual_lines: Vec<String> = if let Some(mw) = max_width {
         explicit_lines
             .iter()
-            .flat_map(|line| word_wrap_line(line, font, font_size, mw, letter_spacing, width_scale, height_scale))
+            .flat_map(|line| {
+                word_wrap_line(
+                    line,
+                    font,
+                    font_size,
+                    mw,
+                    letter_spacing,
+                    width_scale,
+                    height_scale,
+                )
+            })
             .collect()
     } else {
         explicit_lines.iter().map(|s| s.to_string()).collect()
@@ -362,8 +394,15 @@ pub fn rasterize_text(
 
     for (line_idx, line) in visual_lines.iter().enumerate() {
         let y_offset = line_idx as f32 * line_height;
-        let (mut glyphs, total_width, _, _, _) =
-            layout_text(font, line, font_size, alignment, letter_spacing, width_scale, height_scale);
+        let (mut glyphs, total_width, _, _, _) = layout_text(
+            font,
+            line,
+            font_size,
+            alignment,
+            letter_spacing,
+            width_scale,
+            height_scale,
+        );
         // Offset y positions for this line
         for glyph in &mut glyphs {
             glyph.2 += y_offset;
@@ -411,7 +450,13 @@ pub fn rasterize_text(
     let mut max_y = f32::MIN;
 
     for &(glyph_id, gx, gy) in &all_glyphs {
-        let glyph = glyph_id.with_scale_and_position(ab_glyph::PxScale { x: font_size * width_scale, y: font_size * height_scale }, point(gx, gy));
+        let glyph = glyph_id.with_scale_and_position(
+            ab_glyph::PxScale {
+                x: font_size * width_scale,
+                y: font_size * height_scale,
+            },
+            point(gx, gy),
+        );
         if let Some(outlined) = font.outline_glyph(glyph.clone()) {
             let ob = outlined.px_bounds();
             min_x = min_x.min(ob.min.x);
@@ -510,7 +555,13 @@ pub fn rasterize_text(
 
         // Populate cache if this glyph hasn't been rasterized yet
         glyph_cache.entry(cache_key).or_insert_with(|| {
-            let base_glyph = glyph_id.with_scale_and_position(ab_glyph::PxScale { x: font_size * width_scale, y: font_size * height_scale }, point(0.0, 0.0));
+            let base_glyph = glyph_id.with_scale_and_position(
+                ab_glyph::PxScale {
+                    x: font_size * width_scale,
+                    y: font_size * height_scale,
+                },
+                point(0.0, 0.0),
+            );
             let mut px_list = Vec::new();
             let (bx, by) = if let Some(outlined) = font.outline_glyph(base_glyph) {
                 let b = outlined.px_bounds();
@@ -525,7 +576,8 @@ pub fn rasterize_text(
         });
 
         // Replay cached glyph pixels at actual position
-        if let Some((pixels, base_bx, base_by)) = glyph_cache.get(&cache_key) {  // key is (GlyphId, font_size, width_scale, height_scale) bits
+        if let Some((pixels, base_bx, base_by)) = glyph_cache.get(&cache_key) {
+            // key is (GlyphId, font_size, width_scale, height_scale) bits
             let actual_bx = *base_bx + draw_x;
             let actual_by = *base_by + draw_y;
 

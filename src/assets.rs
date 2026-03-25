@@ -2371,6 +2371,16 @@ pub struct KeyCombo {
 }
 
 impl KeyCombo {
+    pub fn modifiers_only(ctrl: bool, shift: bool, alt: bool) -> Self {
+        Self {
+            ctrl,
+            shift,
+            alt,
+            key: None,
+            text_char: None,
+        }
+    }
+
     pub fn key(k: egui::Key) -> Self {
         Self {
             ctrl: false,
@@ -2480,7 +2490,12 @@ impl KeyCombo {
                 }
             }
         }
-        if combo.key.is_some() || combo.text_char.is_some() {
+        if combo.key.is_some()
+            || combo.text_char.is_some()
+            || combo.ctrl
+            || combo.shift
+            || combo.alt
+        {
             Some(combo)
         } else {
             None
@@ -2533,6 +2548,7 @@ pub enum BindableAction {
     ToolColorRemover,
     ToolMeshWarp,
     // Brush
+    BrushResizeDragModifier,
     BrushSizeDecrease,
     BrushSizeIncrease,
 }
@@ -2577,6 +2593,7 @@ impl BindableAction {
             Self::ToolLasso => t!("keybind.tool_lasso"),
             Self::ToolColorRemover => t!("keybind.tool_color_remover"),
             Self::ToolMeshWarp => t!("keybind.tool_mesh_warp"),
+            Self::BrushResizeDragModifier => t!("keybind.brush_resize_drag_modifier"),
             Self::BrushSizeDecrease => t!("keybind.brush_size_decrease"),
             Self::BrushSizeIncrease => t!("keybind.brush_size_increase"),
         }
@@ -2618,7 +2635,9 @@ impl BindableAction {
             | Self::ToolLasso
             | Self::ToolColorRemover
             | Self::ToolMeshWarp => t!("keybind_category.tools"),
-            Self::BrushSizeDecrease | Self::BrushSizeIncrease => t!("keybind_category.brush"),
+            Self::BrushResizeDragModifier | Self::BrushSizeDecrease | Self::BrushSizeIncrease => {
+                t!("keybind_category.brush")
+            }
         }
     }
 
@@ -2662,6 +2681,7 @@ impl BindableAction {
             ToolLasso,
             ToolColorRemover,
             ToolMeshWarp,
+            BrushResizeDragModifier,
             BrushSizeDecrease,
             BrushSizeIncrease,
         ]
@@ -2730,6 +2750,10 @@ impl Default for KeyBindings {
         map.insert(ToolColorRemover, KeyCombo::key(Key::R));
         map.insert(ToolMeshWarp, KeyCombo::key(Key::Q));
         // Brush size
+        map.insert(
+            BrushResizeDragModifier,
+            KeyCombo::modifiers_only(false, true, false),
+        );
         map.insert(BrushSizeDecrease, KeyCombo::text("["));
         map.insert(BrushSizeIncrease, KeyCombo::text("]"));
 
@@ -2798,6 +2822,7 @@ impl KeyBindings {
             "ToolLasso" => Some(BindableAction::ToolLasso),
             "ToolColorRemover" => Some(BindableAction::ToolColorRemover),
             "ToolMeshWarp" => Some(BindableAction::ToolMeshWarp),
+            "BrushResizeDragModifier" => Some(BindableAction::BrushResizeDragModifier),
             "BrushSizeDecrease" => Some(BindableAction::BrushSizeDecrease),
             "BrushSizeIncrease" => Some(BindableAction::BrushSizeIncrease),
             _ => None,
@@ -2858,6 +2883,8 @@ impl KeyBindings {
                 command: combo.ctrl,
             };
             ctx.input_mut(|i| i.consume_key(mods, key))
+        } else if combo.ctrl || combo.shift || combo.alt {
+            false
         } else {
             false
         }
@@ -5683,27 +5710,51 @@ impl SettingsWindow {
                         let name = action.display_name();
                         ui.label(egui::RichText::new(name).size(12.0));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let is_rebinding = self.rebinding_action == Some(*action);
-                            let btn_text = if is_rebinding {
-                                egui::RichText::new(t!("settings.keybinds.press_key"))
-                                    .italics()
-                                    .color(if ui.visuals().dark_mode {
-                                        Color32::from_rgb(100, 200, 255)
-                                    } else {
-                                        Color32::from_rgb(0, 100, 200)
-                                    })
-                            } else {
-                                let combo_text = self
+                            if *action == BindableAction::BrushResizeDragModifier {
+                                let mut current = self
                                     .staged_keybindings
                                     .get(*action)
-                                    .map(|c| c.display())
-                                    .unwrap_or_else(|| "—".to_string());
-                                egui::RichText::new(combo_text).monospace()
-                            };
-                            let btn = ui
-                                .add(egui::Button::new(btn_text).min_size(egui::vec2(100.0, 20.0)));
-                            if btn.clicked() && !is_rebinding {
-                                self.rebinding_action = Some(*action);
+                                    .cloned()
+                                    .unwrap_or_else(|| {
+                                        KeyCombo::modifiers_only(false, true, false)
+                                    });
+                                egui::ComboBox::from_id_source("brush_resize_drag_modifier")
+                                    .selected_text(current.display())
+                                    .show_ui(ui, |ui| {
+                                        let options = [
+                                            ("Shift", KeyCombo::modifiers_only(false, true, false)),
+                                            ("Ctrl", KeyCombo::modifiers_only(true, false, false)),
+                                            ("Alt", KeyCombo::modifiers_only(false, false, true)),
+                                        ];
+                                        for (label, combo) in options {
+                                            ui.selectable_value(&mut current, combo, label);
+                                        }
+                                    });
+                                self.staged_keybindings.set(*action, current);
+                            } else {
+                                let is_rebinding = self.rebinding_action == Some(*action);
+                                let btn_text = if is_rebinding {
+                                    egui::RichText::new(t!("settings.keybinds.press_key"))
+                                        .italics()
+                                        .color(if ui.visuals().dark_mode {
+                                            Color32::from_rgb(100, 200, 255)
+                                        } else {
+                                            Color32::from_rgb(0, 100, 200)
+                                        })
+                                } else {
+                                    let combo_text = self
+                                        .staged_keybindings
+                                        .get(*action)
+                                        .map(|c| c.display())
+                                        .unwrap_or_else(|| "—".to_string());
+                                    egui::RichText::new(combo_text).monospace()
+                                };
+                                let btn = ui.add(
+                                    egui::Button::new(btn_text).min_size(egui::vec2(100.0, 20.0)),
+                                );
+                                if btn.clicked() && !is_rebinding {
+                                    self.rebinding_action = Some(*action);
+                                }
                             }
                         });
                     });

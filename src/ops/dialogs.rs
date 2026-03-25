@@ -585,7 +585,9 @@ impl ResizeImageDialog {
             self.height_input = format_dimension_value(self.height);
             self.preset = ResizePreset::Custom;
             if self.lock_aspect && old_height > 0.0 {
-                self.width = (self.height * self.aspect_ratio).round().clamp(1.0, 20000.0);
+                self.width = (self.height * self.aspect_ratio)
+                    .round()
+                    .clamp(1.0, 20000.0);
                 self.width_input = format_dimension_value(self.width);
             } else {
                 self.aspect_ratio = self.width / self.height.max(1.0);
@@ -717,8 +719,8 @@ impl ResizeImageDialog {
 
                         // Lock aspect ratio (inline between H and Scale)
                         ui.label("");
-                        let lock_resp =
-                            ui.checkbox(&mut self.lock_aspect, t!("dialog.resize_image.lock_aspect"));
+                        let lock_resp = ui
+                            .checkbox(&mut self.lock_aspect, t!("dialog.resize_image.lock_aspect"));
                         if lock_resp.changed() && self.lock_aspect {
                             self.aspect_ratio = self.width / self.height.max(1.0);
                         }
@@ -884,7 +886,9 @@ impl ResizeCanvasDialog {
             self.height = new_height.round().clamp(1.0, 20000.0);
             self.height_input = format_dimension_value(self.height);
             if self.lock_aspect && old_height > 0.0 {
-                self.width = (self.height * self.aspect_ratio).round().clamp(1.0, 20000.0);
+                self.width = (self.height * self.aspect_ratio)
+                    .round()
+                    .clamp(1.0, 20000.0);
                 self.width_input = format_dimension_value(self.width);
             } else {
                 self.aspect_ratio = self.width / self.height.max(1.0);
@@ -985,8 +989,8 @@ impl ResizeCanvasDialog {
                         ui.end_row();
 
                         ui.label("");
-                        let lock_resp =
-                            ui.checkbox(&mut self.lock_aspect, t!("dialog.resize_image.lock_aspect"));
+                        let lock_resp = ui
+                            .checkbox(&mut self.lock_aspect, t!("dialog.resize_image.lock_aspect"));
                         if lock_resp.changed() && self.lock_aspect {
                             self.aspect_ratio = self.width / self.height.max(1.0);
                         }

@@ -207,7 +207,9 @@ impl NewFileDialog {
             self.height_input = format_dimension_value(self.height);
             self.preset = SizePreset::Custom;
             if self.lock_aspect_ratio && old_height > 0.0 {
-                self.width = (self.height * self.aspect_ratio).round().clamp(1.0, 20000.0);
+                self.width = (self.height * self.aspect_ratio)
+                    .round()
+                    .clamp(1.0, 20000.0);
                 self.width_input = format_dimension_value(self.width);
             } else {
                 self.aspect_ratio = self.width / self.height.max(1.0);
@@ -298,7 +300,7 @@ impl NewFileDialog {
                                             self.ppi = ppi;
                                             self.unit = SizeUnit::Pixels;
                                             self.aspect_ratio = self.width / self.height;
-                                                self.sync_inputs_from_values();
+                                            self.sync_inputs_from_values();
                                         }
                                     }
                                 });
@@ -372,8 +374,10 @@ impl NewFileDialog {
 
                             // Lock aspect ratio (below Height)
                             ui.label("");
-                            let checkbox_resp =
-                                ui.checkbox(&mut self.lock_aspect_ratio, t!("common.lock_aspect_ratio"));
+                            let checkbox_resp = ui.checkbox(
+                                &mut self.lock_aspect_ratio,
+                                t!("common.lock_aspect_ratio"),
+                            );
                             if checkbox_resp.changed() && self.lock_aspect_ratio {
                                 self.aspect_ratio = self.width / self.height.max(1.0);
                             }

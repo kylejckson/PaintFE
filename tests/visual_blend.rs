@@ -129,5 +129,8 @@ fn hidden_layer_invisible() {
         s.layers[0].pixels = TiledImage::from_rgba_image(&bg_img);
         s.composite()
     };
-    assert_eq!(result, bg_only, "hidden layer should not contribute to composite");
+    assert_eq!(
+        result, bg_only,
+        "hidden layer should not contribute to composite"
+    );
 }

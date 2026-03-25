@@ -543,7 +543,10 @@ fn pencil_circle() {
             break;
         }
     }
-    assert!(all_binary, "pencil (no AA) should produce only 0 or 255 alpha");
+    assert!(
+        all_binary,
+        "pencil (no AA) should produce only 0 or 255 alpha"
+    );
     assert_golden("tools", "pencil_circle", &img);
 }
 
@@ -583,9 +586,8 @@ fn color_picker_reads_layer_pixel() {
 fn color_picker_reads_composited() {
     let mut state = CanvasState::new(32, 32);
     let mut red_layer = Layer::new("Red".into(), 32, 32, Rgba([0, 0, 0, 0]));
-    red_layer.pixels = TiledImage::from_rgba_image(
-        &RgbaImage::from_pixel(32, 32, Rgba([255, 0, 0, 255])),
-    );
+    red_layer.pixels =
+        TiledImage::from_rgba_image(&RgbaImage::from_pixel(32, 32, Rgba([255, 0, 0, 255])));
     state.layers.push(red_layer);
 
     let comp = state.composite();

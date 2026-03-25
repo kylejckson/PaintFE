@@ -52,7 +52,7 @@ fn make_shape(kind: ShapeKind, fill: ShapeFillMode) -> PlacedShape {
         fill_mode: fill,
         outline_width: 3.0,
         primary_color: [255, 80, 80, 255],   // red outline
-        secondary_color: [80, 80, 255, 255],  // blue fill
+        secondary_color: [80, 80, 255, 255], // blue fill
         anti_alias: true,
         corner_radius: 0.0,
         handle_dragging: None,

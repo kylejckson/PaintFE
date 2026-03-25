@@ -973,8 +973,8 @@ impl TiledImage {
                     }
                     // If chunk doesn't exist, already transparent — nothing to do
                 } else {
-                    let arc = self.chunks[idx]
-                        .get_or_insert_with(|| Arc::new(RgbaImage::new(cs, cs)));
+                    let arc =
+                        self.chunks[idx].get_or_insert_with(|| Arc::new(RgbaImage::new(cs, cs)));
                     let chunk = Arc::make_mut(arc);
                     let dst_off = (ly as usize * cs as usize + lx as usize) * 4;
                     chunk.as_mut()[dst_off..dst_off + byte_len]
@@ -2038,7 +2038,10 @@ impl CanvasState {
                                         let current_a = top[3] as f32 / 255.0;
                                         let new_a = (current_a * (1.0 - mask_strength)).max(0.0);
                                         top[3] = (new_a * 255.0) as u8;
-                                    } else if matches!(preview_blend, BlendMode::Overwrite | BlendMode::Xor) {
+                                    } else if matches!(
+                                        preview_blend,
+                                        BlendMode::Overwrite | BlendMode::Xor
+                                    ) {
                                         // Coverage-weighted lerp: smoothly transition
                                         // from original layer pixel to Overwrite result
                                         // using the preview pixel's alpha as coverage.
@@ -2047,7 +2050,8 @@ impl CanvasState {
                                         // so edge pixels (low coverage) barely change
                                         // the original while interior pixels strongly
                                         // shift toward the Overwrite/Xor result.
-                                        let ow = Self::blend_pixel_static(top, pp, preview_blend, 1.0);
+                                        let ow =
+                                            Self::blend_pixel_static(top, pp, preview_blend, 1.0);
                                         let cov = pp[3] as f32 / 255.0;
                                         let inv = 1.0 - cov;
                                         top = Rgba([
@@ -2174,8 +2178,12 @@ impl CanvasState {
                                     let current_a = top[3] as f32 / 255.0;
                                     let new_a = (current_a * (1.0 - mask_strength)).max(0.0);
                                     top[3] = (new_a * 255.0) as u8;
-                                } else if matches!(preview_blend_mode, BlendMode::Overwrite | BlendMode::Xor) {
-                                    let ow = Self::blend_pixel_static(top, pp, preview_blend_mode, 1.0);
+                                } else if matches!(
+                                    preview_blend_mode,
+                                    BlendMode::Overwrite | BlendMode::Xor
+                                ) {
+                                    let ow =
+                                        Self::blend_pixel_static(top, pp, preview_blend_mode, 1.0);
                                     let cov = pp[3] as f32 / 255.0;
                                     let inv = 1.0 - cov;
                                     top = Rgba([
@@ -5179,8 +5187,9 @@ impl Canvas {
             // show for fill/gradient only when debug panel is enabled.
             // ====================================================================
             let has_user_ops = pending_filter_jobs > 0 || pending_io_ops > 0;
-            let has_debug_ops =
-                self.fill_recalc_active || self.gradient_commit_active || self.tool_map_build_label.is_some();
+            let has_debug_ops = self.fill_recalc_active
+                || self.gradient_commit_active
+                || self.tool_map_build_label.is_some();
             if has_user_ops || (debug_settings.debug_show_operations && has_debug_ops) {
                 let current_time = ui.input(|i| i.time);
                 let mut ops_parts = Vec::new();
@@ -5506,7 +5515,10 @@ impl Canvas {
 
             if draw_eraser_checkerboard
                 && (state.preview_is_eraser
-                    || matches!(state.preview_blend_mode, BlendMode::Overwrite | BlendMode::Xor))
+                    || matches!(
+                        state.preview_blend_mode,
+                        BlendMode::Overwrite | BlendMode::Xor
+                    ))
                 && let Some(ref checker_tex) = self.checkerboard_texture
             {
                 let cell = 10.0_f32;
@@ -5532,7 +5544,10 @@ impl Canvas {
         } else {
             if draw_eraser_checkerboard
                 && (state.preview_is_eraser
-                    || matches!(state.preview_blend_mode, BlendMode::Overwrite | BlendMode::Xor))
+                    || matches!(
+                        state.preview_blend_mode,
+                        BlendMode::Overwrite | BlendMode::Xor
+                    ))
                 && let Some(ref checker_tex) = self.checkerboard_texture
             {
                 let cell = 10.0_f32;
@@ -5723,7 +5738,8 @@ impl Canvas {
             return; // Nothing selected
         }
 
-        let should_animate_interior = selection_overlay_should_animate(Some((min_x, min_y, max_x, max_y)));
+        let should_animate_interior =
+            selection_overlay_should_animate(Some((min_x, min_y, max_x, max_y)));
         let clip_rect = painter.clip_rect();
 
         let sel = |x: u32, y: u32| -> bool { mask_raw[(y as usize) * stride + (x as usize)] > 0 };
@@ -6177,10 +6193,7 @@ impl Canvas {
         let v_min = (rect.min.y - grid_origin_y) / tex_h;
         let u_max = (rect.max.x - grid_origin_x) / tex_w;
         let v_max = (rect.max.y - grid_origin_y) / tex_h;
-        let uv = Rect::from_min_max(
-            Pos2::new(u_min, v_min),
-            Pos2::new(u_max, v_max),
-        );
+        let uv = Rect::from_min_max(Pos2::new(u_min, v_min), Pos2::new(u_max, v_max));
 
         painter.image(tex.id(), rect, uv, Color32::WHITE);
     }

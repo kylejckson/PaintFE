@@ -1356,26 +1356,23 @@ fn register_utility_api(engine: &mut Engine, ctx: SharedContext) {
 fn register_selection_api(engine: &mut Engine, ctx: SharedContext) {
     // select_rect(x1, y1, x2, y2) — replace selection with rectangle
     let c = ctx.clone();
-    engine.register_fn(
-        "select_rect",
-        move |x1: i64, y1: i64, x2: i64, y2: i64| {
-            let mut lock = c.lock().unwrap_or_else(|e| e.into_inner());
-            let w = lock.width;
-            let h = lock.height;
-            let min_x = (x1.max(0) as u32).min(w);
-            let min_y = (y1.max(0) as u32).min(h);
-            let max_x = (x2.max(0) as u32).min(w);
-            let max_y = (y2.max(0) as u32).min(h);
-            let n = (w * h) as usize;
-            let mut mask = vec![0u8; n];
-            for y in min_y..max_y {
-                for x in min_x..max_x {
-                    mask[(y * w + x) as usize] = 255;
-                }
+    engine.register_fn("select_rect", move |x1: i64, y1: i64, x2: i64, y2: i64| {
+        let mut lock = c.lock().unwrap_or_else(|e| e.into_inner());
+        let w = lock.width;
+        let h = lock.height;
+        let min_x = (x1.max(0) as u32).min(w);
+        let min_y = (y1.max(0) as u32).min(h);
+        let max_x = (x2.max(0) as u32).min(w);
+        let max_y = (y2.max(0) as u32).min(h);
+        let n = (w * h) as usize;
+        let mut mask = vec![0u8; n];
+        for y in min_y..max_y {
+            for x in min_x..max_x {
+                mask[(y * w + x) as usize] = 255;
             }
-            lock.mask = Some(mask);
-        },
-    );
+        }
+        lock.mask = Some(mask);
+    });
 
     // select_ellipse(cx, cy, rx, ry) — replace selection with ellipse
     let c = ctx.clone();
@@ -1435,36 +1432,30 @@ fn register_selection_api(engine: &mut Engine, ctx: SharedContext) {
 
     // fill_selected(r, g, b, a) — fill selected area with color
     let c = ctx.clone();
-    engine.register_fn(
-        "fill_selected",
-        move |r: i64, g: i64, b: i64, a: i64| {
-            let mut lock = c.lock().unwrap_or_else(|e| e.into_inner());
-            let w = lock.width;
-            let h = lock.height;
-            let r = r.clamp(0, 255) as u8;
-            let g = g.clamp(0, 255) as u8;
-            let b = b.clamp(0, 255) as u8;
-            let a = a.clamp(0, 255) as u8;
-            for y in 0..h {
-                for x in 0..w {
-                    let idx = (y * w + x) as usize;
-                    let selected = lock
-                        .mask
-                        .as_ref()
-                        .is_none_or(|m| m[idx] > 0);
-                    if selected {
-                        let pi = idx * 4;
-                        if pi + 3 < lock.pixels.len() {
-                            lock.pixels[pi] = r;
-                            lock.pixels[pi + 1] = g;
-                            lock.pixels[pi + 2] = b;
-                            lock.pixels[pi + 3] = a;
-                        }
+    engine.register_fn("fill_selected", move |r: i64, g: i64, b: i64, a: i64| {
+        let mut lock = c.lock().unwrap_or_else(|e| e.into_inner());
+        let w = lock.width;
+        let h = lock.height;
+        let r = r.clamp(0, 255) as u8;
+        let g = g.clamp(0, 255) as u8;
+        let b = b.clamp(0, 255) as u8;
+        let a = a.clamp(0, 255) as u8;
+        for y in 0..h {
+            for x in 0..w {
+                let idx = (y * w + x) as usize;
+                let selected = lock.mask.as_ref().is_none_or(|m| m[idx] > 0);
+                if selected {
+                    let pi = idx * 4;
+                    if pi + 3 < lock.pixels.len() {
+                        lock.pixels[pi] = r;
+                        lock.pixels[pi + 1] = g;
+                        lock.pixels[pi + 2] = b;
+                        lock.pixels[pi + 3] = a;
                     }
                 }
             }
-        },
-    );
+        }
+    });
 
     // delete_selected() — make selected pixels transparent
     let c = ctx.clone();
@@ -1475,10 +1466,7 @@ fn register_selection_api(engine: &mut Engine, ctx: SharedContext) {
         for y in 0..h {
             for x in 0..w {
                 let idx = (y * w + x) as usize;
-                let selected = lock
-                    .mask
-                    .as_ref()
-                    .is_none_or(|m| m[idx] > 0);
+                let selected = lock.mask.as_ref().is_none_or(|m| m[idx] > 0);
                 if selected {
                     let pi = idx * 4;
                     if pi + 3 < lock.pixels.len() {

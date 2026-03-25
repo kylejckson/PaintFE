@@ -1,4 +1,4 @@
-use crate::assets::{Assets, BRUSH_SIZE_PRESETS, Icon, TEXT_SIZE_PRESETS};
+use crate::assets::{Assets, BRUSH_SIZE_PRESETS, Icon, KeyCombo, TEXT_SIZE_PRESETS};
 use crate::canvas::{
     BlendMode, CHUNK_SIZE, CanvasState, SelectionMode, SelectionShape, TiledImage,
 };
@@ -314,6 +314,9 @@ pub struct ToolState {
     smooth_pos: Option<Pos2>,
     /// Current pen pressure (0.0..1.0). Defaults to 1.0 (no pen / full pressure).
     pub current_pressure: f32,
+    brush_resize_drag_origin: Option<Pos2>,
+    brush_resize_drag_start_size: f32,
+    brush_resize_drag_active: bool,
 }
 
 impl Default for ToolState {
@@ -326,6 +329,9 @@ impl Default for ToolState {
             using_secondary_color: false,
             smooth_pos: None,
             current_pressure: 1.0,
+            brush_resize_drag_origin: None,
+            brush_resize_drag_start_size: 10.0,
+            brush_resize_drag_active: false,
         }
     }
 }
@@ -1621,6 +1627,7 @@ pub struct ToolsPanel {
     pub tool_hint: String,
     active_layer_rgba_prewarm_rx: Option<std::sync::mpsc::Receiver<FlatLayerCache>>,
     active_layer_rgba_prewarm_key: Option<(usize, u64, u32, u32)>,
+    pub brush_resize_drag_binding: KeyCombo,
 }
 
 impl Default for ToolsPanel {
@@ -1667,6 +1674,7 @@ impl Default for ToolsPanel {
             tool_hint: String::new(),
             active_layer_rgba_prewarm_rx: None,
             active_layer_rgba_prewarm_key: None,
+            brush_resize_drag_binding: KeyCombo::modifiers_only(false, true, false),
         }
     }
 }
@@ -1811,6 +1819,117 @@ impl Default for ContentAwareBrushState {
 }
 
 impl ToolsPanel {
+    fn brush_resize_drag_modifier_held(&self, ui: &egui::Ui) -> bool {
+        let binding = &self.brush_resize_drag_binding;
+        ui.input(|i| {
+            i.modifiers.command == binding.ctrl
+                && i.modifiers.shift == binding.shift
+                && i.modifiers.alt == binding.alt
+        })
+    }
+
+    fn reset_brush_pointer_state(&mut self) {
+        self.tool_state.last_pos = None;
+        self.tool_state.last_precise_pos = None;
+        self.tool_state.distance_remainder = 0.0;
+        self.tool_state.using_secondary_color = false;
+        self.tool_state.smooth_pos = None;
+    }
+
+    fn commit_brush_straight_line(
+        &mut self,
+        canvas_state: &mut CanvasState,
+        last: (u32, u32),
+        current: (u32, u32),
+        primary_color_f32: [f32; 4],
+        secondary_color_f32: [f32; 4],
+    ) -> Option<StrokeEvent> {
+        let is_eraser = self.active_tool == Tool::Eraser;
+
+        if is_eraser {
+            if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index) {
+                self.stroke_tracker.start_direct_tool(
+                    canvas_state.active_layer_index,
+                    "Eraser Line",
+                    &layer.pixels,
+                );
+            }
+        } else {
+            let description = if self.active_tool == Tool::Pencil {
+                "Pencil Line"
+            } else {
+                "Brush Line"
+            };
+            self.stroke_tracker
+                .start_preview_tool(canvas_state.active_layer_index, description);
+        }
+
+        if !is_eraser {
+            if canvas_state.preview_layer.is_none()
+                || canvas_state.preview_layer.as_ref().unwrap().width() != canvas_state.width
+                || canvas_state.preview_layer.as_ref().unwrap().height() != canvas_state.height
+            {
+                canvas_state.preview_layer =
+                    Some(TiledImage::new(canvas_state.width, canvas_state.height));
+            } else if let Some(ref mut preview) = canvas_state.preview_layer {
+                preview.clear();
+            }
+            canvas_state.preview_blend_mode = self.properties.blending_mode;
+        }
+
+        let mirror = canvas_state.mirror_mode;
+        let mw = canvas_state.width;
+        let mh = canvas_state.height;
+        let start_f = (last.0 as f32, last.1 as f32);
+        let end_f = (current.0 as f32, current.1 as f32);
+        let start_mirrors = mirror.mirror_positions(start_f.0, start_f.1, mw, mh);
+        let end_mirrors = mirror.mirror_positions(end_f.0, end_f.1, mw, mh);
+        let mut modified_rect = Rect::NOTHING;
+        for i in 0..end_mirrors.len {
+            let s = start_mirrors.data[i];
+            let e = end_mirrors.data[i];
+            let r = if self.active_tool == Tool::Pencil {
+                self.draw_pixel_line_and_get_bounds(
+                    canvas_state,
+                    s,
+                    e,
+                    false,
+                    primary_color_f32,
+                    secondary_color_f32,
+                )
+            } else {
+                self.draw_line_and_get_bounds(
+                    canvas_state,
+                    s,
+                    e,
+                    is_eraser,
+                    false,
+                    primary_color_f32,
+                    secondary_color_f32,
+                )
+            };
+            modified_rect = modified_rect.union(r);
+        }
+
+        self.stroke_tracker.expand_bounds(modified_rect);
+
+        if !is_eraser {
+            let stroke_event = self.stroke_tracker.finish(canvas_state);
+            self.commit_bezier_to_layer(canvas_state, primary_color_f32);
+            canvas_state.clear_preview_state();
+            if let Some(ref ev) = stroke_event {
+                canvas_state.mark_dirty(Some(ev.bounds.expand(12.0)));
+            } else {
+                self.mark_full_dirty(canvas_state);
+            }
+            stroke_event
+        } else {
+            let stroke_event = self.stroke_tracker.finish(canvas_state);
+            canvas_state.mark_dirty(Some(modified_rect));
+            stroke_event
+        }
+    }
+
     /// Auto-switch to Text tool when active layer is a text layer, and
     /// restore the previous tool when switching away. Called immediately
     /// after layer selection changes so there is no 1-frame delay.
@@ -4462,117 +4581,94 @@ impl ToolsPanel {
                 }
 
                 let is_painting = is_primary_down || is_secondary_down;
+                let resize_modifier_held =
+                    self.active_tool == Tool::Brush && self.brush_resize_drag_modifier_held(ui);
+                let resize_drag_threshold = 4.0;
+
+                if self.active_tool == Tool::Brush
+                    && is_primary_pressed
+                    && resize_modifier_held
+                    && let Some((x, y)) = canvas_pos_unclamped
+                        .or(canvas_pos_f32)
+                        .or(canvas_pos.map(|(x, y)| (x as f32, y as f32)))
+                {
+                    self.tool_state.brush_resize_drag_origin = Some(Pos2::new(x, y));
+                    self.tool_state.brush_resize_drag_start_size = self.properties.size;
+                    self.tool_state.brush_resize_drag_active = false;
+                    self.reset_brush_pointer_state();
+                    return;
+                }
+
+                if self.active_tool == Tool::Brush
+                    && let Some(origin) = self.tool_state.brush_resize_drag_origin
+                {
+                    let current_drag_pos = canvas_pos_unclamped
+                        .or(canvas_pos_f32)
+                        .or(canvas_pos.map(|(x, y)| (x as f32, y as f32)));
+                    if is_primary_down {
+                        if let Some((x, y)) = current_drag_pos {
+                            let current = Pos2::new(x, y);
+                            let delta = current - origin;
+                            if self.tool_state.brush_resize_drag_active
+                                || delta.length() >= resize_drag_threshold
+                            {
+                                self.tool_state.brush_resize_drag_active = true;
+                                self.properties.size =
+                                    (self.tool_state.brush_resize_drag_start_size + delta.x)
+                                        .clamp(1.0, 500.0);
+                                self.reset_brush_pointer_state();
+                                ui.ctx().request_repaint();
+                            }
+                        }
+                        return;
+                    }
+                    if is_primary_released {
+                        let was_active = self.tool_state.brush_resize_drag_active;
+                        self.tool_state.brush_resize_drag_origin = None;
+                        self.tool_state.brush_resize_drag_active = false;
+                        if was_active {
+                            return;
+                        }
+                        if resize_modifier_held
+                            && self.tool_state.last_brush_pos.is_some()
+                            && let (Some(last), Some(current)) =
+                                (self.tool_state.last_brush_pos, canvas_pos)
+                        {
+                            stroke_event = self.commit_brush_straight_line(
+                                canvas_state,
+                                last,
+                                current,
+                                primary_color_f32,
+                                secondary_color_f32,
+                            );
+                            if stroke_event.is_some() {
+                                self.pending_stroke_event = stroke_event;
+                            }
+                            self.tool_state.last_brush_pos = Some(current);
+                            self.tool_state.last_precise_pos =
+                                Some(Pos2::new(current.0 as f32, current.1 as f32));
+                            ui.ctx().request_repaint();
+                            return;
+                        }
+                    }
+                }
 
                 // TASK 2: Shift+Click straight line
                 // Trigger when mouse is pressed (not dragged) with Shift held
                 if is_primary_pressed
                     && shift_held
+                    && !resize_modifier_held
                     && self.tool_state.last_brush_pos.is_some()
                     && let (Some(last), Some(current)) =
                         (self.tool_state.last_brush_pos, canvas_pos)
                 {
-                    let is_eraser = self.active_tool == Tool::Eraser;
-
-                    // Start stroke tracking for undo/redo BEFORE any modifications
-                    if is_eraser {
-                        // Eraser modifies layer directly - snapshot the layer NOW
-                        if let Some(layer) =
-                            canvas_state.layers.get(canvas_state.active_layer_index)
-                        {
-                            self.stroke_tracker.start_direct_tool(
-                                canvas_state.active_layer_index,
-                                "Eraser Line",
-                                &layer.pixels,
-                            );
-                        }
-                    } else {
-                        // Brush/Pencil uses preview layer - we'll capture before right before commit
-                        let description = if self.active_tool == Tool::Pencil {
-                            "Pencil Line"
-                        } else {
-                            "Brush Line"
-                        };
-                        self.stroke_tracker
-                            .start_preview_tool(canvas_state.active_layer_index, description);
-                    }
-
-                    // For Brush/Pencil: Initialize/clear preview layer
-                    if !is_eraser {
-                        if canvas_state.preview_layer.is_none()
-                            || canvas_state.preview_layer.as_ref().unwrap().width()
-                                != canvas_state.width
-                            || canvas_state.preview_layer.as_ref().unwrap().height()
-                                != canvas_state.height
-                        {
-                            canvas_state.preview_layer =
-                                Some(TiledImage::new(canvas_state.width, canvas_state.height));
-                        } else {
-                            // Clear existing preview layer
-                            if let Some(ref mut preview) = canvas_state.preview_layer {
-                                preview.clear();
-                            }
-                        }
-                        // Set preview blend mode to match tool's blending mode
-                        canvas_state.preview_blend_mode = self.properties.blending_mode;
-                    }
-
-                    // Draw straight line (convert integer positions to float)
-                    // With mirror support
-                    let mirror = canvas_state.mirror_mode;
-                    let mw = canvas_state.width;
-                    let mh = canvas_state.height;
-                    let start_f = (last.0 as f32, last.1 as f32);
-                    let end_f = (current.0 as f32, current.1 as f32);
-                    let start_mirrors = mirror.mirror_positions(start_f.0, start_f.1, mw, mh);
-                    let end_mirrors = mirror.mirror_positions(end_f.0, end_f.1, mw, mh);
-                    let mut modified_rect = Rect::NOTHING;
-                    for i in 0..end_mirrors.len {
-                        let s = start_mirrors.data[i];
-                        let e = end_mirrors.data[i];
-                        let r = if self.active_tool == Tool::Pencil {
-                            self.draw_pixel_line_and_get_bounds(
-                                canvas_state,
-                                s,
-                                e,
-                                false,
-                                primary_color_f32,
-                                secondary_color_f32,
-                            )
-                        } else {
-                            self.draw_line_and_get_bounds(
-                                canvas_state,
-                                s,
-                                e,
-                                is_eraser,
-                                false,
-                                primary_color_f32,
-                                secondary_color_f32,
-                            )
-                        };
-                        modified_rect = modified_rect.union(r);
-                    }
-
-                    // Track the line bounds for undo
-                    self.stroke_tracker.expand_bounds(modified_rect);
-
-                    // For Brush/Pencil: Capture "before" then commit preview layer to active layer
-                    if !is_eraser {
-                        // Finish stroke tracking BEFORE commit - captures "before" from unchanged layer
-                        stroke_event = self.stroke_tracker.finish(canvas_state);
-
-                        self.commit_bezier_to_layer(canvas_state, primary_color_f32);
-                        canvas_state.clear_preview_state();
-                        // Mark only stroke bounds dirty (not full canvas)
-                        if let Some(ref ev) = stroke_event {
-                            canvas_state.mark_dirty(Some(ev.bounds.expand(12.0)));
-                        } else {
-                            self.mark_full_dirty(canvas_state);
-                        }
-                    } else {
-                        // Eraser: Layer was already modified, finish with saved snapshot
-                        stroke_event = self.stroke_tracker.finish(canvas_state);
-                        canvas_state.mark_dirty(Some(modified_rect));
-                    }
+                    stroke_event = self.commit_brush_straight_line(
+                        canvas_state,
+                        last,
+                        current,
+                        primary_color_f32,
+                        secondary_color_f32,
+                    );
 
                     // Store stroke event for app.rs to pick up (before returning)
                     if stroke_event.is_some() {
@@ -4816,11 +4912,7 @@ impl ToolsPanel {
                         }
                     }
 
-                    self.tool_state.last_pos = None;
-                    self.tool_state.last_precise_pos = None;
-                    self.tool_state.distance_remainder = 0.0;
-                    self.tool_state.using_secondary_color = false;
-                    self.tool_state.smooth_pos = None;
+                    self.reset_brush_pointer_state();
                 }
             }
             Tool::Line => {
@@ -5423,7 +5515,8 @@ impl ToolsPanel {
 
                 // Commit on Enter or cancel on Escape
                 if enter_pressed || esc_pressed {
-                    if self.magic_wand_state.region_index.is_some() || self.magic_wand_state.computing
+                    if self.magic_wand_state.region_index.is_some()
+                        || self.magic_wand_state.computing
                     {
                         self.clear_magic_wand_async_state();
                         canvas_state.mark_dirty(None);
@@ -5516,10 +5609,8 @@ impl ToolsPanel {
                                     fill_bbox: result.fill_bbox,
                                     last_threshold: Some(result.threshold),
                                 });
-                                self.fill_state.last_preview_tolerance =
-                                    self.fill_state.tolerance;
-                                self.fill_state.last_preview_aa =
-                                    self.fill_state.anti_aliased;
+                                self.fill_state.last_preview_tolerance = self.fill_state.tolerance;
+                                self.fill_state.last_preview_aa = self.fill_state.anti_aliased;
                                 self.fill_state.tolerance_changed_at = None;
                                 self.apply_fill_preview_patch(
                                     canvas_state,
@@ -5532,7 +5623,10 @@ impl ToolsPanel {
                             }
                         }
                         if self.fill_state.recalc_pending {
-                            self.maybe_spawn_fill_preview(canvas_state, gpu_renderer.as_deref_mut());
+                            self.maybe_spawn_fill_preview(
+                                canvas_state,
+                                gpu_renderer.as_deref_mut(),
+                            );
                         }
                         ui.ctx().request_repaint();
                     } else if self.fill_state.preview_in_flight {
@@ -5803,7 +5897,10 @@ impl ToolsPanel {
                         mw.max(font_size * 2.0)
                     } else if let Some(ref font) = self.text_state.loaded_font {
                         use ab_glyph::{Font as _, ScaleFont as _};
-                        let scaled = font.as_scaled(ab_glyph::PxScale { x: font_size * self.text_state.width_scale, y: font_size * self.text_state.height_scale });
+                        let scaled = font.as_scaled(ab_glyph::PxScale {
+                            x: font_size * self.text_state.width_scale,
+                            y: font_size * self.text_state.height_scale,
+                        });
                         let lines: Vec<&str> = self.text_state.text.split('\n').collect();
                         let mut max_w = font_size * 2.0;
                         for line in &lines {
@@ -5933,93 +6030,98 @@ impl ToolsPanel {
                         self.text_state.text_layer_drag_cached = false;
                         if self.text_state.editing_text_layer
                             && let Some(bid) = self.text_state.active_block_id
-                            && let Some(layer) = canvas_state.layers.get_mut(canvas_state.active_layer_index)
+                            && let Some(layer) =
+                                canvas_state.layers.get_mut(canvas_state.active_layer_index)
                             && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
                             && let Some(block_idx) = td.blocks.iter().position(|b| b.id == bid)
                         {
-                                // 1. Ensure the layer is fully rasterized first
-                                let w = canvas_state.width;
-                                let h = canvas_state.height;
+                            // 1. Ensure the layer is fully rasterized first
+                            let w = canvas_state.width;
+                            let h = canvas_state.height;
 
-                                // 2. Extract the active block's tight pixel buffer.
-                                //    Use the per-block cached_raster if available,
-                                //    otherwise rasterize just this block into a temp buffer.
-                                let block = &td.blocks[block_idx];
-                                let (buf, buf_w, buf_h, off_x, off_y, origin) =
-                                    if let Some(ref cached) = block.cached_raster
-                                        && cached.buf_w > 0
-                                        && cached.buf_h > 0
-                                    {
-                                        let dx = (block.position[0] - cached.origin[0]).round() as i32;
-                                        let dy = (block.position[1] - cached.origin[1]).round() as i32;
-                                        (
-                                            cached.buf.clone(),
-                                            cached.buf_w,
-                                            cached.buf_h,
-                                            cached.off_x + dx,
-                                            cached.off_y + dy,
-                                            block.position,
-                                        )
-                                    } else {
-                                        // No per-block cache — rasterize just this block
-                                        let mut temp = crate::canvas::TiledImage::new(w, h);
-                                        let mut cov = std::mem::take(&mut canvas_state.text_coverage_buf);
-                                        let mut gc = std::mem::take(&mut canvas_state.text_glyph_cache);
-                                        crate::ops::text_layer::rasterize_single_block(
-                                            &mut td.blocks[block_idx],
-                                            td.text_content_generation,
-                                            w, h,
-                                            &mut temp,
-                                            &mut cov,
-                                            &mut gc,
-                                        );
-                                        canvas_state.text_coverage_buf = cov;
-                                        canvas_state.text_glyph_cache = gc;
-                                        // Extract tight bounds from the temp tiled image
-                                        let block_pos = td.blocks[block_idx].position;
-                                        let raw = temp.extract_region_rgba(0, 0, w, h);
-                                        // Find tight AABB of non-transparent pixels
-                                        let (bx, by, bw, bh, tight) =
-                                            crate::ops::text_layer::find_tight_bounds_rgba(&raw, w, h);
-                                        if bw > 0 && bh > 0 {
-                                            (tight, bw, bh, bx as i32, by as i32, block_pos)
-                                        } else {
-                                            (Vec::new(), 0, 0, 0, 0, block_pos)
-                                        }
-                                    };
-
-                                if buf_w > 0 && buf_h > 0 {
-                                    self.text_state.cached_raster_buf = buf;
-                                    self.text_state.cached_raster_w = buf_w;
-                                    self.text_state.cached_raster_h = buf_h;
-                                    self.text_state.cached_raster_off_x = off_x;
-                                    self.text_state.cached_raster_off_y = off_y;
-                                    self.text_state.cached_raster_origin = Some(origin);
-
-                                    // 3. Re-rasterize the layer WITHOUT the active block.
-                                    //    Temporarily empty the block's runs, rasterize, restore.
-                                    let saved_runs = std::mem::take(&mut td.blocks[block_idx].runs);
-                                    td.mark_dirty();
-                                    {
-                                        let mut cov = std::mem::take(&mut canvas_state.text_coverage_buf);
-                                        let mut gc = std::mem::take(&mut canvas_state.text_glyph_cache);
-                                        let new_pixels = td.rasterize(w, h, &mut cov, &mut gc);
-                                        td.raster_generation = td.cache_generation;
-                                        layer.pixels = new_pixels;
-                                        layer.invalidate_lod();
-                                        layer.gpu_generation += 1;
-                                        canvas_state.text_coverage_buf = cov;
-                                        canvas_state.text_glyph_cache = gc;
-                                    }
-                                    // Restore the block's runs
-                                    if let crate::canvas::LayerContent::Text(ref mut td2) = canvas_state.layers[canvas_state.active_layer_index].content {
-                                        td2.blocks[block_idx].runs = saved_runs;
-                                        // Mark dirty again so the full layer will re-rasterize on drag end
-                                        td2.mark_position_dirty();
-                                    }
-
-                                    self.text_state.text_layer_drag_cached = true;
+                            // 2. Extract the active block's tight pixel buffer.
+                            //    Use the per-block cached_raster if available,
+                            //    otherwise rasterize just this block into a temp buffer.
+                            let block = &td.blocks[block_idx];
+                            let (buf, buf_w, buf_h, off_x, off_y, origin) = if let Some(ref cached) =
+                                block.cached_raster
+                                && cached.buf_w > 0
+                                && cached.buf_h > 0
+                            {
+                                let dx = (block.position[0] - cached.origin[0]).round() as i32;
+                                let dy = (block.position[1] - cached.origin[1]).round() as i32;
+                                (
+                                    cached.buf.clone(),
+                                    cached.buf_w,
+                                    cached.buf_h,
+                                    cached.off_x + dx,
+                                    cached.off_y + dy,
+                                    block.position,
+                                )
+                            } else {
+                                // No per-block cache — rasterize just this block
+                                let mut temp = crate::canvas::TiledImage::new(w, h);
+                                let mut cov = std::mem::take(&mut canvas_state.text_coverage_buf);
+                                let mut gc = std::mem::take(&mut canvas_state.text_glyph_cache);
+                                crate::ops::text_layer::rasterize_single_block(
+                                    &mut td.blocks[block_idx],
+                                    td.text_content_generation,
+                                    w,
+                                    h,
+                                    &mut temp,
+                                    &mut cov,
+                                    &mut gc,
+                                );
+                                canvas_state.text_coverage_buf = cov;
+                                canvas_state.text_glyph_cache = gc;
+                                // Extract tight bounds from the temp tiled image
+                                let block_pos = td.blocks[block_idx].position;
+                                let raw = temp.extract_region_rgba(0, 0, w, h);
+                                // Find tight AABB of non-transparent pixels
+                                let (bx, by, bw, bh, tight) =
+                                    crate::ops::text_layer::find_tight_bounds_rgba(&raw, w, h);
+                                if bw > 0 && bh > 0 {
+                                    (tight, bw, bh, bx as i32, by as i32, block_pos)
+                                } else {
+                                    (Vec::new(), 0, 0, 0, 0, block_pos)
                                 }
+                            };
+
+                            if buf_w > 0 && buf_h > 0 {
+                                self.text_state.cached_raster_buf = buf;
+                                self.text_state.cached_raster_w = buf_w;
+                                self.text_state.cached_raster_h = buf_h;
+                                self.text_state.cached_raster_off_x = off_x;
+                                self.text_state.cached_raster_off_y = off_y;
+                                self.text_state.cached_raster_origin = Some(origin);
+
+                                // 3. Re-rasterize the layer WITHOUT the active block.
+                                //    Temporarily empty the block's runs, rasterize, restore.
+                                let saved_runs = std::mem::take(&mut td.blocks[block_idx].runs);
+                                td.mark_dirty();
+                                {
+                                    let mut cov =
+                                        std::mem::take(&mut canvas_state.text_coverage_buf);
+                                    let mut gc = std::mem::take(&mut canvas_state.text_glyph_cache);
+                                    let new_pixels = td.rasterize(w, h, &mut cov, &mut gc);
+                                    td.raster_generation = td.cache_generation;
+                                    layer.pixels = new_pixels;
+                                    layer.invalidate_lod();
+                                    layer.gpu_generation += 1;
+                                    canvas_state.text_coverage_buf = cov;
+                                    canvas_state.text_glyph_cache = gc;
+                                }
+                                // Restore the block's runs
+                                if let crate::canvas::LayerContent::Text(ref mut td2) =
+                                    canvas_state.layers[canvas_state.active_layer_index].content
+                                {
+                                    td2.blocks[block_idx].runs = saved_runs;
+                                    // Mark dirty again so the full layer will re-rasterize on drag end
+                                    td2.mark_position_dirty();
+                                }
+
+                                self.text_state.text_layer_drag_cached = true;
+                            }
                         }
                     }
                 }
@@ -6041,7 +6143,10 @@ impl ToolsPanel {
                         // Compute natural width for handle positioning
                         if let Some(ref font) = self.text_state.loaded_font {
                             use ab_glyph::{Font as _, ScaleFont as _};
-                            let scaled = font.as_scaled(ab_glyph::PxScale { x: font_size * self.text_state.width_scale, y: font_size * self.text_state.height_scale });
+                            let scaled = font.as_scaled(ab_glyph::PxScale {
+                                x: font_size * self.text_state.width_scale,
+                                y: font_size * self.text_state.height_scale,
+                            });
                             let lines: Vec<&str> = self.text_state.text.split('\n').collect();
                             let mut max_w = font_size * 2.0;
                             for line in &lines {
@@ -6222,7 +6327,10 @@ impl ToolsPanel {
                         let compute_natural_width = || -> f32 {
                             if let Some(ref font) = self.text_state.loaded_font {
                                 use ab_glyph::{Font as _, ScaleFont as _};
-                                let scaled = font.as_scaled(ab_glyph::PxScale { x: font_size * self.text_state.width_scale, y: font_size * self.text_state.height_scale });
+                                let scaled = font.as_scaled(ab_glyph::PxScale {
+                                    x: font_size * self.text_state.width_scale,
+                                    y: font_size * self.text_state.height_scale,
+                                });
                                 let ls = self.text_state.letter_spacing;
                                 let lines: Vec<&str> = self.text_state.text.split('\n').collect();
                                 let mut max_w = font_size * 2.0;
@@ -6396,8 +6504,7 @@ impl ToolsPanel {
                     let new_y = pos_f.1 - self.text_state.drag_offset[1];
                     self.text_state.origin = Some([new_x, new_y]);
 
-                    if self.text_state.editing_text_layer
-                        && self.text_state.text_layer_drag_cached
+                    if self.text_state.editing_text_layer && self.text_state.text_layer_drag_cached
                     {
                         // Fast path: use cached block pixels + preview layer.
                         // layer.pixels already shows all blocks EXCEPT the dragging one
@@ -6430,11 +6537,12 @@ impl ToolsPanel {
                             let visible_bounds =
                                 Self::clip_preview_bounds(canvas_state, off_x, off_y, buf_w, buf_h);
                             // Merge old + new preview bounds so both regions get recomposited
-                            let combined_bounds = if let Some(old) = canvas_state.preview_stroke_bounds {
-                                Some(old.union(visible_bounds.unwrap_or(old)))
-                            } else {
-                                visible_bounds
-                            };
+                            let combined_bounds =
+                                if let Some(old) = canvas_state.preview_stroke_bounds {
+                                    Some(old.union(visible_bounds.unwrap_or(old)))
+                                } else {
+                                    visible_bounds
+                                };
                             canvas_state.preview_stroke_bounds = combined_bounds;
                             if canvas_state.preview_texture_cache.is_some() {
                                 canvas_state.preview_dirty_rect = combined_bounds;
@@ -6494,8 +6602,13 @@ impl ToolsPanel {
                                 canvas_state.preview_is_eraser = false;
                                 canvas_state.preview_downscale = 1;
                                 canvas_state.preview_flat_ready = false;
-                                let visible_bounds =
-                                    Self::clip_preview_bounds(canvas_state, off_x, off_y, buf_w, buf_h);
+                                let visible_bounds = Self::clip_preview_bounds(
+                                    canvas_state,
+                                    off_x,
+                                    off_y,
+                                    buf_w,
+                                    buf_h,
+                                );
                                 canvas_state.preview_stroke_bounds = visible_bounds;
                                 if canvas_state.preview_texture_cache.is_some() {
                                     canvas_state.preview_dirty_rect = visible_bounds;
@@ -6520,7 +6633,8 @@ impl ToolsPanel {
                         && self.text_state.editing_text_layer
                     {
                         if let Some(origin) = self.text_state.origin
-                            && let Some(layer) = canvas_state.layers.get_mut(canvas_state.active_layer_index)
+                            && let Some(layer) =
+                                canvas_state.layers.get_mut(canvas_state.active_layer_index)
                             && let crate::canvas::LayerContent::Text(ref mut td) = layer.content
                             && let Some(bid) = self.text_state.active_block_id
                             && let Some(block) = td.blocks.iter_mut().find(|b| b.id == bid)
@@ -10868,7 +10982,8 @@ impl ToolsPanel {
             || self.fill_state.fill_color_u8 != Some(fill_color_u8);
         let old_bbox = active_fill.fill_bbox;
         let new_bbox = region_index.threshold_bbox(threshold);
-        let mut dirty_bbox = if active_fill.last_threshold != Some(threshold) || color_or_aa_changed {
+        let mut dirty_bbox = if active_fill.last_threshold != Some(threshold) || color_or_aa_changed
+        {
             Self::union_bbox(old_bbox, new_bbox)
         } else {
             None
@@ -10890,12 +11005,10 @@ impl ToolsPanel {
         if let Some((x0, y0, x1, y1)) = dirty_bbox {
             let region_w = x1.saturating_sub(x0) + 1;
             let region_h = y1.saturating_sub(y0) + 1;
-            let selection_mask = canvas_state.selection_mask.as_ref().map(|mask| {
-                (
-                    mask.as_raw().as_slice(),
-                    mask.as_raw().as_ptr() as usize,
-                )
-            });
+            let selection_mask = canvas_state
+                .selection_mask
+                .as_ref()
+                .map(|mask| (mask.as_raw().as_slice(), mask.as_raw().as_ptr() as usize));
             let distance_key = region_index.distances.as_ref().as_ptr() as usize;
             let background_key = flat_rgba.as_ref().as_ptr() as usize;
 
@@ -10952,7 +11065,12 @@ impl ToolsPanel {
             return;
         };
         if let Ok(cache) = rx.try_recv() {
-            let key = (cache.layer_index, cache.gpu_generation, cache.width, cache.height);
+            let key = (
+                cache.layer_index,
+                cache.gpu_generation,
+                cache.width,
+                cache.height,
+            );
             self.magic_wand_state.cached_flat_rgba = Some(cache.clone());
             self.fill_state.cached_flat_rgba = Some(cache);
             self.active_layer_rgba_prewarm_rx = None;
@@ -10981,14 +11099,24 @@ impl ToolsPanel {
             .cached_flat_rgba
             .as_ref()
             .is_some_and(|entry| {
-                (entry.layer_index, entry.gpu_generation, entry.width, entry.height) == key
+                (
+                    entry.layer_index,
+                    entry.gpu_generation,
+                    entry.width,
+                    entry.height,
+                ) == key
             })
             || self
                 .fill_state
                 .cached_flat_rgba
                 .as_ref()
                 .is_some_and(|entry| {
-                    (entry.layer_index, entry.gpu_generation, entry.width, entry.height) == key
+                    (
+                        entry.layer_index,
+                        entry.gpu_generation,
+                        entry.width,
+                        entry.height,
+                    ) == key
                 });
         if already_cached || self.active_layer_rgba_prewarm_key == Some(key) {
             return;
@@ -11039,7 +11167,11 @@ impl ToolsPanel {
     ) where
         F: FnMut(usize, u8),
     {
-        let aa_band = if old_anti_aliased || new_anti_aliased { 5u8 } else { 0u8 };
+        let aa_band = if old_anti_aliased || new_anti_aliased {
+            5u8
+        } else {
+            0u8
+        };
         let (start_distance, end_distance) = match old_threshold {
             Some(previous) => (
                 previous.min(new_threshold),
@@ -11066,9 +11198,21 @@ impl ToolsPanel {
         }
     }
 
-    fn build_threshold_mask(index: &ThresholdRegionIndex, threshold: u8, anti_aliased: bool) -> Vec<u8> {
+    fn build_threshold_mask(
+        index: &ThresholdRegionIndex,
+        threshold: u8,
+        anti_aliased: bool,
+    ) -> Vec<u8> {
         let mut mask = vec![0u8; (index.width * index.height) as usize];
-        Self::apply_threshold_delta(index, &mut mask, None, false, threshold, anti_aliased, |_, _| {});
+        Self::apply_threshold_delta(
+            index,
+            &mut mask,
+            None,
+            false,
+            threshold,
+            anti_aliased,
+            |_, _| {},
+        );
         mask
     }
 
@@ -11192,7 +11336,8 @@ impl ToolsPanel {
             },
         );
 
-        canvas_state.selection_mask = GrayImage::from_raw(index.width, index.height, final_mask.clone());
+        canvas_state.selection_mask =
+            GrayImage::from_raw(index.width, index.height, final_mask.clone());
         canvas_state.invalidate_selection_overlay();
         canvas_state.mark_dirty(None);
         self.magic_wand_state.last_applied_tolerance = self.magic_wand_state.tolerance;
@@ -11233,13 +11378,8 @@ impl ToolsPanel {
         let region_h = by1.saturating_sub(by0) + 1;
         let mut region_buf = vec![0u8; region_w as usize * region_h as usize * 4];
 
-        let spans = Self::collect_fill_preview_spans(
-            fill_mask,
-            fill_bbox,
-            selection_mask,
-            width,
-            height,
-        );
+        let spans =
+            Self::collect_fill_preview_spans(fill_mask, fill_bbox, selection_mask, width, height);
 
         for span in spans {
             let row_offset = (span.y - by0) as usize * region_w as usize * 4;
@@ -11330,7 +11470,6 @@ impl ToolsPanel {
         region_buf
     }
 
-
     #[inline]
     fn fill_pixel_is_active(
         fill_mask: &[u8],
@@ -11414,7 +11553,9 @@ impl ToolsPanel {
         let Some(fill_color_u8) = self.fill_state.fill_color_u8 else {
             return;
         };
-        let Some(flat_rgba) = Self::cached_active_layer_rgba(&mut self.fill_state.cached_flat_rgba, canvas_state) else {
+        let Some(flat_rgba) =
+            Self::cached_active_layer_rgba(&mut self.fill_state.cached_flat_rgba, canvas_state)
+        else {
             return;
         };
         let gpu_available = gpu_renderer.is_some();
@@ -11454,9 +11595,7 @@ impl ToolsPanel {
                         let x = (idx as u32) % width;
                         let y = (idx as u32) / width;
                         dirty_bbox = Some(match dirty_bbox {
-                            Some((x0, y0, x1, y1)) => {
-                                (x0.min(x), y0.min(y), x1.max(x), y1.max(y))
-                            }
+                            Some((x0, y0, x1, y1)) => (x0.min(x), y0.min(y), x1.max(x), y1.max(y)),
                             None => (x, y, x, y),
                         });
                     },
@@ -11489,20 +11628,25 @@ impl ToolsPanel {
         let (tx, rx) = std::sync::mpsc::channel();
         self.fill_state.async_rx = Some(rx);
         rayon::spawn(move || {
-            let (region_index, fill_mask, fill_bbox) = if let Some(region_index) = active_fill.region_index.clone() {
-                (Some(region_index), active_fill.fill_mask.clone(), active_fill.fill_bbox)
-            } else {
-                let region_index = Self::compute_flood_distance_map(
-                    &flat_rgba,
-                    (active_fill.start_x, active_fill.start_y),
-                    &active_fill.target_color,
-                    width,
-                    height,
-                );
-                let fill_mask = Self::build_threshold_mask(&region_index, threshold, false);
-                let fill_bbox = region_index.threshold_bbox(threshold);
-                (Some(region_index), fill_mask, fill_bbox)
-            };
+            let (region_index, fill_mask, fill_bbox) =
+                if let Some(region_index) = active_fill.region_index.clone() {
+                    (
+                        Some(region_index),
+                        active_fill.fill_mask.clone(),
+                        active_fill.fill_bbox,
+                    )
+                } else {
+                    let region_index = Self::compute_flood_distance_map(
+                        &flat_rgba,
+                        (active_fill.start_x, active_fill.start_y),
+                        &active_fill.target_color,
+                        width,
+                        height,
+                    );
+                    let fill_mask = Self::build_threshold_mask(&region_index, threshold, false);
+                    let fill_bbox = region_index.threshold_bbox(threshold);
+                    (Some(region_index), fill_mask, fill_bbox)
+                };
 
             let dirty_bbox = dirty_bbox.or(fill_bbox);
 
@@ -11574,9 +11718,10 @@ impl ToolsPanel {
             self.magic_wand_state.base_selection_mask = None;
         }
 
-        let Some(flat_rgba) =
-            Self::cached_active_layer_rgba(&mut self.magic_wand_state.cached_flat_rgba, canvas_state)
-        else {
+        let Some(flat_rgba) = Self::cached_active_layer_rgba(
+            &mut self.magic_wand_state.cached_flat_rgba,
+            canvas_state,
+        ) else {
             return;
         };
 
@@ -11612,8 +11757,7 @@ impl ToolsPanel {
                 )
             };
             if ok {
-                let region_index =
-                    ThresholdRegionIndex::from_distances(distances, w, h);
+                let region_index = ThresholdRegionIndex::from_distances(distances, w, h);
                 self.magic_wand_state.region_index = Some(region_index);
                 self.magic_wand_state.computing = false;
                 self.magic_wand_state.preview_pending = true;
@@ -11636,13 +11780,8 @@ impl ToolsPanel {
                 let map = Self::compute_global_distance_map(&flat_rgba, &target_color, w, h);
                 MagicWandAsyncResult::Global(map)
             } else {
-                let map = Self::compute_flood_distance_map(
-                    &flat_rgba,
-                    start_pos,
-                    &target_color,
-                    w,
-                    h,
-                );
+                let map =
+                    Self::compute_flood_distance_map(&flat_rgba, start_pos, &target_color, w, h);
                 MagicWandAsyncResult::Flood(map)
             };
             let _ = tx.send(result);
@@ -11699,8 +11838,7 @@ impl ToolsPanel {
                     continue;
                 }
                 let ni = ny as usize * w + nx as usize;
-                let neighbor_dist =
-                    Self::pixel_color_distance(flat_rgba, ni, target_color);
+                let neighbor_dist = Self::pixel_color_distance(flat_rgba, ni, target_color);
                 let new_cost = (cost as u8).max(neighbor_dist);
                 if new_cost < distances[ni] {
                     distances[ni] = new_cost;
@@ -11824,10 +11962,8 @@ impl ToolsPanel {
 
         // GPU path: compute flood distances synchronously on GPU, build index, render preview
         if let Some(gpu) = gpu_renderer {
-            let flat_rgba = Self::cached_active_layer_rgba(
-                &mut self.fill_state.cached_flat_rgba,
-                canvas_state,
-            );
+            let flat_rgba =
+                Self::cached_active_layer_rgba(&mut self.fill_state.cached_flat_rgba, canvas_state);
             if let Some(flat_rgba) = flat_rgba {
                 let input_key = flat_rgba.as_ref().as_ptr() as usize;
                 let mut distances = Vec::new();
@@ -11971,7 +12107,10 @@ impl ToolsPanel {
             .min(canvas_state.height as i32)
             .max(0) as f32;
         if x1 > x0 && y1 > y0 {
-            Some(egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1)))
+            Some(egui::Rect::from_min_max(
+                egui::pos2(x0, y0),
+                egui::pos2(x1, y1),
+            ))
         } else {
             None
         }
@@ -13060,7 +13199,12 @@ impl ToolsPanel {
         let ls = self.text_state.letter_spacing;
         let line_height = if let Some(ref font) = self.text_state.loaded_font {
             use ab_glyph::{Font as _, ScaleFont as _};
-            font.as_scaled(ab_glyph::PxScale { x: font_size * self.text_state.width_scale, y: font_size * self.text_state.height_scale }).height() * self.text_state.line_spacing
+            font.as_scaled(ab_glyph::PxScale {
+                x: font_size * self.text_state.width_scale,
+                y: font_size * self.text_state.height_scale,
+            })
+            .height()
+                * self.text_state.line_spacing
         } else {
             font_size * 1.2 * self.text_state.line_spacing
         };
@@ -13071,13 +13215,24 @@ impl ToolsPanel {
         // Compute natural text width (from font metrics)
         let natural_width = if let Some(ref font) = self.text_state.loaded_font {
             use ab_glyph::{Font as _, ScaleFont as _};
-            let scaled = font.as_scaled(ab_glyph::PxScale { x: font_size * self.text_state.width_scale, y: font_size * self.text_state.height_scale });
+            let scaled = font.as_scaled(ab_glyph::PxScale {
+                x: font_size * self.text_state.width_scale,
+                y: font_size * self.text_state.height_scale,
+            });
             // If max_width is set, word-wrap to compute visual lines
             if let Some(mw) = self.text_state.active_block_max_width {
                 let visual_lines: Vec<String> = lines
                     .iter()
                     .flat_map(|line| {
-                        crate::ops::text::word_wrap_line(line, font, font_size, mw, ls, self.text_state.width_scale, self.text_state.height_scale)
+                        crate::ops::text::word_wrap_line(
+                            line,
+                            font,
+                            font_size,
+                            mw,
+                            ls,
+                            self.text_state.width_scale,
+                            self.text_state.height_scale,
+                        )
                     })
                     .collect();
                 let mut max_w = font_size * 2.0;
@@ -13132,7 +13287,17 @@ impl ToolsPanel {
         ) {
             let visual_lines: Vec<String> = lines
                 .iter()
-                .flat_map(|line| crate::ops::text::word_wrap_line(line, font, font_size, mw, ls, self.text_state.width_scale, self.text_state.height_scale))
+                .flat_map(|line| {
+                    crate::ops::text::word_wrap_line(
+                        line,
+                        font,
+                        font_size,
+                        mw,
+                        ls,
+                        self.text_state.width_scale,
+                        self.text_state.height_scale,
+                    )
+                })
                 .collect();
             visual_lines.len().max(1)
         } else {
@@ -13405,7 +13570,15 @@ impl ToolsPanel {
                 self.text_state.active_block_max_width,
                 &self.text_state.loaded_font,
             ) {
-                Self::compute_visual_lines_with_byte_offsets(full_text, font, font_size, mw, ls, self.text_state.width_scale, self.text_state.height_scale)
+                Self::compute_visual_lines_with_byte_offsets(
+                    full_text,
+                    font,
+                    font_size,
+                    mw,
+                    ls,
+                    self.text_state.width_scale,
+                    self.text_state.height_scale,
+                )
             } else {
                 // No wrapping — one visual line per logical line
                 let mut result = Vec::new();
@@ -13434,7 +13607,10 @@ impl ToolsPanel {
                                 .unwrap_or(0.0)
                         } else if let Some(ref font) = self.text_state.loaded_font {
                             use ab_glyph::{Font as _, ScaleFont as _};
-                            let scaled = font.as_scaled(ab_glyph::PxScale { x: font_size * self.text_state.width_scale, y: font_size * self.text_state.height_scale });
+                            let scaled = font.as_scaled(ab_glyph::PxScale {
+                                x: font_size * self.text_state.width_scale,
+                                y: font_size * self.text_state.height_scale,
+                            });
                             let mut x = 0.0f32;
                             let mut prev = None;
                             for ch in line_text[..byte_in_line].chars() {
@@ -13461,7 +13637,10 @@ impl ToolsPanel {
                         } else {
                             let line_w = if let Some(ref font) = self.text_state.loaded_font {
                                 use ab_glyph::{Font as _, ScaleFont as _};
-                                let scaled = font.as_scaled(ab_glyph::PxScale { x: font_size * self.text_state.width_scale, y: font_size * self.text_state.height_scale });
+                                let scaled = font.as_scaled(ab_glyph::PxScale {
+                                    x: font_size * self.text_state.width_scale,
+                                    y: font_size * self.text_state.height_scale,
+                                });
                                 let mut w = 0.0f32;
                                 let mut prev = None;
                                 for ch in line_text.chars() {
@@ -13559,7 +13738,10 @@ impl ToolsPanel {
                     } else if let Some(ref font) = self.text_state.loaded_font {
                         // Fallback: compute from font metrics for the visual line text
                         use ab_glyph::{Font as _, ScaleFont as _};
-                        let scaled = font.as_scaled(ab_glyph::PxScale { x: font_size * self.text_state.width_scale, y: font_size * self.text_state.height_scale });
+                        let scaled = font.as_scaled(ab_glyph::PxScale {
+                            x: font_size * self.text_state.width_scale,
+                            y: font_size * self.text_state.height_scale,
+                        });
                         // Get the visual line text to measure
                         let text_before = &self.text_state.text[..self.text_state.cursor_pos];
                         let last_line = text_before.rsplit('\n').next().unwrap_or(text_before);
@@ -13604,7 +13786,15 @@ impl ToolsPanel {
                             .text
                             .split('\n')
                             .flat_map(|line| {
-                                crate::ops::text::word_wrap_line(line, font, font_size, mw, ls, self.text_state.width_scale, self.text_state.height_scale)
+                                crate::ops::text::word_wrap_line(
+                                    line,
+                                    font,
+                                    font_size,
+                                    mw,
+                                    ls,
+                                    self.text_state.width_scale,
+                                    self.text_state.height_scale,
+                                )
                             })
                             .collect();
                         all_visual.get(cursor_line).cloned().unwrap_or_default()
@@ -13613,7 +13803,10 @@ impl ToolsPanel {
                     };
                     let line_w = if let Some(ref font) = self.text_state.loaded_font {
                         use ab_glyph::{Font as _, ScaleFont as _};
-                        let scaled = font.as_scaled(ab_glyph::PxScale { x: font_size * self.text_state.width_scale, y: font_size * self.text_state.height_scale });
+                        let scaled = font.as_scaled(ab_glyph::PxScale {
+                            x: font_size * self.text_state.width_scale,
+                            y: font_size * self.text_state.height_scale,
+                        });
                         let mut w = 0.0f32;
                         let mut prev = None;
                         for ch in current_line_text.chars() {
@@ -15347,7 +15540,16 @@ impl ToolsPanel {
             self.text_state.active_block_max_width,
             &self.text_state.loaded_font,
         ) {
-            Self::byte_pos_to_visual(text, self.text_state.cursor_pos, font, font_size, mw, ls, self.text_state.width_scale, self.text_state.height_scale)
+            Self::byte_pos_to_visual(
+                text,
+                self.text_state.cursor_pos,
+                font,
+                font_size,
+                mw,
+                ls,
+                self.text_state.width_scale,
+                self.text_state.height_scale,
+            )
         } else {
             // No wrapping — use logical lines
             let before = &text[..self.text_state.cursor_pos];
@@ -15362,7 +15564,17 @@ impl ToolsPanel {
             &self.text_state.loaded_font,
         ) {
             text.split('\n')
-                .flat_map(|line| crate::ops::text::word_wrap_line(line, font, font_size, mw, ls, self.text_state.width_scale, self.text_state.height_scale))
+                .flat_map(|line| {
+                    crate::ops::text::word_wrap_line(
+                        line,
+                        font,
+                        font_size,
+                        mw,
+                        ls,
+                        self.text_state.width_scale,
+                        self.text_state.height_scale,
+                    )
+                })
                 .count()
         } else {
             text.split('\n').count()
@@ -15423,7 +15635,17 @@ impl ToolsPanel {
             self.text_state.active_block_max_width,
             &self.text_state.loaded_font,
         ) {
-            Self::visual_to_byte_pos(text, target_line, target_char, font, font_size, mw, ls, self.text_state.width_scale, self.text_state.height_scale)
+            Self::visual_to_byte_pos(
+                text,
+                target_line,
+                target_char,
+                font,
+                font_size,
+                mw,
+                ls,
+                self.text_state.width_scale,
+                self.text_state.height_scale,
+            )
         } else {
             // No wrapping — use logical lines
             let lines: Vec<&str> = text.split('\n').collect();

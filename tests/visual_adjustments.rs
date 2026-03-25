@@ -239,7 +239,10 @@ fn curves_identity() {
     let result = apply_and_extract(&img, |s, flat| {
         curves_from_flat_multi(s, 0, &channels, flat);
     });
-    assert_eq!(img, result, "all curves channels disabled should be identity");
+    assert_eq!(
+        img, result,
+        "all curves channels disabled should be identity"
+    );
 }
 
 #[test]
@@ -265,10 +268,11 @@ fn color_balance() {
     let img = test_image();
     let result = apply_and_extract(&img, |s, flat| {
         color_balance_from_flat(
-            s, 0,
-            [10.0, 0.0, -10.0],   // shadows: warm
-            [0.0, 0.0, 0.0],      // midtones: neutral
-            [-10.0, 0.0, 10.0],   // highlights: cool
+            s,
+            0,
+            [10.0, 0.0, -10.0], // shadows: warm
+            [0.0, 0.0, 0.0],    // midtones: neutral
+            [-10.0, 0.0, 10.0], // highlights: cool
             flat,
         );
     });
@@ -280,7 +284,8 @@ fn color_balance_identity() {
     let img = test_image();
     let result = apply_and_extract(&img, |s, flat| {
         color_balance_from_flat(
-            s, 0,
+            s,
+            0,
             [0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0],

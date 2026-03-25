@@ -7,11 +7,11 @@
 
 mod common;
 
-use std::collections::HashMap;
 use paintfe::canvas::{CanvasState, Layer, LayerContent};
 use paintfe::ops::text_layer::{
-    TextBlock, TextLayerData, TextRun, TextStyle, ParagraphStyle, TextWarp,
+    ParagraphStyle, TextBlock, TextLayerData, TextRun, TextStyle, TextWarp,
 };
+use std::collections::HashMap;
 
 /// Helper: rasterize a TextLayerData and return the TiledImage.
 fn rasterize(td: &mut TextLayerData, w: u32, h: u32) -> paintfe::canvas::TiledImage {
@@ -160,7 +160,9 @@ fn multi_block_both_rasterized() {
                 break;
             }
         }
-        if top_has { break; }
+        if top_has {
+            break;
+        }
     }
 
     // Check bottom section has pixels
@@ -172,7 +174,9 @@ fn multi_block_both_rasterized() {
                 break;
             }
         }
-        if bottom_has { break; }
+        if bottom_has {
+            break;
+        }
     }
 
     assert!(top_has, "top block should produce pixels");
@@ -202,7 +206,10 @@ fn multi_run_block_rasterizes() {
     td.mark_dirty();
 
     let pixels = rasterize(&mut td, 500, 200);
-    assert!(has_visible_pixels(&pixels, 500, 200), "multi-run text should render");
+    assert!(
+        has_visible_pixels(&pixels, 500, 200),
+        "multi-run text should render"
+    );
 }
 
 // =============================================================================
@@ -263,7 +270,12 @@ fn text_layer_in_canvas() {
                 break;
             }
         }
-        if has_dark { break; }
+        if has_dark {
+            break;
+        }
     }
-    assert!(has_dark, "composited canvas should show black text on white background");
+    assert!(
+        has_dark,
+        "composited canvas should show black text on white background"
+    );
 }

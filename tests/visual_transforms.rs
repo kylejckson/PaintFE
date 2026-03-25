@@ -235,7 +235,15 @@ fn flatten_single_layer() {
 fn affine_rotate_45() {
     let img = test_image();
     let mut state = canvas_from_image(&img);
-    affine_transform_layer(&mut state, 0, 45.0_f32.to_radians(), 0.0, 0.0, 1.0, (0.0, 0.0));
+    affine_transform_layer(
+        &mut state,
+        0,
+        45.0_f32.to_radians(),
+        0.0,
+        0.0,
+        1.0,
+        (0.0, 0.0),
+    );
     let result = extract_layer(&state, 0);
     assert_golden("transforms", "affine_rotate_45", &result);
 }

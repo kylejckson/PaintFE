@@ -1902,7 +1902,8 @@ impl LayersPanel {
                 changed = true;
             }
             if gradient_on && !has_gradient {
-                self.settings_state.text_effects.gradient_fill = Some(GradientFillEffect::default());
+                self.settings_state.text_effects.gradient_fill =
+                    Some(GradientFillEffect::default());
                 self.settings_state.text_effects.texture_fill = None;
                 changed = true;
             } else if !gradient_on && has_gradient {

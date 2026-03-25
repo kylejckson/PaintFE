@@ -11,9 +11,9 @@ use common::*;
 use image::{Rgba, RgbaImage};
 use paintfe::canvas::CanvasState;
 use paintfe::ops::transform::{
-    self, catmull_rom_curve_point, catmull_rom_surface, catmull_rom_weights,
-    generate_displacement_from_mesh, generate_displacement_from_mesh_fast,
-    warp_displacement_full, warp_mesh_catmull_rom, DisplacementField,
+    self, DisplacementField, catmull_rom_curve_point, catmull_rom_surface, catmull_rom_weights,
+    generate_displacement_from_mesh, generate_displacement_from_mesh_fast, warp_displacement_full,
+    warp_mesh_catmull_rom,
 };
 
 // =============================================================================
@@ -37,10 +37,7 @@ fn uniform_grid(cols: usize, rows: usize, w: f32, h: f32) -> Vec<[f32; 2]> {
     let mut pts = Vec::with_capacity((rows + 1) * (cols + 1));
     for r in 0..=rows {
         for c in 0..=cols {
-            pts.push([
-                c as f32 / cols as f32 * w,
-                r as f32 / rows as f32 * h,
-            ]);
+            pts.push([c as f32 / cols as f32 * w, r as f32 / rows as f32 * h]);
         }
     }
     pts
@@ -216,11 +213,7 @@ fn generate_displacement_from_mesh_identity_is_zero() {
     let grid = uniform_grid(2, 2, 32.0, 32.0);
     let field = generate_displacement_from_mesh(&grid, &grid, 2, 2, 32, 32);
     // Identity mesh should produce near-zero displacement
-    let max_disp = field
-        .data
-        .iter()
-        .map(|v| v.abs())
-        .fold(0.0f32, f32::max);
+    let max_disp = field.data.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
     assert!(
         max_disp < 1.0,
         "identity mesh displacement max = {} (expected < 1.0)",
@@ -261,7 +254,9 @@ fn generate_displacement_from_mesh_fast_matches_full() {
 fn affine_identity_preserves_pixels() {
     let mut state = CanvasState::new(32, 32);
     // Paint a red dot
-    state.layers[0].pixels.put_pixel(16, 16, Rgba([255, 0, 0, 255]));
+    state.layers[0]
+        .pixels
+        .put_pixel(16, 16, Rgba([255, 0, 0, 255]));
     let before = state.composite();
 
     // Identity affine: 0 rotation, scale 1, no offset

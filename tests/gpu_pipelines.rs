@@ -13,8 +13,8 @@ mod common;
 
 use image::{Rgba, RgbaImage};
 use paintfe::canvas::{CanvasState, Layer};
-use paintfe::gpu::renderer::GpuRenderer;
 use paintfe::gpu::GradientGpuParams;
+use paintfe::gpu::renderer::GpuRenderer;
 use paintfe::ops::transform::DisplacementField;
 
 // =============================================================================
@@ -31,7 +31,9 @@ macro_rules! require_gpu {
     ($gpu:ident) => {
         #[allow(unused_mut)]
         let Some(mut $gpu) = try_gpu() else {
-            eprintln!("SKIP: no GPU adapter available (software fallback not supported on this OS)");
+            eprintln!(
+                "SKIP: no GPU adapter available (software fallback not supported on this OS)"
+            );
             return;
         };
     };
@@ -124,20 +126,16 @@ fn gpu_gradient_linear() {
         end_y: 0.5,
         width: w,
         height: h,
-        shape: 0,       // linear
-        repeat: 0,       // clamp
+        shape: 0,  // linear
+        repeat: 0, // clamp
         is_eraser: 0,
         _pad0: 0,
         _pad1: 0,
         _pad2: 0,
     };
 
-    gpu.gradient_pipeline.generate_into(
-        &gpu.ctx,
-        &params,
-        &lut,
-        &mut buf,
-    );
+    gpu.gradient_pipeline
+        .generate_into(&gpu.ctx, &params, &lut, &mut buf);
 
     // The gradient should vary across the width. Check that rightmost pixel
     // is significantly brighter than leftmost pixel.
@@ -167,14 +165,8 @@ fn gpu_liquify_identity_displacement() {
 
     gpu.liquify_pipeline.invalidate_source();
     let mut result = vec![0u8; (w * h * 4) as usize];
-    gpu.liquify_pipeline.warp_into(
-        &gpu.ctx,
-        &flat_rgba,
-        &displacement,
-        w,
-        h,
-        &mut result,
-    );
+    gpu.liquify_pipeline
+        .warp_into(&gpu.ctx, &flat_rgba, &displacement, w, h, &mut result);
 
     // Should be very close to original
     let max_diff: u8 = flat_rgba
@@ -203,14 +195,8 @@ fn gpu_liquify_push_changes_pixels() {
 
     gpu.liquify_pipeline.invalidate_source();
     let mut result = vec![0u8; (w * h * 4) as usize];
-    gpu.liquify_pipeline.warp_into(
-        &gpu.ctx,
-        &flat_rgba,
-        &field.data,
-        w,
-        h,
-        &mut result,
-    );
+    gpu.liquify_pipeline
+        .warp_into(&gpu.ctx, &flat_rgba, &field.data, w, h, &mut result);
 
     // Center area should be different from the original
     let ci = ((32 * w + 32) * 4) as usize;
@@ -337,7 +323,11 @@ fn gpu_flood_fill_two_colors() {
 
     // Black region should have high distance from white seed
     let d_black = distances[(16 * w + 24) as usize];
-    assert!(d_black > 200, "black region distance should be >200, got {}", d_black);
+    assert!(
+        d_black > 200,
+        "black region distance should be >200, got {}",
+        d_black
+    );
 }
 
 // =============================================================================
@@ -368,10 +358,26 @@ fn gpu_composite_single_layer() {
     let pixels = result.unwrap();
     // Check the red pixel at (10, 10)
     let idx = ((10 * w + 10) * 4) as usize;
-    assert!(pixels[idx] > 240, "red channel at (10,10) = {} (expected > 240)", pixels[idx]);
-    assert!(pixels[idx + 1] < 15, "green channel at (10,10) = {} (expected < 15)", pixels[idx + 1]);
-    assert!(pixels[idx + 2] < 15, "blue channel at (10,10) = {} (expected < 15)", pixels[idx + 2]);
-    assert!(pixels[idx + 3] > 240, "alpha channel at (10,10) = {} (expected > 240)", pixels[idx + 3]);
+    assert!(
+        pixels[idx] > 240,
+        "red channel at (10,10) = {} (expected > 240)",
+        pixels[idx]
+    );
+    assert!(
+        pixels[idx + 1] < 15,
+        "green channel at (10,10) = {} (expected < 15)",
+        pixels[idx + 1]
+    );
+    assert!(
+        pixels[idx + 2] < 15,
+        "blue channel at (10,10) = {} (expected < 15)",
+        pixels[idx + 2]
+    );
+    assert!(
+        pixels[idx + 3] > 240,
+        "alpha channel at (10,10) = {} (expected > 240)",
+        pixels[idx + 3]
+    );
 }
 
 #[test]
@@ -381,7 +387,9 @@ fn gpu_composite_two_layers() {
     let w = 32u32;
     let h = 32u32;
     let mut state = CanvasState::new(w, h);
-    state.layers.push(Layer::new("Layer 1".into(), w, h, Rgba([0, 0, 0, 0])));
+    state
+        .layers
+        .push(Layer::new("Layer 1".into(), w, h, Rgba([0, 0, 0, 0])));
 
     // Layer 0: solid red at (10, 10)
     state.layers[0]
@@ -399,16 +407,21 @@ fn gpu_composite_two_layers() {
     gpu.ensure_layer_texture(1, w, h, &data1, 1);
 
     // Composite: layer 0 bottom, layer 1 top (Normal blend)
-    let layer_info = vec![
-        (0usize, 1.0f32, true, 0u8),
-        (1usize, 1.0f32, true, 0u8),
-    ];
+    let layer_info = vec![(0usize, 1.0f32, true, 0u8), (1usize, 1.0f32, true, 0u8)];
     let result = gpu.composite(w, h, &layer_info);
     assert!(result.is_some());
 
     let pixels = result.unwrap();
     let idx = ((10 * w + 10) * 4) as usize;
     // Blue layer on top should dominate
-    assert!(pixels[idx] < 15, "red = {} (expected < 15, blue on top)", pixels[idx]);
-    assert!(pixels[idx + 2] > 240, "blue = {} (expected > 240)", pixels[idx + 2]);
+    assert!(
+        pixels[idx] < 15,
+        "red = {} (expected < 15, blue on top)",
+        pixels[idx]
+    );
+    assert!(
+        pixels[idx + 2] > 240,
+        "blue = {} (expected > 240)",
+        pixels[idx + 2]
+    );
 }

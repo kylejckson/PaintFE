@@ -13,17 +13,23 @@ use std::path::{Path, PathBuf};
 
 /// Root of the golden reference images.
 pub fn golden_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("golden")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("golden")
 }
 
 /// Root of the test output (failure artefacts). Git-ignored.
 pub fn output_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("output")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("output")
 }
 
 /// Root of committed test fixture files.
 pub fn fixtures_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
 }
 
 // =============================================================================
@@ -133,7 +139,12 @@ pub fn generate_diff_image(actual: &RgbaImage, expected: &RgbaImage) -> RgbaImag
                 } else {
                     // Red, brightness proportional to difference
                     let intensity = ((max_d as f32 / 255.0).sqrt() * 255.0) as u8;
-                    Rgba([255, 255_u8.saturating_sub(intensity), 255_u8.saturating_sub(intensity), 255])
+                    Rgba([
+                        255,
+                        255_u8.saturating_sub(intensity),
+                        255_u8.saturating_sub(intensity),
+                        255,
+                    ])
                 }
             } else if in_actual {
                 Rgba([255, 128, 0, 255]) // orange = in actual only (larger)
@@ -200,7 +211,13 @@ pub fn save_golden(category: &str, name: &str, img: &RgbaImage) {
 pub fn assert_golden(category: &str, name: &str, actual: &RgbaImage) {
     if should_generate_golden() {
         save_golden(category, name, actual);
-        eprintln!("[golden] wrote {}/{}.png ({}×{})", category, name, actual.width(), actual.height());
+        eprintln!(
+            "[golden] wrote {}/{}.png ({}×{})",
+            category,
+            name,
+            actual.width(),
+            actual.height()
+        );
         return;
     }
 
@@ -224,11 +241,20 @@ pub fn assert_golden(category: &str, name: &str, actual: &RgbaImage) {
              \x20 Mean channel diff: {:.1}\n\
              \x20 Tolerance: {}\n\
              \x20 Artefacts saved to tests/output/",
-            category, name,
-            result.actual_size.0, result.actual_size.1,
-            result.expected_size.0, result.expected_size.1,
-            if result.dimensions_match { "match" } else { "MISMATCH" },
-            result.mismatched_pixels, result.total_pixels, result.mismatch_percentage,
+            category,
+            name,
+            result.actual_size.0,
+            result.actual_size.1,
+            result.expected_size.0,
+            result.expected_size.1,
+            if result.dimensions_match {
+                "match"
+            } else {
+                "MISMATCH"
+            },
+            result.mismatched_pixels,
+            result.total_pixels,
+            result.mismatch_percentage,
             result.max_channel_diff,
             result.mean_channel_diff,
             tolerance,
@@ -247,9 +273,17 @@ pub fn create_test_gradient(w: u32, h: u32) -> RgbaImage {
     let mut img = RgbaImage::new(w, h);
     for y in 0..h {
         for x in 0..w {
-            let r = if w > 1 { (x * 255 / (w - 1)) as u8 } else { 128 };
+            let r = if w > 1 {
+                (x * 255 / (w - 1)) as u8
+            } else {
+                128
+            };
             let g = 255 - r;
-            let b = if h > 1 { (y * 255 / (h - 1)) as u8 } else { 128 };
+            let b = if h > 1 {
+                (y * 255 / (h - 1)) as u8
+            } else {
+                128
+            };
             img.put_pixel(x, y, Rgba([r, g, b, 255]));
         }
     }
@@ -316,7 +350,8 @@ pub fn canvas_from_image(img: &RgbaImage) -> paintfe::canvas::CanvasState {
 
 /// Extract the active layer as a flat `RgbaImage`.
 pub fn extract_layer(state: &paintfe::canvas::CanvasState, layer: usize) -> RgbaImage {
-    let raw = state.layers[layer].pixels.extract_region_rgba(0, 0, state.width, state.height);
-    RgbaImage::from_raw(state.width, state.height, raw)
-        .expect("extract_layer: invalid dimensions")
+    let raw = state.layers[layer]
+        .pixels
+        .extract_region_rgba(0, 0, state.width, state.height);
+    RgbaImage::from_raw(state.width, state.height, raw).expect("extract_layer: invalid dimensions")
 }

@@ -12,7 +12,7 @@ mod common;
 
 use common::*;
 use image::RgbaImage;
-use paintfe::ops::scripting::{execute_script_sync, ScriptError};
+use paintfe::ops::scripting::{ScriptError, execute_script_sync};
 
 /// Run a script on a 64×64 gradient and return the result as RgbaImage.
 fn run_script(source: &str) -> Result<(RgbaImage, Vec<String>), ScriptError> {
@@ -74,7 +74,10 @@ fn script_get_pixel_roundtrip() {
     .unwrap();
     let orig_00 = create_test_gradient(64, 64).get_pixel(0, 0).0;
     let copied = result.get_pixel(1, 1).0;
-    assert_eq!(orig_00, copied, "get/set pixel roundtrip should preserve values");
+    assert_eq!(
+        orig_00, copied,
+        "get/set pixel roundtrip should preserve values"
+    );
 }
 
 // =============================================================================
@@ -296,8 +299,14 @@ fn script_select_ellipse_limits_effect() {
     // Corner (0,0) should remain the original gradient value
     // Original gradient: (0,0) → r=0, g=255, b=0
     let corner = result.get_pixel(0, 0);
-    assert_eq!(corner[0], 0, "corner R should be 0 (unchanged from gradient)");
-    assert_eq!(corner[1], 255, "corner G should be 255 (unchanged from gradient)");
+    assert_eq!(
+        corner[0], 0,
+        "corner R should be 0 (unchanged from gradient)"
+    );
+    assert_eq!(
+        corner[1], 255,
+        "corner G should be 255 (unchanged from gradient)"
+    );
 }
 
 #[test]
@@ -395,8 +404,11 @@ fn script_select_rect_then_apply_effect() {
     let left = result.get_pixel(5, 32);
     let right = result.get_pixel(50, 32);
     // The gradient at x=5 has R channel ~ 5*255/64 ~ 20, inverted = ~235
-    assert!(left[0] > 200, "left R should be high (inverted) got {}", left[0]);
+    assert!(
+        left[0] > 200,
+        "left R should be high (inverted) got {}",
+        left[0]
+    );
     // Right side should be low-ish (original gradient, x=50)
     assert!(right[0] > 100, "right R should be moderate (original)");
 }
-

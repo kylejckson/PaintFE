@@ -539,8 +539,18 @@ fn coverage_from_sdf(distance: f32, anti_alias: bool) -> f32 {
 }
 
 #[inline]
-fn rectangle_outline_coverage(px: f32, py: f32, hx: f32, hy: f32, outline_half: f32, anti_alias: bool) -> f32 {
-    let outer_cov = coverage_from_sdf(sdf_box(px, py, hx + outline_half, hy + outline_half), anti_alias);
+fn rectangle_outline_coverage(
+    px: f32,
+    py: f32,
+    hx: f32,
+    hy: f32,
+    outline_half: f32,
+    anti_alias: bool,
+) -> f32 {
+    let outer_cov = coverage_from_sdf(
+        sdf_box(px, py, hx + outline_half, hy + outline_half),
+        anti_alias,
+    );
     let inner_hx = (hx - outline_half).max(0.0);
     let inner_hy = (hy - outline_half).max(0.0);
     let inner_cov = if inner_hx > 0.0 && inner_hy > 0.0 {

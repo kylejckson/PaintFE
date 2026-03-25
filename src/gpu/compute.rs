@@ -940,7 +940,8 @@ impl GpuMagicWandPipeline {
 
     fn ensure_cache(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, w: u32, h: u32) {
         if self.cached_w != w || self.cached_h != h {
-            self.cached_output_tex = Some(create_rw_texture(device, w, h, "magic_wand_mask_output"));
+            self.cached_output_tex =
+                Some(create_rw_texture(device, w, h, "magic_wand_mask_output"));
 
             let bytes_per_row = super::compositor::Compositor::aligned_bytes_per_row(w);
             let buffer_size = (bytes_per_row * h) as u64;
@@ -960,7 +961,14 @@ impl GpuMagicWandPipeline {
         }
 
         if self.dummy_base_tex.is_none() {
-            self.dummy_base_tex = Some(upload_r8(device, queue, &[0], 1, 1, "magic_wand_base_dummy"));
+            self.dummy_base_tex = Some(upload_r8(
+                device,
+                queue,
+                &[0],
+                1,
+                1,
+                "magic_wand_base_dummy",
+            ));
         }
     }
 
@@ -997,7 +1005,14 @@ impl GpuMagicWandPipeline {
 
         if let Some(base_data) = base_mask {
             if self.cached_base_tex.is_none() || self.cached_base_key != base_key {
-                self.cached_base_tex = Some(upload_r8(device, queue, base_data, w, h, "magic_wand_base_mask"));
+                self.cached_base_tex = Some(upload_r8(
+                    device,
+                    queue,
+                    base_data,
+                    w,
+                    h,
+                    "magic_wand_base_mask",
+                ));
                 self.cached_base_key = base_key;
             }
         } else {
@@ -1296,7 +1311,12 @@ impl GpuFillPreviewPipeline {
         }
 
         if self.cached_region_w != region_w || self.cached_region_h != region_h {
-            self.cached_output_tex = Some(create_rw_texture(device, region_w, region_h, "fill_preview_output"));
+            self.cached_output_tex = Some(create_rw_texture(
+                device,
+                region_w,
+                region_h,
+                "fill_preview_output",
+            ));
 
             let bytes_per_row = super::compositor::Compositor::aligned_bytes_per_row(region_w);
             let buffer_size = (bytes_per_row * region_h) as u64;
@@ -1312,7 +1332,14 @@ impl GpuFillPreviewPipeline {
         }
 
         if self.dummy_selection_tex.is_none() {
-            self.dummy_selection_tex = Some(upload_r8(device, queue, &[255], 1, 1, "fill_preview_selection_dummy"));
+            self.dummy_selection_tex = Some(upload_r8(
+                device,
+                queue,
+                &[255],
+                1,
+                1,
+                "fill_preview_selection_dummy",
+            ));
         }
     }
 
@@ -1342,7 +1369,14 @@ impl GpuFillPreviewPipeline {
         self.ensure_cache(device, queue, canvas_w, canvas_h, region_w, region_h);
 
         if self.cached_distance_tex.is_none() || self.cached_distance_key != distance_key {
-            self.cached_distance_tex = Some(upload_r8(device, queue, distances, canvas_w, canvas_h, "fill_preview_distances"));
+            self.cached_distance_tex = Some(upload_r8(
+                device,
+                queue,
+                distances,
+                canvas_w,
+                canvas_h,
+                "fill_preview_distances",
+            ));
             self.cached_distance_key = distance_key;
         }
 
@@ -1359,7 +1393,9 @@ impl GpuFillPreviewPipeline {
         }
 
         if let Some((selection_data, selection_key)) = selection_mask {
-            if self.cached_selection_tex.is_none() || self.cached_selection_key != Some(selection_key) {
+            if self.cached_selection_tex.is_none()
+                || self.cached_selection_key != Some(selection_key)
+            {
                 self.cached_selection_tex = Some(upload_r8(
                     device,
                     queue,
@@ -1510,7 +1546,10 @@ impl GpuFillPreviewPipeline {
                 return;
             }
             Err(e) => {
-                eprintln!("[GPU] GpuFillPreviewPipeline readback channel error: {:?}", e);
+                eprintln!(
+                    "[GPU] GpuFillPreviewPipeline readback channel error: {:?}",
+                    e
+                );
                 return;
             }
         }
@@ -1591,52 +1630,47 @@ impl GpuFloodFillPipeline {
         // --- Color Distance pipeline ---
         let cd_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("flood_color_dist_shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                super::shaders::FLOOD_COLOR_DISTANCE_SHADER.into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(super::shaders::FLOOD_COLOR_DISTANCE_SHADER.into()),
         });
 
-        let color_dist_bgl =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("flood_color_dist_bgl"),
-                entries: &[
-                    // binding 0: input RGBA texture
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float {
-                                filterable: false,
-                            },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
+        let color_dist_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("flood_color_dist_bgl"),
+            entries: &[
+                // binding 0: input RGBA texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
-                    // binding 1: color_dist storage buffer (write)
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+                    count: None,
+                },
+                // binding 1: color_dist storage buffer (write)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    // binding 2: uniform params
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+                    count: None,
+                },
+                // binding 2: uniform params
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                ],
-            });
+                    count: None,
+                },
+            ],
+        });
 
         let cd_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("flood_color_dist_pl"),
@@ -1659,45 +1693,44 @@ impl GpuFloodFillPipeline {
             source: wgpu::ShaderSource::Wgsl(super::shaders::FLOOD_INIT_SHADER.into()),
         });
 
-        let flood_init_bgl =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("flood_init_bgl"),
-                entries: &[
-                    // binding 0: color_dist buffer (read)
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+        let flood_init_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("flood_init_bgl"),
+            entries: &[
+                // binding 0: color_dist buffer (read)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    // binding 1: flood_dist buffer (read_write)
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+                    count: None,
+                },
+                // binding 1: flood_dist buffer (read_write)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    // binding 2: uniform
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+                    count: None,
+                },
+                // binding 2: uniform
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                ],
-            });
+                    count: None,
+                },
+            ],
+        });
 
         let init_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("flood_init_pl"),
@@ -1720,56 +1753,55 @@ impl GpuFloodFillPipeline {
             source: wgpu::ShaderSource::Wgsl(super::shaders::FLOOD_STEP_SHADER.into()),
         });
 
-        let flood_step_bgl =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("flood_step_bgl"),
-                entries: &[
-                    // binding 0: color_dist (read)
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+        let flood_step_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("flood_step_bgl"),
+            entries: &[
+                // binding 0: color_dist (read)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    // binding 1: flood_a (read_write)
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+                    count: None,
+                },
+                // binding 1: flood_a (read_write)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    // binding 2: flood_b (read_write)
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+                    count: None,
+                },
+                // binding 2: flood_b (read_write)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    // binding 3: uniform
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+                    count: None,
+                },
+                // binding 3: uniform
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                ],
-            });
+                    count: None,
+                },
+            ],
+        });
 
         let step_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("flood_step_pl"),
@@ -2002,28 +2034,26 @@ impl GpuFloodFillPipeline {
 
         // Pre-create param buffers for both ping-pong directions.
         // These are immutable — no write_buffer needed between passes.
-        let params_buf_fwd =
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("flood_step_params_fwd"),
-                contents: bytemuck::bytes_of(&FloodStepGpuParams {
-                    width: w,
-                    height: h,
-                    step_size: 1,
-                    direction: 0,
-                }),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
-        let params_buf_bwd =
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("flood_step_params_bwd"),
-                contents: bytemuck::bytes_of(&FloodStepGpuParams {
-                    width: w,
-                    height: h,
-                    step_size: 1,
-                    direction: 1,
-                }),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
+        let params_buf_fwd = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("flood_step_params_fwd"),
+            contents: bytemuck::bytes_of(&FloodStepGpuParams {
+                width: w,
+                height: h,
+                step_size: 1,
+                direction: 0,
+            }),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+        let params_buf_bwd = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("flood_step_params_bwd"),
+            contents: bytemuck::bytes_of(&FloodStepGpuParams {
+                width: w,
+                height: h,
+                step_size: 1,
+                direction: 1,
+            }),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
 
         // Two bind groups sharing the same storage buffers but different uniform params.
         let bg_fwd = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -2079,17 +2109,15 @@ impl GpuFloodFillPipeline {
         let mut direction = 0u32;
         for chunk_start in (0..num_passes).step_by(batch_size) {
             let chunk_end = num_passes.min(chunk_start + batch_size);
-            let mut encoder =
-                device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("flood_step_batch"),
-                });
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("flood_step_batch"),
+            });
             for _ in chunk_start..chunk_end {
                 {
-                    let mut pass =
-                        encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                            label: Some("flood_step_pass"),
-                            timestamp_writes: None,
-                        });
+                    let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                        label: Some("flood_step_pass"),
+                        timestamp_writes: None,
+                    });
                     pass.set_pipeline(&self.flood_step_pipeline);
                     if direction == 0 {
                         pass.set_bind_group(0, &bg_fwd, &[]);
@@ -2260,12 +2288,18 @@ impl GpuFloodFillPipeline {
         match rx.recv() {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
-                eprintln!("[GPU] GpuFloodFillPipeline global readback map error: {:?}", e);
+                eprintln!(
+                    "[GPU] GpuFloodFillPipeline global readback map error: {:?}",
+                    e
+                );
                 out.clear();
                 return false;
             }
             Err(e) => {
-                eprintln!("[GPU] GpuFloodFillPipeline global readback channel error: {:?}", e);
+                eprintln!(
+                    "[GPU] GpuFloodFillPipeline global readback channel error: {:?}",
+                    e
+                );
                 out.clear();
                 return false;
             }

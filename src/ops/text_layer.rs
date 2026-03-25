@@ -711,9 +711,8 @@ impl TextLayerData {
                 pad = pad.max(outline.width.ceil() + 2.0);
             }
             if let Some(ref inner) = self.effects.inner_shadow {
-                pad = pad.max(
-                    inner.offset_x.abs() + inner.offset_y.abs() + inner.blur_radius * 3.0,
-                );
+                pad =
+                    pad.max(inner.offset_x.abs() + inner.offset_y.abs() + inner.blur_radius * 3.0);
             }
             let pad_px = (pad.ceil() as u32).max(4);
 
@@ -1116,7 +1115,15 @@ pub fn rasterize_single_block(
     coverage_buf: &mut Vec<f32>,
     glyph_cache: &mut GlyphPixelCache,
 ) {
-    rasterize_block_multirun(block, content_generation, canvas_w, canvas_h, target, coverage_buf, glyph_cache);
+    rasterize_block_multirun(
+        block,
+        content_generation,
+        canvas_w,
+        canvas_h,
+        target,
+        coverage_buf,
+        glyph_cache,
+    );
 }
 
 /// Find the tight AABB of non-transparent pixels in an RGBA buffer.
@@ -1225,7 +1232,14 @@ fn rasterize_block_multirun(
                 }
             }
         } else {
-            rasterize_block_per_glyph(&*block, canvas_w, canvas_h, target, coverage_buf, glyph_cache);
+            rasterize_block_per_glyph(
+                &*block,
+                canvas_w,
+                canvas_h,
+                target,
+                coverage_buf,
+                glyph_cache,
+            );
         }
         return;
     }
@@ -1249,16 +1263,30 @@ fn rasterize_block_multirun(
                     apply_block_warp(&cached.buf, cached.buf_w, cached.buf_h, &block.warp)
                 {
                     maybe_rotate_and_blit(
-                        target, &warped, ww, wh,
-                        adj_off_x + wox, adj_off_y + woy,
-                        block.rotation, canvas_w, canvas_h, rot_pivot,
+                        target,
+                        &warped,
+                        ww,
+                        wh,
+                        adj_off_x + wox,
+                        adj_off_y + woy,
+                        block.rotation,
+                        canvas_w,
+                        canvas_h,
+                        rot_pivot,
                     );
                 }
             } else {
                 maybe_rotate_and_blit(
-                    target, &cached.buf, cached.buf_w, cached.buf_h,
-                    adj_off_x, adj_off_y,
-                    block.rotation, canvas_w, canvas_h, rot_pivot,
+                    target,
+                    &cached.buf,
+                    cached.buf_w,
+                    cached.buf_h,
+                    adj_off_x,
+                    adj_off_y,
+                    block.rotation,
+                    canvas_w,
+                    canvas_h,
+                    rot_pivot,
                 );
             }
             return;
@@ -1376,16 +1404,30 @@ fn rasterize_block_multirun(
                 apply_block_warp(&cached.buf, cached.buf_w, cached.buf_h, &block.warp)
             {
                 maybe_rotate_and_blit(
-                    target, &warped, ww, wh,
-                    adj_off_x + wox, adj_off_y + woy,
-                    block.rotation, canvas_w, canvas_h, rot_pivot,
+                    target,
+                    &warped,
+                    ww,
+                    wh,
+                    adj_off_x + wox,
+                    adj_off_y + woy,
+                    block.rotation,
+                    canvas_w,
+                    canvas_h,
+                    rot_pivot,
                 );
             }
         } else {
             maybe_rotate_and_blit(
-                target, &cached.buf, cached.buf_w, cached.buf_h,
-                adj_off_x, adj_off_y,
-                block.rotation, canvas_w, canvas_h, rot_pivot,
+                target,
+                &cached.buf,
+                cached.buf_w,
+                cached.buf_h,
+                adj_off_x,
+                adj_off_y,
+                block.rotation,
+                canvas_w,
+                canvas_h,
+                rot_pivot,
             );
         }
         return;
@@ -1393,16 +1435,25 @@ fn rasterize_block_multirun(
 
     // Cache miss — full multi-run rasterization, then cache the tight result.
     let rasterize_multirun_and_extract = |block: &TextBlock,
-                                           canvas_w: u32, canvas_h: u32,
-                                           coverage_buf: &mut Vec<f32>,
-                                           glyph_cache: &mut GlyphPixelCache|
-        -> Option<(Vec<u8>, u32, u32, i32, i32)>
-    {
+                                          canvas_w: u32,
+                                          canvas_h: u32,
+                                          coverage_buf: &mut Vec<f32>,
+                                          glyph_cache: &mut GlyphPixelCache|
+     -> Option<(Vec<u8>, u32, u32, i32, i32)> {
         let mut temp = TiledImage::new(canvas_w, canvas_h);
         rasterize_block_multirun_slow(
-            block, canvas_w, canvas_h, &mut temp, coverage_buf, glyph_cache,
+            block,
+            canvas_w,
+            canvas_h,
+            &mut temp,
+            coverage_buf,
+            glyph_cache,
         );
-        let max_font = block.runs.iter().map(|r| r.style.font_size).fold(0.0f32, f32::max);
+        let max_font = block
+            .runs
+            .iter()
+            .map(|r| r.style.font_size)
+            .fold(0.0f32, f32::max);
         let margin = (max_font * 2.0) as u32 + 20;
         let bx = (block.position[0] as i32 - margin as i32).max(0) as u32;
         let by = (block.position[1] as i32 - margin as i32).max(0) as u32;
@@ -1415,7 +1466,13 @@ fn rasterize_block_multirun(
         }
         let region = temp.extract_region_rgba(bx, by, bw, bh);
         if let Some((tx, ty, tw, th, trimmed)) = trim_to_content(&region, bw, bh) {
-            Some((trimmed, tw, th, bx as i32 + tx as i32, by as i32 + ty as i32))
+            Some((
+                trimmed,
+                tw,
+                th,
+                bx as i32 + tx as i32,
+                by as i32 + ty as i32,
+            ))
         } else {
             None
         }
@@ -1436,20 +1493,32 @@ fn rasterize_block_multirun(
         });
 
         if has_warp {
-            if let Some((warped, ww, wh, wox, woy)) =
-                apply_block_warp(&buf, tw, th, &block.warp)
-            {
+            if let Some((warped, ww, wh, wox, woy)) = apply_block_warp(&buf, tw, th, &block.warp) {
                 maybe_rotate_and_blit(
-                    target, &warped, ww, wh,
-                    off_x + wox, off_y + woy,
-                    block.rotation, canvas_w, canvas_h, rot_pivot,
+                    target,
+                    &warped,
+                    ww,
+                    wh,
+                    off_x + wox,
+                    off_y + woy,
+                    block.rotation,
+                    canvas_w,
+                    canvas_h,
+                    rot_pivot,
                 );
             }
         } else {
             maybe_rotate_and_blit(
-                target, &buf, tw, th,
-                off_x, off_y,
-                block.rotation, canvas_w, canvas_h, rot_pivot,
+                target,
+                &buf,
+                tw,
+                th,
+                off_x,
+                off_y,
+                block.rotation,
+                canvas_w,
+                canvas_h,
+                rot_pivot,
             );
         }
     }
@@ -1707,7 +1776,10 @@ fn rasterize_block_multirun_slow(
             Some(f) => f,
             None => continue,
         };
-        let scaled = font.as_scaled(ab_glyph::PxScale { x: run.style.font_size * run.style.width_scale, y: run.style.font_size * run.style.height_scale });
+        let scaled = font.as_scaled(ab_glyph::PxScale {
+            x: run.style.font_size * run.style.width_scale,
+            y: run.style.font_size * run.style.height_scale,
+        });
 
         let parts: Vec<&str> = run.text.split('\n').collect();
         for (pi, part) in parts.iter().enumerate() {
@@ -1863,7 +1935,10 @@ pub fn compute_block_layout(block: &TextBlock) -> BlockLayout {
                 continue;
             }
         };
-        let scaled = font.as_scaled(ab_glyph::PxScale { x: run.style.font_size * run.style.width_scale, y: run.style.font_size * run.style.height_scale });
+        let scaled = font.as_scaled(ab_glyph::PxScale {
+            x: run.style.font_size * run.style.width_scale,
+            y: run.style.font_size * run.style.height_scale,
+        });
         let ascent = scaled.ascent();
         let lh = scaled.height();
 
@@ -1979,7 +2054,10 @@ pub fn compute_block_layout(block: &TextBlock) -> BlockLayout {
                         )
                     })
                     .collect();
-                let scaled = font.as_scaled(ab_glyph::PxScale { x: run.style.font_size * run.style.width_scale, y: run.style.font_size * run.style.height_scale });
+                let scaled = font.as_scaled(ab_glyph::PxScale {
+                    x: run.style.font_size * run.style.width_scale,
+                    y: run.style.font_size * run.style.height_scale,
+                });
                 total_height = wrapped_lines.len().max(1) as f32
                     * scaled.height()
                     * block.paragraph.line_spacing;
@@ -2043,7 +2121,10 @@ pub fn compute_glyph_bounds(block: &TextBlock) -> Vec<GlyphBounds> {
             Some(f) => f,
             None => continue,
         };
-        let scaled = font.as_scaled(ab_glyph::PxScale { x: run.style.font_size * run.style.width_scale, y: run.style.font_size * run.style.height_scale });
+        let scaled = font.as_scaled(ab_glyph::PxScale {
+            x: run.style.font_size * run.style.width_scale,
+            y: run.style.font_size * run.style.height_scale,
+        });
         let parts: Vec<&str> = run.text.split('\n').collect();
         for (pi, part) in parts.iter().enumerate() {
             if pi > 0 {
@@ -2095,7 +2176,10 @@ pub fn compute_glyph_bounds(block: &TextBlock) -> Vec<GlyphBounds> {
 
         for seg in segs {
             let font = &seg.font;
-            let scaled = font.as_scaled(ab_glyph::PxScale { x: seg.font_size * seg.width_scale, y: seg.font_size * seg.height_scale });
+            let scaled = font.as_scaled(ab_glyph::PxScale {
+                x: seg.font_size * seg.width_scale,
+                y: seg.font_size * seg.height_scale,
+            });
             let baseline_y = block.position[1] + y_pos + max_ascent;
             let seg_ascent = seg.ascent;
             let mut prev_glyph: Option<ab_glyph::GlyphId> = None;
@@ -3373,11 +3457,15 @@ fn render_gradient_fill(
                 };
                 let inv_t = 1.0 - t;
                 let idx = x * 4;
-                row[idx] = (sr as f32 * inv_t + er as f32 * t).round().clamp(0.0, 255.0) as u8;
-                row[idx + 1] =
-                    (sg as f32 * inv_t + eg as f32 * t).round().clamp(0.0, 255.0) as u8;
-                row[idx + 2] =
-                    (sb as f32 * inv_t + eb as f32 * t).round().clamp(0.0, 255.0) as u8;
+                row[idx] = (sr as f32 * inv_t + er as f32 * t)
+                    .round()
+                    .clamp(0.0, 255.0) as u8;
+                row[idx + 1] = (sg as f32 * inv_t + eg as f32 * t)
+                    .round()
+                    .clamp(0.0, 255.0) as u8;
+                row[idx + 2] = (sb as f32 * inv_t + eb as f32 * t)
+                    .round()
+                    .clamp(0.0, 255.0) as u8;
                 let grad_alpha = sa as f32 * inv_t + ea as f32 * t;
                 row[idx + 3] = (grad_alpha * cov).round().clamp(0.0, 255.0) as u8;
             }

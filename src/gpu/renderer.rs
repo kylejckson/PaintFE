@@ -187,10 +187,9 @@ impl AsyncReadback {
     }
 }
 use super::compute::{
-    GpuBlurPipeline, GpuBrightnessContrastPipeline, GpuFillPreviewPipeline,
-    GpuFloodFillPipeline, GpuGradientPipeline, GpuHslPipeline, GpuInvertPipeline,
-    GpuLiquifyPipeline, GpuMagicWandPipeline, GpuMedianPipeline,
-    GpuMeshWarpDisplacementPipeline,
+    GpuBlurPipeline, GpuBrightnessContrastPipeline, GpuFillPreviewPipeline, GpuFloodFillPipeline,
+    GpuGradientPipeline, GpuHslPipeline, GpuInvertPipeline, GpuLiquifyPipeline,
+    GpuMagicWandPipeline, GpuMedianPipeline, GpuMeshWarpDisplacementPipeline,
 };
 use super::pool::TexturePool;
 use super::texture::{LayerTexture, MipmapPipeline};

@@ -609,6 +609,7 @@ keybind.tool_shapes=Shapes
 keybind.tool_lasso=Lasso
 keybind.tool_color_remover=Color Remover
 keybind.tool_mesh_warp=Mesh Warp
+keybind.brush_resize_drag_modifier=Brush Resize Drag Modifier
 keybind.brush_size_decrease=Decrease Brush Size
 keybind.brush_size_increase=Increase Brush Size
 color_panel.rgb=RGB

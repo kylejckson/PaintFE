@@ -261,7 +261,13 @@ fn oil_painting() {
 #[test]
 fn color_filter_multiply() {
     let img = test_image();
-    let result = color_filter_core(&img, [255, 128, 0, 255], 0.5, ColorFilterMode::Multiply, None);
+    let result = color_filter_core(
+        &img,
+        [255, 128, 0, 255],
+        0.5,
+        ColorFilterMode::Multiply,
+        None,
+    );
     assert_golden("filters", "color_filter_multiply", &result);
 }
 
@@ -319,6 +325,15 @@ fn vignette_identity() {
 #[test]
 fn color_filter_identity() {
     let img = test_image();
-    let result = color_filter_core(&img, [255, 255, 255, 255], 0.0, ColorFilterMode::Multiply, None);
-    assert_eq!(img, result, "color filter with intensity=0 should be identity");
+    let result = color_filter_core(
+        &img,
+        [255, 255, 255, 255],
+        0.0,
+        ColorFilterMode::Multiply,
+        None,
+    );
+    assert_eq!(
+        img, result,
+        "color filter with intensity=0 should be identity"
+    );
 }
