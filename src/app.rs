@@ -1118,10 +1118,10 @@ impl eframe::App for PaintFEApp {
         {
             let dropped: Vec<egui::DroppedFile> = ctx.input(|i| i.raw.dropped_files.clone());
             for file in dropped {
-                if let Some(path) = file.path {
-                    if path.is_file() {
-                        self.open_file_by_path(path, ctx.input(|i| i.time));
-                    }
+                if let Some(path) = file.path
+                    && path.is_file()
+                {
+                    self.open_file_by_path(path, ctx.input(|i| i.time));
                 }
             }
         }

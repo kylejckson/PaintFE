@@ -2883,8 +2883,6 @@ impl KeyBindings {
                 command: combo.ctrl,
             };
             ctx.input_mut(|i| i.consume_key(mods, key))
-        } else if combo.ctrl || combo.shift || combo.alt {
-            false
         } else {
             false
         }

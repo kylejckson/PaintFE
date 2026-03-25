@@ -6,6 +6,13 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.1.10] - 2026-03-25
+
+### Fixed
+- **Clippy**: Resolved CI build failures — collapsed nested `if let`/`if` in drag-and-drop handler; removed redundant always-false branches in keyboard shortcut helper.
+
+---
+
 ## [1.1.9] - 2026-03-25
 
 ### Added
