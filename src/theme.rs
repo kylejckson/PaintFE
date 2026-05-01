@@ -108,6 +108,7 @@ pub struct ThemeOverrides {
     pub window_rounding: Option<f32>,
     pub menu_rounding: Option<f32>,
     pub tool_shelf_rounding: Option<f32>,
+    pub tool_button_rounding: Option<f32>,
     pub badge_rounding: Option<f32>,
     pub tab_rounding: Option<f32>,
 
@@ -157,6 +158,7 @@ impl ThemeOverrides {
             && self.window_rounding.is_none()
             && self.menu_rounding.is_none()
             && self.tool_shelf_rounding.is_none()
+            && self.tool_button_rounding.is_none()
             && self.badge_rounding.is_none()
             && self.tab_rounding.is_none()
             && self.glow_intensity.is_none()
@@ -454,6 +456,7 @@ pub struct Theme {
     pub window_rounding: f32,
     pub menu_rounding: f32,
     pub tool_shelf_rounding: f32,
+    pub tool_button_rounding: f32,
     pub badge_rounding: f32,
     pub tab_rounding: f32,
     pub glow_intensity: f32,
@@ -538,6 +541,7 @@ impl Theme {
             window_rounding: 10.0,
             menu_rounding: 8.0,
             tool_shelf_rounding: 8.0,
+            tool_button_rounding: 4.0,
             badge_rounding: 4.0,
             tab_rounding: 7.0,
             glow_intensity: 1.0,
@@ -616,6 +620,7 @@ impl Theme {
             window_rounding: 10.0,
             menu_rounding: 8.0,
             tool_shelf_rounding: 8.0,
+            tool_button_rounding: 4.0,
             badge_rounding: 4.0,
             tab_rounding: 7.0,
             glow_intensity: 1.0,
@@ -755,6 +760,9 @@ impl Theme {
         }
         if let Some(v) = ov.tool_shelf_rounding {
             self.tool_shelf_rounding = v;
+        }
+        if let Some(v) = ov.tool_button_rounding {
+            self.tool_button_rounding = v;
         }
         if let Some(v) = ov.badge_rounding {
             self.badge_rounding = v;
@@ -929,6 +937,10 @@ impl Theme {
             d.insert_persisted(
                 egui::Id::new("paintfe_icon_button_disabled"),
                 self.icon_button_disabled,
+            );
+            d.insert_persisted(
+                egui::Id::new("paintfe_tool_button_rounding"),
+                self.tool_button_rounding,
             );
             d.insert_persisted(
                 egui::Id::new("paintfe_stepper_button_bg"),
@@ -1145,6 +1157,13 @@ impl Theme {
         ui.ctx().data_mut(|d| {
             d.get_persisted::<Color32>(egui::Id::new("paintfe_icon_button_disabled"))
                 .unwrap_or(ui.visuals().widgets.noninteractive.bg_fill)
+        })
+    }
+
+    pub fn tool_button_rounding_for(ui: &egui::Ui) -> f32 {
+        ui.ctx().data_mut(|d| {
+            d.get_persisted::<f32>(egui::Id::new("paintfe_tool_button_rounding"))
+                .unwrap_or(4.0)
         })
     }
 

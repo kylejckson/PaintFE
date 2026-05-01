@@ -1057,6 +1057,50 @@ impl Canvas {
             state.selection_mask = Some(mask); // put it back
         }
 
+        if tools
+            .as_ref()
+            .is_some_and(|t| t.active_tool == crate::components::tools::Tool::MoveSelection)
+            && let Some(mask) = state.selection_mask.as_ref()
+            && let Some((x0, y0, x1, y1)) = selection_mask_bounds(mask)
+        {
+            let min = Pos2::new(
+                (image_rect.min.x + x0 as f32 * self.zoom).round(),
+                (image_rect.min.y + y0 as f32 * self.zoom).round(),
+            );
+            let max = Pos2::new(
+                (image_rect.min.x + x1 as f32 * self.zoom).round(),
+                (image_rect.min.y + y1 as f32 * self.zoom).round(),
+            );
+            let rect = Rect::from_min_max(min, max);
+            painter.rect_stroke(
+                rect,
+                egui::CornerRadius::ZERO,
+                egui::Stroke::new(1.0, self.selection_stroke),
+                egui::StrokeKind::Middle,
+            );
+            let handle = (8.0_f32).max((self.zoom * 0.6).min(12.0));
+            let points = [
+                rect.left_top(),
+                Pos2::new(rect.center().x, rect.top()),
+                rect.right_top(),
+                Pos2::new(rect.right(), rect.center().y),
+                rect.right_bottom(),
+                Pos2::new(rect.center().x, rect.bottom()),
+                rect.left_bottom(),
+                Pos2::new(rect.left(), rect.center().y),
+            ];
+            for p in points {
+                let hr = Rect::from_center_size(p, Vec2::splat(handle));
+                painter.rect_filled(hr, 2.0, self.selection_stroke);
+                painter.rect_stroke(
+                    hr,
+                    2.0,
+                    egui::Stroke::new(1.0, egui::Color32::WHITE),
+                    egui::StrokeKind::Middle,
+                );
+            }
+        }
+
         if !state.fill_commit_overlays.is_empty() {
             self.draw_fill_commit_overlays(&painter, image_rect, state, ui.ctx());
         }
@@ -1257,7 +1301,31 @@ impl Canvas {
             ui.ctx().request_repaint();
 
             // Draw handles/border on top of the composite.
+            if state.show_pixel_grid && self.zoom >= 8.0 {
+                self.draw_pixel_grid(&painter, image_rect, state, canvas_rect, debug_settings);
+            }
             overlay.draw(&painter, image_rect, self.zoom, is_dark, accent);
+            if state.show_pixel_grid
+                && self.zoom >= 8.0
+                && let Some((x0, y0, x1, y1)) = overlay.transformed_bounds(state.width, state.height)
+            {
+                let rect = Rect::from_min_max(
+                    Pos2::new(image_rect.min.x + x0 as f32 * self.zoom, image_rect.min.y + y0 as f32 * self.zoom),
+                    Pos2::new(image_rect.min.x + x1 as f32 * self.zoom, image_rect.min.y + y1 as f32 * self.zoom),
+                );
+                let grid_color = debug_settings.pixel_grid_outline_color;
+                let stroke = egui::Stroke::new(1.0, grid_color);
+                let mut x = rect.min.x;
+                while x <= rect.max.x {
+                    painter.line_segment([Pos2::new(x, rect.min.y), Pos2::new(x, rect.max.y)], stroke);
+                    x += self.zoom;
+                }
+                let mut y = rect.min.y;
+                while y <= rect.max.y {
+                    painter.line_segment([Pos2::new(rect.min.x, y), Pos2::new(rect.max.x, y)], stroke);
+                    y += self.zoom;
+                }
+            }
 
             // Handle interaction (move, resize, rotate).
             paste_consumed_input = overlay.handle_input(ui, image_rect, self.zoom);
@@ -2737,5 +2805,24 @@ impl Canvas {
         self.pan_offset += delta;
     }
 
+}
+
+fn selection_mask_bounds(mask: &image::GrayImage) -> Option<(u32, u32, u32, u32)> {
+    let (w, h) = mask.dimensions();
+    let mut min_x = w;
+    let mut min_y = h;
+    let mut max_x = 0;
+    let mut max_y = 0;
+    for y in 0..h {
+        for x in 0..w {
+            if mask.get_pixel(x, y)[0] > 0 {
+                min_x = min_x.min(x);
+                min_y = min_y.min(y);
+                max_x = max_x.max(x + 1);
+                max_y = max_y.max(y + 1);
+            }
+        }
+    }
+    (min_x < max_x && min_y < max_y).then_some((min_x, min_y, max_x, max_y))
 }
 

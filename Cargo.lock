@@ -20,6 +20,7 @@ dependencies = [
  "glob",
  "image 0.25.9",
  "imagepipe",
+ "kurbo",
  "libloading",
  "png 0.17.16",
  "pollster",

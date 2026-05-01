@@ -110,9 +110,9 @@ impl GridDialog {
                 let (ok, cancel) = dialog_footer(ui, &colors);
                 if ok {
                     let c = [
-                        (self.color[0] * 255.0) as u8,
-                        (self.color[1] * 255.0) as u8,
-                        (self.color[2] * 255.0) as u8,
+                        (self.color[0] * 255.0).round() as u8,
+                        (self.color[1] * 255.0).round() as u8,
+                        (self.color[2] * 255.0).round() as u8,
                         255,
                     ];
                     result = DialogResult::Ok((
@@ -140,7 +140,7 @@ effect_dialog_base!(DropShadowDialog {
     blur_radius: f32 = 0.0,
     widen_radius: bool = false,
     color: [f32; 3] = [0.0, 0.0, 0.0],
-    opacity: f32 = 0.0,
+    opacity: f32 = 1.0,
     first_open: bool = true
 });
 
@@ -217,9 +217,9 @@ impl DropShadowDialog {
                 let (ok, cancel) = dialog_footer(ui, &colors);
                 if ok {
                     let c = [
-                        (self.color[0] * 255.0) as u8,
-                        (self.color[1] * 255.0) as u8,
-                        (self.color[2] * 255.0) as u8,
+                        (self.color[0] * 255.0).round() as u8,
+                        (self.color[1] * 255.0).round() as u8,
+                        (self.color[2] * 255.0).round() as u8,
                         255,
                     ];
                     result = DialogResult::Ok((

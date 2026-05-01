@@ -2043,6 +2043,8 @@ impl PaintFEApp {
                                         se: 0,
                                     };
 
+                                    let mut close_rect = None;
+
                                     // --- Tab frame ---
                                     let tab_resp = egui::Frame::NONE
                                         .fill(fill)
@@ -2119,6 +2121,7 @@ impl PaintFEApp {
                                                     .min_size(egui::vec2(16.0, 16.0));
                                                 let close_resp =
                                                     ui.add(close_btn).on_hover_text("Close");
+                                                close_rect = Some(close_resp.rect);
                                                 // Red-ish highlight on close button hover
                                                 if close_resp.hovered() {
                                                     let cr = close_resp.rect.expand(2.0);
@@ -2138,6 +2141,27 @@ impl PaintFEApp {
 
                                     // Track tab rect for drag-drop (use the frame response rect)
                                     tab_rects.push(tab_resp.response.rect);
+                                    let full_tab_resp = ui.interact(
+                                        tab_resp.response.rect,
+                                        ui.id().with(("project_tab_full", idx)),
+                                        egui::Sense::click_and_drag(),
+                                    );
+                                    if full_tab_resp.clicked() {
+                                        let click_pos = ui.input(|i| i.pointer.interact_pos());
+                                        if close_rect
+                                            .zip(click_pos)
+                                            .is_some_and(|(r, p)| r.contains(p))
+                                        {
+                                            tab_to_close = Some(idx);
+                                        } else {
+                                            tab_to_switch = Some(idx);
+                                        }
+                                    }
+                                    if full_tab_resp.drag_started() {
+                                        ui.ctx().memory_mut(|m| {
+                                            m.data.insert_temp(drag_src_id, idx);
+                                        });
+                                    }
 
                                     // Drag cursor: show grab while dragging this tab
                                     if dragging_tab == Some(idx)

@@ -44,6 +44,8 @@ pub struct AppSettings {
     pub pixel_grid_outline_color: Color32,
     /// Pixel grid center color (dual-stroke white center)
     pub pixel_grid_center_color: Color32,
+    pub selection_stripe_color: Color32,
+    pub selection_stripe_alpha: u8,
     /// Maximum number of undo steps
     pub max_undo_steps: usize,
     /// Auto-save interval in minutes (0 = disabled)
@@ -134,6 +136,8 @@ pub struct AppSettings {
     pub persisted_brush_tip: String,
     /// Custom brush tips persisted across restarts: (name, category, base64_png_data)
     pub custom_brush_tips: Vec<(String, String, String)>,
+    /// Custom vector shapes persisted across restarts: (name, category, base64_svg_path_data)
+    pub custom_shapes: Vec<(String, String, String)>,
     pub persisted_fill_tolerance: f32,
     pub persisted_fill_anti_aliased: bool,
     pub persisted_fill_global: bool,
@@ -182,6 +186,7 @@ pub struct AppSettings {
     pub menu_rounding: Option<f32>,
     /// Tool shelf corner radius override (px).
     pub tool_shelf_rounding: Option<f32>,
+    pub tool_button_rounding: Option<f32>,
     /// Badge corner radius override (px).
     pub badge_rounding: Option<f32>,
     /// Tab corner radius override (px).
@@ -231,6 +236,8 @@ impl Default for AppSettings {
             pixel_grid_mode: PixelGridMode::Auto,
             pixel_grid_outline_color: Color32::from_black_alpha(90),
             pixel_grid_center_color: Color32::from_white_alpha(100),
+            selection_stripe_color: Color32::from_rgba_premultiplied(255, 255, 255, 255),
+            selection_stripe_alpha: 22,
             max_undo_steps: 50,
             auto_save_minutes: 0,
             neon_mode: false,
@@ -297,6 +304,7 @@ impl Default for AppSettings {
             persisted_brush_mode: "normal".to_string(),
             persisted_brush_tip: String::new(),
             custom_brush_tips: Vec::new(),
+            custom_shapes: Vec::new(),
             persisted_fill_tolerance: 5.0,
             persisted_fill_anti_aliased: true,
             persisted_fill_global: false,
@@ -327,6 +335,7 @@ impl Default for AppSettings {
             window_rounding: None,
             menu_rounding: None,
             tool_shelf_rounding: None,
+            tool_button_rounding: None,
             badge_rounding: None,
             tab_rounding: None,
             ov_bg_color: None,
@@ -503,6 +512,7 @@ impl AppSettings {
             window_rounding: self.window_rounding,
             menu_rounding: self.menu_rounding,
             tool_shelf_rounding: self.tool_shelf_rounding,
+            tool_button_rounding: self.tool_button_rounding,
             badge_rounding: self.badge_rounding,
             tab_rounding: self.tab_rounding,
             glow_intensity: Some(self.glow_intensity),
@@ -578,6 +588,9 @@ impl AppSettings {
         }
         if let Some(v) = self.tool_shelf_rounding {
             content.push_str(&format!("tool_shelf_rounding={v}\n"));
+        }
+        if let Some(v) = self.tool_button_rounding {
+            content.push_str(&format!("tool_button_rounding={v}\n"));
         }
         let ov_fields: &[(&str, Option<Color32>)] = &[
             ("ov_bg_color", self.ov_bg_color),
@@ -722,6 +735,9 @@ impl AppSettings {
         if let Some(v) = map.get("tool_shelf_rounding") {
             self.tool_shelf_rounding = v.parse::<f32>().ok();
         }
+        if let Some(v) = map.get("tool_button_rounding") {
+            self.tool_button_rounding = v.parse::<f32>().ok();
+        }
         macro_rules! import_ov {
             ($key:expr, $field:ident) => {
                 if let Some(v) = map.get($key) {
@@ -810,6 +826,8 @@ impl AppSettings {
              pixel_grid_mode={grid_str}\n\
              pixel_grid_outline_color={}\n\
              pixel_grid_center_color={}\n\
+             selection_stripe_color={}\n\
+             selection_stripe_alpha={}\n\
              max_undo_steps={}\n\
              auto_save_minutes={}\n\
              accent_light_normal={}\n\
@@ -832,6 +850,8 @@ impl AppSettings {
             self.preferred_gpu,
             Self::color_to_str(self.pixel_grid_outline_color),
             Self::color_to_str(self.pixel_grid_center_color),
+            Self::color_to_str(self.selection_stripe_color),
+            self.selection_stripe_alpha,
             self.max_undo_steps,
             self.auto_save_minutes,
             Self::color_to_str(effective_accent.light_normal),
@@ -1000,6 +1020,9 @@ impl AppSettings {
         for (name, cat, b64) in &self.custom_brush_tips {
             content.push_str(&format!("custom_brush_tip={},{},{}\n", name, cat, b64));
         }
+        for (name, cat, b64) in &self.custom_shapes {
+            content.push_str(&format!("custom_shape={},{},{}\n", name, cat, b64));
+        }
         content.push_str(&format!(
             "persisted_fill_tolerance={}\n",
             self.persisted_fill_tolerance
@@ -1100,6 +1123,9 @@ impl AppSettings {
         }
         if let Some(v) = self.tool_shelf_rounding {
             content.push_str(&format!("tool_shelf_rounding={v}\n"));
+        }
+        if let Some(v) = self.tool_button_rounding {
+            content.push_str(&format!("tool_button_rounding={v}\n"));
         }
         if let Some(v) = self.badge_rounding {
             content.push_str(&format!("badge_rounding={v}\n"));
@@ -1210,6 +1236,13 @@ impl AppSettings {
                 "pixel_grid_center_color" => {
                     s.pixel_grid_center_color = Self::str_to_color(val)
                         .unwrap_or(Color32::from_white_alpha(100));
+                }
+                "selection_stripe_color" => {
+                    s.selection_stripe_color = Self::str_to_color(val)
+                        .unwrap_or(Color32::from_rgba_premultiplied(255, 255, 255, 255));
+                }
+                "selection_stripe_alpha" => {
+                    s.selection_stripe_alpha = val.parse().unwrap_or(22);
                 }
                 "max_undo_steps" => {
                     s.max_undo_steps = val.parse().unwrap_or(50);
@@ -1391,6 +1424,17 @@ impl AppSettings {
                         ));
                     }
                 }
+                "custom_shape" => {
+                    if let Some((rest, b64)) = val.rsplit_once(',')
+                        && let Some((name, cat)) = rest.split_once(',')
+                    {
+                        s.custom_shapes.push((
+                            name.to_string(),
+                            cat.to_string(),
+                            b64.to_string(),
+                        ));
+                    }
+                }
                 "persisted_fill_tolerance" => {
                     s.persisted_fill_tolerance = val.parse().unwrap_or(5.0);
                 }
@@ -1482,6 +1526,9 @@ impl AppSettings {
                 }
                 "tool_shelf_rounding" => {
                     s.tool_shelf_rounding = val.parse().ok();
+                }
+                "tool_button_rounding" => {
+                    s.tool_button_rounding = val.parse().ok();
                 }
                 "badge_rounding" => {
                     s.badge_rounding = val.parse().ok();

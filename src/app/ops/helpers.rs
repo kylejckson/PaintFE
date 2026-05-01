@@ -169,6 +169,8 @@ impl PaintFEApp {
     /// Extraction is already in history (for MovePixels) — this pushes a separate commit entry.
     fn commit_paste_overlay(&mut self) {
         if let Some(overlay) = self.paste_overlay.take() {
+            self.paste_transform_undo.clear();
+            self.paste_transform_redo.clear();
             let desc = if self.is_move_pixels_active {
                 "Move Pixels"
             } else {
@@ -186,6 +188,8 @@ impl PaintFEApp {
     /// If MovePixels is active, undo the extraction entry to restore original pixels.
     fn cancel_paste_overlay(&mut self) {
         self.paste_overlay = None;
+        self.paste_transform_undo.clear();
+        self.paste_transform_redo.clear();
         if self.is_move_pixels_active {
             // Undo the extraction snapshot we already pushed
             self.commit_pending_tool_history();

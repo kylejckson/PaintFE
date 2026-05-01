@@ -29,6 +29,7 @@ pub enum ActiveDialog {
     #[default]
     None,
     AddBrushTip(AddBrushTipDialog),
+    AddShape(AddShapeDialog),
     ResizeImage(ResizeImageDialog),
     ResizeCanvas(ResizeCanvasDialog),
     AlignLayer(AlignLayerDialog),
@@ -99,6 +100,7 @@ impl ActiveDialog {
         match self {
             ActiveDialog::None => "None",
             ActiveDialog::AddBrushTip(_) => "AddBrushTip",
+            ActiveDialog::AddShape(_) => "AddShape",
             ActiveDialog::ResizeImage(_) => "ResizeImage",
             ActiveDialog::ResizeCanvas(_) => "ResizeCanvas",
             ActiveDialog::AlignLayer(_) => "AlignLayer",
@@ -517,10 +519,13 @@ pub(crate) fn dialog_slider(
         }
 
         // Stepper + manual input cluster (buttons flank the numeric field).
-        ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(
+            egui::Vec2::new(146.0, 22.0),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
 
-            if themed_stepper_button(ui, "-").clicked() {
+            if ui.add_sized([20.0, 18.0], egui::Button::new("-")).clicked() {
                 *value = (*value - step).max(range_start);
                 changed = true;
             }
@@ -534,18 +539,18 @@ pub(crate) fn dialog_slider(
             } else {
                 dv
             };
-            if ui.add_sized([56.0, 16.0], dv).changed() {
+            if ui.add_sized([60.0, 18.0], dv).changed() {
                 changed = true;
             }
 
-            if themed_stepper_button(ui, "+").clicked() {
+            if ui.add_sized([20.0, 18.0], egui::Button::new("+")).clicked() {
                 *value = (*value + step).min(range_end);
                 changed = true;
             }
 
             let is_default = (*value - default_value).abs() <= step.abs().max(0.0001) * 0.5;
             let reset_resp = ui
-                .add_enabled(!is_default, egui::Button::new("Reset"))
+                .add_enabled(!is_default, egui::Button::new("↺"))
                 .on_hover_text("Reset to default");
             if reset_resp.clicked() {
                 *value = default_value;

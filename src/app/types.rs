@@ -135,10 +135,16 @@ pub struct PaintFEApp {
     // Paste overlay (floating pasted image being manipulated)
     paste_overlay: Option<PasteOverlay>,
     pending_paste_request: Option<PendingPasteRequest>,
+    paste_transform_undo: Vec<crate::ops::clipboard::PasteOverlayTransform>,
+    paste_transform_redo: Vec<crate::ops::clipboard::PasteOverlayTransform>,
 
     // Move-selection drag state (tracks screen-space mouse for translating the mask)
     move_sel_dragging: bool,
     move_sel_last_canvas: Option<(i32, i32)>,
+    move_sel_handle: Option<crate::ops::shapes::ShapeHandle>,
+    move_sel_start_mask: Option<image::GrayImage>,
+    move_sel_start_bounds: Option<(u32, u32, u32, u32)>,
+    pending_selection_reassert: Option<image::GrayImage>,
 
     // Floating panel edge tracking: store offset from screen edge so panels
     // move with window resizes while still being user-draggable.

@@ -548,6 +548,7 @@ impl BindableAction {
 #[derive(Clone, Debug)]
 pub struct KeyBindings {
     pub bindings: std::collections::HashMap<BindableAction, KeyCombo>,
+    pub unbound: std::collections::HashSet<BindableAction>,
 }
 
 impl Default for KeyBindings {
@@ -614,7 +615,10 @@ impl Default for KeyBindings {
         map.insert(BrushSizeDecrease, KeyCombo::text("["));
         map.insert(BrushSizeIncrease, KeyCombo::text("]"));
 
-        Self { bindings: map }
+        Self {
+            bindings: map,
+            unbound: std::collections::HashSet::new(),
+        }
     }
 }
 
@@ -626,14 +630,23 @@ impl KeyBindings {
 
     /// Set a binding
     pub fn set(&mut self, action: BindableAction, combo: KeyCombo) {
-        self.bindings.insert(action, combo);
+        if combo.key.is_none() && combo.text_char.is_none() && !combo.ctrl && !combo.shift && !combo.alt
+        {
+            self.bindings.remove(&action);
+            self.unbound.insert(action);
+        } else {
+            self.unbound.remove(&action);
+            self.bindings.insert(action, combo);
+        }
     }
 
     /// Serialize all bindings for config file
     pub fn to_config_lines(&self) -> Vec<String> {
         let mut lines = Vec::new();
         for action in BindableAction::all() {
-            if let Some(combo) = self.bindings.get(action) {
+            if self.unbound.contains(action) {
+                lines.push(format!("keybind.{:?}=none", action));
+            } else if let Some(combo) = self.bindings.get(action) {
                 lines.push(format!("keybind.{:?}={}", action, combo.to_config_string()));
             }
         }
@@ -736,9 +749,10 @@ impl KeyBindings {
         };
         let trimmed = combo_str.trim();
         if trimmed.eq_ignore_ascii_case("none") || trimmed.is_empty() {
-            // Explicitly unbound — remove from map so default is overridden
             self.bindings.remove(&action);
+            self.unbound.insert(action);
         } else if let Some(combo) = KeyCombo::from_config_string(combo_str) {
+            self.unbound.remove(&action);
             self.bindings.insert(action, combo);
         }
     }

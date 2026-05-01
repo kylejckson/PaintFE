@@ -370,7 +370,7 @@ impl PaintFEApp {
     }
 
     /// Show the floating History panel
-    fn show_floating_history_panel(&mut self, ctx: &egui::Context, _screen_size_changed: bool) {
+    fn show_floating_history_panel(&mut self, ctx: &egui::Context, screen_size_changed: bool) {
         let mut show = self.window_visibility.history;
         let mut close_clicked = false;
 
@@ -378,12 +378,12 @@ impl PaintFEApp {
         let screen_w = screen_rect.max.x;
         let screen_h = screen_rect.max.y;
 
-        let _first_show = self.history_panel_right_offset.is_none();
-
-        // Default: 12px from right edge, 12px from bottom
-        let (right_off, bot_off) = self.history_panel_right_offset.unwrap_or((230.0, 242.0));
+        let first_show = self.history_panel_right_offset.is_none();
+        let panel_size = egui::vec2(200.0, 200.0);
+        let (right_off, y_pos) = self
+            .history_panel_right_offset
+            .unwrap_or((12.0, screen_rect.center().y - panel_size.y * 0.5));
         let pos_x = screen_w - right_off;
-        let pos_y = screen_h - bot_off;
 
         let hover_id = egui::Id::new("History_hover");
         let hover_t = ctx.animate_bool(hover_id, false);
@@ -395,14 +395,12 @@ impl PaintFEApp {
             .min_height(150.0)
             .max_width(screen_w * 0.5)
             .max_height(screen_h * 0.7)
-            .default_size(egui::vec2(200.0, 200.0))
+            .default_size(panel_size)
             .title_bar(false)
             .frame(self.theme.floating_window_frame_animated(hover_t));
 
-        // Always enforce anchored position so the panel stays put on resize
-        {
-            let clamped =
-                Self::clamp_floating_pos(pos_x, pos_y, egui::vec2(200.0, 200.0), screen_rect);
+        if first_show || screen_size_changed {
+            let clamped = Self::clamp_floating_pos(pos_x, y_pos, panel_size, screen_rect);
             window = window.current_pos(clamped);
         }
 
@@ -430,8 +428,7 @@ impl PaintFEApp {
 
         if let Some(inner_resp) = resp {
             let win_rect = inner_resp.response.rect;
-            self.history_panel_right_offset =
-                Some((screen_w - win_rect.min.x, screen_h - win_rect.min.y));
+            self.history_panel_right_offset = Some((screen_w - win_rect.min.x, win_rect.min.y));
             let hovered =
                 ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p)));
             ctx.animate_bool(hover_id, hovered);
@@ -451,18 +448,17 @@ impl PaintFEApp {
         let screen_rect = ctx.content_rect();
         let screen_h = screen_rect.max.y;
 
-        let _first_show = self.colors_panel_left_offset.is_none();
-
-        // Default: 12px from left, 12px from bottom (bot_off = ~360px panel height + 12)
-        let (x_off, bot_off) = self.colors_panel_left_offset.unwrap_or((12.0, 372.0));
-        let pos_y = screen_h - bot_off;
-
         // Dynamic size based on compact / expanded state
         let panel_size = if self.colors_panel.is_expanded() {
             egui::vec2(430.0, 330.0)
         } else {
             egui::vec2(168.0, 310.0)
         };
+        let (x_off, mut bot_off) = self.colors_panel_left_offset.unwrap_or((12.0, 12.0));
+        if bot_off > panel_size.y + 48.0 {
+            bot_off -= panel_size.y;
+        }
+        let pos_y = screen_h - bot_off - panel_size.y;
 
         let hover_id = egui::Id::new("Colors_hover");
         let hover_t = ctx.animate_bool(hover_id, false);
@@ -474,11 +470,8 @@ impl PaintFEApp {
             .title_bar(false)
             .frame(self.theme.floating_window_frame_animated(hover_t));
 
-        // Always enforce anchored position so the panel stays put on resize
-        {
-            let clamped = Self::clamp_floating_pos(x_off, pos_y, panel_size, screen_rect);
-            window = window.current_pos(clamped);
-        }
+        let clamped = Self::clamp_floating_pos(x_off, pos_y, panel_size, screen_rect);
+        window = window.current_pos(clamped);
 
         let resp = window.show(ctx, |ui| {
             // Signal Grid panel header
@@ -502,7 +495,8 @@ impl PaintFEApp {
 
         if let Some(inner_resp) = resp {
             let win_rect = inner_resp.response.rect;
-            self.colors_panel_left_offset = Some((win_rect.min.x, screen_h - win_rect.min.y));
+            self.colors_panel_left_offset =
+                Some((win_rect.min.x, screen_h - win_rect.min.y - panel_size.y));
             let hovered =
                 ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p)));
             ctx.animate_bool(hover_id, hovered);

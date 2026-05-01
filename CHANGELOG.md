@@ -6,6 +6,32 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.2.14] - 2026-05-01
+
+### Added
+- Custom SVG shapes -- Added a new Shapes picker workflow for importing, previewing, and persisting custom SVG-based shapes across restarts.
+- Move Selection handles -- Added resize handles to the Move Selection tool so selection bounds can be transformed directly.
+- Interface customization -- Added preferences for tool button corner radius and selection stripe color/alpha.
+
+### Changed
+- Floating panel anchoring -- Improved Color and History panel anchoring, persistence, and fullscreen/resize behavior.
+- Shape editing workflow -- Tightened shape snapping, minimum sizing, polygon stretching, inward outline growth, and overall transform behavior.
+- Paste overlay presentation -- Improved pixel-grid visibility and transform interaction behavior while editing pasted content.
+- Save As shortcut routing -- Ctrl+Shift+S now resolves correctly to Save As.
+
+### Fixed
+- Adjustment dialog crash -- Opening Vibrance, Threshold, Posterize, Color Balance, Gradient Map, and Black & White no longer panics.
+- Oversized image rejection -- Images above 25,000 px in width or height are now rejected before opening.
+- Paste transform history -- Paste overlay movement checkpoints now round-trip correctly through undo/redo.
+- Paste Commit & Select -- Commit & Select now targets the pasted area instead of selecting the canvas.
+- Hue/Saturation layout bounce -- Removed the dialog layout jitter around the numeric controls.
+- Keybind unbind persistence -- Explicitly unbound shortcuts now stay unbound across restarts.
+- Mirror centering -- Mirror placement now reflects around the correct pixel-centered axis.
+- Shift resize anchoring -- Shift-constrained pasted-image resizing now holds the opposite edge/corner correctly.
+- Project tab hitboxes -- Tab body selection and close-button behavior now work together reliably.
+- Drop Shadow and Outline -- Improved white shadow fidelity and sped up heavy outline/shadow operations.
+- Shape correctness -- Corrected heart alignment and multiple pentagon/hexagon/octagon stretch/render issues.
+
 ## [1.2.13] - 2026-04-26
 
 ### Added

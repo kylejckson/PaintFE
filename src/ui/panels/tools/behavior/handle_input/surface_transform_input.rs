@@ -546,8 +546,8 @@ impl ToolsPanel {
                             if let Some(ref mut p) = self.shapes_state.placed {
                                 match p.handle_dragging {
                                     Some(ShapeHandle::Move) => {
-                                        p.cx = pos_f.0 - p.drag_offset[0];
-                                        p.cy = pos_f.1 - p.drag_offset[1];
+                                        p.cx = (pos_f.0 - p.drag_offset[0]).round();
+                                        p.cy = (pos_f.1 - p.drag_offset[1]).round();
                                         need_preview = true;
                                     }
                                     Some(ShapeHandle::Rotate) => {
@@ -587,7 +587,7 @@ impl ToolsPanel {
                                             // only one local axis changes to avoid perpendicular drift.
                                             match _handle {
                                                 ShapeHandle::Top | ShapeHandle::Bottom => {
-                                                    let new_hh = local_dy.abs().max(2.0);
+                                                    let new_hh = local_dy.abs().max(0.5);
                                                     let center_local = match _handle {
                                                         ShapeHandle::Top => (0.0, -new_hh),
                                                         ShapeHandle::Bottom => (0.0, new_hh),
@@ -598,10 +598,12 @@ impl ToolsPanel {
                                                     p.cy = ay
                                                         + center_local.0 * sin_r
                                                         + center_local.1 * cos_r;
+                                                    p.cx = p.cx.round();
+                                                    p.cy = p.cy.round();
                                                     p.hh = new_hh;
                                                 }
                                                 ShapeHandle::Left | ShapeHandle::Right => {
-                                                    let new_hw = local_dx.abs().max(2.0);
+                                                    let new_hw = local_dx.abs().max(0.5);
                                                     let center_local = match _handle {
                                                         ShapeHandle::Right => (new_hw, 0.0),
                                                         ShapeHandle::Left => (-new_hw, 0.0),
@@ -612,6 +614,8 @@ impl ToolsPanel {
                                                     p.cy = ay
                                                         + center_local.0 * sin_r
                                                         + center_local.1 * cos_r;
+                                                    p.cx = p.cx.round();
+                                                    p.cy = p.cy.round();
                                                     p.hw = new_hw;
                                                 }
                                                 _ => {}
@@ -638,10 +642,10 @@ impl ToolsPanel {
                                                 ax + (-anchor_lx) * cos_r - (-anchor_ly) * sin_r;
                                             let new_cy =
                                                 ay + (-anchor_lx) * sin_r + (-anchor_ly) * cos_r;
-                                            p.cx = new_cx;
-                                            p.cy = new_cy;
-                                            p.hw = lx.max(2.0);
-                                            p.hh = ly.max(2.0);
+                                            p.cx = new_cx.round();
+                                            p.cy = new_cy.round();
+                                            p.hw = lx.max(0.5).round().max(0.5);
+                                            p.hh = ly.max(0.5).round().max(0.5);
                                         }
                                         need_preview = true;
                                     }
@@ -683,7 +687,7 @@ impl ToolsPanel {
                                 end[0] = start[0] + side * (end[0] - start[0]).signum();
                                 end[1] = start[1] + side * (end[1] - start[1]).signum();
                             }
-                            self.shapes_state.draw_end = Some(end);
+                            self.shapes_state.draw_end = Some([end[0].round(), end[1].round()]);
                             self.render_shape_preview(
                                 canvas_state,
                                 primary_color_f32,
@@ -697,11 +701,11 @@ impl ToolsPanel {
                             if let (Some(start), Some(end)) =
                                 (self.shapes_state.draw_start, self.shapes_state.draw_end)
                             {
-                                let cx = (start[0] + end[0]) * 0.5;
-                                let cy = (start[1] + end[1]) * 0.5;
+                                let cx = ((start[0] + end[0]) * 0.5).round();
+                                let cy = ((start[1] + end[1]) * 0.5).round();
                                 let hw = ((end[0] - start[0]) * 0.5).abs();
                                 let hh = ((end[1] - start[1]) * 0.5).abs();
-                                if hw > 2.0 && hh > 2.0 {
+                                if hw >= 0.5 && hh >= 0.5 {
                                     let primary = [
                                         (primary_color_f32[0] * 255.0) as u8,
                                         (primary_color_f32[1] * 255.0) as u8,
@@ -722,6 +726,8 @@ impl ToolsPanel {
                                             hh,
                                             rotation: 0.0,
                                             kind: self.shapes_state.selected_shape,
+                                            custom_shape: self.shapes_state.selected_custom_shape.clone(),
+                                            custom_shape_data: self.shapes_state.selected_custom_shape_data.clone(),
                                             fill_mode: self.shapes_state.fill_mode,
                                             outline_width: self.properties.size,
                                             primary_color: primary,

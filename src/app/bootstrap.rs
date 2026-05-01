@@ -153,8 +153,14 @@ impl PaintFEApp {
             active_dialog: ActiveDialog::default(),
             paste_overlay: None,
             pending_paste_request: None,
+            paste_transform_undo: Vec::new(),
+            paste_transform_redo: Vec::new(),
             move_sel_dragging: false,
             move_sel_last_canvas: None,
+            move_sel_handle: None,
+            move_sel_start_mask: None,
+            move_sel_start_bounds: None,
+            pending_selection_reassert: None,
             layers_panel_right_offset: None,
             history_panel_right_offset: None,
             colors_panel_left_offset: None,
@@ -257,6 +263,13 @@ impl PaintFEApp {
             for (name, cat, b64) in &app.settings.custom_brush_tips {
                 if let Ok(png_data) = base64::engine::general_purpose::STANDARD.decode(b64) {
                     app.assets.load_brush_tip(&cc.egui_ctx, name, cat, &png_data);
+                }
+            }
+            for (name, cat, b64) in &app.settings.custom_shapes {
+                if let Ok(path_data) = base64::engine::general_purpose::STANDARD.decode(b64)
+                    && let Ok(path_data) = String::from_utf8(path_data)
+                {
+                    let _ = app.assets.load_custom_shape(&cc.egui_ctx, name, cat, &path_data);
                 }
             }
         }
@@ -417,6 +430,10 @@ impl PaintFEApp {
             // Clear move-selection drag state
             self.move_sel_dragging = false;
             self.move_sel_last_canvas = None;
+            self.move_sel_handle = None;
+            self.move_sel_start_mask = None;
+            self.move_sel_start_bounds = None;
+            self.pending_selection_reassert = None;
             self.is_move_pixels_active = false;
 
             // Clear GPU layer textures — different project, different layers.
@@ -558,6 +575,8 @@ impl PaintFEApp {
 
             project.canvas_state.clear_selection();
             self.paste_overlay = Some(overlay);
+            self.paste_transform_undo.clear();
+            self.paste_transform_redo.clear();
             self.canvas.open_paste_menu = true;
         }
     }

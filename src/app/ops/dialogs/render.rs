@@ -150,9 +150,9 @@ impl PaintFEApp {
                         let br = dlg.blur_radius;
                         let widen = dlg.widen_radius;
                         let c = [
-                            (dlg.color[0] * 255.0) as u8,
-                            (dlg.color[1] * 255.0) as u8,
-                            (dlg.color[2] * 255.0) as u8,
+                            (dlg.color[0] * 255.0).round() as u8,
+                            (dlg.color[1] * 255.0).round() as u8,
+                            (dlg.color[2] * 255.0).round() as u8,
                             255,
                         ];
                         let opacity = dlg.opacity;
@@ -179,9 +179,9 @@ impl PaintFEApp {
                         let br = dlg.blur_radius;
                         let widen = dlg.widen_radius;
                         let c = [
-                            (dlg.color[0] * 255.0) as u8,
-                            (dlg.color[1] * 255.0) as u8,
-                            (dlg.color[2] * 255.0) as u8,
+                            (dlg.color[0] * 255.0).round() as u8,
+                            (dlg.color[1] * 255.0).round() as u8,
+                            (dlg.color[2] * 255.0).round() as u8,
                             255,
                         ];
                         let opacity = dlg.opacity;
@@ -248,9 +248,9 @@ impl PaintFEApp {
                             let br = dlg.blur_radius;
                             let widen = dlg.widen_radius;
                             let c = [
-                                (dlg.color[0] * 255.0) as u8,
-                                (dlg.color[1] * 255.0) as u8,
-                                (dlg.color[2] * 255.0) as u8,
+                                (dlg.color[0] * 255.0).round() as u8,
+                                (dlg.color[1] * 255.0).round() as u8,
+                                (dlg.color[2] * 255.0).round() as u8,
                                 255,
                             ];
                             let opacity = dlg.opacity;

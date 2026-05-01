@@ -384,14 +384,14 @@ impl Canvas {
 
         match state.mirror_mode {
             MirrorMode::Horizontal => {
-                draw_dashed_v(w / 2.0, line_color_h);
+                draw_dashed_v((w - 1.0) * 0.5, line_color_h);
             }
             MirrorMode::Vertical => {
-                draw_dashed_h(h / 2.0, line_color_v);
+                draw_dashed_h((h - 1.0) * 0.5, line_color_v);
             }
             MirrorMode::Quarters => {
-                draw_dashed_v(w / 2.0, line_color_h);
-                draw_dashed_h(h / 2.0, line_color_v);
+                draw_dashed_v((w - 1.0) * 0.5, line_color_h);
+                draw_dashed_h((h - 1.0) * 0.5, line_color_v);
             }
             MirrorMode::None => {}
         }
@@ -478,6 +478,14 @@ impl Canvas {
                 // alpha difference between the two bands creates a very gentle stripe
                 // without harsh contrast.
                 let mut buf = vec![0u8; buf_len];
+                let stripe = ctx.data_mut(|d| {
+                    d.get_persisted::<Color32>(egui::Id::new("paintfe_selection_stripe_color"))
+                        .unwrap_or(Color32::from_rgba_premultiplied(255, 255, 255, 255))
+                });
+                let stripe_alpha = ctx.data_mut(|d| {
+                    d.get_persisted::<u8>(egui::Id::new("paintfe_selection_stripe_alpha"))
+                        .unwrap_or(22)
+                });
                 for dy in 0..bh {
                     let cy = min_y + dy as u32; // canvas y
                     let row_off = dy * bw * 4;
@@ -491,17 +499,15 @@ impl Canvas {
                         let is_dark = diag < band_period as f32;
                         let px = row_off + dx * 4;
                         if is_dark {
-                            // Very subtle dark band — low alpha, near-black
-                            buf[px] = 0;
-                            buf[px + 1] = 0;
-                            buf[px + 2] = 0;
-                            buf[px + 3] = 22;
+                            buf[px] = stripe.r();
+                            buf[px + 1] = stripe.g();
+                            buf[px + 2] = stripe.b();
+                            buf[px + 3] = stripe_alpha;
                         } else {
-                            // Barely-visible light band — even lower alpha, near-white
-                            buf[px] = 255;
-                            buf[px + 1] = 255;
-                            buf[px + 2] = 255;
-                            buf[px + 3] = 10;
+                            buf[px] = 255u8.saturating_sub(stripe.r());
+                            buf[px + 1] = 255u8.saturating_sub(stripe.g());
+                            buf[px + 2] = 255u8.saturating_sub(stripe.b());
+                            buf[px + 3] = stripe_alpha / 2;
                         }
                     }
                 }

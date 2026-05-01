@@ -91,6 +91,7 @@ impl ToolsPanel {
         let tool_btn_fill = crate::theme::Theme::icon_button_bg_for(ui);
         let tool_btn_active = crate::theme::Theme::icon_button_active_for(ui);
         let tool_btn_disabled = crate::theme::Theme::icon_button_disabled_for(ui);
+        let tool_btn_rounding = crate::theme::Theme::tool_button_rounding_for(ui);
 
         for (gi, group) in groups.iter().enumerate() {
             let group_rows = group.len().div_ceil(cols);
@@ -131,23 +132,23 @@ impl ToolsPanel {
                     let sel = ui.visuals().selection.bg_fill;
                     let glow_color =
                         egui::Color32::from_rgba_unmultiplied(sel.r(), sel.g(), sel.b(), 40);
-                    ui.painter().rect_filled(glow_rect, 6.0, glow_color);
+                    ui.painter().rect_filled(glow_rect, tool_btn_rounding + 2.0, glow_color);
                 }
 
-                ui.painter().rect_filled(btn_rect, 4.0, fill);
+                ui.painter().rect_filled(btn_rect, tool_btn_rounding, fill);
 
                 // Border
                 if selected {
                     ui.painter().rect_stroke(
                         btn_rect,
-                        2.0,
+                        tool_btn_rounding,
                         egui::Stroke::new(2.0, ui.visuals().selection.bg_fill),
                         egui::StrokeKind::Middle,
                     );
                 } else if hovered {
                     ui.painter().rect_stroke(
                         btn_rect,
-                        4.0,
+                        tool_btn_rounding,
                         ui.visuals().widgets.hovered.bg_stroke,
                         egui::StrokeKind::Middle,
                     );

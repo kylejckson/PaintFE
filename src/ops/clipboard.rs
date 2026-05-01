@@ -739,6 +739,7 @@ pub struct PasteOverlay {
     pub drag_start_anchor: Vec2,
     /// Whether shift is held (lock aspect ratio).
     pub shift_held: bool,
+    pub pending_transform_checkpoint: Option<(PasteOverlayTransform, PasteOverlayTransform)>,
 
     // --- Preview cache (avoids re-rendering every frame) ---
     /// Cached pre-scaled source image.
@@ -773,6 +774,15 @@ pub enum HandleKind {
     Anchor,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PasteOverlayTransform {
+    pub center: Pos2,
+    pub rotation: f32,
+    pub scale_x: f32,
+    pub scale_y: f32,
+    pub anchor_offset: Vec2,
+}
+
 impl PasteOverlay {
     /// Create a new overlay from a clipboard image, centered on the canvas.
     pub fn new(source: RgbaImage, canvas_w: u32, canvas_h: u32) -> Self {
@@ -794,6 +804,7 @@ impl PasteOverlay {
             drag_start_rotation: 0.0,
             drag_start_anchor: Vec2::ZERO,
             shift_held: false,
+            pending_transform_checkpoint: None,
             cached_scaled: None,
             cached_preview: None,
             gpu_texture: None,
@@ -801,6 +812,82 @@ impl PasteOverlay {
             gpu_texture_is_preview: false,
             source,
         }
+    }
+
+    pub fn transform(&self) -> PasteOverlayTransform {
+        PasteOverlayTransform {
+            center: self.center,
+            rotation: self.rotation,
+            scale_x: self.scale_x,
+            scale_y: self.scale_y,
+            anchor_offset: self.anchor_offset,
+        }
+    }
+
+    pub fn set_transform(&mut self, t: PasteOverlayTransform) {
+        self.center = t.center;
+        self.rotation = t.rotation;
+        self.scale_x = t.scale_x;
+        self.scale_y = t.scale_y;
+        self.anchor_offset = t.anchor_offset;
+        self.invalidate_cache();
+    }
+
+    pub fn transformed_bounds(&self, cw: u32, ch: u32) -> Option<(u32, u32, u32, u32)> {
+        if cw == 0 || ch == 0 {
+            return None;
+        }
+        let corners = self.corners_canvas();
+        let mut min_x = cw as f32;
+        let mut min_y = ch as f32;
+        let mut max_x = 0.0f32;
+        let mut max_y = 0.0f32;
+        for c in &corners {
+            min_x = min_x.min(c.x);
+            min_y = min_y.min(c.y);
+            max_x = max_x.max(c.x);
+            max_y = max_y.max(c.y);
+        }
+        let x0 = min_x.floor().max(0.0).min(cw as f32) as u32;
+        let y0 = min_y.floor().max(0.0).min(ch as f32) as u32;
+        let x1 = max_x.ceil().max(0.0).min(cw as f32) as u32;
+        let y1 = max_y.ceil().max(0.0).min(ch as f32) as u32;
+        (x1 > x0 && y1 > y0).then_some((x0, y0, x1, y1))
+    }
+
+    pub fn transformed_selection_mask(&self, cw: u32, ch: u32) -> image::GrayImage {
+        let mut mask = image::GrayImage::from_pixel(cw, ch, image::Luma([0u8]));
+        if cw == 0 || ch == 0 {
+            return mask;
+        }
+        let Some((x0, y0, x1, y1)) = self.transformed_bounds(cw, ch) else {
+            return mask;
+        };
+
+        for y in y0..y1 {
+            for x in x0..x1 {
+                mask.put_pixel(x, y, image::Luma([255u8]));
+            }
+        }
+        mask
+    }
+
+    pub fn solid_bounds_selection_mask(&self, cw: u32, ch: u32) -> image::GrayImage {
+        let mut mask = image::GrayImage::from_pixel(cw, ch, image::Luma([0u8]));
+        if let Some((x0, y0, x1, y1)) = self.transformed_bounds(cw, ch) {
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    mask.put_pixel(x, y, image::Luma([255u8]));
+                }
+            }
+        }
+        mask
+    }
+
+    fn invalidate_cache(&mut self) {
+        self.cached_scaled = None;
+        self.cached_preview = None;
+        self.gpu_texture_scale = None;
     }
 
     /// Start a paste from the app clipboard. Returns None if clipboard is empty.
@@ -1618,6 +1705,17 @@ impl PasteOverlay {
 
         // End drag.
         if primary_released && self.active_handle.is_some() {
+            let before = PasteOverlayTransform {
+                center: self.drag_start_center,
+                rotation: self.drag_start_rotation,
+                scale_x: self.drag_start_scale_x,
+                scale_y: self.drag_start_scale_y,
+                anchor_offset: self.drag_start_anchor,
+            };
+            let after = self.transform();
+            if before != after {
+                self.pending_transform_checkpoint = Some((before, after));
+            }
             self.active_handle = None;
             self.drag_start_mouse = None;
             return true;
@@ -1645,7 +1743,7 @@ impl PasteOverlay {
         let start_w = src_w * start_sx;
         let start_h = src_h * start_sy;
 
-        let (mut new_sx, mut new_sy, offset_x, offset_y) = match handle {
+        let (mut new_sx, mut new_sy, _offset_x, _offset_y) = match handle {
             HandleKind::Right => {
                 let new_w = (start_w + local_dx).max(4.0);
                 let sx = new_w / src_w;
@@ -1701,12 +1799,40 @@ impl PasteOverlay {
         self.scale_x = new_sx;
         self.scale_y = new_sy;
 
-        // Move center so the opposite edge stays fixed.
+        // Move center so the opposite edge/corner stays fixed, including Shift-locked scaling.
         let cos_r = self.rotation.cos();
         let sin_r = self.rotation.sin();
+        let anchor_local = match handle {
+            HandleKind::Right => Vec2::new(-start_w * 0.5, 0.0),
+            HandleKind::Left => Vec2::new(start_w * 0.5, 0.0),
+            HandleKind::Bottom => Vec2::new(0.0, -start_h * 0.5),
+            HandleKind::Top => Vec2::new(0.0, start_h * 0.5),
+            HandleKind::TopLeft => Vec2::new(start_w * 0.5, start_h * 0.5),
+            HandleKind::TopRight => Vec2::new(-start_w * 0.5, start_h * 0.5),
+            HandleKind::BottomLeft => Vec2::new(start_w * 0.5, -start_h * 0.5),
+            HandleKind::BottomRight => Vec2::new(-start_w * 0.5, -start_h * 0.5),
+            _ => Vec2::ZERO,
+        };
+        let fixed_anchor = Pos2::new(
+            self.drag_start_center.x + anchor_local.x * cos_r - anchor_local.y * sin_r,
+            self.drag_start_center.y + anchor_local.x * sin_r + anchor_local.y * cos_r,
+        );
+        let new_w = src_w * new_sx;
+        let new_h = src_h * new_sy;
+        let new_anchor_local = match handle {
+            HandleKind::Right => Vec2::new(-new_w * 0.5, 0.0),
+            HandleKind::Left => Vec2::new(new_w * 0.5, 0.0),
+            HandleKind::Bottom => Vec2::new(0.0, -new_h * 0.5),
+            HandleKind::Top => Vec2::new(0.0, new_h * 0.5),
+            HandleKind::TopLeft => Vec2::new(new_w * 0.5, new_h * 0.5),
+            HandleKind::TopRight => Vec2::new(-new_w * 0.5, new_h * 0.5),
+            HandleKind::BottomLeft => Vec2::new(new_w * 0.5, -new_h * 0.5),
+            HandleKind::BottomRight => Vec2::new(-new_w * 0.5, -new_h * 0.5),
+            _ => Vec2::ZERO,
+        };
         self.center = Pos2::new(
-            self.drag_start_center.x + offset_x * cos_r - offset_y * sin_r,
-            self.drag_start_center.y + offset_x * sin_r + offset_y * cos_r,
+            fixed_anchor.x - (new_anchor_local.x * cos_r - new_anchor_local.y * sin_r),
+            fixed_anchor.y - (new_anchor_local.x * sin_r + new_anchor_local.y * cos_r),
         );
     }
 
@@ -2050,6 +2176,7 @@ impl PasteOverlay {
         &self.cached_preview.as_ref().unwrap().0
     }
 }
+
 
 /// Bilinear interpolation sample from an RgbaImage at fractional coords.
 /// Uses clamp-to-edge for out-of-bounds samples (matches GPU ClampToEdge

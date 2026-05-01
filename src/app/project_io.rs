@@ -118,7 +118,12 @@ impl PaintFEApp {
                     if !parsed.is_empty() {
                         let mut decoded_any = false;
                         for path in parsed {
-                            if let Ok(decoded) = image::open(path) {
+                            if let Ok((w, h)) = image::image_dimensions(&path)
+                                && crate::io::validate_open_dimensions(w, h).is_err()
+                            {
+                                continue;
+                            }
+                            if let Ok(decoded) = image::open(&path) {
                                 images.push(decoded.to_rgba8());
                                 decoded_any = true;
                                 break;
@@ -147,6 +152,9 @@ impl PaintFEApp {
         let image = decoded.to_rgba8();
         let width = image.width();
         let height = image.height();
+        if crate::io::validate_open_dimensions(width, height).is_err() {
+            return;
+        }
 
         self.persist_active_project_view();
         self.untitled_counter += 1;
@@ -337,8 +345,25 @@ impl PaintFEApp {
                     return;
                 }
 
+                if let Ok((w, h)) = image::image_dimensions(&path)
+                    && let Err(e) = crate::io::validate_open_dimensions(w, h)
+                {
+                    let _ = sender.send(IoResult::LoadFailed(e));
+                    return;
+                }
+
                 match image::open(&path) {
                     Ok(img) => {
+                        if crate::io::validate_open_dimensions(img.width(), img.height()).is_err() {
+                            let _ = sender.send(IoResult::LoadFailed(format!(
+                                "Image size {}x{} exceeds maximum allowed {}x{}",
+                                img.width(),
+                                img.height(),
+                                crate::io::MAX_OPEN_IMAGE_DIM,
+                                crate::io::MAX_OPEN_IMAGE_DIM
+                            )));
+                            return;
+                        }
                         let image = img.to_rgba8();
                         let width = image.width();
                         let height = image.height();

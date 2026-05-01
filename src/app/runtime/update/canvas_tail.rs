@@ -1,5 +1,14 @@
 impl PaintFEApp {
     fn show_runtime_canvas_tail(&mut self, ctx: &egui::Context, modal_open: bool) {
+        if let Some(mask) = self.pending_selection_reassert.take()
+            && let Some(project) = self.active_project_mut()
+        {
+            project.canvas_state.selection_mask = Some(mask);
+            project.canvas_state.invalidate_selection_overlay();
+            project.canvas_state.mark_dirty(None);
+            ctx.request_repaint();
+        }
+
         let has_project = !self.projects.is_empty();
 
         // --- Floating Tool Shelf (replaces docked context bar) ---
@@ -124,6 +133,27 @@ impl PaintFEApp {
             self.settings.save();
         }
 
+        if self.tools_panel.pending_open_add_shape {
+            self.tools_panel.pending_open_add_shape = false;
+            let cats: Vec<String> = self.assets.custom_shape_categories()
+                .iter()
+                .map(|c| c.name.clone())
+                .collect();
+            let mut dlg = crate::ui::dialogs::core::AddShapeDialog::new(&cats);
+            dlg.open_dialog();
+            self.active_dialog = crate::ui::dialogs::core::ActiveDialog::AddShape(dlg);
+        }
+
+        if let Some(shape_name) = self.tools_panel.pending_delete_shape.take() {
+            if self.tools_panel.shapes_state.selected_custom_shape.as_ref() == Some(&shape_name) {
+                self.tools_panel.shapes_state.selected_custom_shape = None;
+                self.tools_panel.shapes_state.selected_custom_shape_data = None;
+            }
+            self.assets.remove_custom_shape(&shape_name);
+            self.settings.custom_shapes.retain(|(n, _, _)| n != &shape_name);
+            self.settings.save();
+        }
+
         // Process pending selection modification from context bar
         if let Some(op) = self.tools_panel.pending_sel_modify.take()
             && let Some(project) = self.active_project_mut()
@@ -199,6 +229,16 @@ impl PaintFEApp {
                         self.canvas.tool_cursor_icon =
                             icon_for_cursor.and_then(|ic| self.assets.get_texture(ic).cloned());
                     }
+                    ctx.data_mut(|d| {
+                        d.insert_persisted(
+                            egui::Id::new("paintfe_selection_stripe_color"),
+                            self.settings.selection_stripe_color,
+                        );
+                        d.insert_persisted(
+                            egui::Id::new("paintfe_selection_stripe_alpha"),
+                            self.settings.selection_stripe_alpha,
+                        );
+                    });
                     self.canvas.show_with_state(
                         ui,
                         &mut project.canvas_state,
@@ -216,6 +256,15 @@ impl PaintFEApp {
                         self.io_ops_start_time,
                         &self.filter_status_description,
                     );
+                    if let Some(overlay) = self.paste_overlay.as_mut()
+                        && let Some((before, _after)) = overlay.pending_transform_checkpoint.take()
+                    {
+                        self.paste_transform_undo.push(before);
+                        self.paste_transform_redo.clear();
+                        project.history.push(Box::new(
+                            crate::components::history::MarkerCommand::new("Move Paste"),
+                        ));
+                    }
 
                     // Handle paste overlay context menu results.
                     if let Some(action) = self.canvas.paste_context_action.take() {
@@ -223,7 +272,21 @@ impl PaintFEApp {
                             crate::canvas::PasteAction::Commit
                             | crate::canvas::PasteAction::CommitAndSelect => {
                                 // Commit — always a fresh snapshot (extraction is already in history).
+                                let select_mask = self.paste_overlay.as_ref().map(|overlay| {
+                                    overlay.solid_bounds_selection_mask(
+                                        project.canvas_state.width,
+                                        project.canvas_state.height,
+                                    )
+                                });
+                                let select_bounds = self.paste_overlay.as_ref().and_then(|overlay| {
+                                    overlay.transformed_bounds(
+                                        project.canvas_state.width,
+                                        project.canvas_state.height,
+                                    )
+                                });
                                 if let Some(overlay) = self.paste_overlay.take() {
+                                    self.paste_transform_undo.clear();
+                                    self.paste_transform_redo.clear();
                                     let desc = if self.is_move_pixels_active {
                                         "Move Pixels"
                                     } else {
@@ -239,19 +302,30 @@ impl PaintFEApp {
                                 }
                                 self.is_move_pixels_active = false;
 
-                                // Commit & Select: auto-select the full canvas
                                 if action == crate::canvas::PasteAction::CommitAndSelect {
-                                    let w = project.canvas_state.width;
-                                    let h = project.canvas_state.height;
-                                    let mask = image::GrayImage::from_pixel(w, h, image::Luma([255u8]));
-                                    project.canvas_state.selection_mask = Some(mask);
+                                    project.canvas_state.selection_mask = select_mask;
+                                    if let Some(mask) = project.canvas_state.selection_mask.as_mut()
+                                        && let Some((x0, y0, x1, y1)) = select_bounds
+                                    {
+                                        for y in y0..y1 {
+                                            for x in x0..x1 {
+                                                mask.put_pixel(x, y, image::Luma([255u8]));
+                                            }
+                                        }
+                                    }
                                     project.canvas_state.invalidate_selection_overlay();
                                     project.canvas_state.mark_dirty(None);
+                                    self.pending_selection_reassert =
+                                        project.canvas_state.selection_mask.clone();
+                                    self.tools_panel.selection_state.mode =
+                                        crate::canvas::SelectionMode::Replace;
                                 }
                             }
                             crate::canvas::PasteAction::Cancel => {
                                 // Cancel.
                                 self.paste_overlay = None;
+                                self.paste_transform_undo.clear();
+                                self.paste_transform_redo.clear();
                                 if self.is_move_pixels_active {
                                     // MovePixels: undo the extraction entry we already pushed
                                     project.history.undo(&mut project.canvas_state);

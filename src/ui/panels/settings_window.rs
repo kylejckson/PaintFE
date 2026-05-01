@@ -877,6 +877,28 @@ impl SettingsWindow {
                     }
                 });
                 ui.end_row();
+
+                ui.label("Selection Stripes");
+                ui.horizontal(|ui| {
+                    if Self::color_row(ui, "", &mut settings.selection_stripe_color) {
+                        settings.save();
+                    }
+                    let mut alpha = settings.selection_stripe_alpha as f32;
+                    if ui
+                        .add(egui::Slider::new(&mut alpha, 0.0..=96.0).show_value(true))
+                        .changed()
+                    {
+                        settings.selection_stripe_alpha = alpha.round() as u8;
+                        settings.save();
+                    }
+                    if ui.button("↺").on_hover_text("Reset to default").clicked() {
+                        settings.selection_stripe_color =
+                            Color32::from_rgba_premultiplied(255, 255, 255, 255);
+                        settings.selection_stripe_alpha = 22;
+                        settings.save();
+                    }
+                });
+                ui.end_row();
             });
         ui.label(
             egui::RichText::new(t!("settings.interface.zoom_filter_hint"))
@@ -1188,6 +1210,14 @@ impl SettingsWindow {
                     );
                     Self::opt_f32_row(
                         ui,
+                        "Tool Button CornerRadius",
+                        &mut settings.tool_button_rounding,
+                        0.0,
+                        24.0,
+                        &mut self.dirty,
+                    );
+                    Self::opt_f32_row(
+                        ui,
                         "Menu CornerRadius",
                         &mut settings.menu_rounding,
                         0.0,
@@ -1269,6 +1299,7 @@ impl SettingsWindow {
                 settings.window_rounding = None;
                 settings.menu_rounding = None;
                 settings.tool_shelf_rounding = None;
+                settings.tool_button_rounding = None;
                 settings.glow_intensity = 1.0;
                 settings.shadow_strength = 1.0;
                 settings.canvas_grid_visible = true;

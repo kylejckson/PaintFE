@@ -1,5 +1,142 @@
 use rayon::prelude::*;
 
+#[derive(Clone, Debug)]
+pub struct CustomShapeData {
+    pub name: String,
+    pub category: String,
+    pub svg_path_data: String,
+    pub polylines: Vec<Vec<(f32, f32)>>,
+    pub bounds: (f32, f32, f32, f32),
+}
+
+#[derive(Clone, Debug)]
+pub struct CustomShapeRenderData {
+    pub polylines: Vec<Vec<(f32, f32)>>,
+    pub bounds: (f32, f32, f32, f32),
+}
+
+impl From<&CustomShapeData> for CustomShapeRenderData {
+    fn from(value: &CustomShapeData) -> Self {
+        Self {
+            polylines: value.polylines.clone(),
+            bounds: value.bounds,
+        }
+    }
+}
+
+pub fn extract_svg_path_data(svg: &str) -> Result<String, String> {
+    if svg.contains("<image") || svg.contains("data:image") {
+        return Err("Embedded raster images are not supported.".to_string());
+    }
+    let mut paths = Vec::new();
+    let mut rest = svg;
+    while let Some(path_idx) = rest.find("<path") {
+        rest = &rest[path_idx + 5..];
+        let Some(end_idx) = rest.find('>') else {
+            break;
+        };
+        let tag = &rest[..end_idx];
+        for pat in ["d=\"", "d='"] {
+            if let Some(d_idx) = tag.find(pat) {
+                let quote = pat.as_bytes()[2] as char;
+                let data_start = d_idx + pat.len();
+                if let Some(data_end) = tag[data_start..].find(quote) {
+                    let d = tag[data_start..data_start + data_end].trim();
+                    if !d.is_empty() {
+                        paths.push(d.to_string());
+                    }
+                }
+            }
+        }
+        rest = &rest[end_idx + 1..];
+    }
+    if paths.is_empty() {
+        Err("SVG must contain at least one <path d=\"...\">.".to_string())
+    } else {
+        Ok(paths.join(" "))
+    }
+}
+
+pub fn parse_custom_shape(name: &str, category: &str, svg_path_data: &str) -> Result<CustomShapeData, String> {
+    use kurbo::{BezPath, PathEl, Shape};
+
+    let path = BezPath::from_svg(svg_path_data).map_err(|e| format!("Invalid SVG path: {e}"))?;
+    let bbox = path.bounding_box();
+    if !bbox.width().is_finite()
+        || !bbox.height().is_finite()
+        || bbox.width() <= 0.0
+        || bbox.height() <= 0.0
+    {
+        return Err("SVG path has empty bounds.".to_string());
+    }
+
+    let mut polylines: Vec<Vec<(f32, f32)>> = Vec::new();
+    let mut current: Vec<(f32, f32)> = Vec::new();
+    let mut first: Option<(f32, f32)> = None;
+    kurbo::flatten(path.iter(), 0.5, |el| match el {
+        PathEl::MoveTo(p) => {
+            if current.len() > 1 {
+                polylines.push(std::mem::take(&mut current));
+            }
+            let pt = (p.x as f32, p.y as f32);
+            current.push(pt);
+            first = Some(pt);
+        }
+        PathEl::LineTo(p) => current.push((p.x as f32, p.y as f32)),
+        PathEl::ClosePath => {
+            if let Some(pt) = first {
+                current.push(pt);
+            }
+            if current.len() > 1 {
+                polylines.push(std::mem::take(&mut current));
+            }
+            first = None;
+        }
+        _ => {}
+    });
+    if current.len() > 1 {
+        polylines.push(current);
+    }
+    if polylines.is_empty() {
+        return Err("SVG path did not produce drawable geometry.".to_string());
+    }
+
+    Ok(CustomShapeData {
+        name: name.to_string(),
+        category: category.to_string(),
+        svg_path_data: svg_path_data.to_string(),
+        polylines,
+        bounds: (bbox.x0 as f32, bbox.y0 as f32, bbox.x1 as f32, bbox.y1 as f32),
+    })
+}
+
+pub fn render_custom_shape_icon(shape: &CustomShapeData, size: usize, dark: bool) -> Vec<u8> {
+    let mut out = vec![0u8; size * size * 4];
+    let data = CustomShapeRenderData::from(shape);
+    let fg = if dark { 235 } else { 30 };
+    for y in 0..size {
+        for x in 0..size {
+            let mut cov = 0.0;
+            for sy in 0..4 {
+                for sx in 0..4 {
+                    let lx = (x as f32 + (sx as f32 + 0.5) * 0.25) / size as f32 * 2.0 - 1.0;
+                    let ly = (y as f32 + (sy as f32 + 0.5) * 0.25) / size as f32 * 2.0 - 1.0;
+                    cov += custom_shape_coverage_sample(&data, lx, ly, 0.82, 0.82, 0.04, ShapeFillMode::Filled);
+                }
+            }
+            cov = (cov / 16.0).clamp(0.0, 1.0);
+            if cov > 0.0 {
+                let idx = (y * size + x) * 4;
+                out[idx] = fg;
+                out[idx + 1] = fg;
+                out[idx + 2] = fg;
+                out[idx + 3] = (255.0 * cov).round() as u8;
+            }
+        }
+    }
+    out
+}
+
 /// Available shape primitives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ShapeKind {
@@ -177,6 +314,8 @@ pub struct PlacedShape {
     /// Rotation in radians
     pub rotation: f32,
     pub kind: ShapeKind,
+    pub custom_shape: Option<String>,
+    pub custom_shape_data: Option<CustomShapeRenderData>,
     pub fill_mode: ShapeFillMode,
     pub outline_width: f32,
     pub primary_color: [u8; 4],
@@ -264,6 +403,13 @@ fn sdf_polygon(px: f32, py: f32, r: f32, n: u32) -> f32 {
     let qy = len * theta.sin();
     let _ = qy;
     qx - r * half.cos()
+}
+
+fn sdf_polygon_stretched(px: f32, py: f32, hx: f32, hy: f32, n: u32) -> f32 {
+    let r = hx.min(hy).max(0.001);
+    let sx = r / hx.max(0.001);
+    let sy = r / hy.max(0.001);
+    sdf_polygon(px * sx, py * sy, r, n) / sx.max(sy)
 }
 
 /// SDF for a star with `n` points, outer radius `ro`, inner radius `ri`.
@@ -408,7 +554,7 @@ fn sdf_heart(px: f32, py: f32, hx: f32, hy: f32) -> f32 {
     for (xr, yr) in raw {
         verts.push((xr * sx, -yr * sy));
     }
-    sdf_polygon_path(&verts, px, py)
+    sdf_polygon_path(&verts, px, py + hy * 0.18)
 }
 
 // ---- New SDF functions for added shapes ----
@@ -676,9 +822,9 @@ pub fn shape_sdf(kind: ShapeKind, px: f32, py: f32, hx: f32, hy: f32, corner_rad
         ShapeKind::Trapezoid => sdf_trapezoid(px, py, hx, hy),
         ShapeKind::Parallelogram => sdf_parallelogram(px, py, hx, hy),
         ShapeKind::Diamond => sdf_diamond(px, py, hx, hy),
-        ShapeKind::Pentagon => sdf_polygon(px, py, hx.min(hy), 5),
-        ShapeKind::Hexagon => sdf_polygon(px, py, hx.min(hy), 6),
-        ShapeKind::Octagon => sdf_polygon(px, py, hx.min(hy), 8),
+        ShapeKind::Pentagon => sdf_polygon_stretched(px, py, hx, hy, 5),
+        ShapeKind::Hexagon => sdf_polygon_stretched(px, py, hx, hy, 6),
+        ShapeKind::Octagon => sdf_polygon_stretched(px, py, hx, hy, 8),
         ShapeKind::Cross => sdf_cross(px, py, hx, hy),
         ShapeKind::Check => sdf_check(px, py, hx, hy),
         ShapeKind::Star5 => sdf_star(px, py, hx.min(hy), hx.min(hy) * 0.4, 5),
@@ -916,6 +1062,85 @@ fn shape_local_corners(kind: ShapeKind, hw: f32, hh: f32) -> [(f32, f32); 4] {
     }
 }
 
+fn custom_shape_coverage(data: &CustomShapeRenderData, lx: f32, ly: f32, hx: f32, hy: f32, outline_width: f32, fill_mode: ShapeFillMode) -> f32 {
+    let samples = [
+        (-0.25_f32, -0.25_f32),
+        (0.25_f32, -0.25_f32),
+        (-0.25_f32, 0.25_f32),
+        (0.25_f32, 0.25_f32),
+    ];
+    let mut total = 0.0;
+    for (ox, oy) in samples {
+        total += custom_shape_coverage_sample(data, lx + ox, ly + oy, hx, hy, outline_width, fill_mode);
+    }
+    total * 0.25
+}
+
+fn custom_shape_coverage_sample(data: &CustomShapeRenderData, lx: f32, ly: f32, hx: f32, hy: f32, outline_width: f32, fill_mode: ShapeFillMode) -> f32 {
+    let (min_x, min_y, max_x, max_y) = data.bounds;
+    let bw = (max_x - min_x).max(1.0);
+    let bh = (max_y - min_y).max(1.0);
+    let sx = bw / (hx * 2.0).max(1.0);
+    let sy = bh / (hy * 2.0).max(1.0);
+    let px = (lx + hx) * sx + min_x;
+    let py = (ly + hy) * sy + min_y;
+    let inside = point_in_polylines(px, py, &data.polylines);
+    let fill_cov = if inside { 1.0 } else { 0.0 };
+    if matches!(fill_mode, ShapeFillMode::Filled) {
+        return fill_cov;
+    }
+    let edge_dist = distance_to_polylines(px, py, &data.polylines) / sx.max(sy);
+    let outline_cov = if edge_dist <= outline_width.max(1.0) { 1.0 } else { 0.0 };
+    match fill_mode {
+        ShapeFillMode::Outline => outline_cov,
+        ShapeFillMode::Both => fill_cov.max(outline_cov),
+        ShapeFillMode::Filled => fill_cov,
+    }
+}
+
+fn point_in_polylines(px: f32, py: f32, polylines: &[Vec<(f32, f32)>]) -> bool {
+    let mut inside = false;
+    for poly in polylines {
+        for win in poly.windows(2) {
+            let (x1, y1) = win[0];
+            let (x2, y2) = win[1];
+            let denom = y2 - y1;
+            if denom.abs() > 1e-6
+                && ((y1 > py) != (y2 > py))
+                && (px < (x2 - x1) * (py - y1) / denom + x1)
+            {
+                inside = !inside;
+            }
+        }
+    }
+    inside
+}
+
+fn distance_to_polylines(px: f32, py: f32, polylines: &[Vec<(f32, f32)>]) -> f32 {
+    let mut best = f32::MAX;
+    for poly in polylines {
+        for win in poly.windows(2) {
+            let (ax, ay) = win[0];
+            let (bx, by) = win[1];
+            best = best.min(distance_to_segment(px, py, ax, ay, bx, by));
+        }
+    }
+    best
+}
+
+fn distance_to_segment(px: f32, py: f32, ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
+    let dx = bx - ax;
+    let dy = by - ay;
+    let len2 = dx * dx + dy * dy;
+    if len2 <= 1e-6 {
+        return ((px - ax).powi(2) + (py - ay).powi(2)).sqrt();
+    }
+    let t = (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0);
+    let cx = ax + dx * t;
+    let cy = ay + dy * t;
+    ((px - cx).powi(2) + (py - cy).powi(2)).sqrt()
+}
+
 /// Rasterize a shape into an RGBA buffer.
 ///
 /// Returns `(buf, buf_w, buf_h, offset_x, offset_y)` where offset is the
@@ -942,8 +1167,7 @@ pub fn rasterize_shape(
         max_x = max_x.max(rx);
         max_y = max_y.max(ry);
     }
-    // Add padding for outline width + AA
-    let pad = placed.outline_width + 2.0;
+    let pad = 2.0;
     min_x -= pad;
     min_y -= pad;
     max_x += pad;
@@ -969,12 +1193,13 @@ pub fn rasterize_shape(
 
     let primary = placed.primary_color;
     let secondary = placed.secondary_color;
-    let outline_half = placed.outline_width * 0.5;
+    let outline_width = placed.outline_width.max(0.0);
     let aa = placed.anti_alias;
     let fill_mode = placed.fill_mode;
     let hx = placed.hw;
     let hy = placed.hh;
     let kind = placed.kind;
+    let custom_shape_data = placed.custom_shape_data.clone();
     let corner_radius = placed.corner_radius;
     let cx = placed.cx;
     let cy = placed.cy;
@@ -992,22 +1217,32 @@ pub fn rasterize_shape(
                 let lx = dx * inv_cos - dy * inv_sin;
                 let ly = dx * inv_sin + dy * inv_cos;
 
-                let d = shape_sdf(kind, lx, ly, hx, hy, corner_radius);
-
-                let (color, coverage) = match fill_mode {
+                let (color, coverage) = if let Some(ref data) = custom_shape_data {
+                    let cov = custom_shape_coverage(data, lx, ly, hx, hy, outline_width, fill_mode);
+                    let color = match fill_mode {
+                        ShapeFillMode::Both => primary,
+                        ShapeFillMode::Filled => primary,
+                        ShapeFillMode::Outline => primary,
+                    };
+                    (color, cov)
+                } else {
+                    let d = shape_sdf(kind, lx, ly, hx, hy, corner_radius);
+                    match fill_mode {
                     ShapeFillMode::Filled => {
                         let cov = coverage_from_sdf(d, aa);
                         (primary, cov)
                     }
                     ShapeFillMode::Outline => {
-                        let cov = shape_outline_coverage(kind, lx, ly, hx, hy, outline_half, aa, d);
+                        let outer = coverage_from_sdf(d, aa);
+                        let inner = coverage_from_sdf(d + outline_width, aa);
+                        let cov = (outer - inner).clamp(0.0, 1.0);
                         (primary, cov)
                     }
                     ShapeFillMode::Both => {
                         // Fill interior with secondary, outline with primary
                         let fill_cov = coverage_from_sdf(d, aa);
-                        let outline_cov =
-                            shape_outline_coverage(kind, lx, ly, hx, hy, outline_half, aa, d);
+                        let outline_cov = (fill_cov - coverage_from_sdf(d + outline_width, aa))
+                            .clamp(0.0, 1.0);
 
                         if outline_cov > 0.001 {
                             // Outline on top
@@ -1030,6 +1265,7 @@ pub fn rasterize_shape(
                         } else {
                             (secondary, fill_cov)
                         }
+                    }
                     }
                 };
 
@@ -1072,7 +1308,7 @@ pub fn rasterize_shape_into(
         max_x = max_x.max(rx);
         max_y = max_y.max(ry);
     }
-    let pad = placed.outline_width + 2.0;
+    let pad = 2.0;
     min_x -= pad;
     min_y -= pad;
     max_x += pad;
@@ -1099,12 +1335,13 @@ pub fn rasterize_shape_into(
     let inv_sin = -sin_r;
     let primary = placed.primary_color;
     let secondary = placed.secondary_color;
-    let outline_half = placed.outline_width * 0.5;
+    let outline_width = placed.outline_width.max(0.0);
     let aa = placed.anti_alias;
     let fill_mode = placed.fill_mode;
     let hx = placed.hw;
     let hy = placed.hh;
     let kind = placed.kind;
+    let custom_shape_data = placed.custom_shape_data.clone();
     let corner_radius = placed.corner_radius;
     let cx = placed.cx;
     let cy = placed.cy;
@@ -1119,21 +1356,27 @@ pub fn rasterize_shape_into(
                 let dy = py_canvas - cy;
                 let lx = dx * inv_cos - dy * inv_sin;
                 let ly = dx * inv_sin + dy * inv_cos;
-                let d = shape_sdf(kind, lx, ly, hx, hy, corner_radius);
-
-                let (color, coverage) = match fill_mode {
+                let (color, coverage) = if let Some(ref data) = custom_shape_data {
+                    let cov = custom_shape_coverage(data, lx, ly, hx, hy, outline_width, fill_mode);
+                    let color = primary;
+                    (color, cov)
+                } else {
+                    let d = shape_sdf(kind, lx, ly, hx, hy, corner_radius);
+                    match fill_mode {
                     ShapeFillMode::Filled => {
                         let cov = coverage_from_sdf(d, aa);
                         (primary, cov)
                     }
                     ShapeFillMode::Outline => {
-                        let cov = shape_outline_coverage(kind, lx, ly, hx, hy, outline_half, aa, d);
+                        let outer = coverage_from_sdf(d, aa);
+                        let inner = coverage_from_sdf(d + outline_width, aa);
+                        let cov = (outer - inner).clamp(0.0, 1.0);
                         (primary, cov)
                     }
                     ShapeFillMode::Both => {
                         let fill_cov = coverage_from_sdf(d, aa);
-                        let outline_cov =
-                            shape_outline_coverage(kind, lx, ly, hx, hy, outline_half, aa, d);
+                        let outline_cov = (fill_cov - coverage_from_sdf(d + outline_width, aa))
+                            .clamp(0.0, 1.0);
                         if outline_cov > 0.001 {
                             let oa = outline_cov;
                             let fa = fill_cov * (1.0 - oa);
@@ -1154,6 +1397,7 @@ pub fn rasterize_shape_into(
                         } else {
                             (secondary, fill_cov)
                         }
+                    }
                     }
                 };
 

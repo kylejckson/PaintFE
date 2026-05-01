@@ -49,6 +49,8 @@ fn make_shape(kind: ShapeKind, fill: ShapeFillMode) -> PlacedShape {
         hh: 40.0,
         rotation: 0.0,
         kind,
+        custom_shape: None,
+        custom_shape_data: None,
         fill_mode: fill,
         outline_width: 3.0,
         primary_color: [255, 80, 80, 255],   // red outline

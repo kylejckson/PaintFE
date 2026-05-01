@@ -19,6 +19,27 @@ pub trait Command: Send + Sync {
     fn memory_size(&self) -> usize;
 }
 
+pub struct MarkerCommand {
+    desc: String,
+}
+
+impl MarkerCommand {
+    pub fn new(desc: impl Into<String>) -> Self {
+        Self { desc: desc.into() }
+    }
+}
+
+impl Command for MarkerCommand {
+    fn undo(&self, _canvas: &mut CanvasState) {}
+    fn redo(&self, _canvas: &mut CanvasState) {}
+    fn description(&self) -> String {
+        self.desc.clone()
+    }
+    fn memory_size(&self) -> usize {
+        std::mem::size_of::<Self>() + self.desc.len()
+    }
+}
+
 // ============================================================================
 // BRUSH COMMAND - Memory-efficient patch-based undo for drawing
 // ============================================================================

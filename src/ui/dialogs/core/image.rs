@@ -1231,3 +1231,177 @@ impl AddBrushTipDialog {
         result
     }
 }
+
+pub struct AddShapeResult {
+    pub name: String,
+    pub svg_path_data: String,
+}
+
+pub struct AddShapeDialog {
+    pub open: bool,
+    pub name: String,
+    pub categories: Vec<String>,
+    pub selected_path: Option<std::path::PathBuf>,
+    pub svg_path_data: Option<String>,
+    pub preview_texture: Option<egui::TextureHandle>,
+    pub valid: bool,
+    pub error_message: String,
+}
+
+impl AddShapeDialog {
+    pub fn new(categories: &[String]) -> Self {
+        let mut cats = categories.to_vec();
+        if !cats.iter().any(|c| c == "Custom") {
+            cats.push("Custom".to_string());
+        }
+        Self {
+            open: false,
+            name: String::new(),
+            categories: cats,
+            selected_path: None,
+            svg_path_data: None,
+            preview_texture: None,
+            valid: false,
+            error_message: String::new(),
+        }
+    }
+
+    pub fn open_dialog(&mut self) {
+        self.open = true;
+        self.name.clear();
+        self.selected_path = None;
+        self.svg_path_data = None;
+        self.preview_texture = None;
+        self.valid = false;
+        self.error_message.clear();
+    }
+
+    fn validate_file(&mut self, ctx: &egui::Context, path: &std::path::Path) {
+        self.error_message.clear();
+        self.valid = false;
+        self.svg_path_data = None;
+        self.preview_texture = None;
+        let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()).unwrap_or_default();
+        if ext != "svg" {
+            self.error_message = "Only SVG files are supported.".to_string();
+            return;
+        }
+        let text = match std::fs::read_to_string(path) {
+            Ok(t) => t,
+            Err(e) => {
+                self.error_message = format!("Cannot read file: {e}");
+                return;
+            }
+        };
+        let path_data = match crate::ops::shapes::extract_svg_path_data(&text)
+            .and_then(|d| crate::ops::shapes::parse_custom_shape("Preview", "Custom", &d).map(|_| d))
+        {
+            Ok(d) => d,
+            Err(e) => {
+                self.error_message = e;
+                return;
+            }
+        };
+        let preview = crate::ops::shapes::parse_custom_shape("Preview", "Custom", &path_data)
+            .map(|s| crate::ops::shapes::render_custom_shape_icon(&s, 96, ctx.global_style().visuals.dark_mode))
+            .ok();
+        if let Some(pixels) = preview {
+            let ci = egui::ColorImage::from_rgba_unmultiplied([96, 96], &pixels);
+            self.preview_texture = Some(ctx.load_texture("shape_preview", ci, egui::TextureOptions::LINEAR));
+        }
+        self.svg_path_data = Some(path_data);
+        self.valid = true;
+    }
+
+    pub fn show(&mut self, ctx: &egui::Context) -> Option<AddShapeResult> {
+        if !self.open {
+            return None;
+        }
+        let mut result = None;
+        let colors = super::DialogColors::from_ctx(ctx);
+        egui::Window::new("dialog_add_shape")
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(false)
+            .default_pos(egui::pos2(ctx.content_rect().center().x - 200.0, 80.0))
+            .show(ctx, |ui| {
+                ui.set_min_width(400.0);
+                if super::paint_dialog_header(ui, &colors, "◇", "New Shape") {
+                    self.open = false;
+                    return;
+                }
+                ui.add_space(4.0);
+                super::section_label(ui, &colors, "INFORMATION");
+                ui.label(egui::RichText::new("Import an SVG containing path geometry. Use the example as a template; embedded raster images are not supported.").size(12.0).color(colors.text_muted));
+                ui.add_space(8.0);
+                super::section_label(ui, &colors, "SHAPE NAME");
+                ui.add_sized([280.0, 22.0], egui::TextEdit::singleline(&mut self.name).hint_text("Enter shape name..."));
+                ui.add_space(6.0);
+                super::section_label(ui, &colors, "SVG FILE");
+                ui.horizontal(|ui| {
+                    let path_text = self.selected_path.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("No file selected");
+                    ui.add_sized([250.0, 22.0], egui::Label::new(egui::RichText::new(path_text).size(12.0).color(colors.text_muted)));
+                    if ui.button("Browse...").clicked()
+                        && let Some(path) = rfd::FileDialog::new().add_filter("SVG Shape", &["svg"]).pick_file()
+                    {
+                        self.selected_path = Some(path.clone());
+                        self.validate_file(ctx, &path);
+                        if self.name.is_empty()
+                            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                        {
+                            self.name = stem.to_string();
+                        }
+                    }
+                    if ui.button("Export example...").clicked()
+                        && let Some(path) = rfd::FileDialog::new()
+                            .set_file_name("paintfe_pentagon_shape.svg")
+                            .add_filter("SVG Shape", &["svg"])
+                            .save_file()
+                    {
+                        let example = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="-50 -50 100 100">
+  <path d="M 0 -48 L 45.65 -14.83 L 28.21 38.83 L -28.21 38.83 L -45.65 -14.83 Z"/>
+</svg>
+"#;
+                        if let Err(e) = std::fs::write(&path, example) {
+                            self.error_message = format!("Cannot write example: {e}");
+                        }
+                    }
+                });
+                if self.selected_path.is_some() {
+                    super::accent_separator(ui, &colors);
+                    super::section_label(ui, &colors, "PREVIEW");
+                    if self.valid {
+                        ui.horizontal(|ui| {
+                            if let Some(tex) = &self.preview_texture {
+                                let sized = egui::load::SizedTexture::from_handle(tex);
+                                let rect = ui.allocate_exact_size(egui::Vec2::splat(96.0), egui::Sense::hover()).0;
+                                egui::Image::from_texture(sized).fit_to_exact_size(egui::Vec2::splat(96.0)).paint_at(ui, rect);
+                            }
+                            ui.label(egui::RichText::new("Valid SVG path").color(egui::Color32::from_rgb(80, 200, 80)));
+                        });
+                    } else {
+                        ui.label(egui::RichText::new(&self.error_message).color(egui::Color32::from_rgb(220, 60, 60)));
+                    }
+                }
+                let (ok, cancel) = super::dialog_footer(ui, &colors);
+                if ok {
+                    let name = self.name.trim().to_string();
+                    if name.is_empty() {
+                        self.error_message = "Please enter a shape name.".to_string();
+                    } else if !self.valid {
+                        self.error_message = "Please select a valid SVG file.".to_string();
+                    } else if let Some(svg_path_data) = self.svg_path_data.clone() {
+                        result = Some(AddShapeResult {
+                            name,
+                            svg_path_data,
+                        });
+                        self.open = false;
+                    }
+                }
+                if cancel {
+                    self.open = false;
+                }
+            });
+        result
+    }
+}

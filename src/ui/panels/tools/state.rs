@@ -1741,6 +1741,8 @@ impl Default for SmudgeState {
 #[derive(Clone, Debug)]
 pub struct ShapesToolState {
     pub selected_shape: crate::ops::shapes::ShapeKind,
+    pub selected_custom_shape: Option<String>,
+    pub selected_custom_shape_data: Option<crate::ops::shapes::CustomShapeRenderData>,
     pub draw_start: Option<[f32; 2]>,
     pub draw_end: Option<[f32; 2]>,
     pub is_drawing: bool,
@@ -1760,6 +1762,8 @@ impl Default for ShapesToolState {
     fn default() -> Self {
         Self {
             selected_shape: crate::ops::shapes::ShapeKind::Rectangle,
+            selected_custom_shape: None,
+            selected_custom_shape_data: None,
             draw_start: None,
             draw_end: None,
             is_drawing: false,
@@ -1804,6 +1808,8 @@ pub struct ToolsPanel {
     /// Pending async color removal request — consumed by app.rs for spawn_filter_job.
     pending_color_removal: Option<ColorRemovalRequest>,
     pub shapes_state: ShapesToolState,
+    pub pending_open_add_shape: bool,
+    pub pending_delete_shape: Option<String>,
     last_tracked_layer_index: usize,
     last_tracked_layer_count: usize,
     /// B6: Pre-computed brush alpha LUT indexed by squared distance ratio.
@@ -1881,6 +1887,8 @@ impl Default for ToolsPanel {
             smudge_state: SmudgeState::default(),
             pending_color_removal: None,
             shapes_state: ShapesToolState::default(),
+            pending_open_add_shape: false,
+            pending_delete_shape: None,
             last_tracked_layer_index: 0,
             last_tracked_layer_count: 0,
             brush_alpha_lut: [0u8; 256],

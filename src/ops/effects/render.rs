@@ -250,27 +250,41 @@ pub fn shadow_core(
     if widen_radius {
         let spread = blur_radius.max(1.0).round() as i32;
         if spread > 0 {
-            let src = shadow_alpha.clone();
-            for y in 0..h as i32 {
-                for x in 0..w as i32 {
-                    let mut max_a = 0u8;
-                    for oy in -spread..=spread {
-                        let sy = y + oy;
-                        if sy < 0 || sy >= h as i32 {
-                            continue;
+            let wu = w as usize;
+            let hu = h as usize;
+            let r = spread as usize;
+            let src = shadow_alpha;
+            let mut horizontal = vec![0u8; src.len()];
+            horizontal
+                .par_chunks_mut(wu)
+                .enumerate()
+                .for_each(|(y, row)| {
+                    let base = y * wu;
+                    for (x, cell) in row.iter_mut().enumerate().take(wu) {
+                        let x0 = x.saturating_sub(r);
+                        let x1 = (x + r).min(wu - 1);
+                        let mut max_a = 0u8;
+                        for sx in x0..=x1 {
+                            max_a = max_a.max(src[base + sx]);
                         }
-                        for ox in -spread..=spread {
-                            let sx = x + ox;
-                            if sx < 0 || sx >= w as i32 {
-                                continue;
-                            }
-                            let idx = sy as usize * w as usize + sx as usize;
-                            max_a = max_a.max(src[idx]);
-                        }
+                        *cell = max_a;
                     }
-                    shadow_alpha[y as usize * w as usize + x as usize] = max_a;
-                }
-            }
+                });
+            shadow_alpha = vec![0u8; horizontal.len()];
+            shadow_alpha
+                .par_chunks_mut(wu)
+                .enumerate()
+                .for_each(|(y, row)| {
+                    let y0 = y.saturating_sub(r);
+                    let y1 = (y + r).min(hu - 1);
+                    for x in 0..wu {
+                        let mut max_a = 0u8;
+                        for sy in y0..=y1 {
+                            max_a = max_a.max(horizontal[sy * wu + x]);
+                        }
+                        row[x] = max_a;
+                    }
+                });
         }
     }
 
@@ -309,17 +323,24 @@ pub fn shadow_core(
                     continue;
                 }
                 let si = y * stride + pi;
-                let shadow_a = (blur_raw[y * stride + pi] as f32 / 255.0) * opacity;
+                let shadow_a = (blur_raw[y * stride + pi] as f32 / 255.0)
+                    * opacity
+                    * (color[3] as f32 / 255.0);
                 let src_a = src_raw[si + 3] as f32 / 255.0;
 
-                // Shadow first, then source on top (premultiplied-style compositing).
+                // Shadow first, then source on top, written back as straight RGBA.
+                let out_a = src_a + shadow_a * (1.0 - src_a);
                 for c in 0..3 {
-                    let shadow_c = color[c] as f32 * shadow_a;
-                    let src_c = src_raw[si + c] as f32 * src_a;
-                    let out_c = src_c + shadow_c * (1.0 - src_a);
+                    let shadow_c = color[c] as f32 / 255.0;
+                    let src_c = src_raw[si + c] as f32 / 255.0;
+                    let out_c = if out_a > 0.0 {
+                        (src_c * src_a + shadow_c * shadow_a * (1.0 - src_a)) / out_a
+                    } else {
+                        0.0
+                    };
+                    let out_c = out_c * 255.0;
                     row_out[pi + c] = out_c.round().clamp(0.0, 255.0) as u8;
                 }
-                let out_a = src_a + shadow_a * (1.0 - src_a);
                 row_out[pi + 3] = (out_a * 255.0).round().clamp(0.0, 255.0) as u8;
             }
         });
@@ -398,6 +419,27 @@ pub fn outline_core(
     let src_raw = flat.as_raw();
     let stride = w * 4;
     let alpha: Vec<u8> = (0..w * h).map(|i| src_raw[i * 4 + 3]).collect();
+    let mut alpha_min_x = w;
+    let mut alpha_min_y = h;
+    let mut alpha_max_x = 0usize;
+    let mut alpha_max_y = 0usize;
+    for (idx, a) in alpha.iter().enumerate() {
+        if *a > 0 {
+            let x = idx % w;
+            let y = idx / w;
+            alpha_min_x = alpha_min_x.min(x);
+            alpha_min_y = alpha_min_y.min(y);
+            alpha_max_x = alpha_max_x.max(x);
+            alpha_max_y = alpha_max_y.max(y);
+        }
+    }
+    if alpha_min_x == w {
+        return flat.clone();
+    }
+    let proc_min_x = alpha_min_x.saturating_sub(search_radius as usize + 1);
+    let proc_min_y = alpha_min_y.saturating_sub(search_radius as usize + 1);
+    let proc_max_x = (alpha_max_x + search_radius as usize + 1).min(w - 1);
+    let proc_max_y = (alpha_max_y + search_radius as usize + 1).min(h - 1);
 
     let mask_raw = mask.map(|m| m.as_raw().as_slice());
     let mask_w = mask.map_or(0, |m| m.width() as usize);
@@ -451,6 +493,9 @@ pub fn outline_core(
         .for_each(|(y, row_out)| {
             for x in 0..w {
                 let pi = x * 4;
+                if x < proc_min_x || x > proc_max_x || y < proc_min_y || y > proc_max_y {
+                    continue;
+                }
                 if let Some(mr) = mask_raw
                     && x < mask_w
                     && y < mask_h

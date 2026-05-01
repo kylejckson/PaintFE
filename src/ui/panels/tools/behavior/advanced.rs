@@ -586,15 +586,27 @@ impl ToolsPanel {
         // Button showing current shape icon + name, opens grid popup
         let popup_id = ui.make_persistent_id("shapes_grid_popup");
         let btn_response = {
-            let label_text = self.shapes_state.selected_shape.label();
-            if let Some(tex) = assets.get_shape_texture(self.shapes_state.selected_shape) {
+            let mut label_text = self
+                .shapes_state
+                .selected_custom_shape
+                .clone()
+                .unwrap_or_else(|| self.shapes_state.selected_shape.label());
+            if label_text.chars().count() > 12 {
+                label_text = format!("{}...", label_text.chars().take(12).collect::<String>());
+            }
+            let custom_tex = self
+                .shapes_state
+                .selected_custom_shape
+                .as_ref()
+                .and_then(|n| assets.get_custom_shape_texture(n));
+            if let Some(tex) = custom_tex.or_else(|| assets.get_shape_texture(self.shapes_state.selected_shape)) {
                 let sized = egui::load::SizedTexture::from_handle(tex);
                 let img =
                     egui::Image::from_texture(sized).fit_to_exact_size(egui::Vec2::splat(16.0));
                 let btn = egui::Button::image_and_text(img, label_text);
-                ui.add(btn)
+                ui.add_sized([116.0, 24.0], btn)
             } else {
-                ui.button(label_text)
+                ui.add_sized([116.0, 24.0], egui::Button::new(label_text))
             }
         };
         if btn_response.clicked() {
@@ -610,7 +622,9 @@ impl ToolsPanel {
         .open_memory(None::<egui::SetOpenCommand>)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
-            ui.set_min_width(180.0);
+            ui.set_width(156.0);
+            ui.set_min_width(156.0);
+            ui.set_max_width(156.0);
             let picker_shapes = ShapeKind::picker_shapes();
             let cols = 5;
             let icon_size = egui::Vec2::splat(28.0);
@@ -622,11 +636,17 @@ impl ToolsPanel {
                 70
             };
 
+            if ui.add_sized([54.0, 20.0], egui::Button::new("New...")).clicked() {
+                self.pending_open_add_shape = true;
+                ui.close();
+            }
+
             egui::Grid::new("shapes_icon_grid")
                 .spacing(egui::Vec2::splat(2.0))
                 .show(ui, |ui| {
                     for (i, kind) in picker_shapes.iter().enumerate() {
-                        let selected = self.shapes_state.selected_shape == *kind;
+                        let selected = self.shapes_state.selected_custom_shape.is_none()
+                            && self.shapes_state.selected_shape == *kind;
                         let (rect, response) =
                             ui.allocate_exact_size(icon_size, egui::Sense::click());
 
@@ -678,6 +698,8 @@ impl ToolsPanel {
 
                         if response.clicked() {
                             self.shapes_state.selected_shape = *kind;
+                            self.shapes_state.selected_custom_shape = None;
+                            self.shapes_state.selected_custom_shape_data = None;
                         }
                         response.on_hover_text(kind.label());
 
@@ -686,6 +708,49 @@ impl ToolsPanel {
                         }
                     }
                 });
+
+            for cat in assets.custom_shape_categories() {
+                ui.add_space(4.0);
+                egui::Grid::new(format!("custom_shapes_{}_grid", cat.name))
+                    .spacing(egui::Vec2::splat(2.0))
+                    .show(ui, |ui| {
+                        for (i, name) in cat.shapes.iter().enumerate() {
+                            let selected = self.shapes_state.selected_custom_shape.as_ref() == Some(name);
+                            let (rect, response) = ui.allocate_exact_size(icon_size, egui::Sense::click());
+                            if selected {
+                                ui.painter().rect_filled(
+                                    rect,
+                                    4.0,
+                                    egui::Color32::from_rgba_premultiplied(
+                                        accent.r(), accent.g(), accent.b(), selected_alpha,
+                                    ),
+                                );
+                                ui.painter().rect_stroke(rect, 4.0, selected_stroke, egui::StrokeKind::Middle);
+                            }
+                            if response.hovered() {
+                                ui.painter().rect_filled(rect, 4.0, ui.visuals().widgets.hovered.bg_fill);
+                            }
+                            if let Some(tex) = assets.get_custom_shape_texture(name) {
+                                let sized = egui::load::SizedTexture::from_handle(tex);
+                                egui::Image::from_texture(sized)
+                                    .fit_to_exact_size(icon_size * 0.8)
+                                    .paint_at(ui, rect.shrink(icon_size.x * 0.1));
+                            }
+                            if response.clicked() {
+                                self.shapes_state.selected_custom_shape = Some(name.clone());
+                                self.shapes_state.selected_custom_shape_data =
+                                    assets.get_custom_shape_data(name).map(Into::into);
+                            }
+                            if response.secondary_clicked() {
+                                self.pending_delete_shape = Some(name.clone());
+                            }
+                            response.on_hover_text(name);
+                            if (i + 1) % cols == 0 {
+                                ui.end_row();
+                            }
+                        }
+                    });
+            }
         });
 
         ui.separator();
@@ -892,6 +957,8 @@ impl ToolsPanel {
                 hh,
                 rotation: 0.0,
                 kind: self.shapes_state.selected_shape,
+                custom_shape: self.shapes_state.selected_custom_shape.clone(),
+                custom_shape_data: self.shapes_state.selected_custom_shape_data.clone(),
                 fill_mode: self.shapes_state.fill_mode,
                 outline_width: self.properties.size,
                 primary_color: primary,

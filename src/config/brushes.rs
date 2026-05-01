@@ -1,6 +1,6 @@
 use crate::config::icons::Icon;
 use crate::config::keybindings::{BindableAction, KeyBindings};
-use crate::ops::shapes::ShapeKind;
+use crate::ops::shapes::{CustomShapeData, ShapeKind};
 use eframe::egui;
 use egui::{Color32, ColorImage, Sense, TextureHandle, TextureOptions, Vec2};
 use std::collections::HashMap;
@@ -8,6 +8,11 @@ use std::collections::HashMap;
 pub struct BrushTipCategory {
     pub name: String,
     pub tips: Vec<String>,
+}
+
+pub struct CustomShapeCategory {
+    pub name: String,
+    pub shapes: Vec<String>,
 }
 
 /// Loaded brush tip data — normalized alpha mask + icon
@@ -28,6 +33,9 @@ pub struct BrushTipData {
 pub struct Assets {
     pub(crate) textures: HashMap<Icon, TextureHandle>,
     shape_textures: HashMap<ShapeKind, TextureHandle>,
+    custom_shape_data: Vec<CustomShapeData>,
+    custom_shape_categories: Vec<CustomShapeCategory>,
+    custom_shape_textures: HashMap<String, TextureHandle>,
     /// Original (light-mode) RGBA pixel data for each icon
     icon_pixels: HashMap<Icon, Vec<u8>>,
     /// Original (light-mode) RGBA pixel data for each shape icon
@@ -1180,10 +1188,67 @@ impl Assets {
                 self.brush_tip_textures.insert(name.clone(), texture);
             }
         }
+
+        for shape in &self.custom_shape_data {
+            let icon_pixels = crate::ops::shapes::render_custom_shape_icon(shape, 48, dark);
+            let color_image = ColorImage::from_rgba_unmultiplied([48, 48], &icon_pixels);
+            let texture = ctx.load_texture(
+                format!("custom_shape_{}", shape.name),
+                color_image,
+                TextureOptions::LINEAR,
+            );
+            self.custom_shape_textures.insert(shape.name.clone(), texture);
+        }
     }
 
     pub fn get_shape_texture(&self, kind: ShapeKind) -> Option<&TextureHandle> {
         self.shape_textures.get(&kind)
+    }
+
+    pub fn load_custom_shape(&mut self, ctx: &egui::Context, name: &str, category: &str, svg_path_data: &str) -> Result<(), String> {
+        let data = crate::ops::shapes::parse_custom_shape(name, category, svg_path_data)?;
+        let icon_pixels = crate::ops::shapes::render_custom_shape_icon(&data, 48, self.icons_inverted);
+        let color_image = ColorImage::from_rgba_unmultiplied([48, 48], &icon_pixels);
+        let texture = ctx.load_texture(format!("custom_shape_{name}"), color_image, TextureOptions::LINEAR);
+        self.custom_shape_data.retain(|s| s.name != name);
+        self.custom_shape_textures.insert(name.to_string(), texture);
+        self.custom_shape_data.push(data);
+        for cat in &mut self.custom_shape_categories {
+            cat.shapes.retain(|s| s != name);
+        }
+        if let Some(cat) = self.custom_shape_categories.iter_mut().find(|c| c.name == category) {
+            cat.shapes.push(name.to_string());
+        } else {
+            self.custom_shape_categories.push(CustomShapeCategory {
+                name: category.to_string(),
+                shapes: vec![name.to_string()],
+            });
+        }
+        self.custom_shape_categories.retain(|c| !c.shapes.is_empty());
+        Ok(())
+    }
+
+    pub fn remove_custom_shape(&mut self, name: &str) -> bool {
+        let before = self.custom_shape_data.len();
+        self.custom_shape_data.retain(|s| s.name != name);
+        self.custom_shape_textures.remove(name);
+        for cat in &mut self.custom_shape_categories {
+            cat.shapes.retain(|s| s != name);
+        }
+        self.custom_shape_categories.retain(|c| !c.shapes.is_empty());
+        self.custom_shape_data.len() != before
+    }
+
+    pub fn custom_shape_categories(&self) -> &[CustomShapeCategory] {
+        &self.custom_shape_categories
+    }
+
+    pub fn get_custom_shape_texture(&self, name: &str) -> Option<&TextureHandle> {
+        self.custom_shape_textures.get(name)
+    }
+
+    pub fn get_custom_shape_data(&self, name: &str) -> Option<&CustomShapeData> {
+        self.custom_shape_data.iter().find(|s| s.name == name)
     }
 
     /// Load a brush tip from grayscale PNG bytes.

@@ -42,6 +42,7 @@ pub fn decode_raw_image(path: &Path) -> Result<RgbaImage, String> {
 
     let width = srgb.width;
     let height = srgb.height;
+    validate_open_dimensions(width as u32, height as u32)?;
 
     // srgb.data is Vec<u8> in RGB (3 bytes per pixel) — convert to RGBA
     let pixel_count = width * height;
@@ -350,9 +351,23 @@ pub fn load_pfe(path: &Path) -> Result<CanvasState, PfeError> {
 
 /// Maximum supported canvas dimension in pixels (per axis).
 /// Prevents memory exhaustion from crafted project files.
-const MAX_CANVAS_DIM: u32 = 32_768;
+pub const MAX_OPEN_IMAGE_DIM: u32 = 25_000;
+const MAX_CANVAS_DIM: u32 = MAX_OPEN_IMAGE_DIM;
 /// Maximum number of layers in a project file.
 const MAX_LAYERS: usize = 256;
+
+pub fn validate_open_dimensions(width: u32, height: u32) -> Result<(), String> {
+    if width == 0 || height == 0 {
+        return Err("Image dimensions cannot be zero".to_string());
+    }
+    if width > MAX_OPEN_IMAGE_DIM || height > MAX_OPEN_IMAGE_DIM {
+        return Err(format!(
+            "Image size {}x{} exceeds maximum allowed {}x{}",
+            width, height, MAX_OPEN_IMAGE_DIM, MAX_OPEN_IMAGE_DIM
+        ));
+    }
+    Ok(())
+}
 
 // ============================================================================
 // SYNCHRONOUS IMAGE LOADER (CLI / headless mode)
@@ -391,11 +406,15 @@ pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
     let img: RgbaImage = if is_raw_extension(&ext) {
         decode_raw_image(path)?
     } else {
+        if let Ok((w, h)) = image::image_dimensions(path) {
+            validate_open_dimensions(w, h)?;
+        }
         image::open(path).map_err(|e| e.to_string())?.to_rgba8()
     };
 
     let w = img.width();
     let h = img.height();
+    validate_open_dimensions(w, h)?;
     let name = path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -474,17 +493,7 @@ fn load_pfe_v2(raw: &[u8]) -> Result<CanvasState, PfeError> {
 
     let project: ProjectFileV2 = bincode::deserialize(raw)?;
 
-    if project.width == 0 || project.height == 0 {
-        return Err(PfeError::InvalidFormat(
-            "Canvas dimensions cannot be zero".into(),
-        ));
-    }
-    if project.width > MAX_CANVAS_DIM || project.height > MAX_CANVAS_DIM {
-        return Err(PfeError::InvalidFormat(format!(
-            "Canvas size {}x{} exceeds maximum allowed {}x{}",
-            project.width, project.height, MAX_CANVAS_DIM, MAX_CANVAS_DIM
-        )));
-    }
+    validate_open_dimensions(project.width, project.height).map_err(PfeError::InvalidFormat)?;
     if project.layers.len() > MAX_LAYERS {
         return Err(PfeError::InvalidFormat(format!(
             "Project contains {} layers, which exceeds the maximum of {}",
@@ -624,17 +633,7 @@ fn load_pfe_v2(raw: &[u8]) -> Result<CanvasState, PfeError> {
 fn load_pfe_v1(raw: &[u8]) -> Result<CanvasState, PfeError> {
     let project: ProjectFileV1 = bincode::deserialize(raw)?;
 
-    if project.width == 0 || project.height == 0 {
-        return Err(PfeError::InvalidFormat(
-            "Canvas dimensions cannot be zero".into(),
-        ));
-    }
-    if project.width > MAX_CANVAS_DIM || project.height > MAX_CANVAS_DIM {
-        return Err(PfeError::InvalidFormat(format!(
-            "Canvas size {}x{} exceeds maximum allowed {}x{}",
-            project.width, project.height, MAX_CANVAS_DIM, MAX_CANVAS_DIM
-        )));
-    }
+    validate_open_dimensions(project.width, project.height).map_err(PfeError::InvalidFormat)?;
     if project.layers.len() > MAX_LAYERS {
         return Err(PfeError::InvalidFormat(format!(
             "Project contains {} layers, which exceeds the maximum of {}",
@@ -746,17 +745,7 @@ fn load_pfe_v1(raw: &[u8]) -> Result<CanvasState, PfeError> {
 fn load_pfe_v0(raw: &[u8]) -> Result<CanvasState, PfeError> {
     let project: ProjectFileV0 = bincode::deserialize(raw)?;
 
-    if project.width == 0 || project.height == 0 {
-        return Err(PfeError::InvalidFormat(
-            "Canvas dimensions cannot be zero".into(),
-        ));
-    }
-    if project.width > MAX_CANVAS_DIM || project.height > MAX_CANVAS_DIM {
-        return Err(PfeError::InvalidFormat(format!(
-            "Canvas size {}x{} exceeds maximum allowed {}x{}",
-            project.width, project.height, MAX_CANVAS_DIM, MAX_CANVAS_DIM
-        )));
-    }
+    validate_open_dimensions(project.width, project.height).map_err(PfeError::InvalidFormat)?;
     if project.layers.len() > MAX_LAYERS {
         return Err(PfeError::InvalidFormat(format!(
             "Project contains {} layers, which exceeds the maximum of {}",
@@ -1101,9 +1090,20 @@ impl FileHandler {
             .add_filter("All Files", &["*"])
             .pick_file()?;
 
+        if let Ok((w, h)) = image::image_dimensions(&path)
+            && let Err(e) = validate_open_dimensions(w, h)
+        {
+            eprintln!("{}", e);
+            return None;
+        }
+
         match image::open(&path) {
             Ok(img) => {
                 let rgba = img.to_rgba8();
+                if let Err(e) = validate_open_dimensions(rgba.width(), rgba.height()) {
+                    eprintln!("{}", e);
+                    return None;
+                }
                 self.current_path = Some(path.clone());
 
                 // Detect format from extension
@@ -1324,6 +1324,7 @@ pub fn decode_gif_frames(path: &Path) -> Result<Vec<(RgbaImage, u16)>, String> {
 
     let width = decoder.width() as u32;
     let height = decoder.height() as u32;
+    validate_open_dimensions(width, height)?;
 
     let mut frames: Vec<(RgbaImage, u16)> = Vec::new();
     // Running canvas for frame composition (GIF frames can be partial)
@@ -1415,6 +1416,7 @@ pub fn decode_apng_frames(path: &Path) -> Result<Vec<(RgbaImage, u16)>, String> 
 
     let width = info.width;
     let height = info.height;
+    validate_open_dimensions(width, height)?;
     let _color_type = info.color_type;
     let _bit_depth = info.bit_depth;
 
