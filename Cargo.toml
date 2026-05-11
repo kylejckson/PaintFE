@@ -12,7 +12,7 @@ name = "PaintFE"
 path = "src/main.rs"
 
 [dependencies]
-eframe = "0.34.1"    # Wrapper for egui (the GUI framework)
+eframe = "0.34.2"    # Wrapper for egui (the GUI framework)
 egui = "0.34.1"      # The core GUI library
 image = { version = "0.25", features = ["jpeg", "png", "webp", "bmp", "tga", "ico", "tiff"] }
 tiff = "0.9"         # Direct dependency for TIFF compression options
