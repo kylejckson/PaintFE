@@ -24,7 +24,7 @@ bincode = "1"        # Binary serialization for .pfe files
 
 gif = "0.13"             # Direct GIF encoder/decoder (multi-frame animation)
 png = "0.17"             # Direct PNG encoder/decoder (APNG animation support)
-color_quant = "1"        # Color quantization for GIF palette reduction
+color_quant = "2"        # Color quantization for GIF palette reduction
 
 arboard = { version = "3", features = ["wayland-data-control"] } # System clipboard (copy/paste images to/from OS)
 wgpu = "29"                                      # GPU acceleration (WebGPU API)

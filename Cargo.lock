@@ -12,7 +12,7 @@ dependencies = [
  "bincode",
  "bytemuck",
  "clap",
- "color_quant",
+ "color_quant 2.0.0",
  "eframe",
  "egui",
  "font-kit",
@@ -928,6 +928,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d7b894f5411737b7867f4827955924d7c254fc9f4d91a6aad6b097804b1018b"
 
 [[package]]
+name = "color_quant"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00c1c79b421ca69d94677a49b2ccf389dab3409952aed790594de8fa03b07989"
+
+[[package]]
 name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1778,7 +1784,7 @@ version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ae047235e33e2829703574b54fdec96bfbad892062d97fed2f76022287de61b"
 dependencies = [
- "color_quant",
+ "color_quant 1.1.0",
  "weezl",
 ]
 
@@ -1788,7 +1794,7 @@ version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee8cfcc411d9adbbaba82fb72661cc1bcca13e8bba98b364e62b2dba8f960159"
 dependencies = [
- "color_quant",
+ "color_quant 1.1.0",
  "weezl",
 ]
 
@@ -2151,7 +2157,7 @@ checksum = "5690139d2f55868e080017335e4b94cb7414274c74f1669c84fb5feba2c9f69d"
 dependencies = [
  "bytemuck",
  "byteorder",
- "color_quant",
+ "color_quant 1.1.0",
  "exr",
  "gif 0.13.3",
  "jpeg-decoder",
@@ -2169,7 +2175,7 @@ checksum = "e6506c6c10786659413faa717ceebcb8f70731c0a60cbae39795fdf114519c1a"
 dependencies = [
  "bytemuck",
  "byteorder-lite",
- "color_quant",
+ "color_quant 1.1.0",
  "exr",
  "gif 0.14.2",
  "image-webp",
