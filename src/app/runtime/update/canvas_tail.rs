@@ -10,6 +10,16 @@ impl PaintFEApp {
         }
 
         let has_project = !self.projects.is_empty();
+        let live_window_resize = crate::windows_key_probe::is_live_resize();
+        let was_live_window_resize = ctx.data_mut(|d| {
+            let id = egui::Id::new("paintfe_live_window_resize");
+            let was = d.get_temp::<bool>(id).unwrap_or(false);
+            d.insert_temp(id, live_window_resize);
+            was
+        });
+        if was_live_window_resize && !live_window_resize {
+            ctx.request_repaint();
+        }
 
         // --- Floating Tool Shelf (replaces docked context bar) ---
         // Keep the strip itself transparent so the canvas/app backdrop remains
@@ -255,6 +265,7 @@ impl PaintFEApp {
                         self.filter_ops_start_time,
                         self.io_ops_start_time,
                         &self.filter_status_description,
+                        live_window_resize,
                     );
                     if let Some(overlay) = self.paste_overlay.as_mut()
                         && let Some((before, _after)) = overlay.pending_transform_checkpoint.take()
@@ -366,7 +377,7 @@ impl PaintFEApp {
         // Persist last non-trivial window content size for next launch.
         let is_maximized = ctx.input(|i| i.viewport().maximized).unwrap_or(false);
         self.settings.persist_window_maximized = is_maximized;
-        if !is_maximized {
+        if !is_maximized && !live_window_resize {
             if screen_w >= 640.0 && screen_h >= 480.0 {
                 self.settings.persist_window_width = screen_w;
                 self.settings.persist_window_height = screen_h;
@@ -376,7 +387,10 @@ impl PaintFEApp {
             }
         }
         let current_time = ctx.input(|i| i.time);
-        self.persist_window_state_if_changed(current_time, false);
+        self.persist_window_state_if_changed(
+            current_time,
+            was_live_window_resize && !live_window_resize,
+        );
 
         // --- Tool Hint (bottom-left status text) ---
         // Subtle text showing what the current tool does, visible at the bottom-left.

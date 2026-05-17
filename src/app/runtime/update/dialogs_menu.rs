@@ -179,9 +179,6 @@ impl PaintFEApp {
                     });
 
                     ui.menu_button(t!("menu.edit"), |ui| {
-                        if !has_project {
-                            ui.disable();
-                        }
                         let can_undo = self.active_project().is_some_and(|p| p.history.can_undo());
                         let can_redo = self.active_project().is_some_and(|p| p.history.can_redo());
 
@@ -283,7 +280,7 @@ impl PaintFEApp {
                                 ui,
                                 Icon::MenuEditPaste,
                                 &t!("menu.edit.paste"),
-                                has_clip,
+                                has_project && has_clip,
                                 &menu_kb,
                                 BindableAction::Paste,
                             )
@@ -309,7 +306,7 @@ impl PaintFEApp {
                                 ui,
                                 Icon::MenuEditPasteLayer,
                                 &t!("menu.edit.paste_as_layer"),
-                                has_clip,
+                                has_project && has_clip,
                             )
                             .clicked()
                         {
@@ -333,10 +330,11 @@ impl PaintFEApp {
                         // Selection operations
                         if self
                             .assets
-                            .menu_item_shortcut(
+                            .menu_item_shortcut_enabled(
                                 ui,
                                 Icon::MenuEditSelectAll,
                                 &t!("menu.edit.select_all"),
+                                has_project,
                                 &menu_kb,
                                 BindableAction::SelectAll,
                             )
@@ -399,7 +397,7 @@ impl PaintFEApp {
                                 ui,
                                 Icon::MenuEditColorRange,
                                 "Select Color Range...",
-                                true,
+                                has_project,
                             )
                             .clicked()
                         {

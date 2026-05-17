@@ -6,6 +6,13 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.2.16] - 2026-05-18
+
+### Fixed
+- Preferences without a project -- Edit > Preferences can now be opened before any file/project is open.
+- Windows live resize -- Reduced dropped frames during corner-drag resizing by deferring full canvas GPU recomposite/readback work until the live resize finishes.
+- Hardware preferences -- Removed the unused GPU acceleration placeholder toggle while keeping preferred adapter selection.
+
 ## [1.2.15] - 2026-05-11
 
 ### Changed

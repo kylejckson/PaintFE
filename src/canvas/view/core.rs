@@ -85,6 +85,7 @@ impl Canvas {
             None,
             None,
             "",
+            false,
         );
     }
 
@@ -105,6 +106,7 @@ impl Canvas {
         filter_ops_start_time: Option<f64>,
         io_ops_start_time: Option<f64>,
         filter_status_description: &str,
+        live_window_resize: bool,
     ) {
         // FPS tracking: measure time since last frame
         let current_time = ui.input(|i| i.time);
@@ -192,6 +194,7 @@ impl Canvas {
         {
             let gpu = &mut self.gpu_renderer;
             let pixels_dirty = state.dirty_rect.is_some() || state.composite_cache.is_none();
+            let defer_live_resize_composite = live_window_resize && state.composite_cache.is_some();
 
             // Plan A: filter_changed (zoom crosses 2.0├ù threshold) doesn't
             // require GPU recomposite ÔÇö the pixels haven't changed, only the
@@ -199,7 +202,7 @@ impl Canvas {
             let needs_reupload_only =
                 filter_changed && !pixels_dirty && !state.composite_cpu_buffer.is_empty();
 
-            if pixels_dirty {
+            if pixels_dirty && !defer_live_resize_composite {
                 // Sync each real layer to the GPU ÔÇö per-layer generation
                 // tracking ensures only actually-modified layers are
                 // re-uploaded, and dirty-rect partial uploads avoid copying
@@ -412,6 +415,59 @@ impl Canvas {
                     ui.ctx().request_repaint();
                 }
                 state.dirty_rect = None;
+            } else if pixels_dirty && defer_live_resize_composite {
+                if let Some((pixels, rx, ry, rw, rh, is_full)) =
+                    gpu.async_readback.try_read(&gpu.ctx.device)
+                {
+                    let src: &[Color32] = bytemuck::cast_slice(&pixels);
+                    let cmyk = state.cmyk_preview;
+                    if is_full {
+                        let display_pixels = if cmyk {
+                            apply_cmyk_soft_proof(src)
+                        } else {
+                            src.to_vec()
+                        };
+                        let color_image = ColorImage {
+                            size: [state.width as usize, state.height as usize],
+                            source_size: egui::Vec2::new(state.width as f32, state.height as f32),
+                            pixels: display_pixels,
+                        };
+                        state.composite_cpu_buffer.clear();
+                        state.composite_cpu_buffer.extend_from_slice(src);
+                        let image_data = ImageData::Color(Arc::new(color_image));
+                        if let Some(ref mut tex) = state.composite_cache {
+                            tex.set(image_data, texture_options);
+                        }
+                    } else {
+                        let canvas_w = state.width as usize;
+                        let region_w = rw as usize;
+                        for row in 0..rh as usize {
+                            let dst_y = ry as usize + row;
+                            let dst_start = dst_y * canvas_w + rx as usize;
+                            let src_start = row * region_w;
+                            state.composite_cpu_buffer[dst_start..dst_start + region_w]
+                                .copy_from_slice(&src[src_start..src_start + region_w]);
+                        }
+                        let region_pixels = if cmyk {
+                            apply_cmyk_soft_proof(src)
+                        } else {
+                            src.to_vec()
+                        };
+                        let region_image = ColorImage {
+                            size: [rw as usize, rh as usize],
+                            source_size: egui::Vec2::new(rw as f32, rh as f32),
+                            pixels: region_pixels,
+                        };
+                        let region_data = ImageData::Color(Arc::new(region_image));
+                        if let Some(ref mut tex) = state.composite_cache {
+                            tex.set_partial(
+                                [rx as usize, ry as usize],
+                                region_data,
+                                texture_options,
+                            );
+                        }
+                    }
+                }
             } else if gpu.async_readback.read_pending {
                 // B1 fix: The async readback from the previous dirty frame may
                 // have completed.  Poll it even though no new dirty rect exists,
@@ -476,7 +532,9 @@ impl Canvas {
                     }
                 } else {
                     // Data not ready yet ÔÇö request another repaint so we poll again next frame
-                    ui.ctx().request_repaint();
+                    if !live_window_resize {
+                        ui.ctx().request_repaint();
+                    }
                 }
             } else if needs_reupload_only {
                 // Plan A: filter mode changed but pixels didn't ÔÇö re-upload
@@ -2562,7 +2620,7 @@ impl Canvas {
                     parts.push(format!("{:.0} FPS", self.fps));
                 }
 
-                if debug_settings.debug_show_gpu && debug_settings.gpu_acceleration {
+                if debug_settings.debug_show_gpu {
                     let gpu_name = &self.gpu_renderer.ctx.adapter_name;
                     // Shorten GPU name if too long
                     let display_name = if gpu_name.len() > 25 {

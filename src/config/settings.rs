@@ -34,8 +34,6 @@ pub struct AppSettings {
     pub theme_preset: ThemePreset,
     /// Custom accent colors (used when preset == Custom)
     pub custom_accent: AccentColors,
-    /// Enable GPU acceleration (placeholder)
-    pub gpu_acceleration: bool,
     /// Preferred GPU adapter name (e.g. \"NVIDIA RTX 3080\")
     pub preferred_gpu: String,
     /// Pixel grid display mode
@@ -231,7 +229,6 @@ impl Default for AppSettings {
             theme_mode: ThemeMode::Light,
             theme_preset: preset,
             custom_accent: preset.accent_colors(),
-            gpu_acceleration: true,
             preferred_gpu: "Auto".to_string(),
             pixel_grid_mode: PixelGridMode::Auto,
             pixel_grid_outline_color: Color32::from_black_alpha(90),
@@ -821,7 +818,6 @@ impl AppSettings {
         let content = format!(
             "theme_mode={mode_str}\n\
              theme_preset={preset_str}\n\
-             gpu_acceleration={}\n\
              preferred_gpu={}\n\
              pixel_grid_mode={grid_str}\n\
              pixel_grid_outline_color={}\n\
@@ -846,7 +842,6 @@ impl AppSettings {
              default_canvas_height={}\n\
              create_canvas_on_startup={}\n\
              confirm_on_exit={}\n",
-            self.gpu_acceleration,
             self.preferred_gpu,
             Self::color_to_str(self.pixel_grid_outline_color),
             Self::color_to_str(self.pixel_grid_center_color),
@@ -1220,9 +1215,7 @@ impl AppSettings {
                         _ => ThemePreset::Blue,
                     };
                 }
-                "gpu_acceleration" => {
-                    s.gpu_acceleration = val == "true";
-                }
+                "gpu_acceleration" => {}
                 "preferred_gpu" => {
                     s.preferred_gpu = val.to_string();
                 }

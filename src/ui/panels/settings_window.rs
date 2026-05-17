@@ -602,20 +602,6 @@ impl SettingsWindow {
 
     // -- Hardware Tab -----------------------------------------------
     fn show_hardware_tab(&mut self, ui: &mut egui::Ui, settings: &mut AppSettings) {
-        // -- Acceleration ----------------------------------------------
-        Self::section_header(ui, "GPU Acceleration");
-        ui.checkbox(
-            &mut settings.gpu_acceleration,
-            "Enable hardware-accelerated rendering",
-        );
-        ui.label(
-            egui::RichText::new(
-                "Disable only if you experience rendering glitches. Takes effect after restart.",
-            )
-            .small()
-            .weak(),
-        );
-
         // -- Preferred Adapter --------------------------------------------
         Self::section_header(ui, &t!("settings.hardware.preferred_gpu"));
 
@@ -701,7 +687,6 @@ impl SettingsWindow {
         ui.add_space(4.0);
         if ui.button(t!("settings.hardware.reset")).clicked() {
             settings.preferred_gpu = "Auto".to_string();
-            settings.gpu_acceleration = true;
             self.gpu_adapters.clear();
             self.gpu_adapters_receiver = None;
         }

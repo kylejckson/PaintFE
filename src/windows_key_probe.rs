@@ -7,6 +7,9 @@ mod imp {
     const WM_KEYUP: u32 = 0x0101;
     const WM_SYSKEYDOWN: u32 = 0x0104;
     const WM_SYSKEYUP: u32 = 0x0105;
+    const WM_SIZING: u32 = 0x0214;
+    const WM_ENTERSIZEMOVE: u32 = 0x0231;
+    const WM_EXITSIZEMOVE: u32 = 0x0232;
 
     const VK_CONTROL: usize = 0x11;
     const VK_LCONTROL: usize = 0xA2;
@@ -23,6 +26,8 @@ mod imp {
     static V_DOWN: AtomicBool = AtomicBool::new(false);
     static ENTER_DOWN: AtomicBool = AtomicBool::new(false);
     static ESCAPE_DOWN: AtomicBool = AtomicBool::new(false);
+    static SIZE_MOVE_ACTIVE: AtomicBool = AtomicBool::new(false);
+    static LIVE_RESIZE_ACTIVE: AtomicBool = AtomicBool::new(false);
 
     static C_PRESS_COUNT: AtomicU64 = AtomicU64::new(0);
     static X_PRESS_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -104,6 +109,19 @@ mod imp {
                     _ => {}
                 }
             }
+            WM_ENTERSIZEMOVE => {
+                SIZE_MOVE_ACTIVE.store(true, Ordering::Relaxed);
+                LIVE_RESIZE_ACTIVE.store(false, Ordering::Relaxed);
+            }
+            WM_SIZING => {
+                if SIZE_MOVE_ACTIVE.load(Ordering::Relaxed) {
+                    LIVE_RESIZE_ACTIVE.store(true, Ordering::Relaxed);
+                }
+            }
+            WM_EXITSIZEMOVE => {
+                SIZE_MOVE_ACTIVE.store(false, Ordering::Relaxed);
+                LIVE_RESIZE_ACTIVE.store(false, Ordering::Relaxed);
+            }
             _ => {}
         }
     }
@@ -129,6 +147,10 @@ mod imp {
             enter_press_count: ENTER_PRESS_COUNT.load(Ordering::Relaxed),
             escape_press_count: ESCAPE_PRESS_COUNT.load(Ordering::Relaxed),
         }
+    }
+
+    pub fn is_live_resize() -> bool {
+        LIVE_RESIZE_ACTIVE.load(Ordering::Relaxed)
     }
 }
 
@@ -158,6 +180,10 @@ mod imp {
     pub fn snapshot() -> KeyProbeSnapshot {
         KeyProbeSnapshot::default()
     }
+
+    pub fn is_live_resize() -> bool {
+        false
+    }
 }
 
-pub use imp::{KeyProbeSnapshot, is_vk_down, observe_windows_message, snapshot};
+pub use imp::{KeyProbeSnapshot, is_live_resize, is_vk_down, observe_windows_message, snapshot};
