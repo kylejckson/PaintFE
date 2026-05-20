@@ -688,6 +688,27 @@ impl PaintFEApp {
                         }
                         if self
                             .assets
+                            .menu_item_enabled(
+                                ui,
+                                Icon::ColorRemover,
+                                &t!("menu.color.color_to_alpha"),
+                                no_dialog,
+                            )
+                            .clicked()
+                        {
+                            let target = self.colors_panel.get_primary_color();
+                            if let Some(project) = self.active_project() {
+                                self.active_dialog = ActiveDialog::ColorToAlpha(
+                                    crate::ops::effect_dialogs::ColorToAlphaDialog::new_with_target(
+                                        &project.canvas_state,
+                                        target,
+                                    ),
+                                );
+                            }
+                            ui.close();
+                        }
+                        if self
+                            .assets
                             .menu_item(ui, Icon::MenuColorSepia, &t!("menu.color.sepia_tone"))
                             .clicked()
                         {

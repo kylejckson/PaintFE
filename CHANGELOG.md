@@ -6,6 +6,15 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.2.17] - 2026-05-20
+
+### Added
+- Color to Alpha -- Added a new Color > Color to Alpha dialog for removing a chosen color from the active layer or selection while deriving transparency from mixed pixels.
+- Color sampling -- Added target-color controls with primary-color defaults, manual color editing, and coordinate-based image sampling inside the Color to Alpha dialog.
+
+### Fixed
+- Live preview history -- System dialog live previews now update the visible layer without adding undo history entries; only applying the dialog records the final edit.
+
 ## [1.2.16] - 2026-05-18
 
 ### Fixed

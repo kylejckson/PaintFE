@@ -73,6 +73,7 @@ pub enum ActiveDialog {
     Ink(InkDialog),
     OilPainting(OilPaintingDialog),
     ColorFilter(ColorFilterDialog),
+    ColorToAlpha(ColorToAlphaDialog),
     CanvasBorder(CanvasBorderDialog),
     // Render effects (additional)
     Contours(ContoursDialog),
@@ -137,6 +138,7 @@ impl ActiveDialog {
             ActiveDialog::Ink(_) => "Ink",
             ActiveDialog::OilPainting(_) => "OilPainting",
             ActiveDialog::ColorFilter(_) => "ColorFilter",
+            ActiveDialog::ColorToAlpha(_) => "ColorToAlpha",
             ActiveDialog::CanvasBorder(_) => "CanvasBorder",
             ActiveDialog::Contours(_) => "Contours",
             ActiveDialog::RemoveBackground(_) => "RemoveBackground",

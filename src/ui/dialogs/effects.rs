@@ -18,7 +18,7 @@ use crate::ops::effects::{ColorFilterMode, GridStyle, HalftoneShape, NoiseType, 
 use crate::ui::dialogs::core::{
     DialogColors, DialogResult, accent_separator, contrast_text_color, dialog_footer,
     dialog_footer_with_reset, dialog_slider, numeric_field_with_buttons, paint_dialog_header,
-    preview_controls, section_label,
+    paint_dialog_header_with_texture, preview_controls, section_label,
 };
 
 // Create common effect dialog fields

@@ -130,6 +130,11 @@ impl PaintFEApp {
             {
                 let idx = result.layer_idx;
                 if idx < project.canvas_state.layers.len() {
+                    if result.preview_token != 0 {
+                        project.canvas_state.layers[idx].pixels = result.result_pixels;
+                        project.canvas_state.mark_dirty(None);
+                        continue;
+                    }
                     // Swap original back for "before" snapshot, then install result
                     project.canvas_state.layers[idx].pixels = result.original_pixels;
                     let mut cmd = SingleLayerSnapshotCommand::new_for_layer(

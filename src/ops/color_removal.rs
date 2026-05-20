@@ -1,6 +1,153 @@
-use image::{Rgba, RgbaImage};
+use image::{GrayImage, Rgba, RgbaImage};
 use rayon::prelude::*;
 use std::collections::VecDeque;
+
+#[derive(Clone, Copy, Debug)]
+pub struct ColorToAlphaSettings {
+    pub target: [u8; 3],
+    pub tolerance: f32,
+    pub softness: f32,
+    pub strength: f32,
+    pub spill_suppression: f32,
+    pub alpha_floor: f32,
+    pub alpha_ceiling: f32,
+    pub protect_luminance: f32,
+}
+
+impl Default for ColorToAlphaSettings {
+    fn default() -> Self {
+        Self {
+            target: [255, 0, 0],
+            tolerance: 18.0,
+            softness: 35.0,
+            strength: 1.0,
+            spill_suppression: 0.35,
+            alpha_floor: 0.0,
+            alpha_ceiling: 1.0,
+            protect_luminance: 0.15,
+        }
+    }
+}
+
+pub fn color_to_alpha_core(
+    img: &RgbaImage,
+    settings: &ColorToAlphaSettings,
+    mask: Option<&GrayImage>,
+) -> RgbaImage {
+    let w = img.width() as usize;
+    let h = img.height() as usize;
+    if w == 0 || h == 0 {
+        return img.clone();
+    }
+
+    let src = img.as_raw();
+    let mut dst = src.clone();
+    let stride = w * 4;
+    let target = [
+        settings.target[0] as f32,
+        settings.target[1] as f32,
+        settings.target[2] as f32,
+    ];
+    let tolerance = (settings.tolerance / 255.0).clamp(0.0, 1.0);
+    let softness = (settings.softness / 255.0).max(0.001);
+    let strength = settings.strength.clamp(0.0, 1.0);
+    let spill = settings.spill_suppression.clamp(0.0, 1.0);
+    let alpha_floor = settings.alpha_floor.clamp(0.0, 1.0);
+    let alpha_ceiling = settings.alpha_ceiling.clamp(alpha_floor, 1.0);
+    let protect_luma = settings.protect_luminance.clamp(0.0, 1.0);
+    let target_luma = luma(target[0], target[1], target[2]);
+
+    let mask_raw = mask.map(|m| m.as_raw().as_slice());
+    let mask_w = mask.map_or(0, |m| m.width() as usize);
+    let mask_h = mask.map_or(0, |m| m.height() as usize);
+
+    dst.par_chunks_mut(stride).enumerate().for_each(|(y, row)| {
+        let src_row = &src[y * stride..(y + 1) * stride];
+        for x in 0..w {
+            if let Some(mr) = mask_raw
+                && (x >= mask_w || y >= mask_h || mr[y * mask_w + x] == 0)
+            {
+                continue;
+            }
+
+            let pi = x * 4;
+            let orig_a = src_row[pi + 3];
+            if orig_a == 0 {
+                continue;
+            }
+
+            let r = src_row[pi] as f32;
+            let g = src_row[pi + 1] as f32;
+            let b = src_row[pi + 2] as f32;
+            let max_d = ((r - target[0]).abs() / 255.0)
+                .max((g - target[1]).abs() / 255.0)
+                .max((b - target[2]).abs() / 255.0);
+
+            let mut contribution = 1.0 - ((max_d - tolerance) / softness).clamp(0.0, 1.0);
+            if protect_luma > 0.0 {
+                let luma_delta = ((luma(r, g, b) - target_luma).abs() / 255.0).clamp(0.0, 1.0);
+                let protection = (luma_delta * protect_luma).clamp(0.0, 1.0);
+                contribution *= 1.0 - protection;
+            }
+
+            let removal = (contribution * strength).clamp(0.0, 1.0);
+            if removal <= 0.0 {
+                continue;
+            }
+
+            let new_a_f = ((orig_a as f32 / 255.0) * (1.0 - removal))
+                .clamp(alpha_floor, alpha_ceiling);
+            let kept = if orig_a == 0 {
+                0.0
+            } else {
+                (new_a_f / (orig_a as f32 / 255.0)).clamp(0.0, 1.0)
+            };
+            let new_a = (new_a_f * 255.0).round().clamp(0.0, 255.0) as u8;
+            row[pi + 3] = new_a;
+
+            if new_a == 0 || kept < 0.001 {
+                row[pi] = 0;
+                row[pi + 1] = 0;
+                row[pi + 2] = 0;
+                continue;
+            }
+
+            let recover = |orig: f32, target_ch: f32| -> f32 {
+                ((orig - target_ch * removal) / kept).clamp(0.0, 255.0)
+            };
+            let mut nr = recover(r, target[0]);
+            let mut ng = recover(g, target[1]);
+            let mut nb = recover(b, target[2]);
+
+            if spill > 0.0 {
+                let spill_amount = spill * contribution * (1.0 - kept);
+                nr = suppress_channel_spill(nr, target[0], spill_amount);
+                ng = suppress_channel_spill(ng, target[1], spill_amount);
+                nb = suppress_channel_spill(nb, target[2], spill_amount);
+            }
+
+            row[pi] = nr.round() as u8;
+            row[pi + 1] = ng.round() as u8;
+            row[pi + 2] = nb.round() as u8;
+        }
+    });
+
+    RgbaImage::from_raw(w as u32, h as u32, dst).unwrap()
+}
+
+#[inline]
+fn luma(r: f32, g: f32, b: f32) -> f32 {
+    r * 0.2126 + g * 0.7152 + b * 0.0722
+}
+
+#[inline]
+fn suppress_channel_spill(value: f32, target: f32, amount: f32) -> f32 {
+    if target <= 0.0 {
+        value
+    } else {
+        value * (1.0 - amount.clamp(0.0, 1.0))
+    }
+}
 
 /// Smart Contiguous Eraser — three-step color removal:
 ///
@@ -284,4 +431,55 @@ fn color_dist_sq(pixel: &Rgba<u8>, seed_rgb: &[f32; 3]) -> f32 {
     let dg = pixel[1] as f32 - seed_rgb[1];
     let db = pixel[2] as f32 - seed_rgb[2];
     dr * dr + dg * dg + db * db
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{GrayImage, Luma};
+
+    #[test]
+    fn color_to_alpha_makes_exact_target_transparent() {
+        let img = RgbaImage::from_pixel(1, 1, Rgba([255, 0, 0, 255]));
+        let out = color_to_alpha_core(&img, &ColorToAlphaSettings::default(), None);
+        assert_eq!(out.get_pixel(0, 0).0, [0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn color_to_alpha_keeps_distant_color_unchanged() {
+        let img = RgbaImage::from_pixel(1, 1, Rgba([0, 180, 40, 255]));
+        let out = color_to_alpha_core(&img, &ColorToAlphaSettings::default(), None);
+        assert_eq!(out.get_pixel(0, 0).0, [0, 180, 40, 255]);
+    }
+
+    #[test]
+    fn color_to_alpha_partially_removes_mixed_target_color() {
+        let img = RgbaImage::from_pixel(1, 1, Rgba([220, 35, 0, 255]));
+        let out = color_to_alpha_core(&img, &ColorToAlphaSettings::default(), None);
+        let p = out.get_pixel(0, 0);
+        assert!(p[3] > 0 && p[3] < 255);
+        assert!(p[1] >= 35);
+    }
+
+    #[test]
+    fn color_to_alpha_respects_selection_mask() {
+        let mut img = RgbaImage::from_pixel(2, 1, Rgba([255, 0, 0, 255]));
+        *img.get_pixel_mut(1, 0) = Rgba([255, 0, 0, 255]);
+        let mut mask = GrayImage::from_pixel(2, 1, Luma([0]));
+        *mask.get_pixel_mut(0, 0) = Luma([255]);
+
+        let out = color_to_alpha_core(&img, &ColorToAlphaSettings::default(), Some(&mask));
+        assert_eq!(out.get_pixel(0, 0).0, [0, 0, 0, 0]);
+        assert_eq!(out.get_pixel(1, 0).0, [255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn color_to_alpha_preserves_existing_alpha_ratio() {
+        let img = RgbaImage::from_pixel(1, 1, Rgba([255, 0, 0, 128]));
+        let mut settings = ColorToAlphaSettings::default();
+        settings.strength = 0.5;
+        let out = color_to_alpha_core(&img, &settings, None);
+        let p = out.get_pixel(0, 0);
+        assert!(p[3] > 0 && p[3] < 128);
+    }
 }

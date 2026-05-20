@@ -261,6 +261,226 @@ impl ColorFilterDialog {
     }
 }
 
+effect_dialog_base!(ColorToAlphaDialog {
+    target_color: [f32; 3] = [1.0, 0.0, 0.0],
+    tolerance: f32 = 18.0,
+    softness: f32 = 35.0,
+    strength: f32 = 1.0,
+    spill_suppression: f32 = 0.35,
+    alpha_floor: f32 = 0.0,
+    alpha_ceiling: f32 = 1.0,
+    protect_luminance: f32 = 0.15,
+    sample_x: u32 = 0,
+    sample_y: u32 = 0,
+    first_open: bool = true
+});
+
+impl ColorToAlphaDialog {
+    pub fn new_with_target(state: &CanvasState, target: Color32) -> Self {
+        let mut dlg = Self::new(state);
+        dlg.target_color = [
+            target.r() as f32 / 255.0,
+            target.g() as f32 / 255.0,
+            target.b() as f32 / 255.0,
+        ];
+        dlg
+    }
+
+    pub fn settings(&self) -> crate::ops::color_removal::ColorToAlphaSettings {
+        crate::ops::color_removal::ColorToAlphaSettings {
+            target: [
+                (self.target_color[0] * 255.0).round().clamp(0.0, 255.0) as u8,
+                (self.target_color[1] * 255.0).round().clamp(0.0, 255.0) as u8,
+                (self.target_color[2] * 255.0).round().clamp(0.0, 255.0) as u8,
+            ],
+            tolerance: self.tolerance,
+            softness: self.softness,
+            strength: self.strength,
+            spill_suppression: self.spill_suppression,
+            alpha_floor: self.alpha_floor,
+            alpha_ceiling: self.alpha_ceiling,
+            protect_luminance: self.protect_luminance,
+        }
+    }
+
+    fn set_preset(&mut self, color: [f32; 3]) {
+        self.target_color = color;
+        self.tolerance = 18.0;
+        self.softness = 35.0;
+        self.strength = 1.0;
+        self.spill_suppression = 0.35;
+        self.alpha_floor = 0.0;
+        self.alpha_ceiling = 1.0;
+        self.protect_luminance = 0.15;
+    }
+
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        icon_texture: Option<&egui::TextureHandle>,
+    ) -> DialogResult<crate::ops::color_removal::ColorToAlphaSettings> {
+        let mut result = DialogResult::Open;
+        let colors = DialogColors::from_ctx(ctx);
+
+        egui::Window::new("dialog_color_to_alpha")
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(false)
+            .default_pos(egui::pos2(ctx.content_rect().center().x - 200.0, 60.0))
+            .show(ctx, |ui| {
+                ui.set_min_width(420.0);
+                let close_clicked = if icon_texture.is_some() {
+                    paint_dialog_header_with_texture(
+                        ui,
+                        &colors,
+                        icon_texture,
+                        &t!("dialog.color_to_alpha"),
+                    )
+                } else {
+                    paint_dialog_header(
+                        ui,
+                        &colors,
+                        crate::assets::Icon::ColorRemover.emoji(),
+                        &t!("dialog.color_to_alpha"),
+                    )
+                };
+                if close_clicked {
+                    result = DialogResult::Cancel;
+                }
+                ui.add_space(4.0);
+                section_label(ui, &colors, "TARGET COLOR");
+
+                let mut changed = false;
+                egui::Grid::new("color_to_alpha_target")
+                    .num_columns(2)
+                    .spacing([8.0, 6.0])
+                    .show(ui, |ui| {
+                        ui.label("Color");
+                        if ui.color_edit_button_rgb(&mut self.target_color).changed() {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Sample");
+                        ui.horizontal(|ui| {
+                            let max_x = self
+                                .original_flat
+                                .as_ref()
+                                .map_or(0, |img| img.width().saturating_sub(1));
+                            let max_y = self
+                                .original_flat
+                                .as_ref()
+                                .map_or(0, |img| img.height().saturating_sub(1));
+                            ui.add(egui::DragValue::new(&mut self.sample_x).range(0..=max_x));
+                            ui.label("x");
+                            ui.add(egui::DragValue::new(&mut self.sample_y).range(0..=max_y));
+                            if ui.small_button("Pick").clicked()
+                                && let Some(flat) = &self.original_flat
+                            {
+                                let x = self.sample_x.min(flat.width().saturating_sub(1));
+                                let y = self.sample_y.min(flat.height().saturating_sub(1));
+                                let p = flat.get_pixel(x, y);
+                                self.target_color = [
+                                    p[0] as f32 / 255.0,
+                                    p[1] as f32 / 255.0,
+                                    p[2] as f32 / 255.0,
+                                ];
+                                changed = true;
+                            }
+                        });
+                        ui.end_row();
+
+                        ui.label("Reset");
+                        if ui.small_button("\u{21BA}").clicked() {
+                            self.set_preset([1.0, 0.0, 0.0]);
+                            changed = true;
+                        }
+                        ui.end_row();
+                    });
+
+                ui.add_space(4.0);
+                section_label(ui, &colors, "REMOVAL SETTINGS");
+                egui::Grid::new("color_to_alpha_params")
+                    .num_columns(2)
+                    .spacing([8.0, 6.0])
+                    .show(ui, |ui| {
+                        ui.label("Tolerance");
+                        if dialog_slider(ui, &mut self.tolerance, 0.0..=128.0, 1.0, "", 0) {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Softness");
+                        if dialog_slider(ui, &mut self.softness, 0.0..=255.0, 1.0, "", 0) {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Strength");
+                        if dialog_slider(ui, &mut self.strength, 0.0..=1.0, 0.01, "", 2) {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Spill Suppression");
+                        if dialog_slider(
+                            ui,
+                            &mut self.spill_suppression,
+                            0.0..=1.0,
+                            0.01,
+                            "",
+                            2,
+                        ) {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Alpha Floor");
+                        if dialog_slider(ui, &mut self.alpha_floor, 0.0..=1.0, 0.01, "", 2) {
+                            self.alpha_ceiling = self.alpha_ceiling.max(self.alpha_floor);
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Alpha Ceiling");
+                        if dialog_slider(ui, &mut self.alpha_ceiling, 0.0..=1.0, 0.01, "", 2) {
+                            self.alpha_floor = self.alpha_floor.min(self.alpha_ceiling);
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Protect Luminance");
+                        if dialog_slider(
+                            ui,
+                            &mut self.protect_luminance,
+                            0.0..=1.0,
+                            0.01,
+                            "",
+                            2,
+                        ) {
+                            changed = true;
+                        }
+                        ui.end_row();
+                    });
+
+                accent_separator(ui, &colors);
+                let manual = preview_controls(ui, &colors, &mut self.live_preview);
+                if (changed && self.live_preview) || manual {
+                    result = DialogResult::Changed;
+                }
+
+                let (ok, cancel) = dialog_footer(ui, &colors);
+                if ok {
+                    result = DialogResult::Ok(self.settings());
+                }
+                if cancel {
+                    result = DialogResult::Cancel;
+                }
+            });
+        result
+    }
+}
+
 // ============================================================================
 // RENDER — CONTOURS DIALOG
 // ============================================================================

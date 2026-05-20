@@ -1,6 +1,6 @@
 impl PaintFEApp {
     fn process_glitch_and_artistic_dialog(&mut self, ctx: &egui::Context, dialog: &mut ActiveDialog) -> bool {
-        let matched = matches!(dialog, ActiveDialog::PixelDrag(_) | ActiveDialog::RgbDisplace(_) | ActiveDialog::Ink(_) | ActiveDialog::OilPainting(_) | ActiveDialog::ColorFilter(_) | ActiveDialog::Contours(_));
+        let matched = matches!(dialog, ActiveDialog::PixelDrag(_) | ActiveDialog::RgbDisplace(_) | ActiveDialog::Ink(_) | ActiveDialog::OilPainting(_) | ActiveDialog::ColorFilter(_) | ActiveDialog::ColorToAlpha(_) | ActiveDialog::Contours(_));
         if !matched {
             return false;
         }
@@ -544,6 +544,125 @@ impl PaintFEApp {
                                 move |img| {
                                     crate::ops::effects::color_filter_core(
                                         img, fc, intensity, mode, None,
+                                    )
+                                },
+                            );
+                        }
+                    }
+                }
+            },
+
+            ActiveDialog::ColorToAlpha(dlg) => match dlg.show(
+                ctx,
+                self.assets.icon_texture(crate::assets::Icon::ColorRemover),
+            ) {
+                DialogResult::Changed => {
+                    dlg.first_open = false;
+                    let idx = dlg.layer_idx;
+                    if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
+                    {
+                        let settings = dlg.settings();
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|project| project.canvas_state.selection_mask.clone());
+                        self.spawn_preview_job(
+                            ctx.input(|i| i.time),
+                            "Color to Alpha".to_string(),
+                            idx,
+                            original.clone(),
+                            flat.clone(),
+                            move |img| {
+                                crate::ops::color_removal::color_to_alpha_core(
+                                    img,
+                                    &settings,
+                                    selection_mask.as_ref(),
+                                )
+                            },
+                        );
+                    }
+                }
+                DialogResult::Ok(settings) => {
+                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                    let idx = dlg.layer_idx;
+                    let selection_mask = self
+                        .active_project()
+                        .and_then(|project| project.canvas_state.selection_mask.clone());
+                    if let Some(flat) = &dlg.original_flat
+                        && let Some(project) = self.active_project_mut()
+                    {
+                        Self::apply_fullres_effect(
+                            &mut project.canvas_state,
+                            idx,
+                            flat,
+                            |img| {
+                                crate::ops::color_removal::color_to_alpha_core(
+                                    img,
+                                    &settings,
+                                    selection_mask.as_ref(),
+                                )
+                            },
+                        );
+                    }
+                    self.active_dialog = ActiveDialog::None;
+                    if let Some(project) = self.active_project_mut() {
+                        let idx = dlg.layer_idx;
+                        if let Some(original) = &dlg.original_pixels
+                            && idx < project.canvas_state.layers.len()
+                        {
+                            let adjusted = project.canvas_state.layers[idx].pixels.clone();
+                            project.canvas_state.layers[idx].pixels = original.clone();
+                            let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
+                                "Color to Alpha".to_string(),
+                                &project.canvas_state,
+                                idx,
+                            );
+                            project.canvas_state.layers[idx].pixels = adjusted;
+                            cmd.set_after(&project.canvas_state);
+                            project.history.push(Box::new(cmd));
+                        }
+                        project.mark_dirty();
+                    }
+                    return true;
+                }
+                DialogResult::Cancel => {
+                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                    self.filter_cancel
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                    let idx = dlg.layer_idx;
+                    if let Some(original) = &dlg.original_pixels
+                        && let Some(project) = self.active_project_mut()
+                    {
+                        if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
+                            layer.pixels = original.clone();
+                        }
+                        project.canvas_state.mark_dirty(None);
+                    }
+                    self.active_dialog = ActiveDialog::None;
+                    return true;
+                }
+                _ => {
+                    dlg.poll_flat();
+                    if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
+                        dlg.first_open = false;
+                        let idx = dlg.layer_idx;
+                        if let (Some(original), Some(flat)) =
+                            (&dlg.original_pixels, &dlg.original_flat)
+                        {
+                            let settings = dlg.settings();
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|project| project.canvas_state.selection_mask.clone());
+                            self.spawn_preview_job(
+                                ctx.input(|i| i.time),
+                                "Color to Alpha".to_string(),
+                                idx,
+                                original.clone(),
+                                flat.clone(),
+                                move |img| {
+                                    crate::ops::color_removal::color_to_alpha_core(
+                                        img,
+                                        &settings,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );

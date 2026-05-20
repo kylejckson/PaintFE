@@ -1439,6 +1439,10 @@ impl Assets {
         response.on_hover_text(icon.tooltip())
     }
 
+    pub fn icon_texture(&self, icon: Icon) -> Option<&TextureHandle> {
+        self.textures.get(&icon)
+    }
+
     /// Create a selectable icon (for tool selection) with custom size
     pub fn icon_selectable_sized(
         &self,
