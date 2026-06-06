@@ -100,9 +100,9 @@ Setup: Edit > Preferences > AI. Point it at your `onnxruntime.dll` / `libonnxrun
 
 ## File Formats
 
-**Read:** PNG, JPEG, WebP, BMP, TIFF, TGA, GIF (animated), APNG (animated), `.PFE`, CR2/CR3/NEF/ARW/DNG/ORF/RW2/SRW/PEF/RAF (RAW via `rawloader`)
+**Read:** PNG, JPEG, WebP (lossy and lossles, static only), BMP, TIFF, TGA, GIF (animated), APNG (animated), PaintFE project (`.PFE`), CR2/CR3/NEF/ARW/DNG/ORF/RW2/SRW/PEF/RAF (RAW via `rawloader`)
 
-**Write:** PNG, JPEG, WebP, BMP, TIFF, TGA, ICO, GIF (static + animated), APNG (animated), `.PFE`
+**Write:** PNG, JPEG, WebP (static lossy only), BMP, TIFF, TGA, ICO, GIF (static + animated), APNG (animated), PaintFE project (`.PFE`)
 
 Animated export: each visible layer = one frame. FPS, loop count, and GIF palette are configurable in the export dialog.
 
