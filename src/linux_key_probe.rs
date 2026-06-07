@@ -106,7 +106,7 @@ mod imp {
         // SAFETY: display is valid for the lifetime of the probe state, and
         // keys points to a writable 32-byte buffer as required by XQueryKeymap.
         unsafe {
-            (state.xlib.XQueryKeymap)(state.display, keys.as_mut_ptr());
+            (state.xlib.XQueryKeymap)(state.display, keys.as_mut_ptr() as *mut _);
         }
 
         let ctrl_down = key_down(&keys, state.ctrl_l) || key_down(&keys, state.ctrl_r);
