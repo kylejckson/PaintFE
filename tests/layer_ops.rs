@@ -10,8 +10,8 @@ mod common;
 #[allow(unused_imports)]
 use common::*;
 use image::{Rgba, RgbaImage};
-use paintfe::canvas::{CanvasState, Layer, TiledImage};
-use paintfe::components::history::HistoryManager;
+use paintfe::canvas::{CanvasState, Layer, LayerFolder, TiledImage};
+use paintfe::components::history::{HistoryManager, SnapshotCommand};
 use paintfe::ops::canvas_ops;
 use paintfe::ops::transform::flatten_image;
 
@@ -113,6 +113,61 @@ fn hidden_layer_not_composited() {
     let comp = state.composite();
     // Should be white (background only) since red layer is hidden
     assert_eq!(*comp.get_pixel(16, 16), Rgba([255, 255, 255, 255]));
+}
+
+#[test]
+fn hidden_folder_hides_member_layers() {
+    let mut state = CanvasState::new(32, 32);
+    state.layer_folders.push(LayerFolder {
+        id: 1,
+        name: "Group".into(),
+        visible: false,
+        collapsed: false,
+        insert_above_layer: None,
+        color_index: None,
+    });
+
+    let mut layer = Layer::new("Red".into(), 32, 32, Rgba([0, 0, 0, 0]));
+    layer.pixels =
+        TiledImage::from_rgba_image(&RgbaImage::from_pixel(32, 32, Rgba([255, 0, 0, 255])));
+    layer.folder_id = Some(1);
+    state.layers.push(layer);
+
+    let comp = state.composite();
+    assert_eq!(*comp.get_pixel(16, 16), Rgba([255, 255, 255, 255]));
+    assert!(!state.layer_effectively_visible(1));
+}
+
+#[test]
+fn folder_snapshot_undo_redo_restores_membership() {
+    let mut state = CanvasState::new(16, 16);
+    state
+        .layers
+        .push(Layer::new("Paint".into(), 16, 16, Rgba([0, 0, 0, 0])));
+    let mut hist = history();
+
+    let mut snap = SnapshotCommand::new("Add Folder".into(), &state);
+    state.layer_folders.push(LayerFolder {
+        id: 1,
+        name: "Group".into(),
+        visible: true,
+        collapsed: true,
+        insert_above_layer: None,
+        color_index: None,
+    });
+    state.next_layer_folder_id = 2;
+    state.layers[1].folder_id = Some(1);
+    snap.set_after(&state);
+    hist.push(Box::new(snap));
+
+    assert_eq!(state.layers[1].folder_id, Some(1));
+    hist.undo(&mut state);
+    assert!(state.layer_folders.is_empty());
+    assert_eq!(state.layers[1].folder_id, None);
+    hist.redo(&mut state);
+    assert_eq!(state.layer_folders.len(), 1);
+    assert_eq!(state.layers[1].folder_id, Some(1));
+    assert!(state.layer_folders[0].collapsed);
 }
 
 #[test]

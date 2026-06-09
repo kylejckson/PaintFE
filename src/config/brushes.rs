@@ -38,6 +38,8 @@ pub struct Assets {
     custom_shape_textures: HashMap<String, TextureHandle>,
     /// Original (light-mode) RGBA pixel data for each icon
     icon_pixels: HashMap<Icon, Vec<u8>>,
+    /// Per-mode icon textures for places that need local contrast independent of app theme.
+    inline_icon_textures: HashMap<(Icon, bool), TextureHandle>,
     /// Original (light-mode) RGBA pixel data for each shape icon
     shape_pixels: HashMap<ShapeKind, Vec<u8>>,
     /// Dimensions [width, height] for each icon
@@ -1579,6 +1581,53 @@ impl Assets {
                     egui::RichText::new(icon.emoji())
                         .size(rect.height() * 0.7)
                         .color(tint),
+                )
+                .sense(Sense::click()),
+            )
+        }
+    }
+
+    pub fn icon_in_rect_for_dark(
+        &mut self,
+        ui: &mut egui::Ui,
+        icon: Icon,
+        rect: egui::Rect,
+        dark: bool,
+    ) -> egui::Response {
+        if let (Some(original_pixels), Some(size)) =
+            (self.icon_pixels.get(&icon), self.icon_sizes.get(&icon))
+        {
+            let texture = self
+                .inline_icon_textures
+                .entry((icon, dark))
+                .or_insert_with(|| {
+                    let display_pixels = if dark {
+                        Self::invert_rgb(original_pixels)
+                    } else {
+                        original_pixels.clone()
+                    };
+                    let color_image = ColorImage::from_rgba_unmultiplied(*size, &display_pixels);
+                    ui.ctx().load_texture(
+                        format!("inline_icon_{:?}_{dark}", icon),
+                        color_image,
+                        TextureOptions::LINEAR,
+                    )
+                });
+            let sized_texture = egui::load::SizedTexture::from_handle(texture);
+            let img = egui::Image::from_texture(sized_texture).fit_to_exact_size(rect.size());
+            ui.put(rect, img.sense(Sense::click()))
+        } else {
+            let color = if dark {
+                Color32::WHITE
+            } else {
+                Color32::from_gray(0)
+            };
+            ui.put(
+                rect,
+                egui::Label::new(
+                    egui::RichText::new(icon.emoji())
+                        .size(rect.height() * 0.7)
+                        .color(color),
                 )
                 .sense(Sense::click()),
             )

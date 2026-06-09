@@ -1,4 +1,32 @@
 impl Canvas {
+    fn valid_readback_for_canvas(
+        pixels_len: usize,
+        rx: u32,
+        ry: u32,
+        rw: u32,
+        rh: u32,
+        state: &CanvasState,
+    ) -> bool {
+        if rw == 0
+            || rh == 0
+            || rx.saturating_add(rw) > state.width
+            || ry.saturating_add(rh) > state.height
+        {
+            return false;
+        }
+        pixels_len == (rw as usize).saturating_mul(rh as usize).saturating_mul(4)
+    }
+
+    fn reject_stale_readback(ui: &egui::Ui, state: &mut CanvasState) {
+        state.composite_cpu_buffer.clear();
+        state.composite_cache = None;
+        state.dirty_rect = Some(Rect::from_min_max(
+            Pos2::new(0.0, 0.0),
+            Pos2::new(state.width as f32, state.height as f32),
+        ));
+        ui.ctx().request_repaint();
+    }
+
     pub fn new(preferred_gpu: &str) -> Self {
         let gpu_renderer = crate::gpu::GpuRenderer::new(preferred_gpu);
         Self {
@@ -195,6 +223,14 @@ impl Canvas {
             let gpu = &mut self.gpu_renderer;
             let pixels_dirty = state.dirty_rect.is_some() || state.composite_cache.is_none();
             let defer_live_resize_composite = live_window_resize && state.composite_cache.is_some();
+            let has_visible_adjustment = state
+                .layers
+                .iter()
+                .enumerate()
+                .any(|(idx, l)| {
+                    state.layer_effectively_visible(idx)
+                        && matches!(l.content, LayerContent::Adjustment(_))
+                });
 
             // Plan A: filter_changed (zoom crosses 2.0├ù threshold) doesn't
             // require GPU recomposite ÔÇö the pixels haven't changed, only the
@@ -202,14 +238,51 @@ impl Canvas {
             let needs_reupload_only =
                 filter_changed && !pixels_dirty && !state.composite_cpu_buffer.is_empty();
 
-            if pixels_dirty && !defer_live_resize_composite {
+            if pixels_dirty && has_visible_adjustment {
+                gpu.async_readback.cancel_pending();
+                let composite = state.composite();
+                let mut pixels = Vec::with_capacity((state.width * state.height) as usize);
+                for p in composite.pixels() {
+                    let a = p[3];
+                    if a == 255 || a == 0 {
+                        pixels.push(Color32::from_rgba_premultiplied(p[0], p[1], p[2], a));
+                    } else {
+                        let pm_r = ((p[0] as u16 * a as u16 + 127) / 255) as u8;
+                        let pm_g = ((p[1] as u16 * a as u16 + 127) / 255) as u8;
+                        let pm_b = ((p[2] as u16 * a as u16 + 127) / 255) as u8;
+                        pixels.push(Color32::from_rgba_premultiplied(pm_r, pm_g, pm_b, a));
+                    }
+                }
+                state.composite_cpu_buffer = pixels.clone();
+                let display_pixels = if state.cmyk_preview {
+                    apply_cmyk_soft_proof(&pixels)
+                } else {
+                    pixels
+                };
+                let color_image = ColorImage {
+                    size: [state.width as usize, state.height as usize],
+                    source_size: egui::Vec2::new(state.width as f32, state.height as f32),
+                    pixels: display_pixels,
+                };
+                let image_data = ImageData::Color(Arc::new(color_image));
+                if let Some(ref mut tex) = state.composite_cache {
+                    tex.set(image_data, texture_options);
+                } else {
+                    state.composite_cache = Some(ui.ctx().load_texture(
+                        "canvas_composite",
+                        image_data,
+                        texture_options,
+                    ));
+                }
+                state.dirty_rect = None;
+            } else if pixels_dirty && !defer_live_resize_composite {
                 // Sync each real layer to the GPU ÔÇö per-layer generation
                 // tracking ensures only actually-modified layers are
                 // re-uploaded, and dirty-rect partial uploads avoid copying
                 // the entire image when only a small brush stroke changed.
                 let dirty_rect_opt = state.dirty_rect;
                 for (idx, layer) in state.layers.iter().enumerate() {
-                    if !layer.visible {
+                    if !state.layer_effectively_visible(idx) {
                         continue;
                     }
 
@@ -292,7 +365,12 @@ impl Canvas {
                 let mut layer_info: Vec<(usize, f32, bool, u8)> =
                     Vec::with_capacity(state.layers.len());
                 for (i, l) in state.layers.iter().enumerate() {
-                    layer_info.push((i, l.opacity, l.visible, l.blend_mode.to_u8()));
+                    layer_info.push((
+                        i,
+                        l.opacity,
+                        state.layer_effectively_visible(i),
+                        l.blend_mode.to_u8(),
+                    ));
                 }
 
                 // B1: Async double-buffered readback.  GPU composites the full
@@ -319,79 +397,21 @@ impl Canvas {
                 );
 
                 if let Some((pixels, rx, ry, rw, rh, is_full)) = result {
-                    // Plan D: bytemuck zero-copy cast from &[u8] to &[Color32]
-                    let src: &[Color32] = bytemuck::cast_slice(&pixels);
-                    let cmyk = state.cmyk_preview;
-
-                    if is_full {
-                        // Full readback ÔÇö replace entire CPU buffer.
-                        // Create ColorImage directly from src to avoid a
-                        // redundant 33MB clone at 4K.
-                        let display_pixels = if cmyk {
-                            apply_cmyk_soft_proof(src)
-                        } else {
-                            src.to_vec()
-                        };
-                        let color_image = ColorImage {
-                            size: [state.width as usize, state.height as usize],
-                            source_size: egui::Vec2::new(state.width as f32, state.height as f32),
-                            pixels: display_pixels,
-                        };
-                        // Update persistent CPU buffer from the same source
-                        // (un-proofed ÔÇö true pixel values)
-                        state.composite_cpu_buffer.clear();
-                        state.composite_cpu_buffer.extend_from_slice(src);
-
-                        let image_data = ImageData::Color(Arc::new(color_image));
-                        if let Some(ref mut tex) = state.composite_cache {
-                            tex.set(image_data, texture_options);
-                        } else {
-                            state.composite_cache = Some(ui.ctx().load_texture(
-                                "canvas_composite",
-                                image_data,
-                                texture_options,
-                            ));
-                        }
+                    if !Self::valid_readback_for_canvas(pixels.len(), rx, ry, rw, rh, state) {
+                        Self::reject_stale_readback(ui, state);
                     } else {
-                        // Partial readback ÔÇö patch dirty region into persistent CPU buffer
-                        let canvas_w = state.width as usize;
-                        let region_w = rw as usize;
-                        for row in 0..rh as usize {
-                            let dst_y = ry as usize + row;
-                            let dst_start = dst_y * canvas_w + rx as usize;
-                            let src_start = row * region_w;
-                            state.composite_cpu_buffer[dst_start..dst_start + region_w]
-                                .copy_from_slice(&src[src_start..src_start + region_w]);
-                        }
+                        // Plan D: bytemuck zero-copy cast from &[u8] to &[Color32]
+                        let src: &[Color32] = bytemuck::cast_slice(&pixels);
+                        let cmyk = state.cmyk_preview;
 
-                        // B2: Partial upload ÔÇö only send the dirty region to egui.
-                        // This avoids cloning the entire 33MB CPU buffer at 4K.
-                        // A brush stroke (e.g. 40├ù40px) uploads ~6KB instead of ~33MB.
-                        let region_pixels = if cmyk {
-                            apply_cmyk_soft_proof(src)
-                        } else {
-                            src.to_vec()
-                        };
-                        let region_image = ColorImage {
-                            size: [rw as usize, rh as usize],
-                            source_size: egui::Vec2::new(rw as f32, rh as f32),
-                            pixels: region_pixels,
-                        };
-                        let region_data = ImageData::Color(Arc::new(region_image));
-                        if let Some(ref mut tex) = state.composite_cache {
-                            tex.set_partial(
-                                [rx as usize, ry as usize],
-                                region_data,
-                                texture_options,
-                            );
-                        } else {
-                            // No texture yet ÔÇö need full upload. Fall back to
-                            // full buffer (shouldn't happen: partial readback
-                            // requires an existing buffer).
+                        if is_full {
+                            // Full readback ÔÇö replace entire CPU buffer.
+                            // Create ColorImage directly from src to avoid a
+                            // redundant 33MB clone at 4K.
                             let display_pixels = if cmyk {
-                                apply_cmyk_soft_proof(&state.composite_cpu_buffer)
+                                apply_cmyk_soft_proof(src)
                             } else {
-                                state.composite_cpu_buffer.clone()
+                                src.to_vec()
                             };
                             let color_image = ColorImage {
                                 size: [state.width as usize, state.height as usize],
@@ -401,12 +421,77 @@ impl Canvas {
                                 ),
                                 pixels: display_pixels,
                             };
+                            // Update persistent CPU buffer from the same source
+                            // (un-proofed ÔÇö true pixel values)
+                            state.composite_cpu_buffer.clear();
+                            state.composite_cpu_buffer.extend_from_slice(src);
+
                             let image_data = ImageData::Color(Arc::new(color_image));
-                            state.composite_cache = Some(ui.ctx().load_texture(
-                                "canvas_composite",
-                                image_data,
-                                texture_options,
-                            ));
+                            if let Some(ref mut tex) = state.composite_cache {
+                                tex.set(image_data, texture_options);
+                            } else {
+                                state.composite_cache = Some(ui.ctx().load_texture(
+                                    "canvas_composite",
+                                    image_data,
+                                    texture_options,
+                                ));
+                            }
+                        } else {
+                            // Partial readback ÔÇö patch dirty region into persistent CPU buffer
+                            let canvas_w = state.width as usize;
+                            let region_w = rw as usize;
+                            for row in 0..rh as usize {
+                                let dst_y = ry as usize + row;
+                                let dst_start = dst_y * canvas_w + rx as usize;
+                                let src_start = row * region_w;
+                                state.composite_cpu_buffer[dst_start..dst_start + region_w]
+                                    .copy_from_slice(&src[src_start..src_start + region_w]);
+                            }
+
+                            // B2: Partial upload ÔÇö only send the dirty region to egui.
+                            // This avoids cloning the entire 33MB CPU buffer at 4K.
+                            // A brush stroke (e.g. 40├ù40px) uploads ~6KB instead of ~33MB.
+                            let region_pixels = if cmyk {
+                                apply_cmyk_soft_proof(src)
+                            } else {
+                                src.to_vec()
+                            };
+                            let region_image = ColorImage {
+                                size: [rw as usize, rh as usize],
+                                source_size: egui::Vec2::new(rw as f32, rh as f32),
+                                pixels: region_pixels,
+                            };
+                            let region_data = ImageData::Color(Arc::new(region_image));
+                            if let Some(ref mut tex) = state.composite_cache {
+                                tex.set_partial(
+                                    [rx as usize, ry as usize],
+                                    region_data,
+                                    texture_options,
+                                );
+                            } else {
+                                // No texture yet ÔÇö need full upload. Fall back to
+                                // full buffer (shouldn't happen: partial readback
+                                // requires an existing buffer).
+                                let display_pixels = if cmyk {
+                                    apply_cmyk_soft_proof(&state.composite_cpu_buffer)
+                                } else {
+                                    state.composite_cpu_buffer.clone()
+                                };
+                                let color_image = ColorImage {
+                                    size: [state.width as usize, state.height as usize],
+                                    source_size: egui::Vec2::new(
+                                        state.width as f32,
+                                        state.height as f32,
+                                    ),
+                                    pixels: display_pixels,
+                                };
+                                let image_data = ImageData::Color(Arc::new(color_image));
+                                state.composite_cache = Some(ui.ctx().load_texture(
+                                    "canvas_composite",
+                                    image_data,
+                                    texture_options,
+                                ));
+                            }
                         }
                     }
                 } else if gpu.async_readback.read_pending {
@@ -419,52 +504,59 @@ impl Canvas {
                 if let Some((pixels, rx, ry, rw, rh, is_full)) =
                     gpu.async_readback.try_read(&gpu.ctx.device)
                 {
-                    let src: &[Color32] = bytemuck::cast_slice(&pixels);
-                    let cmyk = state.cmyk_preview;
-                    if is_full {
-                        let display_pixels = if cmyk {
-                            apply_cmyk_soft_proof(src)
-                        } else {
-                            src.to_vec()
-                        };
-                        let color_image = ColorImage {
-                            size: [state.width as usize, state.height as usize],
-                            source_size: egui::Vec2::new(state.width as f32, state.height as f32),
-                            pixels: display_pixels,
-                        };
-                        state.composite_cpu_buffer.clear();
-                        state.composite_cpu_buffer.extend_from_slice(src);
-                        let image_data = ImageData::Color(Arc::new(color_image));
-                        if let Some(ref mut tex) = state.composite_cache {
-                            tex.set(image_data, texture_options);
-                        }
+                    if !Self::valid_readback_for_canvas(pixels.len(), rx, ry, rw, rh, state) {
+                        Self::reject_stale_readback(ui, state);
                     } else {
-                        let canvas_w = state.width as usize;
-                        let region_w = rw as usize;
-                        for row in 0..rh as usize {
-                            let dst_y = ry as usize + row;
-                            let dst_start = dst_y * canvas_w + rx as usize;
-                            let src_start = row * region_w;
-                            state.composite_cpu_buffer[dst_start..dst_start + region_w]
-                                .copy_from_slice(&src[src_start..src_start + region_w]);
-                        }
-                        let region_pixels = if cmyk {
-                            apply_cmyk_soft_proof(src)
+                        let src: &[Color32] = bytemuck::cast_slice(&pixels);
+                        let cmyk = state.cmyk_preview;
+                        if is_full {
+                            let display_pixels = if cmyk {
+                                apply_cmyk_soft_proof(src)
+                            } else {
+                                src.to_vec()
+                            };
+                            let color_image = ColorImage {
+                                size: [state.width as usize, state.height as usize],
+                                source_size: egui::Vec2::new(
+                                    state.width as f32,
+                                    state.height as f32,
+                                ),
+                                pixels: display_pixels,
+                            };
+                            state.composite_cpu_buffer.clear();
+                            state.composite_cpu_buffer.extend_from_slice(src);
+                            let image_data = ImageData::Color(Arc::new(color_image));
+                            if let Some(ref mut tex) = state.composite_cache {
+                                tex.set(image_data, texture_options);
+                            }
                         } else {
-                            src.to_vec()
-                        };
-                        let region_image = ColorImage {
-                            size: [rw as usize, rh as usize],
-                            source_size: egui::Vec2::new(rw as f32, rh as f32),
-                            pixels: region_pixels,
-                        };
-                        let region_data = ImageData::Color(Arc::new(region_image));
-                        if let Some(ref mut tex) = state.composite_cache {
-                            tex.set_partial(
-                                [rx as usize, ry as usize],
-                                region_data,
-                                texture_options,
-                            );
+                            let canvas_w = state.width as usize;
+                            let region_w = rw as usize;
+                            for row in 0..rh as usize {
+                                let dst_y = ry as usize + row;
+                                let dst_start = dst_y * canvas_w + rx as usize;
+                                let src_start = row * region_w;
+                                state.composite_cpu_buffer[dst_start..dst_start + region_w]
+                                    .copy_from_slice(&src[src_start..src_start + region_w]);
+                            }
+                            let region_pixels = if cmyk {
+                                apply_cmyk_soft_proof(src)
+                            } else {
+                                src.to_vec()
+                            };
+                            let region_image = ColorImage {
+                                size: [rw as usize, rh as usize],
+                                source_size: egui::Vec2::new(rw as f32, rh as f32),
+                                pixels: region_pixels,
+                            };
+                            let region_data = ImageData::Color(Arc::new(region_image));
+                            if let Some(ref mut tex) = state.composite_cache {
+                                tex.set_partial(
+                                    [rx as usize, ry as usize],
+                                    region_data,
+                                    texture_options,
+                                );
+                            }
                         }
                     }
                 }
@@ -476,58 +568,65 @@ impl Canvas {
                 if let Some((pixels, rx, ry, rw, rh, is_full)) =
                     gpu.async_readback.try_read(&gpu.ctx.device)
                 {
-                    let src: &[Color32] = bytemuck::cast_slice(&pixels);
-                    let cmyk = state.cmyk_preview;
-                    if is_full {
-                        let display_pixels = if cmyk {
-                            apply_cmyk_soft_proof(src)
-                        } else {
-                            src.to_vec()
-                        };
-                        let color_image = ColorImage {
-                            size: [state.width as usize, state.height as usize],
-                            source_size: egui::Vec2::new(state.width as f32, state.height as f32),
-                            pixels: display_pixels,
-                        };
-                        state.composite_cpu_buffer.clear();
-                        state.composite_cpu_buffer.extend_from_slice(src);
-                        let image_data = ImageData::Color(Arc::new(color_image));
-                        if let Some(ref mut tex) = state.composite_cache {
-                            tex.set(image_data, texture_options);
-                        } else {
-                            state.composite_cache = Some(ui.ctx().load_texture(
-                                "canvas_composite",
-                                image_data,
-                                texture_options,
-                            ));
-                        }
+                    if !Self::valid_readback_for_canvas(pixels.len(), rx, ry, rw, rh, state) {
+                        Self::reject_stale_readback(ui, state);
                     } else {
-                        let canvas_w = state.width as usize;
-                        let region_w = rw as usize;
-                        for row in 0..rh as usize {
-                            let dst_y = ry as usize + row;
-                            let dst_start = dst_y * canvas_w + rx as usize;
-                            let src_start = row * region_w;
-                            state.composite_cpu_buffer[dst_start..dst_start + region_w]
-                                .copy_from_slice(&src[src_start..src_start + region_w]);
-                        }
-                        let region_pixels = if cmyk {
-                            apply_cmyk_soft_proof(src)
+                        let src: &[Color32] = bytemuck::cast_slice(&pixels);
+                        let cmyk = state.cmyk_preview;
+                        if is_full {
+                            let display_pixels = if cmyk {
+                                apply_cmyk_soft_proof(src)
+                            } else {
+                                src.to_vec()
+                            };
+                            let color_image = ColorImage {
+                                size: [state.width as usize, state.height as usize],
+                                source_size: egui::Vec2::new(
+                                    state.width as f32,
+                                    state.height as f32,
+                                ),
+                                pixels: display_pixels,
+                            };
+                            state.composite_cpu_buffer.clear();
+                            state.composite_cpu_buffer.extend_from_slice(src);
+                            let image_data = ImageData::Color(Arc::new(color_image));
+                            if let Some(ref mut tex) = state.composite_cache {
+                                tex.set(image_data, texture_options);
+                            } else {
+                                state.composite_cache = Some(ui.ctx().load_texture(
+                                    "canvas_composite",
+                                    image_data,
+                                    texture_options,
+                                ));
+                            }
                         } else {
-                            src.to_vec()
-                        };
-                        let region_image = ColorImage {
-                            size: [rw as usize, rh as usize],
-                            source_size: egui::Vec2::new(rw as f32, rh as f32),
-                            pixels: region_pixels,
-                        };
-                        let region_data = ImageData::Color(Arc::new(region_image));
-                        if let Some(ref mut tex) = state.composite_cache {
-                            tex.set_partial(
-                                [rx as usize, ry as usize],
-                                region_data,
-                                texture_options,
-                            );
+                            let canvas_w = state.width as usize;
+                            let region_w = rw as usize;
+                            for row in 0..rh as usize {
+                                let dst_y = ry as usize + row;
+                                let dst_start = dst_y * canvas_w + rx as usize;
+                                let src_start = row * region_w;
+                                state.composite_cpu_buffer[dst_start..dst_start + region_w]
+                                    .copy_from_slice(&src[src_start..src_start + region_w]);
+                            }
+                            let region_pixels = if cmyk {
+                                apply_cmyk_soft_proof(src)
+                            } else {
+                                src.to_vec()
+                            };
+                            let region_image = ColorImage {
+                                size: [rw as usize, rh as usize],
+                                source_size: egui::Vec2::new(rw as f32, rh as f32),
+                                pixels: region_pixels,
+                            };
+                            let region_data = ImageData::Color(Arc::new(region_image));
+                            if let Some(ref mut tex) = state.composite_cache {
+                                tex.set_partial(
+                                    [rx as usize, ry as usize],
+                                    region_data,
+                                    texture_options,
+                                );
+                            }
                         }
                     }
                 } else {
@@ -1331,11 +1430,9 @@ impl Canvas {
 
             // Clear CPU preview layer so the composite doesn't double-draw.
             if state.preview_layer.is_some() {
-                let tool_using = tools
-                    .as_ref()
-                    .is_some_and(|t| {
-                        t.stroke_tracker.uses_preview_layer || t.should_keep_fill_preview_overlay()
-                    });
+                let tool_using = tools.as_ref().is_some_and(|t| {
+                    t.stroke_tracker.uses_preview_layer || t.should_keep_fill_preview_overlay()
+                });
                 if !tool_using {
                     state.clear_preview_state();
                     state.mark_dirty(None);
@@ -1350,22 +1447,31 @@ impl Canvas {
             overlay.draw(&painter, image_rect, self.zoom, is_dark, accent);
             if state.show_pixel_grid
                 && self.zoom >= 8.0
-                && let Some((x0, y0, x1, y1)) = overlay.transformed_bounds(state.width, state.height)
+                && let Some((x0, y0, x1, y1)) =
+                    overlay.transformed_bounds(state.width, state.height)
             {
                 let rect = Rect::from_min_max(
-                    Pos2::new(image_rect.min.x + x0 as f32 * self.zoom, image_rect.min.y + y0 as f32 * self.zoom),
-                    Pos2::new(image_rect.min.x + x1 as f32 * self.zoom, image_rect.min.y + y1 as f32 * self.zoom),
+                    Pos2::new(
+                        image_rect.min.x + x0 as f32 * self.zoom,
+                        image_rect.min.y + y0 as f32 * self.zoom,
+                    ),
+                    Pos2::new(
+                        image_rect.min.x + x1 as f32 * self.zoom,
+                        image_rect.min.y + y1 as f32 * self.zoom,
+                    ),
                 );
                 let grid_color = debug_settings.pixel_grid_outline_color;
                 let stroke = egui::Stroke::new(1.0, grid_color);
                 let mut x = rect.min.x;
                 while x <= rect.max.x {
-                    painter.line_segment([Pos2::new(x, rect.min.y), Pos2::new(x, rect.max.y)], stroke);
+                    painter
+                        .line_segment([Pos2::new(x, rect.min.y), Pos2::new(x, rect.max.y)], stroke);
                     x += self.zoom;
                 }
                 let mut y = rect.min.y;
                 while y <= rect.max.y {
-                    painter.line_segment([Pos2::new(rect.min.x, y), Pos2::new(rect.max.x, y)], stroke);
+                    painter
+                        .line_segment([Pos2::new(rect.min.x, y), Pos2::new(rect.max.x, y)], stroke);
                     y += self.zoom;
                 }
             }
@@ -1436,11 +1542,9 @@ impl Canvas {
             if state.preview_layer.is_some() {
                 // Only clear if tools aren't using it.
                 // Check if a tool stroke is active ÔÇö if so, leave preview_layer alone.
-                let tool_using_preview = tools
-                    .as_ref()
-                    .is_some_and(|t| {
-                        t.stroke_tracker.uses_preview_layer || t.should_keep_fill_preview_overlay()
-                    });
+                let tool_using_preview = tools.as_ref().is_some_and(|t| {
+                    t.stroke_tracker.uses_preview_layer || t.should_keep_fill_preview_overlay()
+                });
                 if !tool_using_preview {
                     state.clear_preview_state();
                 }
@@ -1484,86 +1588,86 @@ impl Canvas {
         });
 
         // Tool info data (for bottom-left info overlay).
-        let tool_info_data: Option<String> = tools.as_ref().and_then(|t| {
-            match t.active_tool {
-                crate::components::tools::Tool::Line => {
-                    let lt = &t.line_state.line_tool;
-                    if lt.stage == crate::components::tools::LineStage::Dragging
-                        || lt.stage == crate::components::tools::LineStage::Editing
-                    {
-                        let p0 = lt.control_points[0];
-                        let p3 = lt.control_points[3];
-                        let dx = p3.x - p0.x;
-                        let dy = p3.y - p0.y;
-                        let length = (dx * dx + dy * dy).sqrt();
-                        Some(format!(
-                            "Line: {:.1}px | Pos: ({:.0}, {:.0}) \u{2192} ({:.0}, {:.0})",
-                            length, p0.x, p0.y, p3.x, p3.y
-                        ))
-                    } else {
-                        None
-                    }
+        let tool_info_data: Option<String> = tools.as_ref().and_then(|t| match t.active_tool {
+            crate::components::tools::Tool::Line => {
+                let lt = &t.line_state.line_tool;
+                if lt.stage == crate::components::tools::LineStage::Dragging
+                    || lt.stage == crate::components::tools::LineStage::Editing
+                {
+                    let p0 = lt.control_points[0];
+                    let p3 = lt.control_points[3];
+                    let dx = p3.x - p0.x;
+                    let dy = p3.y - p0.y;
+                    let length = (dx * dx + dy * dy).sqrt();
+                    Some(format!(
+                        "Line: {:.1}px | Pos: ({:.0}, {:.0}) \u{2192} ({:.0}, {:.0})",
+                        length, p0.x, p0.y, p3.x, p3.y
+                    ))
+                } else {
+                    None
                 }
-                crate::components::tools::Tool::RectangleSelect
-                | crate::components::tools::Tool::EllipseSelect => {
-                    if t.selection_state.dragging {
-                        if let (Some(s), Some(e)) =
-                            (t.selection_state.drag_start, t.selection_state.drag_end)
-                        {
-                            let w = (e.x - s.x).abs();
-                            let h = (e.y - s.y).abs();
-                            let cx = (s.x + e.x) / 2.0;
-                            let cy = (s.y + e.y) / 2.0;
-                            let label = if t.active_tool
-                                == crate::components::tools::Tool::RectangleSelect
-                            {
+            }
+            crate::components::tools::Tool::RectangleSelect
+            | crate::components::tools::Tool::EllipseSelect => {
+                if t.selection_state.dragging {
+                    if let (Some(s), Some(e)) =
+                        (t.selection_state.drag_start, t.selection_state.drag_end)
+                    {
+                        let w = (e.x - s.x).abs();
+                        let h = (e.y - s.y).abs();
+                        let cx = (s.x + e.x) / 2.0;
+                        let cy = (s.y + e.y) / 2.0;
+                        let label =
+                            if t.active_tool == crate::components::tools::Tool::RectangleSelect {
                                 "Rect"
                             } else {
                                 "Ellipse"
                             };
-                            Some(format!(
-                                "{}: {:.0}x{:.0} | Center: ({:.0}, {:.0})",
-                                label, w, h, cx, cy
-                            ))
-                        } else {
-                            None
-                        }
+                        Some(format!(
+                            "{}: {:.0}x{:.0} | Center: ({:.0}, {:.0})",
+                            label, w, h, cx, cy
+                        ))
                     } else {
                         None
                     }
+                } else {
+                    None
                 }
-                crate::components::tools::Tool::Shapes => {
-                    let ss = &t.shapes_state;
-                    if ss.is_drawing {
-                        if let (Some(start), Some(end)) = (ss.draw_start, ss.draw_end) {
-                            let w = (end[0] - start[0]).abs();
-                            let h = (end[1] - start[1]).abs();
-                            let cx = (start[0] + end[0]) / 2.0;
-                            let cy = (start[1] + end[1]) / 2.0;
-                            Some(format!(
-                                "Shape: {:.0}x{:.0} | Center: ({:.0}, {:.0})",
-                                w, h, cx, cy
-                            ))
-                        } else {
-                            None
-                        }
-                    } else if let Some(ref placed) = ss.placed {
-                        let w = placed.hw * 2.0;
-                        let h = placed.hh * 2.0;
-                        let mut s = format!(
-                            "Shape: {:.0}x{:.0} | Center: ({:.0}, {:.0})",
-                            w, h, placed.cx, placed.cy
-                        );
-                        if placed.rotation != 0.0 {
-                            s.push_str(&format!(" | Rot: {:.1}\u{b0}", placed.rotation.to_degrees()));
-                        }
-                        Some(s)
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
             }
+            crate::components::tools::Tool::Shapes => {
+                let ss = &t.shapes_state;
+                if ss.is_drawing {
+                    if let (Some(start), Some(end)) = (ss.draw_start, ss.draw_end) {
+                        let w = (end[0] - start[0]).abs();
+                        let h = (end[1] - start[1]).abs();
+                        let cx = (start[0] + end[0]) / 2.0;
+                        let cy = (start[1] + end[1]) / 2.0;
+                        Some(format!(
+                            "Shape: {:.0}x{:.0} | Center: ({:.0}, {:.0})",
+                            w, h, cx, cy
+                        ))
+                    } else {
+                        None
+                    }
+                } else if let Some(ref placed) = ss.placed {
+                    let w = placed.hw * 2.0;
+                    let h = placed.hh * 2.0;
+                    let mut s = format!(
+                        "Shape: {:.0}x{:.0} | Center: ({:.0}, {:.0})",
+                        w, h, placed.cx, placed.cy
+                    );
+                    if placed.rotation != 0.0 {
+                        s.push_str(&format!(
+                            " | Rot: {:.1}\u{b0}",
+                            placed.rotation.to_degrees()
+                        ));
+                    }
+                    Some(s)
+                } else {
+                    None
+                }
+            }
+            _ => None,
         });
 
         // Check if Pencil tool is active before consuming tools
@@ -1724,53 +1828,50 @@ impl Canvas {
                 })
             });
             let shift_held_now = ui.input(|i| i.modifiers.shift);
-            let raw_fill_clicks: Vec<crate::components::tools::FillPendingClick> =
-                if tools.active_tool == crate::components::tools::Tool::Fill && !pointer_over_egui
-                {
-                    ui.input(|i| {
-                        i.events
-                            .iter()
-                            .filter_map(|e| match e {
-                                egui::Event::PointerButton {
-                                    pressed: true,
-                                    pos,
-                                    button,
-                                    ..
-                                } if matches!(
-                                    button,
-                                    egui::PointerButton::Primary
-                                        | egui::PointerButton::Secondary
-                                ) && image_rect.contains(*pos) =>
-                                {
-                                    self.screen_to_canvas(*pos, canvas_rect, state).map(
-                                        |canvas_pos| crate::components::tools::FillPendingClick {
-                                            pos: canvas_pos,
-                                            use_secondary: *button
-                                                == egui::PointerButton::Secondary,
-                                            global_fill: shift_held_now,
-                                        },
-                                    )
-                                }
-                                egui::Event::Touch {
-                                    phase: egui::TouchPhase::Start,
-                                    pos,
-                                    ..
-                                } if image_rect.contains(*pos) => {
-                                    self.screen_to_canvas(*pos, canvas_rect, state).map(
-                                        |canvas_pos| crate::components::tools::FillPendingClick {
-                                            pos: canvas_pos,
-                                            use_secondary: false,
-                                            global_fill: shift_held_now,
-                                        },
-                                    )
-                                }
-                                _ => None,
-                            })
-                            .collect()
-                    })
-                } else {
-                    Vec::new()
-                };
+            let raw_fill_clicks: Vec<crate::components::tools::FillPendingClick> = if tools
+                .active_tool
+                == crate::components::tools::Tool::Fill
+                && !pointer_over_egui
+            {
+                ui.input(|i| {
+                    i.events
+                        .iter()
+                        .filter_map(|e| match e {
+                            egui::Event::PointerButton {
+                                pressed: true,
+                                pos,
+                                button,
+                                ..
+                            } if matches!(
+                                button,
+                                egui::PointerButton::Primary | egui::PointerButton::Secondary
+                            ) && image_rect.contains(*pos) =>
+                            {
+                                self.screen_to_canvas(*pos, canvas_rect, state)
+                                    .map(|canvas_pos| crate::components::tools::FillPendingClick {
+                                        pos: canvas_pos,
+                                        use_secondary: *button == egui::PointerButton::Secondary,
+                                        global_fill: shift_held_now,
+                                    })
+                            }
+                            egui::Event::Touch {
+                                phase: egui::TouchPhase::Start,
+                                pos,
+                                ..
+                            } if image_rect.contains(*pos) => self
+                                .screen_to_canvas(*pos, canvas_rect, state)
+                                .map(|canvas_pos| crate::components::tools::FillPendingClick {
+                                    pos: canvas_pos,
+                                    use_secondary: false,
+                                    global_fill: shift_held_now,
+                                }),
+                            _ => None,
+                        })
+                        .collect()
+                })
+            } else {
+                Vec::new()
+            };
 
             // Get canvas position (will be None if not over image)
             let canvas_pos =
@@ -1862,9 +1963,9 @@ impl Canvas {
             // otherwise clicking Bold/Italic buttons passes through to the canvas.
             let text_handles_active =
                 tools.text_state.is_editing && tools.text_state.editing_text_layer;
-            let text_drag_override =
-                (text_handles_active || tools.text_state.text_box_drag.is_some())
-                    && !pointer_over_egui_with_touch;
+            let text_drag_override = (text_handles_active
+                || tools.text_state.text_box_drag.is_some())
+                && !pointer_over_egui_with_touch;
             let keyboard_finalize_pressed =
                 ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape));
             let pending_tool_commit = tools.mesh_warp_state.commit_pending
@@ -2733,28 +2834,27 @@ impl Canvas {
             // ====================================================================
             // TOOL INFO OVERLAY  (bottom-left, context-sensitive, single line)
             // ====================================================================
-            if debug_settings.show_tool_info && let Some(ref info_text) = tool_info_data {
-                    let font_id = egui::FontId::monospace(9.0);
-                    let text_color = Color32::from_gray(200);
+            if debug_settings.show_tool_info
+                && let Some(ref info_text) = tool_info_data
+            {
+                let font_id = egui::FontId::monospace(9.0);
+                let text_color = Color32::from_gray(200);
 
-                    let galley = ui.painter().layout_no_wrap(
-                        info_text.clone(),
-                        font_id,
-                        text_color,
-                    );
+                let galley = ui
+                    .painter()
+                    .layout_no_wrap(info_text.clone(), font_id, text_color);
 
-                    // Position at bottom-left of canvas
-                    let info_pos = canvas_rect.left_bottom()
-                        + egui::vec2(10.0, -(galley.size().y + 10.0));
-                    let info_rect = egui::Align2::LEFT_TOP.anchor_rect(
-                        egui::Rect::from_min_size(info_pos, galley.size()),
-                    );
+                // Position at bottom-left of canvas
+                let info_pos =
+                    canvas_rect.left_bottom() + egui::vec2(10.0, -(galley.size().y + 10.0));
+                let info_rect = egui::Align2::LEFT_TOP
+                    .anchor_rect(egui::Rect::from_min_size(info_pos, galley.size()));
 
-                    // Draw semi-transparent black background
-                    painter.rect_filled(info_rect.expand(4.0), 2.0, Color32::from_black_alpha(120));
+                // Draw semi-transparent black background
+                painter.rect_filled(info_rect.expand(4.0), 2.0, Color32::from_black_alpha(120));
 
-                    // Draw text
-                    painter.galley(info_pos, galley, egui::Color32::TRANSPARENT);
+                // Draw text
+                painter.galley(info_pos, galley, egui::Color32::TRANSPARENT);
             }
 
             // ====================================================================
@@ -2765,27 +2865,29 @@ impl Canvas {
                 let font_id = egui::FontId::monospace(10.0);
                 let badge_color = Color32::from_rgb(255, 200, 50); // amber/gold
 
-                let galley = ui.painter().layout_no_wrap(
-                    badge_text.to_string(),
-                    font_id,
-                    badge_color,
-                );
+                let galley =
+                    ui.painter()
+                        .layout_no_wrap(badge_text.to_string(), font_id, badge_color);
 
                 // Position below tool info (or at bottom-left if no tool info)
-                let tool_info_height = if debug_settings.show_tool_info && tool_info_data.is_some() {
-                    ui.painter().layout_no_wrap(
-                        "X".to_string(),
-                        egui::FontId::monospace(9.0),
-                        Color32::from_gray(200),
-                    ).size().y + 14.0
+                let tool_info_height = if debug_settings.show_tool_info && tool_info_data.is_some()
+                {
+                    ui.painter()
+                        .layout_no_wrap(
+                            "X".to_string(),
+                            egui::FontId::monospace(9.0),
+                            Color32::from_gray(200),
+                        )
+                        .size()
+                        .y
+                        + 14.0
                 } else {
                     0.0
                 };
                 let badge_pos = canvas_rect.left_bottom()
                     + egui::vec2(10.0, -(tool_info_height + galley.size().y + 10.0));
-                let badge_rect = egui::Align2::LEFT_TOP.anchor_rect(
-                    egui::Rect::from_min_size(badge_pos, galley.size()),
-                );
+                let badge_rect = egui::Align2::LEFT_TOP
+                    .anchor_rect(egui::Rect::from_min_size(badge_pos, galley.size()));
 
                 // Draw semi-transparent dark background
                 painter.rect_filled(badge_rect.expand(4.0), 2.0, Color32::from_black_alpha(160));
@@ -2847,7 +2949,6 @@ impl Canvas {
     pub fn pan_by(&mut self, delta: Vec2) {
         self.pan_offset += delta;
     }
-
 }
 
 fn selection_mask_bounds(mask: &image::GrayImage) -> Option<(u32, u32, u32, u32)> {
@@ -2868,4 +2969,3 @@ fn selection_mask_bounds(mask: &image::GrayImage) -> Option<(u32, u32, u32, u32)
     }
     (min_x < max_x && min_y < max_y).then_some((min_x, min_y, max_x, max_y))
 }
-

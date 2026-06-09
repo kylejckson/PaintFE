@@ -10,7 +10,7 @@ mod common;
 
 use common::*;
 use image::{Rgba, RgbaImage};
-use paintfe::canvas::{CanvasState, Layer, TiledImage};
+use paintfe::canvas::{CanvasState, Layer, LayerFolder, TiledImage};
 use paintfe::components::dialogs::{SaveFormat, TiffCompression};
 use paintfe::io::{encode_and_write, load_image_sync, load_pfe, save_pfe};
 use std::path::PathBuf;
@@ -167,6 +167,44 @@ fn roundtrip_pfe_multi_layer() {
         original_comp, loaded_comp,
         "PFE composite should be pixel-exact"
     );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn roundtrip_pfe_layer_folders() {
+    let w = 16;
+    let h = 16;
+    let mut state = CanvasState::new(w, h);
+    state.layer_folders.push(LayerFolder {
+        id: 7,
+        name: "Paint group".into(),
+        visible: false,
+        collapsed: true,
+        insert_above_layer: None,
+        color_index: Some(2),
+    });
+    state.next_layer_folder_id = 8;
+
+    let mut layer = Layer::new("Grouped".into(), w, h, Rgba([0, 0, 0, 0]));
+    layer.folder_id = Some(7);
+    layer.pixels =
+        TiledImage::from_rgba_image(&RgbaImage::from_pixel(w, h, Rgba([255, 0, 0, 255])));
+    state.layers.push(layer);
+
+    let path = temp_dir().join("rt_folders.pfe");
+    save_pfe(&state, &path).unwrap();
+    let loaded = load_pfe(&path).unwrap();
+
+    assert_eq!(loaded.layer_folders.len(), 1);
+    assert_eq!(loaded.layer_folders[0].id, 7);
+    assert_eq!(loaded.layer_folders[0].name, "Paint group");
+    assert!(!loaded.layer_folders[0].visible);
+    assert!(loaded.layer_folders[0].collapsed);
+    assert_eq!(loaded.layer_folders[0].color_index, Some(2));
+    assert_eq!(loaded.next_layer_folder_id, 8);
+    assert_eq!(loaded.layers[1].folder_id, Some(7));
+    assert!(!loaded.layer_effectively_visible(1));
 
     let _ = std::fs::remove_file(&path);
 }

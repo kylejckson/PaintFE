@@ -867,9 +867,10 @@ impl PaintFEApp {
                 }
             }
 
-            // Ctrl+A — Select All (skip when script editor has text focus)
+            // Ctrl+A — Select All (skip when a text editor has focus)
             let script_editor_open = self.window_visibility.script_editor;
-            if !script_editor_open && kb.is_pressed(ctx, BindableAction::SelectAll) {
+            let text_edit_focused = ctx.text_edit_focused();
+            if !script_editor_open && !text_edit_focused && kb.is_pressed(ctx, BindableAction::SelectAll) {
                 self.select_all_canvas();
             }
 

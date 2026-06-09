@@ -95,8 +95,8 @@ pub fn color_to_alpha_core(
                 continue;
             }
 
-            let new_a_f = ((orig_a as f32 / 255.0) * (1.0 - removal))
-                .clamp(alpha_floor, alpha_ceiling);
+            let new_a_f =
+                ((orig_a as f32 / 255.0) * (1.0 - removal)).clamp(alpha_floor, alpha_ceiling);
             let kept = if orig_a == 0 {
                 0.0
             } else {

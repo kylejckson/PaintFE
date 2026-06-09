@@ -8,6 +8,8 @@ pub struct FillCommitOverlay {
 
 pub struct CanvasState {
     pub layers: Vec<Layer>,
+    pub layer_folders: Vec<LayerFolder>,
+    pub next_layer_folder_id: u64,
     pub active_layer_index: usize,
     pub edit_layer_mask: bool,
     pub width: u32,
@@ -138,6 +140,8 @@ impl CanvasState {
 
         Self {
             layers: vec![background],
+            layer_folders: Vec::new(),
+            next_layer_folder_id: 1,
             active_layer_index: 0,
             edit_layer_mask: false,
             width,
@@ -187,6 +191,29 @@ impl CanvasState {
             text_editing_layer: None,
             canvas_widget_id: None,
         }
+    }
+
+    pub fn layer_folder(&self, folder_id: u64) -> Option<&LayerFolder> {
+        self.layer_folders.iter().find(|folder| folder.id == folder_id)
+    }
+
+    pub fn layer_folder_mut(&mut self, folder_id: u64) -> Option<&mut LayerFolder> {
+        self.layer_folders
+            .iter_mut()
+            .find(|folder| folder.id == folder_id)
+    }
+
+    pub fn layer_effectively_visible(&self, layer_idx: usize) -> bool {
+        let Some(layer) = self.layers.get(layer_idx) else {
+            return false;
+        };
+        if !layer.visible {
+            return false;
+        }
+        layer
+            .folder_id
+            .and_then(|id| self.layer_folder(id))
+            .is_none_or(|folder| folder.visible)
     }
 
     /// Reset all preview-related state (call whenever preview_layer is cleared).
@@ -489,8 +516,8 @@ impl CanvasState {
 
         // Collect unique chunk keys from visible layers within viewport
         let mut active_chunks: Vec<(u32, u32)> = Vec::new();
-        for layer in &self.layers {
-            if !layer.visible {
+        for (idx, layer) in self.layers.iter().enumerate() {
+            if !self.layer_effectively_visible(idx) {
                 continue;
             }
             for key in layer.pixels.chunk_keys() {
@@ -511,6 +538,9 @@ impl CanvasState {
         active_chunks.sort_unstable();
         active_chunks.dedup();
 
+        let layer_visibility: Vec<bool> = (0..self.layers.len())
+            .map(|idx| self.layer_effectively_visible(idx))
+            .collect();
         let layers = &self.layers;
         let preview = &self.preview_layer;
         let preview_blend = self.preview_blend_mode;
@@ -532,7 +562,13 @@ impl CanvasState {
                 let mut pixels = vec![Rgba([0u8, 0, 0, 0]); (cw * ch) as usize];
 
                 for (li, layer) in layers.iter().enumerate() {
-                    if !layer.visible {
+                    if !layer_visibility.get(li).copied().unwrap_or(false) {
+                        continue;
+                    }
+                    if let LayerContent::Adjustment(adj) = &layer.content {
+                        for px in pixels.iter_mut() {
+                            *px = adj.apply_to_pixel_with_opacity(*px, layer.opacity);
+                        }
                         continue;
                     }
 
@@ -668,6 +704,9 @@ impl CanvasState {
         let target_w = source_w.div_ceil(scale);
         let target_h = source_h.div_ceil(scale);
 
+        let layer_visibility: Vec<bool> = (0..self.layers.len())
+            .map(|idx| self.layer_effectively_visible(idx))
+            .collect();
         let layers = &self.layers;
         let preview_layer = &self.preview_layer;
         let preview_blend_mode = self.preview_blend_mode;
@@ -694,7 +733,7 @@ impl CanvasState {
                     let mut start_layer_idx = 0;
                     if !preview_targets_mask {
                         for (idx, layer) in layers.iter().enumerate().rev() {
-                            if !layer.visible {
+                            if !layer_visibility.get(idx).copied().unwrap_or(false) {
                                 continue;
                             }
                             if preview_is_eraser
@@ -727,7 +766,11 @@ impl CanvasState {
                     let mut base = Rgba([0, 0, 0, 0]);
 
                     for (li, layer) in layers.iter().enumerate().skip(start_layer_idx) {
-                        if !layer.visible {
+                        if !layer_visibility.get(li).copied().unwrap_or(false) {
+                            continue;
+                        }
+                        if let LayerContent::Adjustment(adj) = &layer.content {
+                            base = adj.apply_to_pixel_with_opacity(base, layer.opacity);
                             continue;
                         }
                         let mut top = *layer.pixels.get_pixel(x, y);
@@ -833,6 +876,9 @@ impl CanvasState {
         let height = max_y - min_y;
 
         // Capture shared state for the parallel closure
+        let layer_visibility: Vec<bool> = (0..self.layers.len())
+            .map(|idx| self.layer_effectively_visible(idx))
+            .collect();
         let layers = &self.layers;
         let preview_layer = &self.preview_layer;
         let preview_blend_mode = self.preview_blend_mode;
@@ -893,7 +939,7 @@ impl CanvasState {
                         let mut start_layer_idx = 0;
                         if !preview_targets_mask {
                             for (idx, layer) in layers.iter().enumerate().rev() {
-                                if !layer.visible {
+                                if !layer_visibility.get(idx).copied().unwrap_or(false) {
                                     continue;
                                 }
                                 if preview_is_eraser
@@ -930,7 +976,11 @@ impl CanvasState {
                         let mut base = Rgba([0, 0, 0, 0]);
 
                         for (li, layer) in layers.iter().enumerate().skip(start_layer_idx) {
-                            if !layer.visible {
+                            if !layer_visibility.get(li).copied().unwrap_or(false) {
+                                continue;
+                            }
+                            if let LayerContent::Adjustment(adj) = &layer.content {
+                                base = adj.apply_to_pixel_with_opacity(base, layer.opacity);
                                 continue;
                             }
                             let mut top = match chunk_raws[li] {
@@ -1038,7 +1088,10 @@ impl CanvasState {
     /// Used to overlay layers-above on top of a paste preview.
     pub fn composite_layers_above(&mut self) -> Option<ColorImage> {
         let above_start = self.active_layer_index + 1;
-        let has_any = self.layers.iter().skip(above_start).any(|l| l.visible);
+        let layer_visibility: Vec<bool> = (0..self.layers.len())
+            .map(|idx| self.layer_effectively_visible(idx))
+            .collect();
+        let has_any = layer_visibility.iter().skip(above_start).any(|v| *v);
         if !has_any {
             return None;
         }
@@ -1057,8 +1110,12 @@ impl CanvasState {
             .for_each(|(y, row)| {
                 for (x, pixel) in row.iter_mut().enumerate() {
                     let mut base = Rgba([0u8, 0, 0, 0]);
-                    for layer in self.layers.iter().skip(above_start) {
-                        if !layer.visible {
+                    for (idx, layer) in self.layers.iter().enumerate().skip(above_start) {
+                        if !layer_visibility.get(idx).copied().unwrap_or(false) {
+                            continue;
+                        }
+                        if let LayerContent::Adjustment(adj) = &layer.content {
+                            base = adj.apply_to_pixel_with_opacity(base, layer.opacity);
                             continue;
                         }
                         let mut top = *layer.pixels.get_pixel(x as u32, y as u32);
@@ -1098,11 +1155,13 @@ impl CanvasState {
     /// transparent background. Returns a premultiplied full-canvas image or
     /// `None` when there are no visible layers below.
     pub fn composite_layers_below_active(&mut self) -> Option<ColorImage> {
-        let has_any = self
-            .layers
+        let layer_visibility: Vec<bool> = (0..self.layers.len())
+            .map(|idx| self.layer_effectively_visible(idx))
+            .collect();
+        let has_any = layer_visibility
             .iter()
             .take(self.active_layer_index)
-            .any(|l| l.visible);
+            .any(|v| *v);
         if !has_any {
             return None;
         }
@@ -1120,8 +1179,13 @@ impl CanvasState {
             .for_each(|(y, row)| {
                 for (x, pixel) in row.iter_mut().enumerate() {
                     let mut base = Rgba([0u8, 0, 0, 0]);
-                    for layer in self.layers.iter().take(self.active_layer_index) {
-                        if !layer.visible {
+                    for (idx, layer) in self.layers.iter().enumerate().take(self.active_layer_index)
+                    {
+                        if !layer_visibility.get(idx).copied().unwrap_or(false) {
+                            continue;
+                        }
+                        if let LayerContent::Adjustment(adj) = &layer.content {
+                            base = adj.apply_to_pixel_with_opacity(base, layer.opacity);
                             continue;
                         }
                         let mut top = *layer.pixels.get_pixel(x as u32, y as u32);
@@ -1452,6 +1516,12 @@ impl CanvasState {
         if rect.is_some() {
             // Only the active layer was modified (brush stroke, etc.)
             if let Some(layer) = self.layers.get_mut(self.active_layer_index) {
+                let r = new_rect;
+                let x0 = r.min.x.floor().max(0.0) as u32;
+                let y0 = r.min.y.floor().max(0.0) as u32;
+                let x1 = r.max.x.ceil().max(0.0) as u32;
+                let y1 = r.max.y.ceil().max(0.0) as u32;
+                layer.sync_deep_pixels_from_preview_region(x0, y0, x1, y1);
                 layer.gpu_generation = layer.gpu_generation.wrapping_add(1);
             }
         } else {
@@ -1700,6 +1770,7 @@ impl CanvasState {
                     }
                 }
             }
+            layer.sync_all_deep_pixels_from_preview();
             self.mark_dirty(None);
         }
     }
@@ -1737,8 +1808,8 @@ impl CanvasState {
                     }
                 }
             }
+            layer.sync_all_deep_pixels_from_preview();
             self.mark_dirty(None);
         }
     }
 }
-

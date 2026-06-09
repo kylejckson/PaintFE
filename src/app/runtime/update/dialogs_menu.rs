@@ -1903,6 +1903,8 @@ impl PaintFEApp {
                         {
                             project.canvas_state.mirror_mode =
                                 project.canvas_state.mirror_mode.next();
+                            project.canvas_state.clear_preview_state();
+                            project.canvas_state.mark_dirty(None);
                         }
                     }
 

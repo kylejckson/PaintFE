@@ -1,10 +1,43 @@
 impl LayersPanel {
+    fn folder_color(folder: &crate::canvas::LayerFolder, settings: &AppSettings) -> Option<Color32> {
+        folder
+            .color_index
+            .and_then(|idx| settings.folder_color_palette.get(idx as usize).copied())
+    }
+
+    fn folder_drop_zone(relative_y: f32) -> FolderDropZone {
+        if relative_y < 0.28 {
+            FolderDropZone::Above
+        } else if relative_y > 0.72 {
+            FolderDropZone::Below
+        } else {
+            FolderDropZone::Inside
+        }
+    }
+
+    fn readable_text_for_bg(color: Color32) -> Color32 {
+        let lum =
+            0.2126 * color.r() as f32 + 0.7152 * color.g() as f32 + 0.0722 * color.b() as f32;
+        if lum > 150.0 {
+            Color32::from_rgb(24, 26, 30)
+        } else {
+            Color32::WHITE
+        }
+    }
+
+    fn icon_dark_for_text(color: Color32) -> bool {
+        let lum =
+            0.2126 * color.r() as f32 + 0.7152 * color.g() as f32 + 0.0722 * color.b() as f32;
+        lum > 150.0
+    }
+
     /// Main show method - renders the entire layers panel
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
         canvas_state: &mut CanvasState,
-        assets: &Assets,
+        assets: &mut Assets,
+        settings: &AppSettings,
         history: &mut HistoryManager,
     ) {
         let layer_count = canvas_state.layers.len();
@@ -29,7 +62,7 @@ impl LayersPanel {
             }
 
             // Layer list with scroll area (takes most of the space)
-            self.show_layer_list(ui, canvas_state, assets, history);
+            self.show_layer_list(ui, canvas_state, assets, settings, history);
 
             ui.add_space(4.0);
 
@@ -64,15 +97,21 @@ impl LayersPanel {
         &mut self,
         ui: &mut egui::Ui,
         canvas_state: &mut CanvasState,
-        assets: &Assets,
+        assets: &mut Assets,
+        settings: &AppSettings,
         history: &mut HistoryManager,
     ) {
         let layer_count = canvas_state.layers.len();
         if layer_count == 0 {
             return;
         }
+        self.selected_layers.retain(|idx| *idx < layer_count);
+        if self.selected_layers.is_empty() && canvas_state.active_layer_index < layer_count {
+            self.selected_layers.insert(canvas_state.active_layer_index);
+        }
 
         let row_height = 48.0;
+        let folder_row_height = 28.0;
         let row_gap = 3.0;
         let row_stride = row_height + row_gap;
 
@@ -81,21 +120,50 @@ impl LayersPanel {
         let is_filtering = !self.search_query.is_empty();
         let query_lower = self.search_query.to_lowercase();
 
-        let visible_entries: Vec<(usize, usize)> = (0..layer_count)
-            .map(|display_idx| (display_idx, layer_count - 1 - display_idx))
-            .filter(|&(_, layer_idx)| {
-                if !is_filtering {
-                    return true;
+        let mut shown_folders = HashSet::new();
+        let mut display_rows = Vec::new();
+        for display_idx in 0..layer_count {
+            let layer_idx = layer_count - 1 - display_idx;
+            for folder in &canvas_state.layer_folders {
+                if folder.insert_above_layer == Some(layer_idx) && shown_folders.insert(folder.id) {
+                    display_rows.push(LayerListRow::Folder(folder.id));
                 }
-                canvas_state.layers[layer_idx]
+            }
+            let layer_matches = !is_filtering
+                || canvas_state.layers[layer_idx]
                     .name
                     .to_lowercase()
-                    .contains(&query_lower)
-            })
-            .collect();
+                    .contains(&query_lower);
+            let folder_id = canvas_state.layers[layer_idx].folder_id;
+            if let Some(folder_id) = folder_id
+                && shown_folders.insert(folder_id)
+                && canvas_state.layer_folder(folder_id).is_some()
+            {
+                display_rows.push(LayerListRow::Folder(folder_id));
+            }
+            if !layer_matches {
+                continue;
+            }
+            if !is_filtering
+                && let Some(folder_id) = folder_id
+                && canvas_state
+                    .layer_folder(folder_id)
+                    .is_some_and(|folder| folder.collapsed)
+            {
+                continue;
+            }
+            display_rows.push(LayerListRow::Layer {
+                display_idx,
+                layer_idx,
+            });
+        }
+        for folder in &canvas_state.layer_folders {
+            if !shown_folders.contains(&folder.id) {
+                display_rows.push(LayerListRow::Folder(folder.id));
+            }
+        }
 
-        let visible_count = visible_entries.len();
-        if visible_count == 0 {
+        if display_rows.is_empty() {
             ui.vertical_centered(|ui| {
                 ui.add_space(20.0);
                 ui.label(egui::RichText::new("No layers match filter").weak());
@@ -106,9 +174,12 @@ impl LayersPanel {
         // Ensure anim_offsets vec is the right size
         self.drag_state.anim_offsets.resize(layer_count, 0.0);
 
-        // Disable drag-and-drop when filtering (reordering filtered list is confusing)
+        let folders_present = !canvas_state.layer_folders.is_empty();
+
+        // Disable drag-and-drop when filtering (reordering filtered list is confusing).
         if is_filtering {
             self.drag_state.dragging_display_idx = None;
+            self.drag_state.dragging_folder_id = None;
             self.drag_state.drag_offset_y = 0.0;
         }
 
@@ -132,15 +203,49 @@ impl LayersPanel {
             .auto_shrink([false, false])
             .show(ui, |ui: &mut egui::Ui| {
                 // Reserve total space for visible rows only
-                let total_h = visible_count as f32 * row_stride;
+                let total_h: f32 = display_rows
+                    .iter()
+                    .map(|row| match row {
+                        LayerListRow::Folder(_) => folder_row_height + row_gap,
+                        LayerListRow::Layer { .. } => row_stride,
+                    })
+                    .sum();
                 let available_w = ui.available_width();
-                let (total_rect, _) =
+                let (total_rect, total_response) =
                     ui.allocate_exact_size(Vec2::new(available_w, total_h), Sense::hover());
 
                 // --- Drag logic (frame-level) ---
                 let pointer_pos = ui.input(|i| i.pointer.latest_pos());
                 let pointer_down = ui.input(|i| i.pointer.primary_down());
                 let drag_delta_y = ui.input(|i| i.pointer.delta().y);
+                let hovered_row = pointer_pos.and_then(|p| {
+                    let mut y = total_rect.top();
+                    for row in display_rows.iter().copied() {
+                        let row_h = match row {
+                            LayerListRow::Folder(_) => folder_row_height,
+                            LayerListRow::Layer { .. } => row_height,
+                        };
+                        if p.y >= y && p.y <= y + row_h {
+                            let rel = ((p.y - y) / row_h).clamp(0.0, 1.0);
+                            return Some((row, rel));
+                        }
+                        y += row_h + row_gap;
+                    }
+                    None
+                });
+                let highlighted_folder = if self.drag_state.dragging_display_idx.is_some()
+                    && self.drag_state.dragging_folder_id.is_none()
+                {
+                    hovered_row.and_then(|(row, rel)| match row {
+                        LayerListRow::Folder(id) if Self::folder_drop_zone(rel) == FolderDropZone::Inside => Some(id),
+                        LayerListRow::Layer { layer_idx, .. } => {
+                            canvas_state.layers[layer_idx].folder_id
+                        }
+                        _ => None,
+                    })
+                } else {
+                    None
+                };
 
                 // Determine which display_idx the pointer would be over
                 let _hover_display_idx: Option<usize> = pointer_pos.map(|p| {
@@ -178,11 +283,110 @@ impl LayersPanel {
                         let target = ((dragged_center_y / row_stride).floor() as usize)
                             .min(layer_count.saturating_sub(1));
 
-                        if target != drag_didx {
+                        if folders_present {
+                            let from_layer_idx = layer_count - 1 - drag_didx;
+                            let mut move_indices: Vec<usize> =
+                                self.selected_layers.iter().copied().collect();
+                            if !move_indices.contains(&from_layer_idx) {
+                                move_indices.push(from_layer_idx);
+                            }
+                            let drop_target = hovered_row
+                                .map(|(target_row, rel)| {
+                                    let target_folder_id = match target_row {
+                                        LayerListRow::Folder(id)
+                                            if Self::folder_drop_zone(rel)
+                                                == FolderDropZone::Inside =>
+                                        {
+                                            Some(id)
+                                        }
+                                        LayerListRow::Folder(_) => None,
+                                        LayerListRow::Layer { layer_idx, .. } => {
+                                            canvas_state.layers[layer_idx].folder_id
+                                        }
+                                    };
+                                    let insert_before_idx = match target_row {
+                                        LayerListRow::Folder(id) => {
+                                            match Self::folder_drop_zone(rel) {
+                                                FolderDropZone::Above => {
+                                                    self.folder_top_insert_index(canvas_state, id)
+                                                }
+                                                FolderDropZone::Inside => canvas_state
+                                                    .layers
+                                                    .iter()
+                                                    .rposition(|layer| layer.folder_id == Some(id))
+                                                    .map(|idx| idx + 1)
+                                                    .unwrap_or_else(|| {
+                                                        (canvas_state.active_layer_index + 1)
+                                                            .min(canvas_state.layers.len())
+                                                    }),
+                                                FolderDropZone::Below => canvas_state
+                                                    .layers
+                                                    .iter()
+                                                    .position(|layer| layer.folder_id == Some(id))
+                                                    .unwrap_or_else(|| {
+                                                        canvas_state
+                                                            .layer_folder(id)
+                                                            .and_then(|folder| {
+                                                                folder.insert_above_layer
+                                                            })
+                                                            .unwrap_or(0)
+                                                    }),
+                                            }
+                                        }
+                                        LayerListRow::Layer { layer_idx, .. } => {
+                                            if rel < 0.5 {
+                                                layer_idx + 1
+                                            } else {
+                                                layer_idx
+                                            }
+                                        }
+                                    };
+                                    (insert_before_idx, target_folder_id)
+                                })
+                                .or_else(|| {
+                                    pointer_pos.map(|p| {
+                                        if p.y < total_rect.center().y {
+                                            (canvas_state.layers.len(), None)
+                                        } else {
+                                            (0, None)
+                                        }
+                                    })
+                                });
+                            if let Some((insert_before_idx, folder_id)) = drop_target {
+                                if let Some(new_selection) = self.move_layer_group(
+                                    move_indices,
+                                    insert_before_idx,
+                                    folder_id,
+                                    canvas_state,
+                                    history,
+                                ) {
+                                    self.selected_layers = new_selection.into_iter().collect();
+                                }
+                            }
+                        } else if target != drag_didx {
                             // Convert display indices to layer indices (display is reversed)
                             let from_layer_idx = layer_count - 1 - drag_didx;
                             let to_layer_idx = layer_count - 1 - target;
-                            self.move_layer(from_layer_idx, to_layer_idx, canvas_state, history);
+                            let mut move_indices: Vec<usize> =
+                                self.selected_layers.iter().copied().collect();
+                            if !move_indices.contains(&from_layer_idx) {
+                                move_indices.push(from_layer_idx);
+                            }
+                            if move_indices.len() > 1 {
+                                if let Some(new_selection) = self.move_layer_group(
+                                    move_indices,
+                                    to_layer_idx,
+                                    None,
+                                    canvas_state,
+                                    history,
+                                ) {
+                                    self.selected_layers = new_selection.into_iter().collect();
+                                }
+                            } else {
+                                self.move_layer(from_layer_idx, to_layer_idx, canvas_state, history);
+                                self.selected_layers.clear();
+                                self.selected_layers.insert(to_layer_idx);
+                            }
                         }
 
                         // Reset drag state
@@ -191,6 +395,59 @@ impl LayersPanel {
                         for v in self.drag_state.anim_offsets.iter_mut() {
                             *v = 0.0;
                         }
+                    }
+                }
+                if let Some(folder_id) = self.drag_state.dragging_folder_id {
+                    if pointer_down {
+                        self.drag_state.drag_offset_y += drag_delta_y;
+                        ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+                        ui.ctx().request_repaint();
+                    } else {
+                        let target = hovered_row
+                            .and_then(|(target_row, rel)| match target_row {
+                                LayerListRow::Folder(id) if id != folder_id => {
+                                    Some(match Self::folder_drop_zone(rel) {
+                                        FolderDropZone::Above | FolderDropZone::Inside => {
+                                            self.folder_top_insert_index(canvas_state, id)
+                                        }
+                                        FolderDropZone::Below => canvas_state
+                                            .layers
+                                            .iter()
+                                            .position(|layer| layer.folder_id == Some(id))
+                                            .unwrap_or_else(|| {
+                                                canvas_state
+                                                    .layer_folder(id)
+                                                    .and_then(|folder| folder.insert_above_layer)
+                                                    .unwrap_or(0)
+                                            }),
+                                    })
+                                }
+                                LayerListRow::Layer { layer_idx, .. }
+                                    if canvas_state.layers[layer_idx].folder_id.is_none() =>
+                                {
+                                    Some(if rel < 0.5 { layer_idx + 1 } else { layer_idx })
+                                }
+                                _ => None,
+                            })
+                            .or_else(|| {
+                                pointer_pos.map(|p| {
+                                    if p.y < total_rect.center().y {
+                                        canvas_state.layers.len()
+                                    } else {
+                                        0
+                                    }
+                                })
+                            });
+                        if let Some(insert_before_idx) = target {
+                            self.move_folder_block(
+                                folder_id,
+                                insert_before_idx,
+                                canvas_state,
+                                history,
+                            );
+                        }
+                        self.drag_state.dragging_folder_id = None;
+                        self.drag_state.drag_offset_y = 0.0;
                     }
                 }
 
@@ -237,24 +494,178 @@ impl LayersPanel {
                 let mut layer_to_merge: Option<usize> = None;
                 let mut layer_to_flatten = false;
                 let mut layer_to_add = false;
+                let mut layer_to_add_top = false;
                 let mut layer_to_add_text = false;
+                let mut layer_to_add_text_top = false;
+                let mut layer_to_add_adjustment = false;
+                let mut layer_to_add_folder = false;
+                let mut layer_to_add_folder_top = false;
                 let mut layer_to_duplicate: Option<usize> = None;
                 let mut layer_to_delete: Option<usize> = None;
                 let mut layer_to_rasterize: Option<usize> = None;
+                let mut layer_to_folder: Option<(usize, Option<u64>)> = None;
                 let mut new_active: Option<usize> = None;
                 let mut swap_layers: Option<(usize, usize)> = None;
 
+                total_response.context_menu(|ui| {
+                    if assets.menu_item(ui, Icon::LayerAdd, "Add Layer").clicked() {
+                        layer_to_add_top = true;
+                        ui.close();
+                    }
+                    if assets.menu_item(ui, Icon::Rename, "Add Text Layer").clicked() {
+                        layer_to_add_text_top = true;
+                        ui.close();
+                    }
+                    if assets
+                        .menu_item(ui, Icon::MenuColorExposure, "Add Adjustment Layer")
+                        .clicked()
+                    {
+                        canvas_state.active_layer_index = canvas_state.layers.len() - 1;
+                        layer_to_add_adjustment = true;
+                        ui.close();
+                    }
+                    if assets.menu_item(ui, Icon::MenuFileOpen, "Add Folder").clicked() {
+                        layer_to_add_folder_top = true;
+                        ui.close();
+                    }
+                });
+
                 // --- Draw rows ---
                 let is_dragging = self.drag_state.dragging_display_idx.is_some();
+                let drag_enabled = !is_filtering;
 
-                for (vis_idx, &(display_idx, layer_idx)) in visible_entries.iter().enumerate() {
+                let mut cursor_y = total_rect.top();
+                for row in display_rows.iter().copied() {
+                    let row_h = match row {
+                        LayerListRow::Folder(_) => folder_row_height,
+                        LayerListRow::Layer { .. } => row_height,
+                    };
+                    let row_rect = Rect::from_min_size(
+                        Pos2::new(total_rect.left(), cursor_y),
+                        Vec2::new(available_w, row_h),
+                    );
+                    cursor_y += row_h + row_gap;
+
+                    let LayerListRow::Layer {
+                        display_idx,
+                        layer_idx,
+                    } = row
+                    else {
+                        if let LayerListRow::Folder(folder_id) = row
+                            && let Some(action) = self.show_folder_row_at(
+                                ui,
+                                row_rect,
+                                folder_id,
+                                canvas_state,
+                                assets,
+                                settings,
+                                highlighted_folder == Some(folder_id),
+                                self.selected_folder == Some(folder_id),
+                            )
+                        {
+                            match action {
+                                FolderAction::Select(id) => {
+                                    self.selected_folder = Some(id);
+                                    self.selected_layers.clear();
+                                }
+                                FolderAction::BeginDrag(id) => {
+                                    self.selected_folder = Some(id);
+                                    self.selected_layers.clear();
+                                    self.drag_state.dragging_folder_id = Some(id);
+                                    self.drag_state.dragging_display_idx = None;
+                                    self.drag_state.drag_offset_y = 0.0;
+                                }
+                                FolderAction::ToggleCollapsed(id) => {
+                                    let collapsed = canvas_state
+                                        .layer_folder(id)
+                                        .map(|folder| !folder.collapsed)
+                                        .unwrap_or(false);
+                                    self.set_layer_folder_collapsed(id, collapsed, canvas_state);
+                                }
+                                FolderAction::ToggleVisibility(id) => {
+                                    self.toggle_layer_folder_visibility(id, canvas_state, history);
+                                }
+                                FolderAction::StartRename(id) => {
+                                    self.folder_rename_state.renaming_folder = Some(id);
+                                    self.folder_rename_state.rename_text = canvas_state
+                                        .layer_folder(id)
+                                        .map(|folder| folder.name.clone())
+                                        .unwrap_or_default();
+                                    self.folder_rename_state.focus_requested = true;
+                                }
+                                FolderAction::FinishRename => {
+                                    if let Some(id) = self.folder_rename_state.renaming_folder {
+                                        let new_name =
+                                            self.folder_rename_state.rename_text.clone();
+                                        self.rename_layer_folder(
+                                            id,
+                                            new_name,
+                                            canvas_state,
+                                            history,
+                                        );
+                                    }
+                                    self.folder_rename_state.renaming_folder = None;
+                                }
+                                FolderAction::CancelRename => {
+                                    self.folder_rename_state.renaming_folder = None;
+                                }
+                                FolderAction::Delete(id) => {
+                                    self.delete_layer_folder(id, canvas_state, history);
+                                }
+                                FolderAction::AddLayer(id) => {
+                                    self.selected_folder = Some(id);
+                                    self.add_new_layer(canvas_state, history);
+                                }
+                                FolderAction::AddTextLayer(id) => {
+                                    self.selected_folder = Some(id);
+                                    self.add_new_text_layer(canvas_state, history);
+                                }
+                                FolderAction::AddFolderAbove(id) => {
+                                    self.add_layer_folder_above(id, canvas_state, history);
+                                }
+                                FolderAction::SelectContents(id) => {
+                                    self.selected_folder = None;
+                                    self.selected_layers.clear();
+                                    let mut members: Vec<usize> = canvas_state
+                                        .layers
+                                        .iter()
+                                        .enumerate()
+                                        .filter_map(|(idx, layer)| {
+                                            (layer.folder_id == Some(id)).then_some(idx)
+                                        })
+                                        .collect();
+                                    if let Some(primary) = members.iter().copied().max() {
+                                        canvas_state.active_layer_index = primary;
+                                        if !canvas_state.layers[primary].has_live_mask() {
+                                            canvas_state.edit_layer_mask = false;
+                                        }
+                                        for idx in members.drain(..) {
+                                            self.selected_layers.insert(idx);
+                                        }
+                                    }
+                                }
+                                FolderAction::SetColor(id, color_index) => {
+                                    let mut snap = SnapshotCommand::new(
+                                        "Set Folder Color".to_string(),
+                                        canvas_state,
+                                    );
+                                    if let Some(folder) = canvas_state.layer_folder_mut(id) {
+                                        folder.color_index = color_index;
+                                    }
+                                    snap.set_after(canvas_state);
+                                    history.push(Box::new(snap));
+                                }
+                            }
+                        }
+                        continue;
+                    };
                     let is_dragged = self.drag_state.dragging_display_idx == Some(display_idx);
 
                     // Compute visual Y position — use vis_idx for layout when filtering
-                    let base_y = total_rect.top() + vis_idx as f32 * row_stride;
+                    let base_y = row_rect.top();
                     let visual_y = if is_dragged {
                         base_y + self.drag_state.drag_offset_y
-                    } else if !is_filtering {
+                    } else if !is_filtering && !folders_present {
                         base_y + self.drag_state.anim_offsets[display_idx]
                     } else {
                         base_y
@@ -286,12 +697,28 @@ impl LayersPanel {
                         assets,
                         is_dragged,
                         is_dragging,
+                        drag_enabled,
+                        self.selected_layers.contains(&layer_idx),
                     );
 
                     // Handle row click actions
                     if let Some(act) = action {
                         match act {
-                            LayerAction::Select => new_active = Some(layer_idx),
+                            LayerAction::Select { additive } => {
+                                if additive {
+                                    if !self.selected_layers.insert(layer_idx) {
+                                        self.selected_layers.remove(&layer_idx);
+                                        if self.selected_layers.is_empty() {
+                                            self.selected_layers.insert(canvas_state.active_layer_index);
+                                        }
+                                    }
+                                } else {
+                                    self.selected_layers.clear();
+                                    self.selected_layers.insert(layer_idx);
+                                    self.selected_folder = None;
+                                    new_active = Some(layer_idx);
+                                }
+                            }
                             LayerAction::StartRename => {
                                 self.rename_state.renaming_layer = Some(layer_idx);
                                 self.rename_state.rename_text =
@@ -332,6 +759,12 @@ impl LayersPanel {
                                 self.mark_full_dirty(canvas_state);
                             }
                             LayerAction::BeginDrag => {
+                                if !self.selected_layers.contains(&layer_idx) {
+                                    self.selected_layers.clear();
+                                    self.selected_layers.insert(layer_idx);
+                                    self.selected_folder = None;
+                                    new_active = Some(layer_idx);
+                                }
                                 self.drag_state.dragging_display_idx = Some(display_idx);
                                 self.drag_state.origin_display_idx = display_idx;
                                 self.drag_state.drag_offset_y = 0.0;
@@ -345,7 +778,21 @@ impl LayersPanel {
                     // Handle context menu actions
                     if let Some(ctx_act) = context_action {
                         match ctx_act {
-                            ContextAction::AddNew => layer_to_add = true,
+                            ContextAction::AddNew => {
+                                canvas_state.active_layer_index = layer_idx;
+                                self.selected_folder = None;
+                                layer_to_add = true;
+                            }
+                            ContextAction::AddFolder => {
+                                canvas_state.active_layer_index = layer_idx;
+                                self.selected_folder = None;
+                                layer_to_add_folder = true;
+                            }
+                            ContextAction::AddAdjustment => {
+                                canvas_state.active_layer_index = layer_idx;
+                                self.selected_folder = None;
+                                layer_to_add_adjustment = true;
+                            }
                             ContextAction::MergeDown => layer_to_merge = Some(layer_idx),
                             ContextAction::MergeDownAsMask => {
                                 self.pending_app_action =
@@ -443,6 +890,8 @@ impl LayersPanel {
                                 self.show_all_layers(canvas_state);
                             }
                             ContextAction::AddNewTextLayer => {
+                                canvas_state.active_layer_index = layer_idx;
+                                self.selected_folder = None;
                                 layer_to_add_text = true;
                             }
                             ContextAction::RasterizeTextLayer => {
@@ -461,6 +910,44 @@ impl LayersPanel {
                                     canvas_state,
                                     LayerSettingsTab::Warp,
                                 );
+                            }
+                            ContextAction::MoveToFolder(folder_id) => {
+                                layer_to_folder = Some((layer_idx, Some(folder_id)));
+                            }
+                            ContextAction::RemoveFromFolder => {
+                                layer_to_folder = Some((layer_idx, None));
+                            }
+                            ContextAction::ExtractChannel(channel) => {
+                                let mut snap = SnapshotCommand::new(
+                                    format!("Extract {:?} Channel", channel),
+                                    canvas_state,
+                                );
+                                crate::ops::canvas_ops::extract_channel_to_layer(
+                                    canvas_state,
+                                    layer_idx,
+                                    channel,
+                                );
+                                snap.set_after(canvas_state);
+                                history.push(Box::new(snap));
+                                self.thumbnail_cache.clear();
+                            }
+                            ContextAction::ReplaceAlphaFromBelowLuminance => {
+                                if layer_idx > 0 {
+                                    let mut snap = SnapshotCommand::new(
+                                        "Replace Alpha from Layer Below".to_string(),
+                                        canvas_state,
+                                    );
+                                    crate::ops::canvas_ops::replace_channel_from_layer(
+                                        canvas_state,
+                                        layer_idx,
+                                        layer_idx - 1,
+                                        ImageChannel::Alpha,
+                                        ImageChannel::Luminance,
+                                    );
+                                    snap.set_after(canvas_state);
+                                    history.push(Box::new(snap));
+                                    self.thumbnail_cache.clear();
+                                }
                             }
                         }
                     }
@@ -498,8 +985,32 @@ impl LayersPanel {
                 if layer_to_add {
                     self.add_new_layer(canvas_state, history);
                 }
+                if layer_to_add_top {
+                    self.selected_folder = None;
+                    canvas_state.active_layer_index = canvas_state.layers.len() - 1;
+                    self.add_new_layer(canvas_state, history);
+                }
                 if layer_to_add_text {
                     self.add_new_text_layer(canvas_state, history);
+                }
+                if layer_to_add_text_top {
+                    self.selected_folder = None;
+                    canvas_state.active_layer_index = canvas_state.layers.len() - 1;
+                    self.add_new_text_layer(canvas_state, history);
+                }
+                if layer_to_add_adjustment {
+                    self.add_adjustment_layer(canvas_state, history);
+                }
+                if layer_to_add_folder {
+                    self.add_layer_folder(canvas_state, history);
+                }
+                if layer_to_add_folder_top {
+                    self.selected_folder = None;
+                    canvas_state.active_layer_index = canvas_state.layers.len() - 1;
+                    self.add_layer_folder(canvas_state, history);
+                }
+                if let Some((layer_idx, folder_id)) = layer_to_folder {
+                    self.set_layer_folder(layer_idx, folder_id, canvas_state, history);
                 }
                 if let Some(dup_idx) = layer_to_duplicate {
                     self.duplicate_layer(dup_idx, canvas_state, history);
@@ -516,6 +1027,244 @@ impl LayersPanel {
             });
     }
 
+    fn show_folder_row_at(
+        &mut self,
+        ui: &mut egui::Ui,
+        row_rect: Rect,
+        folder_id: u64,
+        canvas_state: &mut CanvasState,
+        assets: &mut Assets,
+        settings: &AppSettings,
+        is_drop_target: bool,
+        is_selected: bool,
+    ) -> Option<FolderAction> {
+        let Some(folder) = canvas_state.layer_folder(folder_id).cloned() else {
+            return None;
+        };
+        let mut action = None;
+        let is_renaming = self.folder_rename_state.renaming_folder == Some(folder_id);
+        let response = ui.interact(
+            row_rect,
+            Id::new("layer_folder_row").with(folder_id),
+            Sense::click_and_drag(),
+        );
+
+        let bg_rect = row_rect.shrink2(Vec2::new(0.0, 2.0));
+        let folder_tint = Self::folder_color(&folder, settings);
+        let bg_fill = if is_drop_target || is_selected {
+            ui.visuals().selection.bg_fill
+        } else if let Some(color) = folder_tint {
+            color
+        } else {
+            ui.visuals().faint_bg_color
+        };
+        let text_color = folder_tint
+            .filter(|_| !is_drop_target && !is_selected)
+            .map(Self::readable_text_for_bg)
+            .unwrap_or_else(|| ui.visuals().strong_text_color());
+        ui.painter().rect_filled(bg_rect, 4.0, bg_fill);
+        if is_drop_target {
+            ui.painter().rect_stroke(
+                bg_rect,
+                4.0,
+                egui::Stroke::new(1.5, ui.visuals().selection.stroke.color),
+                egui::StrokeKind::Middle,
+            );
+        }
+
+        let center_y = row_rect.center().y;
+        let mut x = row_rect.left() + 6.0;
+        let arrow_rect = Rect::from_center_size(Pos2::new(x + 7.0, center_y), Vec2::splat(16.0));
+        let icon_dark = Self::icon_dark_for_text(text_color);
+        let arrow_icon = if folder.collapsed {
+            Icon::Expand
+        } else {
+            Icon::DropDown
+        };
+        let arrow_response = assets.icon_in_rect_for_dark(ui, arrow_icon, arrow_rect, icon_dark);
+        if arrow_response.clicked() {
+            action = Some(FolderAction::ToggleCollapsed(folder_id));
+        }
+        x += 18.0;
+
+        let icon_rect = Rect::from_center_size(Pos2::new(x + 8.0, center_y), Vec2::splat(16.0));
+        assets.icon_in_rect_for_dark(ui, Icon::MenuFileOpen, icon_rect, icon_dark);
+        x += 20.0;
+
+        let eye_rect = Rect::from_center_size(
+            Pos2::new(row_rect.right() - 16.0, center_y),
+            Vec2::splat(18.0),
+        );
+        let eye = if folder.visible {
+            Icon::Visible
+        } else {
+            Icon::Hidden
+        };
+        let eye_response = assets.icon_in_rect_for_dark(ui, eye, eye_rect, icon_dark);
+        if eye_response.clicked() {
+            action = Some(FolderAction::ToggleVisibility(folder_id));
+        }
+
+        let name_rect = Rect::from_min_max(
+            Pos2::new(x, row_rect.top() + 3.0),
+            Pos2::new(row_rect.right() - 34.0, row_rect.bottom() - 3.0),
+        );
+        if is_renaming {
+            let edit = egui::TextEdit::singleline(&mut self.folder_rename_state.rename_text)
+                .font(egui::TextStyle::Body)
+                .desired_width(name_rect.width());
+            let edit_response = ui.put(name_rect, edit);
+            if self.folder_rename_state.focus_requested {
+                edit_response.request_focus();
+                self.folder_rename_state.focus_requested = false;
+            }
+            let (enter_pressed, escape_pressed) = ui.input(|i| {
+                let enter = i.key_pressed(egui::Key::Enter)
+                    || i.events.iter().any(|event| {
+                        matches!(
+                            event,
+                            egui::Event::Key {
+                                key: egui::Key::Enter,
+                                pressed: true,
+                                ..
+                            }
+                        )
+                    });
+                let escape = i.key_pressed(egui::Key::Escape)
+                    || i.events.iter().any(|event| {
+                        matches!(
+                            event,
+                            egui::Event::Key {
+                                key: egui::Key::Escape,
+                                pressed: true,
+                                ..
+                            }
+                        )
+                    });
+                (enter, escape)
+            });
+            if escape_pressed {
+                action = Some(FolderAction::CancelRename);
+            } else if enter_pressed || edit_response.lost_focus() {
+                action = Some(FolderAction::FinishRename);
+            }
+        } else {
+            ui.painter().text(
+                name_rect.left_center(),
+                egui::Align2::LEFT_CENTER,
+                folder.name,
+                egui::FontId::proportional(13.0),
+                text_color,
+            );
+        }
+
+        if response.drag_started() {
+            action = Some(FolderAction::BeginDrag(folder_id));
+        }
+        if response.clicked() && action.is_none() {
+            action = Some(FolderAction::Select(folder_id));
+        }
+        if response.double_clicked() {
+            action = Some(FolderAction::StartRename(folder_id));
+        }
+        response.context_menu(|ui| {
+            if assets.menu_item(ui, Icon::LayerAdd, "Add Layer").clicked() {
+                action = Some(FolderAction::AddLayer(folder_id));
+                ui.close();
+            }
+            if assets.menu_item(ui, Icon::Rename, "Add Text Layer").clicked() {
+                action = Some(FolderAction::AddTextLayer(folder_id));
+                ui.close();
+            }
+            if assets
+                .menu_item(ui, Icon::MenuFileOpen, "Add Folder Above")
+                .clicked()
+            {
+                action = Some(FolderAction::AddFolderAbove(folder_id));
+                ui.close();
+            }
+            ui.separator();
+            ui.label(egui::RichText::new("Folder color").strong());
+            ui.horizontal_wrapped(|ui| {
+                if ui.small_button("None").clicked() {
+                    action = Some(FolderAction::SetColor(folder_id, None));
+                    ui.close();
+                }
+                for (idx, color) in settings.folder_color_palette.into_iter().enumerate() {
+                    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::click());
+                    ui.painter().rect_filled(rect.shrink(2.0), 4.0, color);
+                    if folder.color_index == Some(idx as u8) {
+                        ui.painter().rect_stroke(
+                            rect.shrink(1.0),
+                            4.0,
+                            egui::Stroke::new(2.0, ui.visuals().strong_text_color()),
+                            egui::StrokeKind::Middle,
+                        );
+                    }
+                    if resp.clicked() {
+                        action = Some(FolderAction::SetColor(folder_id, Some(idx as u8)));
+                        ui.close();
+                    }
+                }
+            });
+            ui.separator();
+            if assets
+                .menu_item(ui, Icon::Layers, "Select Contents")
+                .clicked()
+            {
+                action = Some(FolderAction::SelectContents(folder_id));
+                ui.close();
+            }
+            if assets
+                .menu_item(ui, Icon::Rename, "Rename Folder")
+                .clicked()
+            {
+                action = Some(FolderAction::StartRename(folder_id));
+                ui.close();
+            }
+            if assets
+                .menu_item(
+                    ui,
+                    if folder.visible {
+                        Icon::Hidden
+                    } else {
+                        Icon::Visible
+                    },
+                    if folder.visible {
+                        "Hide Folder"
+                    } else {
+                        "Show Folder"
+                    },
+                )
+                .clicked()
+            {
+                action = Some(FolderAction::ToggleVisibility(folder_id));
+                ui.close();
+            }
+            if assets
+                .menu_item(
+                    ui,
+                    Icon::MoveDown,
+                    if folder.collapsed { "Expand" } else { "Collapse" },
+                )
+                .clicked()
+            {
+                action = Some(FolderAction::ToggleCollapsed(folder_id));
+                ui.close();
+            }
+            ui.separator();
+            if assets
+                .menu_item(ui, Icon::LayerDelete, "Delete Folder")
+                .clicked()
+            {
+                action = Some(FolderAction::Delete(folder_id));
+                ui.close();
+            }
+        });
+
+        action
+    }
+
     /// Render a single layer row at an explicit rect (supports drag offset)
     fn show_layer_row_at(
         &mut self,
@@ -528,11 +1277,13 @@ impl LayersPanel {
         assets: &Assets,
         is_dragged: bool,
         is_any_dragging: bool,
+        drag_enabled: bool,
+        is_selected: bool,
     ) -> (Option<LayerAction>, Option<ContextAction>) {
         // Copy the values we need from the layer to avoid borrow conflicts
         let layer_visible = canvas_state.layers[layer_idx].visible;
         let layer_name = canvas_state.layers[layer_idx].name.clone();
-        let is_active = layer_idx == canvas_state.active_layer_index;
+        let is_active = self.selected_folder.is_none() && layer_idx == canvas_state.active_layer_index;
         let is_renaming = self.rename_state.renaming_layer == Some(layer_idx);
 
         let mut action: Option<LayerAction> = None;
@@ -543,6 +1294,8 @@ impl LayersPanel {
         let selection_color = ui.visuals().selection.bg_fill;
         let row_bg = if is_active {
             selection_color
+        } else if is_selected {
+            ui.visuals().widgets.hovered.bg_fill
         } else {
             Color32::TRANSPARENT
         };
@@ -552,12 +1305,12 @@ impl LayersPanel {
         let row_response = ui.interact(row_rect, row_id, Sense::click_and_drag());
 
         // Drag initiation — only when not already dragging and not renaming
-        if !is_any_dragging && !is_renaming && row_response.drag_started() {
+        if drag_enabled && !is_any_dragging && !is_renaming && row_response.drag_started() {
             action = Some(LayerAction::BeginDrag);
         }
 
         // Hover cursor: show grab hand when hovering a row (but not when dragging)
-        if !is_any_dragging && row_response.hovered() {
+        if drag_enabled && !is_any_dragging && row_response.hovered() {
             ui.ctx().set_cursor_icon(CursorIcon::Grab);
         }
 
@@ -593,6 +1346,9 @@ impl LayersPanel {
             // Layout: [Eye] [Thumbnail] [Name]
             let mut x = row_rect.left() + 4.0;
             let center_y = row_rect.center().y;
+            if canvas_state.layers[layer_idx].folder_id.is_some() {
+                x += 14.0;
+            }
 
             // Pre-calculate all rects
             let eye_rect = Rect::from_center_size(Pos2::new(x + 10.0, center_y), Vec2::splat(20.0));
@@ -609,6 +1365,11 @@ impl LayersPanel {
                 canvas_state.layers[layer_idx].content,
                 LayerContent::Text(_)
             );
+            let layer_kind_label = match &canvas_state.layers[layer_idx].content {
+                LayerContent::Text(_) => Some("TEXT LAYER"),
+                LayerContent::Adjustment(_) => Some("ADJUSTMENT"),
+                LayerContent::Raster => None,
+            };
             let gear_width = if is_text_layer { 20.0 } else { 0.0 };
             let name_rect = Rect::from_min_max(
                 Pos2::new(x, row_rect.top() + 4.0),
@@ -709,20 +1470,37 @@ impl LayersPanel {
                     self.rename_state.focus_requested = false;
                 }
 
-                if response.lost_focus() {
-                    if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        action = Some(LayerAction::FinishRename);
-                    } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                        action = Some(LayerAction::CancelRename);
-                    } else {
-                        action = Some(LayerAction::FinishRename);
-                    }
+                let (enter_pressed, escape_pressed) = ui.input(|i| {
+                    let enter = i.key_pressed(egui::Key::Enter)
+                        || i.events.iter().any(|event| {
+                            matches!(
+                                event,
+                                egui::Event::Key {
+                                    key: egui::Key::Enter,
+                                    pressed: true,
+                                    ..
+                                }
+                            )
+                        });
+                    let escape = i.key_pressed(egui::Key::Escape)
+                        || i.events.iter().any(|event| {
+                            matches!(
+                                event,
+                                egui::Event::Key {
+                                    key: egui::Key::Escape,
+                                    pressed: true,
+                                    ..
+                                }
+                            )
+                        });
+                    (enter, escape)
+                });
+                if escape_pressed {
+                    action = Some(LayerAction::CancelRename);
+                } else if enter_pressed || response.lost_focus() {
+                    action = Some(LayerAction::FinishRename);
                 }
             } else {
-                let is_text = matches!(
-                    canvas_state.layers[layer_idx].content,
-                    LayerContent::Text(_)
-                );
                 let mut name_text =
                     egui::RichText::new(&layer_name)
                         .size(13.0)
@@ -731,7 +1509,7 @@ impl LayersPanel {
                         } else {
                             icon_color
                         });
-                if is_text {
+                if layer_kind_label.is_some() {
                     name_text = name_text.strong();
                 }
 
@@ -742,7 +1520,11 @@ impl LayersPanel {
                 );
                 child_ui.spacing_mut().item_spacing.y = 0.0;
                 // Vertically center the content block within the row
-                let content_h = if is_text { 13.0 + 9.0 + 1.0 } else { 13.0 };
+                let content_h = if layer_kind_label.is_some() {
+                    13.0 + 9.0 + 1.0
+                } else {
+                    13.0
+                };
                 let pad = ((name_rect.height() - content_h) / 2.0).max(0.0);
                 if pad > 0.0 {
                     child_ui.add_space(pad);
@@ -753,11 +1535,11 @@ impl LayersPanel {
                         .truncate()
                         .sense(egui::Sense::hover()),
                 );
-                if is_text {
+                if let Some(kind_label) = layer_kind_label {
                     let accent = child_ui.visuals().selection.stroke.color;
                     child_ui.add(
                         egui::Label::new(
-                            egui::RichText::new("TEXT LAYER")
+                            egui::RichText::new(kind_label)
                                 .size(9.0)
                                 .strong()
                                 .color(accent),
@@ -776,7 +1558,8 @@ impl LayersPanel {
 
         // Row click handling (select layer) — only when not dragging
         if !is_any_dragging && row_response.clicked() && action.is_none() {
-            action = Some(LayerAction::Select);
+            let additive = ui.input(|i| i.modifiers.shift);
+            action = Some(LayerAction::Select { additive });
         }
 
         // Double-click to rename
@@ -801,6 +1584,22 @@ impl LayersPanel {
                 ui.close();
             }
             if assets
+                .menu_item(ui, Icon::MenuColorExposure, "Add Adjustment Layer")
+                .clicked()
+            {
+                context_action = Some(ContextAction::AddAdjustment);
+                ui.close();
+            }
+            if canvas_state.layers[layer_idx].folder_id.is_none() {
+                if assets
+                    .menu_item(ui, Icon::MenuFileOpen, "Add Folder")
+                    .clicked()
+                {
+                    context_action = Some(ContextAction::AddFolder);
+                    ui.close();
+                }
+            }
+            if assets
                 .menu_item(ui, Icon::LayerDuplicate, &t!("layer.duplicate_layer"))
                 .clicked()
             {
@@ -813,6 +1612,60 @@ impl LayersPanel {
                     .clicked()
             {
                 context_action = Some(ContextAction::Delete);
+                ui.close();
+            }
+            ui.separator();
+            if !canvas_state.layer_folders.is_empty() {
+                ui.menu_button(format!("{} Move to Folder", Icon::MenuFileOpen.emoji()), |ui| {
+                    for folder in &canvas_state.layer_folders {
+                        if assets
+                            .menu_item(ui, Icon::MenuFileOpen, &folder.name)
+                            .clicked()
+                        {
+                            context_action = Some(ContextAction::MoveToFolder(folder.id));
+                            ui.close();
+                        }
+                    }
+                    if canvas_state.layers[layer_idx].folder_id.is_some() {
+                        ui.separator();
+                        if assets
+                            .menu_item(ui, Icon::MoveDown, "Remove from Folder")
+                            .clicked()
+                        {
+                            context_action = Some(ContextAction::RemoveFromFolder);
+                            ui.close();
+                        }
+                    }
+                });
+                ui.separator();
+            }
+            ui.menu_button(
+                format!("{} Extract Channel", Icon::MenuColorLevels.emoji()),
+                |ui| {
+                    for (label, icon, channel) in [
+                        ("Red", Icon::MenuColorCurves, ImageChannel::Red),
+                        ("Green", Icon::MenuColorHsl, ImageChannel::Green),
+                        ("Blue", Icon::MenuFilterColorFilter, ImageChannel::Blue),
+                        ("Alpha", Icon::MenuColorInvertAlpha, ImageChannel::Alpha),
+                        ("Luminance", Icon::MenuColorLevels, ImageChannel::Luminance),
+                    ] {
+                        if assets.menu_item(ui, icon, label).clicked() {
+                            context_action = Some(ContextAction::ExtractChannel(channel));
+                            ui.close();
+                        }
+                    }
+                },
+            );
+            if layer_idx > 0
+                && assets
+                    .menu_item(
+                        ui,
+                        Icon::MergeDownAsMask,
+                        "Replace Alpha from Below Luminance",
+                    )
+                    .clicked()
+            {
+                context_action = Some(ContextAction::ReplaceAlphaFromBelowLuminance);
                 ui.close();
             }
             ui.separator();
@@ -1441,4 +2294,3 @@ impl LayersPanel {
         }
     }
 }
-

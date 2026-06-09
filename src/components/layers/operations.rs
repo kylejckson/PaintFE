@@ -1,19 +1,53 @@
 impl LayersPanel {
+    fn folder_insert_index(&self, canvas_state: &CanvasState, folder_id: u64) -> usize {
+        canvas_state
+            .layers
+            .iter()
+            .rposition(|layer| layer.folder_id == Some(folder_id))
+            .map(|idx| idx + 1)
+            .or_else(|| {
+                canvas_state
+                    .layer_folder(folder_id)
+                    .and_then(|folder| folder.insert_above_layer.map(|idx| idx + 1))
+            })
+            .unwrap_or_else(|| (canvas_state.active_layer_index + 1).min(canvas_state.layers.len()))
+            .min(canvas_state.layers.len())
+    }
+
+    fn active_target_folder(&self, canvas_state: &CanvasState) -> Option<u64> {
+        self.selected_folder
+            .filter(|id| canvas_state.layer_folder(*id).is_some())
+    }
+
     fn add_new_layer(&mut self, canvas_state: &mut CanvasState, history: &mut HistoryManager) {
         let layer_num = canvas_state.layers.len() + 1;
         let layer_name = format!("Layer {}", layer_num);
         let transparent = Rgba([0, 0, 0, 0]);
-        let new_layer = Layer::new(
+        let mut new_layer = Layer::new(
             layer_name.clone(),
             canvas_state.width,
             canvas_state.height,
             transparent,
         );
+        new_layer.folder_id = self.active_target_folder(canvas_state).or_else(|| {
+            canvas_state
+                .layers
+                .get(canvas_state.active_layer_index)
+                .and_then(|layer| layer.folder_id)
+        });
 
         // Insert above current active layer
-        let insert_idx = canvas_state.active_layer_index + 1;
+        let insert_idx = new_layer
+            .folder_id
+            .map(|id| self.folder_insert_index(canvas_state, id))
+            .unwrap_or_else(|| (canvas_state.active_layer_index + 1).min(canvas_state.layers.len()));
         canvas_state.layers.insert(insert_idx, new_layer);
         canvas_state.active_layer_index = insert_idx;
+        if let Some(id) = canvas_state.layers[insert_idx].folder_id
+            && let Some(folder) = canvas_state.layer_folder_mut(id)
+        {
+            folder.insert_above_layer = None;
+        }
 
         // Record history
         history.push(Box::new(LayerOpCommand::new(LayerOperation::Add {
@@ -21,6 +55,7 @@ impl LayersPanel {
             name: layer_name,
             width: canvas_state.width,
             height: canvas_state.height,
+            folder_id: canvas_state.layers[insert_idx].folder_id,
         })));
 
         self.thumbnail_cache.clear();
@@ -30,21 +65,278 @@ impl LayersPanel {
     fn add_new_text_layer(&mut self, canvas_state: &mut CanvasState, history: &mut HistoryManager) {
         let layer_num = canvas_state.layers.len() + 1;
         let layer_name = format!("Text Layer {}", layer_num);
-        let new_layer =
+        let mut new_layer =
             Layer::new_text(layer_name.clone(), canvas_state.width, canvas_state.height);
+        new_layer.folder_id = self.active_target_folder(canvas_state).or_else(|| {
+            canvas_state
+                .layers
+                .get(canvas_state.active_layer_index)
+                .and_then(|layer| layer.folder_id)
+        });
 
-        let insert_idx = canvas_state.active_layer_index + 1;
+        let insert_idx = new_layer
+            .folder_id
+            .map(|id| self.folder_insert_index(canvas_state, id))
+            .unwrap_or_else(|| (canvas_state.active_layer_index + 1).min(canvas_state.layers.len()));
         canvas_state.layers.insert(insert_idx, new_layer);
         canvas_state.active_layer_index = insert_idx;
+        if let Some(id) = canvas_state.layers[insert_idx].folder_id
+            && let Some(folder) = canvas_state.layer_folder_mut(id)
+        {
+            folder.insert_above_layer = None;
+        }
 
         history.push(Box::new(LayerOpCommand::new(LayerOperation::Add {
             index: insert_idx,
             name: layer_name,
             width: canvas_state.width,
             height: canvas_state.height,
+            folder_id: canvas_state.layers[insert_idx].folder_id,
         })));
 
         self.thumbnail_cache.clear();
+        self.mark_full_dirty(canvas_state);
+    }
+
+    fn add_adjustment_layer(
+        &mut self,
+        canvas_state: &mut CanvasState,
+        history: &mut HistoryManager,
+    ) {
+        let mut snap = SnapshotCommand::new("Add Adjustment Layer".to_string(), canvas_state);
+        let layer_num = canvas_state.layers.len() + 1;
+        let layer_name = format!("Adjustment Layer {}", layer_num);
+        let mut new_layer = Layer::new_adjustment(
+            layer_name,
+            canvas_state.width,
+            canvas_state.height,
+            crate::canvas::AdjustmentKind::Exposure { ev: 0.5 },
+        );
+        new_layer.folder_id = canvas_state.layers[canvas_state.active_layer_index].folder_id;
+        let insert_idx = canvas_state.active_layer_index + 1;
+        canvas_state.layers.insert(insert_idx, new_layer);
+        canvas_state.active_layer_index = insert_idx;
+        snap.set_after(canvas_state);
+        history.push(Box::new(snap));
+
+        self.thumbnail_cache.clear();
+        self.mark_full_dirty(canvas_state);
+    }
+
+    fn add_layer_folder(
+        &mut self,
+        canvas_state: &mut CanvasState,
+        history: &mut HistoryManager,
+    ) {
+        let mut snap = SnapshotCommand::new("Add Layer Folder".to_string(), canvas_state);
+        let id = canvas_state.next_layer_folder_id.max(1);
+        canvas_state.next_layer_folder_id = id + 1;
+        let name = format!("Folder {}", canvas_state.layer_folders.len() + 1);
+        let insert_above_layer = canvas_state
+            .layers
+            .get(canvas_state.active_layer_index)
+            .and_then(|layer| layer.folder_id)
+            .and_then(|id| {
+                canvas_state
+                    .layers
+                    .iter()
+                    .rposition(|layer| layer.folder_id == Some(id))
+            })
+            .or(Some(canvas_state.active_layer_index));
+        canvas_state.layer_folders.push(crate::canvas::LayerFolder {
+            id,
+            name,
+            visible: true,
+            collapsed: false,
+            insert_above_layer,
+            color_index: None,
+        });
+        snap.set_after(canvas_state);
+        history.push(Box::new(snap));
+    }
+
+    fn folder_top_insert_index(&self, canvas_state: &CanvasState, folder_id: u64) -> usize {
+        canvas_state
+            .layers
+            .iter()
+            .rposition(|layer| layer.folder_id == Some(folder_id))
+            .map(|idx| idx + 1)
+            .or_else(|| {
+                canvas_state
+                    .layer_folder(folder_id)
+                    .and_then(|folder| folder.insert_above_layer.map(|idx| idx + 1))
+            })
+            .unwrap_or(canvas_state.layers.len())
+            .min(canvas_state.layers.len())
+    }
+
+    fn move_folder_block(
+        &mut self,
+        folder_id: u64,
+        insert_before_idx: usize,
+        canvas_state: &mut CanvasState,
+        history: &mut HistoryManager,
+    ) {
+        if canvas_state.layer_folder(folder_id).is_none() {
+            return;
+        }
+        let member_indices: Vec<usize> = canvas_state
+            .layers
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, layer)| (layer.folder_id == Some(folder_id)).then_some(idx))
+            .collect();
+        let mut snap = SnapshotCommand::new("Move Folder".to_string(), canvas_state);
+        if member_indices.is_empty() {
+            let adjusted = insert_before_idx.saturating_sub(1).min(canvas_state.layers.len());
+            if let Some(folder) = canvas_state.layer_folder_mut(folder_id) {
+                folder.insert_above_layer = Some(adjusted);
+            }
+        } else {
+            let removed_before = member_indices
+                .iter()
+                .filter(|idx| **idx < insert_before_idx)
+                .count();
+            let mut moved = Vec::with_capacity(member_indices.len());
+            for idx in member_indices.iter().rev() {
+                moved.push(canvas_state.layers.remove(*idx));
+            }
+            moved.reverse();
+            let insert_idx = insert_before_idx
+                .saturating_sub(removed_before)
+                .min(canvas_state.layers.len());
+            for (offset, layer) in moved.into_iter().enumerate() {
+                canvas_state.layers.insert(insert_idx + offset, layer);
+            }
+            if let Some(folder) = canvas_state.layer_folder_mut(folder_id) {
+                folder.insert_above_layer = None;
+            }
+        }
+        snap.set_after(canvas_state);
+        history.push(Box::new(snap));
+        self.thumbnail_cache.clear();
+        self.pending_gpu_clear = true;
+        self.mark_full_dirty(canvas_state);
+    }
+
+    fn add_layer_folder_above(
+        &mut self,
+        anchor_folder_id: u64,
+        canvas_state: &mut CanvasState,
+        history: &mut HistoryManager,
+    ) {
+        let Some(anchor) = canvas_state.layer_folder(anchor_folder_id) else {
+            return;
+        };
+        let insert_above_layer = anchor.insert_above_layer;
+        let mut snap = SnapshotCommand::new("Add Layer Folder".to_string(), canvas_state);
+        let id = canvas_state.next_layer_folder_id.max(1);
+        canvas_state.next_layer_folder_id = id + 1;
+        let name = format!("Folder {}", canvas_state.layer_folders.len() + 1);
+        canvas_state.layer_folders.push(crate::canvas::LayerFolder {
+            id,
+            name,
+            visible: true,
+            collapsed: false,
+            insert_above_layer,
+            color_index: None,
+        });
+        snap.set_after(canvas_state);
+        history.push(Box::new(snap));
+    }
+
+    fn set_layer_folder(
+        &mut self,
+        layer_idx: usize,
+        folder_id: Option<u64>,
+        canvas_state: &mut CanvasState,
+        history: &mut HistoryManager,
+    ) {
+        if layer_idx >= canvas_state.layers.len()
+            || canvas_state.layers[layer_idx].folder_id == folder_id
+        {
+            return;
+        }
+        if let Some(id) = folder_id
+            && canvas_state.layer_folder(id).is_none()
+        {
+            return;
+        }
+        let mut snap = SnapshotCommand::new("Move Layer to Folder".to_string(), canvas_state);
+        canvas_state.layers[layer_idx].folder_id = folder_id;
+        if let Some(id) = folder_id
+            && let Some(folder) = canvas_state.layer_folder_mut(id)
+        {
+            folder.insert_above_layer = None;
+        }
+        snap.set_after(canvas_state);
+        history.push(Box::new(snap));
+        self.mark_full_dirty(canvas_state);
+    }
+
+    fn rename_layer_folder(
+        &mut self,
+        folder_id: u64,
+        new_name: String,
+        canvas_state: &mut CanvasState,
+        history: &mut HistoryManager,
+    ) {
+        if new_name.trim().is_empty() {
+            return;
+        }
+        let Some(folder) = canvas_state.layer_folder(folder_id) else {
+            return;
+        };
+        if folder.name == new_name {
+            return;
+        }
+        let mut snap = SnapshotCommand::new("Rename Layer Folder".to_string(), canvas_state);
+        if let Some(folder) = canvas_state.layer_folder_mut(folder_id) {
+            folder.name = new_name;
+        }
+        snap.set_after(canvas_state);
+        history.push(Box::new(snap));
+    }
+
+    fn toggle_layer_folder_visibility(
+        &mut self,
+        folder_id: u64,
+        canvas_state: &mut CanvasState,
+        history: &mut HistoryManager,
+    ) {
+        let mut snap = SnapshotCommand::new("Toggle Layer Folder Visibility".to_string(), canvas_state);
+        if let Some(folder) = canvas_state.layer_folder_mut(folder_id) {
+            folder.visible = !folder.visible;
+        }
+        snap.set_after(canvas_state);
+        history.push(Box::new(snap));
+        self.mark_full_dirty(canvas_state);
+    }
+
+    fn set_layer_folder_collapsed(&mut self, folder_id: u64, collapsed: bool, canvas_state: &mut CanvasState) {
+        if let Some(folder) = canvas_state.layer_folder_mut(folder_id) {
+            folder.collapsed = collapsed;
+        }
+    }
+
+    fn delete_layer_folder(
+        &mut self,
+        folder_id: u64,
+        canvas_state: &mut CanvasState,
+        history: &mut HistoryManager,
+    ) {
+        if canvas_state.layer_folder(folder_id).is_none() {
+            return;
+        }
+        let mut snap = SnapshotCommand::new("Delete Layer Folder".to_string(), canvas_state);
+        canvas_state.layer_folders.retain(|folder| folder.id != folder_id);
+        for layer in &mut canvas_state.layers {
+            if layer.folder_id == Some(folder_id) {
+                layer.folder_id = None;
+            }
+        }
+        snap.set_after(canvas_state);
+        history.push(Box::new(snap));
         self.mark_full_dirty(canvas_state);
     }
 
@@ -140,8 +432,13 @@ impl LayersPanel {
         let mask_enabled = layer.mask_enabled;
         let name = layer.name.clone();
         let visible = layer.visible;
+        let folder_id = layer.folder_id;
         let opacity = layer.opacity;
         let content = layer.content.clone();
+        let pixel_format = layer.pixel_format;
+        let hdr_metadata = layer.hdr_metadata.clone();
+        let source_metadata = layer.source_metadata.clone();
+        let deep_pixels = layer.deep_pixels.clone();
         let clear_selection =
             canvas_state.active_layer_index == layer_idx && canvas_state.selection_mask.is_some();
         let snapshot_cmd = clear_selection
@@ -184,8 +481,13 @@ impl LayersPanel {
                 mask_enabled,
                 name,
                 visible,
+                folder_id,
                 opacity,
                 content,
+                pixel_format,
+                hdr_metadata,
+                source_metadata,
+                deep_pixels,
             })));
         }
 
@@ -213,11 +515,16 @@ impl LayersPanel {
         );
         new_layer.pixels = source.pixels.clone();
         new_layer.visible = source.visible;
+        new_layer.folder_id = source.folder_id;
         new_layer.opacity = source.opacity;
         new_layer.blend_mode = source.blend_mode;
         new_layer.content = source.content.clone();
         new_layer.mask = source.mask.clone();
         new_layer.mask_enabled = source.mask_enabled;
+        new_layer.pixel_format = source.pixel_format;
+        new_layer.hdr_metadata = source.hdr_metadata.clone();
+        new_layer.source_metadata = source.source_metadata.clone();
+        new_layer.deep_pixels = source.deep_pixels.clone();
 
         let new_index = layer_idx + 1;
 
@@ -226,8 +533,13 @@ impl LayersPanel {
         let mask = new_layer.mask.clone();
         let mask_enabled = new_layer.mask_enabled;
         let visible = new_layer.visible;
+        let folder_id = new_layer.folder_id;
         let opacity = new_layer.opacity;
         let content = new_layer.content.clone();
+        let pixel_format = new_layer.pixel_format;
+        let hdr_metadata = new_layer.hdr_metadata.clone();
+        let source_metadata = new_layer.source_metadata.clone();
+        let deep_pixels = new_layer.deep_pixels.clone();
 
         // Insert above the duplicated layer
         canvas_state.layers.insert(new_index, new_layer);
@@ -242,8 +554,13 @@ impl LayersPanel {
             mask_enabled,
             name: new_name,
             visible,
+            folder_id,
             opacity,
             content,
+            pixel_format,
+            hdr_metadata,
+            source_metadata,
+            deep_pixels,
         })));
 
         self.thumbnail_cache.clear();
@@ -289,6 +606,61 @@ impl LayersPanel {
         self.thumbnail_cache.clear();
         self.pending_gpu_clear = true;
         self.mark_full_dirty(canvas_state);
+    }
+
+    fn move_layer_group(
+        &mut self,
+        mut indices: Vec<usize>,
+        insert_before_idx: usize,
+        folder_id: Option<u64>,
+        canvas_state: &mut CanvasState,
+        history: &mut HistoryManager,
+    ) -> Option<Vec<usize>> {
+        indices.sort_unstable();
+        indices.dedup();
+        indices.retain(|idx| *idx < canvas_state.layers.len());
+        if indices.is_empty() {
+            return None;
+        }
+        if let Some(id) = folder_id
+            && canvas_state.layer_folder(id).is_none()
+        {
+            return None;
+        }
+
+        let active_rank = indices
+            .iter()
+            .position(|idx| *idx == canvas_state.active_layer_index)
+            .unwrap_or(0);
+        let mut snap = SnapshotCommand::new("Move Layers".to_string(), canvas_state);
+        let removed_before = indices
+            .iter()
+            .filter(|idx| **idx < insert_before_idx)
+            .count();
+        let mut moved = Vec::with_capacity(indices.len());
+        for idx in indices.iter().rev() {
+            moved.push(canvas_state.layers.remove(*idx));
+        }
+        moved.reverse();
+        let insert_idx = insert_before_idx
+            .saturating_sub(removed_before)
+            .min(canvas_state.layers.len());
+        for (offset, mut layer) in moved.into_iter().enumerate() {
+            layer.folder_id = folder_id;
+            canvas_state.layers.insert(insert_idx + offset, layer);
+        }
+        canvas_state.active_layer_index = (insert_idx + active_rank).min(canvas_state.layers.len() - 1);
+        if let Some(id) = folder_id
+            && let Some(folder) = canvas_state.layer_folder_mut(id)
+        {
+            folder.insert_above_layer = None;
+        }
+        snap.set_after(canvas_state);
+        history.push(Box::new(snap));
+        self.thumbnail_cache.clear();
+        self.pending_gpu_clear = true;
+        self.mark_full_dirty(canvas_state);
+        Some((insert_idx..insert_idx + indices.len()).collect())
     }
 
     /// Start peeking at a layer (hide all others temporarily)
@@ -516,4 +888,3 @@ impl LayersPanel {
         ));
     }
 }
-

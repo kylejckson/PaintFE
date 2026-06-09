@@ -479,6 +479,7 @@ impl GpuRenderer {
     }
 
     pub fn clear_layers(&mut self) {
+        self.async_readback.cancel_pending();
         let keys: Vec<_> = self.layer_textures.keys().cloned().collect();
         for k in keys {
             self.remove_layer(k);

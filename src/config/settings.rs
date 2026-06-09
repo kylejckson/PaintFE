@@ -44,6 +44,8 @@ pub struct AppSettings {
     pub pixel_grid_center_color: Color32,
     pub selection_stripe_color: Color32,
     pub selection_stripe_alpha: u8,
+    /// Preset colors shown for layer folders.
+    pub folder_color_palette: [Color32; 8],
     /// Maximum number of undo steps
     pub max_undo_steps: usize,
     /// Auto-save interval in minutes (0 = disabled)
@@ -103,6 +105,7 @@ pub struct AppSettings {
     pub persist_script_editor_visible: bool,
     pub persist_tools_panel_pos: Option<(f32, f32)>,
     pub persist_layers_panel_right_offset: Option<(f32, f32)>,
+    pub persist_layers_panel_size: Option<(f32, f32)>,
     pub persist_history_panel_right_offset: Option<(f32, f32)>,
     pub persist_colors_panel_left_offset: Option<(f32, f32)>,
     pub persist_palette_panel_pos: Option<(f32, f32)>,
@@ -235,6 +238,7 @@ impl Default for AppSettings {
             pixel_grid_center_color: Color32::from_white_alpha(100),
             selection_stripe_color: Color32::from_rgba_premultiplied(255, 255, 255, 255),
             selection_stripe_alpha: 22,
+            folder_color_palette: AppSettings::default_folder_color_palette(),
             max_undo_steps: 50,
             auto_save_minutes: 0,
             neon_mode: false,
@@ -273,6 +277,7 @@ impl Default for AppSettings {
             persist_script_editor_visible: false,
             persist_tools_panel_pos: None,
             persist_layers_panel_right_offset: None,
+            persist_layers_panel_size: None,
             persist_history_panel_right_offset: None,
             persist_colors_panel_left_offset: None,
             persist_palette_panel_pos: None,
@@ -369,6 +374,19 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
+    pub fn default_folder_color_palette() -> [Color32; 8] {
+        [
+            Color32::from_rgb(79, 140, 255),
+            Color32::from_rgb(32, 181, 126),
+            Color32::from_rgb(238, 184, 48),
+            Color32::from_rgb(238, 108, 77),
+            Color32::from_rgb(169, 120, 255),
+            Color32::from_rgb(236, 105, 170),
+            Color32::from_rgb(80, 185, 214),
+            Color32::from_rgb(142, 151, 166),
+        ]
+    }
+
     /// Path to the settings file.
     /// On Linux:   ~/.config/paintfe/paintfe_settings.cfg  (XDG_CONFIG_HOME respected)
     /// On Windows: %APPDATA%\PaintFE\paintfe_settings.cfg
@@ -912,6 +930,10 @@ impl AppSettings {
             Self::opt_pair_to_str(self.persist_layers_panel_right_offset)
         ));
         content.push_str(&format!(
+            "persist_layers_panel_size={}\n",
+            Self::opt_pair_to_str(self.persist_layers_panel_size)
+        ));
+        content.push_str(&format!(
             "persist_history_panel_right_offset={}\n",
             Self::opt_pair_to_str(self.persist_history_panel_right_offset)
         ));
@@ -1082,6 +1104,13 @@ impl AppSettings {
             "persist_window_maximized={}\n",
             self.persist_window_maximized
         ));
+        for (idx, color) in self.folder_color_palette.iter().enumerate() {
+            content.push_str(&format!(
+                "folder_color_{}={}\n",
+                idx,
+                Self::color_to_str(*color)
+            ));
+        }
         for line in self.keybindings.to_config_lines() {
             content.push_str(&line);
             content.push('\n');
@@ -1241,6 +1270,14 @@ impl AppSettings {
                 "selection_stripe_alpha" => {
                     s.selection_stripe_alpha = val.parse().unwrap_or(22);
                 }
+                key if key.starts_with("folder_color_") => {
+                    if let Ok(idx) = key.trim_start_matches("folder_color_").parse::<usize>()
+                        && idx < s.folder_color_palette.len()
+                        && let Some(color) = Self::str_to_color(val)
+                    {
+                        s.folder_color_palette[idx] = color;
+                    }
+                }
                 "max_undo_steps" => {
                     s.max_undo_steps = val.parse().unwrap_or(50);
                 }
@@ -1333,6 +1370,9 @@ impl AppSettings {
                 }
                 "persist_layers_panel_right_offset" => {
                     s.persist_layers_panel_right_offset = Self::str_to_opt_pair(val);
+                }
+                "persist_layers_panel_size" => {
+                    s.persist_layers_panel_size = Self::str_to_opt_pair(val);
                 }
                 "persist_history_panel_right_offset" => {
                     s.persist_history_panel_right_offset = Self::str_to_opt_pair(val);

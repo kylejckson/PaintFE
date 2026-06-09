@@ -233,6 +233,204 @@ impl LayersPanel {
                     }
                 });
         });
+
+        if matches!(
+            canvas_state.layers[layer_idx].content,
+            LayerContent::Adjustment(_)
+        ) {
+            self.show_adjustment_settings(ui, layer_idx, canvas_state);
+        }
+
+        ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(4.0);
+        ui.label(egui::RichText::new("Image data").strong().size(12.0));
+        ui.horizontal(|ui| {
+            ui.label("Pixel format");
+            let mut fmt = canvas_state.layers[layer_idx].pixel_format;
+            egui::ComboBox::from_id_salt(("pixel_format_combo_ls", layer_idx))
+                .selected_text(fmt.name())
+                .width(120.0)
+                .show_ui(ui, |ui| {
+                    for next in [
+                        crate::canvas::PixelFormat::RgbaU8,
+                        crate::canvas::PixelFormat::RgbaU16,
+                        crate::canvas::PixelFormat::RgbaF16,
+                        crate::canvas::PixelFormat::RgbaF32,
+                    ] {
+                        if ui.selectable_label(fmt == next, next.name()).clicked() {
+                            fmt = next;
+                        }
+                    }
+                });
+            if fmt != canvas_state.layers[layer_idx].pixel_format {
+                canvas_state.layers[layer_idx].pixel_format = fmt;
+            }
+        });
+        let mut hdr_enabled = canvas_state.layers[layer_idx].hdr_metadata.enabled;
+        if ui.checkbox(&mut hdr_enabled, "HDR metadata").changed() {
+            canvas_state.layers[layer_idx].hdr_metadata.enabled = hdr_enabled;
+        }
+        if hdr_enabled {
+            let mut max_nits = canvas_state.layers[layer_idx]
+                .hdr_metadata
+                .max_luminance_nits
+                .unwrap_or(1000.0);
+            ui.horizontal(|ui| {
+                ui.label("Max nits");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut max_nits)
+                            .range(80.0..=10000.0)
+                            .speed(10.0),
+                    )
+                    .changed()
+                {
+                    canvas_state.layers[layer_idx]
+                        .hdr_metadata
+                        .max_luminance_nits = Some(max_nits);
+                }
+            });
+        }
+        let meta = &canvas_state.layers[layer_idx].source_metadata;
+        if meta.source_format.is_some()
+            || !meta.png_text_chunks.is_empty()
+            || !meta.raw_png_chunks.is_empty()
+        {
+            ui.label(
+                egui::RichText::new(format!(
+                    "Metadata: {} text, {} raw chunks",
+                    meta.png_text_chunks.len(),
+                    meta.raw_png_chunks.len()
+                ))
+                .size(11.0),
+            );
+        }
+    }
+
+    fn show_adjustment_settings(
+        &mut self,
+        ui: &mut egui::Ui,
+        layer_idx: usize,
+        canvas_state: &mut CanvasState,
+    ) {
+        ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(4.0);
+        ui.label(egui::RichText::new("Adjustment").strong().size(12.0));
+
+        let mut changed = false;
+        let layer = &mut canvas_state.layers[layer_idx];
+        let LayerContent::Adjustment(ref mut adj) = layer.content else {
+            return;
+        };
+
+        let selected = match adj.kind {
+            crate::canvas::AdjustmentKind::Exposure { .. } => "Exposure",
+            crate::canvas::AdjustmentKind::BrightnessContrast { .. } => "Brightness / Contrast",
+            crate::canvas::AdjustmentKind::Invert => "Invert",
+            crate::canvas::AdjustmentKind::ChannelMixer { .. } => "Channel Mixer",
+        };
+        egui::ComboBox::from_id_salt(("adjustment_kind", layer_idx))
+            .selected_text(selected)
+            .width(180.0)
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(selected == "Exposure", "Exposure")
+                    .clicked()
+                {
+                    adj.kind = crate::canvas::AdjustmentKind::Exposure { ev: 0.5 };
+                    changed = true;
+                }
+                if ui
+                    .selectable_label(selected == "Brightness / Contrast", "Brightness / Contrast")
+                    .clicked()
+                {
+                    adj.kind = crate::canvas::AdjustmentKind::BrightnessContrast {
+                        brightness: 0.0,
+                        contrast: 0.0,
+                    };
+                    changed = true;
+                }
+                if ui
+                    .selectable_label(selected == "Invert", "Invert")
+                    .clicked()
+                {
+                    adj.kind = crate::canvas::AdjustmentKind::Invert;
+                    changed = true;
+                }
+                if ui
+                    .selectable_label(selected == "Channel Mixer", "Channel Mixer")
+                    .clicked()
+                {
+                    adj.kind = crate::canvas::AdjustmentKind::ChannelMixer {
+                        red: [1.0, 0.0, 0.0, 0.0],
+                        green: [0.0, 1.0, 0.0, 0.0],
+                        blue: [0.0, 0.0, 1.0, 0.0],
+                        alpha: [0.0, 0.0, 0.0, 1.0],
+                    };
+                    changed = true;
+                }
+            });
+
+        match &mut adj.kind {
+            crate::canvas::AdjustmentKind::Exposure { ev } => {
+                changed |= ui
+                    .add(
+                        egui::Slider::new(ev, -4.0..=4.0)
+                            .text("EV")
+                            .fixed_decimals(2),
+                    )
+                    .changed();
+            }
+            crate::canvas::AdjustmentKind::BrightnessContrast {
+                brightness,
+                contrast,
+            } => {
+                changed |= ui
+                    .add(egui::Slider::new(brightness, -255.0..=255.0).text("Brightness"))
+                    .changed();
+                changed |= ui
+                    .add(egui::Slider::new(contrast, -255.0..=255.0).text("Contrast"))
+                    .changed();
+            }
+            crate::canvas::AdjustmentKind::Invert => {
+                ui.label("Inverts RGB; alpha is preserved.");
+            }
+            crate::canvas::AdjustmentKind::ChannelMixer {
+                red,
+                green,
+                blue,
+                alpha,
+            } => {
+                for (label, row) in [
+                    ("Red", red),
+                    ("Green", green),
+                    ("Blue", blue),
+                    ("Alpha", alpha),
+                ] {
+                    ui.label(label);
+                    ui.horizontal(|ui| {
+                        for (i, coeff) in row.iter_mut().enumerate() {
+                            let name = ["R", "G", "B", "A"][i];
+                            changed |= ui
+                                .add(
+                                    egui::DragValue::new(coeff)
+                                        .range(-2.0..=2.0)
+                                        .speed(0.05)
+                                        .prefix(name),
+                                )
+                                .changed();
+                        }
+                    });
+                }
+            }
+        }
+
+        if changed {
+            layer.gpu_generation = layer.gpu_generation.wrapping_add(1);
+            self.mark_full_dirty(canvas_state);
+        }
     }
 
     /// Effects tab (text layers only): outline, shadow, inner shadow, texture fill.
@@ -901,6 +1099,4 @@ impl LayersPanel {
     }
 
     // === Layer Operations ===
-
 }
-

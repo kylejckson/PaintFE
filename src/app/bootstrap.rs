@@ -162,6 +162,7 @@ impl PaintFEApp {
             move_sel_start_bounds: None,
             pending_selection_reassert: None,
             layers_panel_right_offset: None,
+            layers_panel_size: None,
             history_panel_right_offset: None,
             colors_panel_left_offset: None,
             palette_panel_pos: None,
@@ -235,6 +236,7 @@ impl PaintFEApp {
         app.window_visibility.script_editor = app.settings.persist_script_editor_visible;
         app.tools_panel_pos = app.settings.persist_tools_panel_pos;
         app.layers_panel_right_offset = app.settings.persist_layers_panel_right_offset;
+        app.layers_panel_size = app.settings.persist_layers_panel_size;
         app.history_panel_right_offset = app.settings.persist_history_panel_right_offset;
         app.colors_panel_left_offset = app.settings.persist_colors_panel_left_offset;
         app.palette_panel_pos = app.settings.persist_palette_panel_pos.or_else(|| {
@@ -874,6 +876,7 @@ impl PaintFEApp {
             .hash(&mut hasher);
         hash_opt_pair(self.tools_panel_pos, &mut hasher);
         hash_opt_pair(self.layers_panel_right_offset, &mut hasher);
+        hash_opt_pair(self.layers_panel_size, &mut hasher);
         hash_opt_pair(self.history_panel_right_offset, &mut hasher);
         hash_opt_pair(self.colors_panel_left_offset, &mut hasher);
         hash_opt_pair(self.palette_panel_pos, &mut hasher);
@@ -905,6 +908,7 @@ impl PaintFEApp {
         self.settings.persist_script_editor_visible = self.window_visibility.script_editor;
         self.settings.persist_tools_panel_pos = self.tools_panel_pos;
         self.settings.persist_layers_panel_right_offset = self.layers_panel_right_offset;
+        self.settings.persist_layers_panel_size = self.layers_panel_size;
         self.settings.persist_history_panel_right_offset = self.history_panel_right_offset;
         self.settings.persist_colors_panel_left_offset = self.colors_panel_left_offset;
         self.settings.persist_palette_panel_pos = self.palette_panel_pos;

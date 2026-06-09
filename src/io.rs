@@ -12,8 +12,11 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::canvas::{BlendMode, CHUNK_SIZE, CanvasState, Layer, TiledImage};
+use crate::canvas::{
+    BlendMode, CHUNK_SIZE, CanvasState, Layer, LayerContent, PixelFormat, TiledImage,
+};
 use crate::components::dialogs::SaveFormat;
+use crate::experimental::{DeepRgbaBuffer, f16_bits_to_f32, reinhard_tone_map_rgba};
 
 /// Minimum frame delay in milliseconds for animated images.
 const MIN_FRAME_DELAY_MS: u16 = 10;
@@ -75,6 +78,8 @@ const PFE_MAGIC_V0: &str = "PFE0";
 const PFE_MAGIC_V1: &str = "PFE1";
 /// Magic header for the tiled format with text layer support (v2)
 const PFE_MAGIC_V2: &str = "PFE2";
+/// Magic header for experimental metadata, adjustment and format support (v3)
+const PFE_MAGIC_V3: &str = "PFE3";
 
 /// V0 (legacy) serializable project file structure
 #[derive(Serialize, Deserialize)]
@@ -150,6 +155,43 @@ struct LayerDataV2 {
     text_data: Option<Vec<u8>>,
 }
 
+/// V3 serializable project file — experimental feature payloads.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct ProjectFileV3 {
+    magic: String,
+    width: u32,
+    height: u32,
+    active_layer_index: usize,
+    #[serde(default)]
+    folders: Vec<crate::canvas::LayerFolder>,
+    #[serde(default = "default_next_layer_folder_id")]
+    next_layer_folder_id: u64,
+    layers: Vec<LayerDataV3>,
+}
+
+fn default_next_layer_folder_id() -> u64 {
+    1
+}
+
+/// V3 layer data with backward-compatible raster chunks plus experimental metadata.
+#[derive(Serialize, Deserialize)]
+struct LayerDataV3 {
+    name: String,
+    visible: bool,
+    #[serde(default)]
+    folder_id: Option<u64>,
+    opacity: f32,
+    blend_mode: u8,
+    /// 0 = Raster, 1 = Text, 2 = Adjustment
+    layer_type: u8,
+    chunks: Vec<ChunkData>,
+    content_data: Option<Vec<u8>>,
+    pixel_format: crate::canvas::PixelFormat,
+    hdr_metadata: crate::canvas::HdrMetadata,
+    source_metadata: crate::canvas::ImageMetadata,
+    deep_pixels: Option<crate::experimental::DeepRgbaBuffer>,
+}
+
 /// Error type for PFE file operations
 #[derive(Debug)]
 pub enum PfeError {
@@ -191,16 +233,32 @@ pub fn save_pfe(state: &CanvasState, path: &Path) -> Result<(), PfeError> {
 pub enum PfeData {
     V1(ProjectFileV1),
     V2(ProjectFileV2),
+    V3(ProjectFileV3),
 }
 
 /// Build a serializable PFE project, auto-selecting V1 or V2 based on content.
 /// Safe to call on the main thread, then move the result to a background thread.
 pub fn build_pfe(state: &CanvasState) -> PfeData {
+    let has_layer_folders =
+        !state.layer_folders.is_empty() || state.layers.iter().any(|l| l.folder_id.is_some());
+    let has_experimental_layers = state.layers.iter().any(|l| {
+        !matches!(
+            l.content,
+            crate::canvas::LayerContent::Raster | crate::canvas::LayerContent::Text(_)
+        ) || l.pixel_format != crate::canvas::PixelFormat::RgbaU8
+            || l.hdr_metadata.enabled
+            || !l.source_metadata.png_text_chunks.is_empty()
+            || !l.source_metadata.raw_png_chunks.is_empty()
+            || l.source_metadata.source_format.is_some()
+            || l.deep_pixels.is_some()
+    });
     let has_text_layers = state
         .layers
         .iter()
         .any(|l| matches!(l.content, crate::canvas::LayerContent::Text(_)));
-    if has_text_layers {
+    if has_experimental_layers || has_layer_folders {
+        PfeData::V3(build_pfe_v3(state))
+    } else if has_text_layers {
         PfeData::V2(build_pfe_v2(state))
     } else {
         PfeData::V1(build_pfe_v1(state))
@@ -212,6 +270,7 @@ pub fn write_pfe(data: &PfeData, path: &Path) -> Result<(), PfeError> {
     match data {
         PfeData::V1(project) => write_pfe_v1(project, path),
         PfeData::V2(project) => write_pfe_v2(project, path),
+        PfeData::V3(project) => write_pfe_v3(project, path),
     }
 }
 
@@ -294,6 +353,7 @@ pub fn build_pfe_v2(state: &CanvasState) -> ProjectFileV2 {
                     let serialized = bincode::serialize(td).ok();
                     (1u8, serialized)
                 }
+                LayerContent::Adjustment(_) => (0u8, None),
             };
 
             LayerDataV2 {
@@ -326,6 +386,68 @@ pub fn write_pfe_v2(project: &ProjectFileV2, path: &Path) -> Result<(), PfeError
     Ok(())
 }
 
+/// Build the experimental v3 project data from canvas state.
+pub fn build_pfe_v3(state: &CanvasState) -> ProjectFileV3 {
+    use crate::canvas::LayerContent;
+
+    let layers: Vec<LayerDataV3> = state
+        .layers
+        .iter()
+        .map(|layer| {
+            let chunks: Vec<ChunkData> = layer
+                .pixels
+                .chunk_keys()
+                .map(|(cx, cy)| {
+                    let chunk_img = layer.pixels.get_chunk(cx, cy).unwrap();
+                    ChunkData {
+                        cx,
+                        cy,
+                        pixels: chunk_img.as_raw().clone(),
+                    }
+                })
+                .collect();
+
+            let (layer_type, content_data) = match &layer.content {
+                LayerContent::Raster => (0u8, None),
+                LayerContent::Text(td) => (1u8, bincode::serialize(td).ok()),
+                LayerContent::Adjustment(adj) => (2u8, bincode::serialize(adj).ok()),
+            };
+
+            LayerDataV3 {
+                name: layer.name.clone(),
+                visible: layer.visible,
+                folder_id: layer.folder_id,
+                opacity: layer.opacity,
+                blend_mode: layer.blend_mode.to_u8(),
+                layer_type,
+                chunks,
+                content_data,
+                pixel_format: layer.pixel_format,
+                hdr_metadata: layer.hdr_metadata.clone(),
+                source_metadata: layer.source_metadata.clone(),
+                deep_pixels: layer.deep_pixels.clone(),
+            }
+        })
+        .collect();
+
+    ProjectFileV3 {
+        magic: PFE_MAGIC_V3.to_string(),
+        width: state.width,
+        height: state.height,
+        active_layer_index: state.active_layer_index,
+        folders: state.layer_folders.clone(),
+        next_layer_folder_id: state.next_layer_folder_id,
+        layers,
+    }
+}
+
+pub fn write_pfe_v3(project: &ProjectFileV3, path: &Path) -> Result<(), PfeError> {
+    let file = File::create(path)?;
+    let writer = BufWriter::new(file);
+    bincode::serialize_into(writer, &project)?;
+    Ok(())
+}
+
 /// Load a .pfe project file (supports both v0 flat and v1 tiled formats)
 pub fn load_pfe(path: &Path) -> Result<CanvasState, PfeError> {
     // Peek at the first 4 bytes to determine version
@@ -339,9 +461,10 @@ pub fn load_pfe(path: &Path) -> Result<CanvasState, PfeError> {
     let magic = std::str::from_utf8(&raw[8..12]).unwrap_or("");
 
     match magic {
-        "PFE2" => load_pfe_v2(&raw),
-        "PFE1" => load_pfe_v1(&raw),
-        "PFE0" => load_pfe_v0(&raw),
+        PFE_MAGIC_V3 => load_pfe_v3(&raw),
+        PFE_MAGIC_V2 => load_pfe_v2(&raw),
+        PFE_MAGIC_V1 => load_pfe_v1(&raw),
+        PFE_MAGIC_V0 => load_pfe_v0(&raw),
         _ => Err(PfeError::InvalidFormat(format!(
             "Unknown magic '{}'",
             magic
@@ -384,6 +507,159 @@ pub fn autosave_dir() -> Option<std::path::PathBuf> {
 
 // ============================================================================
 
+fn metadata_for_path(path: &Path) -> crate::canvas::ImageMetadata {
+    let mut meta = crate::canvas::ImageMetadata {
+        source_format: path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_ascii_lowercase()),
+        source_name: path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_string()),
+        ..Default::default()
+    };
+
+    if meta.source_format.as_deref() != Some("png") {
+        return meta;
+    }
+    let Ok(bytes) = std::fs::read(path) else {
+        return meta;
+    };
+    const PNG_SIG: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    if bytes.len() < 12 || &bytes[..8] != PNG_SIG {
+        return meta;
+    }
+
+    let mut pos = 8usize;
+    while pos + 12 <= bytes.len() {
+        let len = u32::from_be_bytes([bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]])
+            as usize;
+        let typ_start = pos + 4;
+        let data_start = pos + 8;
+        let data_end = data_start.saturating_add(len);
+        let chunk_end = data_end.saturating_add(4);
+        if chunk_end > bytes.len() {
+            break;
+        }
+        let chunk_type = &bytes[typ_start..typ_start + 4];
+        if matches!(chunk_type, b"tEXt" | b"iTXt" | b"zTXt") {
+            meta.raw_png_chunks.push(bytes[pos..chunk_end].to_vec());
+            if chunk_type == b"tEXt" {
+                let data = &bytes[data_start..data_end];
+                if let Some(split) = data.iter().position(|&b| b == 0) {
+                    let key = String::from_utf8_lossy(&data[..split]).to_string();
+                    let value = String::from_utf8_lossy(&data[split + 1..]).to_string();
+                    meta.png_text_chunks.push((key, value));
+                }
+            }
+        }
+        if chunk_type == b"IEND" {
+            break;
+        }
+        pos = chunk_end;
+    }
+
+    meta
+}
+
+fn dynamic_image_to_rgba_and_deep(
+    img: DynamicImage,
+) -> (
+    RgbaImage,
+    crate::canvas::PixelFormat,
+    Option<crate::experimental::DeepRgbaBuffer>,
+    crate::canvas::HdrMetadata,
+) {
+    match &img {
+        DynamicImage::ImageRgba16(buf) => (
+            img.to_rgba8(),
+            crate::canvas::PixelFormat::RgbaU16,
+            Some(crate::experimental::DeepRgbaBuffer::U16(
+                buf.as_raw().clone(),
+            )),
+            crate::canvas::HdrMetadata::default(),
+        ),
+        DynamicImage::ImageRgb16(buf) => {
+            let mut deep = Vec::with_capacity(buf.as_raw().len() / 3 * 4);
+            for px in buf.pixels() {
+                deep.extend_from_slice(&[px[0], px[1], px[2], u16::MAX]);
+            }
+            (
+                img.to_rgba8(),
+                crate::canvas::PixelFormat::RgbaU16,
+                Some(crate::experimental::DeepRgbaBuffer::U16(deep)),
+                crate::canvas::HdrMetadata::default(),
+            )
+        }
+        DynamicImage::ImageLuma16(buf) => {
+            let mut deep = Vec::with_capacity(buf.as_raw().len() * 4);
+            for px in buf.pixels() {
+                let v = px[0];
+                deep.extend_from_slice(&[v, v, v, u16::MAX]);
+            }
+            (
+                img.to_rgba8(),
+                crate::canvas::PixelFormat::RgbaU16,
+                Some(crate::experimental::DeepRgbaBuffer::U16(deep)),
+                crate::canvas::HdrMetadata::default(),
+            )
+        }
+        DynamicImage::ImageLumaA16(buf) => {
+            let mut deep = Vec::with_capacity(buf.as_raw().len() / 2 * 4);
+            for px in buf.pixels() {
+                let v = px[0];
+                deep.extend_from_slice(&[v, v, v, px[1]]);
+            }
+            (
+                img.to_rgba8(),
+                crate::canvas::PixelFormat::RgbaU16,
+                Some(crate::experimental::DeepRgbaBuffer::U16(deep)),
+                crate::canvas::HdrMetadata::default(),
+            )
+        }
+        DynamicImage::ImageRgba32F(buf) => {
+            let raw = buf.as_raw().clone();
+            let max = raw.iter().copied().fold(0.0_f32, f32::max);
+            (
+                img.to_rgba8(),
+                crate::canvas::PixelFormat::RgbaF32,
+                Some(crate::experimental::DeepRgbaBuffer::F32(raw)),
+                crate::canvas::HdrMetadata {
+                    enabled: max > 1.0,
+                    max_luminance_nits: (max > 1.0).then_some(max * 100.0),
+                    reference_white_nits: Some(100.0),
+                    transfer_function: Some("linear-f32".to_string()),
+                },
+            )
+        }
+        DynamicImage::ImageRgb32F(buf) => {
+            let mut deep = Vec::with_capacity(buf.as_raw().len() / 3 * 4);
+            for px in buf.pixels() {
+                deep.extend_from_slice(&[px[0], px[1], px[2], 1.0]);
+            }
+            let max = deep.iter().copied().fold(0.0_f32, f32::max);
+            (
+                img.to_rgba8(),
+                crate::canvas::PixelFormat::RgbaF32,
+                Some(crate::experimental::DeepRgbaBuffer::F32(deep)),
+                crate::canvas::HdrMetadata {
+                    enabled: max > 1.0,
+                    max_luminance_nits: (max > 1.0).then_some(max * 100.0),
+                    reference_white_nits: Some(100.0),
+                    transfer_function: Some("linear-f32".to_string()),
+                },
+            )
+        }
+        _ => (
+            img.to_rgba8(),
+            crate::canvas::PixelFormat::RgbaU8,
+            None,
+            crate::canvas::HdrMetadata::default(),
+        ),
+    }
+}
+
 /// Synchronously load any supported image into a single-layer [`CanvasState`].
 ///
 /// Supported inputs:
@@ -402,14 +678,19 @@ pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
         return load_pfe(path).map_err(|e| format!("{:?}", e));
     }
 
-    // Decode to RGBA
-    let img: RgbaImage = if is_raw_extension(&ext) {
-        decode_raw_image(path)?
+    // Decode to display RGBA while preserving high-depth payload when available.
+    let (img, pixel_format, deep_pixels, hdr_metadata) = if is_raw_extension(&ext) {
+        (
+            decode_raw_image(path)?,
+            crate::canvas::PixelFormat::RgbaU8,
+            None,
+            crate::canvas::HdrMetadata::default(),
+        )
     } else {
         if let Ok((w, h)) = image::image_dimensions(path) {
             validate_open_dimensions(w, h)?;
         }
-        image::open(path).map_err(|e| e.to_string())?.to_rgba8()
+        dynamic_image_to_rgba_and_deep(image::open(path).map_err(|e| e.to_string())?)
     };
 
     let w = img.width();
@@ -424,6 +705,7 @@ pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
     let layer = Layer {
         name,
         visible: true,
+        folder_id: None,
         opacity: 1.0,
         blend_mode: BlendMode::Normal,
         pixels: TiledImage::from_rgba_image(&img),
@@ -432,13 +714,159 @@ pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
         lod_cache: None,
         gpu_generation: 0,
         content: crate::canvas::LayerContent::Raster,
+        pixel_format,
+        hdr_metadata,
+        source_metadata: metadata_for_path(path),
+        deep_pixels,
     };
 
     Ok(CanvasState {
         width: w,
         height: h,
         layers: vec![layer],
+        layer_folders: Vec::new(),
+        next_layer_folder_id: 1,
         active_layer_index: 0,
+        edit_layer_mask: false,
+        composite_cache: None,
+        dirty_rect: None,
+        show_pixel_grid: true,
+        show_guidelines: false,
+        mirror_mode: crate::canvas::MirrorMode::None,
+        show_wrap_preview: false,
+        preview_layer: None,
+        preview_blend_mode: BlendMode::Normal,
+        preview_force_composite: false,
+        preview_is_eraser: false,
+        preview_replaces_layer: false,
+        preview_targets_mask: false,
+        preview_mask_reveal: false,
+        dirty_generation: 0,
+        selection_mask: None,
+        lod_composite_cache: None,
+        lod_generation: 0,
+        preview_dirty_rect: None,
+        preview_texture_cache: None,
+        preview_generation: 0,
+        preview_stroke_bounds: None,
+        preview_flat_buffer: Vec::new(),
+        preview_flat_ready: false,
+        preview_downscale: 1,
+        composite_cpu_buffer: Vec::new(),
+        composite_cpu_buffer_back: Vec::new(),
+        region_extract_buf: Vec::new(),
+        composite_above_buffer: Vec::new(),
+        preview_premul_cache: Vec::new(),
+        preview_cache_rect: None,
+        selection_overlay_texture: None,
+        selection_overlay_generation: 0,
+        selection_overlay_built_generation: 0,
+        selection_overlay_anim_offset: -1.0,
+        selection_overlay_bounds: None,
+        fill_commit_overlays: Vec::new(),
+        selection_border_h_segs: Vec::new(),
+        selection_border_v_segs: Vec::new(),
+        selection_border_built_generation: u64::MAX,
+        cmyk_preview: false,
+        text_coverage_buf: Vec::new(),
+        text_glyph_cache: Default::default(),
+        text_editing_layer: None,
+        canvas_widget_id: None,
+    })
+}
+
+/// Load a v3 tiled project file with experimental feature support.
+fn load_pfe_v3(raw: &[u8]) -> Result<CanvasState, PfeError> {
+    use crate::canvas::{AdjustmentLayerData, LayerContent};
+
+    let project: ProjectFileV3 = bincode::deserialize(raw)?;
+
+    validate_open_dimensions(project.width, project.height).map_err(PfeError::InvalidFormat)?;
+    if project.layers.len() > MAX_LAYERS {
+        return Err(PfeError::InvalidFormat(format!(
+            "Project contains {} layers, which exceeds the maximum of {}",
+            project.layers.len(),
+            MAX_LAYERS
+        )));
+    }
+
+    let expected_chunk_bytes = (CHUNK_SIZE * CHUNK_SIZE * 4) as usize;
+    let mut layers = Vec::with_capacity(project.layers.len());
+
+    for ld in project.layers {
+        let mut tiled = TiledImage::new(project.width, project.height);
+        for cd in ld.chunks {
+            if cd.pixels.len() != expected_chunk_bytes {
+                return Err(PfeError::InvalidFormat(format!(
+                    "Chunk ({},{}) in layer '{}' has {} bytes, expected {}",
+                    cd.cx,
+                    cd.cy,
+                    ld.name,
+                    cd.pixels.len(),
+                    expected_chunk_bytes,
+                )));
+            }
+            let chunk_img =
+                RgbaImage::from_raw(CHUNK_SIZE, CHUNK_SIZE, cd.pixels).ok_or_else(|| {
+                    PfeError::InvalidFormat(format!(
+                        "Failed to reconstruct chunk ({},{}) for layer '{}'",
+                        cd.cx, cd.cy, ld.name
+                    ))
+                })?;
+            tiled.set_chunk(cd.cx, cd.cy, chunk_img);
+        }
+
+        let content = match ld.layer_type {
+            1 => ld
+                .content_data
+                .as_ref()
+                .and_then(|b| bincode::deserialize::<crate::ops::text_layer::TextLayerData>(b).ok())
+                .map(|mut td| {
+                    td.raster_generation = 1;
+                    td.next_block_id = td.blocks.iter().map(|b| b.id).max().unwrap_or(0) + 1;
+                    LayerContent::Text(td)
+                })
+                .unwrap_or(LayerContent::Raster),
+            2 => ld
+                .content_data
+                .as_ref()
+                .and_then(|b| bincode::deserialize::<AdjustmentLayerData>(b).ok())
+                .map(LayerContent::Adjustment)
+                .unwrap_or(LayerContent::Raster),
+            _ => LayerContent::Raster,
+        };
+
+        layers.push(Layer {
+            name: ld.name,
+            visible: ld.visible,
+            folder_id: ld.folder_id,
+            opacity: ld.opacity,
+            blend_mode: BlendMode::from_u8(ld.blend_mode),
+            pixels: tiled,
+            mask: None,
+            mask_enabled: true,
+            lod_cache: None,
+            gpu_generation: 0,
+            content,
+            pixel_format: ld.pixel_format,
+            hdr_metadata: ld.hdr_metadata,
+            source_metadata: ld.source_metadata,
+            deep_pixels: ld.deep_pixels,
+        });
+    }
+
+    if layers.is_empty() {
+        return Err(PfeError::InvalidFormat("Project contains no layers".into()));
+    }
+
+    let active = project.active_layer_index.min(layers.len() - 1);
+    Ok(CanvasState {
+        width: project.width,
+        height: project.height,
+        layers,
+        layer_folders: project.folders,
+        next_layer_folder_id: project.next_layer_folder_id,
+        active_layer_index: active,
         edit_layer_mask: false,
         composite_cache: None,
         dirty_rect: None,
@@ -559,6 +987,7 @@ fn load_pfe_v2(raw: &[u8]) -> Result<CanvasState, PfeError> {
         layers.push(Layer {
             name: ld.name,
             visible: ld.visible,
+            folder_id: None,
             opacity: ld.opacity,
             blend_mode: BlendMode::from_u8(ld.blend_mode),
             pixels: tiled,
@@ -567,6 +996,10 @@ fn load_pfe_v2(raw: &[u8]) -> Result<CanvasState, PfeError> {
             lod_cache: None,
             gpu_generation: 0,
             content,
+            pixel_format: crate::canvas::PixelFormat::RgbaU8,
+            hdr_metadata: crate::canvas::HdrMetadata::default(),
+            source_metadata: crate::canvas::ImageMetadata::default(),
+            deep_pixels: None,
         });
     }
 
@@ -580,6 +1013,8 @@ fn load_pfe_v2(raw: &[u8]) -> Result<CanvasState, PfeError> {
         width: project.width,
         height: project.height,
         layers,
+        layer_folders: Vec::new(),
+        next_layer_folder_id: 1,
         active_layer_index: active,
         edit_layer_mask: false,
         composite_cache: None,
@@ -671,6 +1106,7 @@ fn load_pfe_v1(raw: &[u8]) -> Result<CanvasState, PfeError> {
         layers.push(Layer {
             name: ld.name,
             visible: ld.visible,
+            folder_id: None,
             opacity: ld.opacity,
             blend_mode: BlendMode::from_u8(ld.blend_mode),
             pixels: tiled,
@@ -679,6 +1115,10 @@ fn load_pfe_v1(raw: &[u8]) -> Result<CanvasState, PfeError> {
             lod_cache: None,
             gpu_generation: 0,
             content: crate::canvas::LayerContent::Raster,
+            pixel_format: crate::canvas::PixelFormat::RgbaU8,
+            hdr_metadata: crate::canvas::HdrMetadata::default(),
+            source_metadata: crate::canvas::ImageMetadata::default(),
+            deep_pixels: None,
         });
     }
 
@@ -692,6 +1132,8 @@ fn load_pfe_v1(raw: &[u8]) -> Result<CanvasState, PfeError> {
         width: project.width,
         height: project.height,
         layers,
+        layer_folders: Vec::new(),
+        next_layer_folder_id: 1,
         active_layer_index: active,
         edit_layer_mask: false,
         composite_cache: None,
@@ -780,6 +1222,7 @@ fn load_pfe_v0(raw: &[u8]) -> Result<CanvasState, PfeError> {
         layers.push(Layer {
             name: layer_data.name,
             visible: layer_data.visible,
+            folder_id: None,
             opacity: layer_data.opacity,
             blend_mode: BlendMode::from_u8(layer_data.blend_mode),
             pixels: TiledImage::from_rgba_image(&flat),
@@ -788,6 +1231,10 @@ fn load_pfe_v0(raw: &[u8]) -> Result<CanvasState, PfeError> {
             lod_cache: None,
             gpu_generation: 0,
             content: crate::canvas::LayerContent::Raster,
+            pixel_format: crate::canvas::PixelFormat::RgbaU8,
+            hdr_metadata: crate::canvas::HdrMetadata::default(),
+            source_metadata: crate::canvas::ImageMetadata::default(),
+            deep_pixels: None,
         });
     }
 
@@ -801,6 +1248,8 @@ fn load_pfe_v0(raw: &[u8]) -> Result<CanvasState, PfeError> {
         width: project.width,
         height: project.height,
         layers,
+        layer_folders: Vec::new(),
+        next_layer_folder_id: 1,
         active_layer_index: active,
         edit_layer_mask: false,
         composite_cache: None,
@@ -853,6 +1302,360 @@ fn load_pfe_v0(raw: &[u8]) -> Result<CanvasState, PfeError> {
 // ============================================================================
 // THREAD-SAFE IMAGE ENCODING
 // ============================================================================
+
+#[derive(Clone, Debug)]
+pub enum PreparedExportImage {
+    Rgba8(RgbaImage),
+    Rgba16 {
+        width: u32,
+        height: u32,
+        pixels: Vec<u16>,
+    },
+    RgbaF32 {
+        width: u32,
+        height: u32,
+        pixels: Vec<f32>,
+    },
+}
+
+impl PreparedExportImage {
+    fn rgba8(&self) -> RgbaImage {
+        match self {
+            PreparedExportImage::Rgba8(image) => image.clone(),
+            PreparedExportImage::Rgba16 {
+                width,
+                height,
+                pixels,
+            } => {
+                let data = pixels
+                    .iter()
+                    .map(|&v| ((v as u32 + 128) / 257) as u8)
+                    .collect();
+                RgbaImage::from_raw(*width, *height, data)
+                    .unwrap_or_else(|| RgbaImage::new(*width, *height))
+            }
+            PreparedExportImage::RgbaF32 {
+                width,
+                height,
+                pixels,
+            } => {
+                let mut data = Vec::with_capacity(pixels.len());
+                for px in pixels.chunks_exact(4) {
+                    let mapped = if px[0] > 1.0 || px[1] > 1.0 || px[2] > 1.0 {
+                        reinhard_tone_map_rgba([px[0], px[1], px[2], px[3]], 1.0)
+                    } else {
+                        Rgba([
+                            (px[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+                            (px[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+                            (px[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+                            (px[3].clamp(0.0, 1.0) * 255.0).round() as u8,
+                        ])
+                    };
+                    data.extend_from_slice(&mapped.0);
+                }
+                RgbaImage::from_raw(*width, *height, data)
+                    .unwrap_or_else(|| RgbaImage::new(*width, *height))
+            }
+        }
+    }
+}
+
+pub fn prepare_export_image(state: &CanvasState) -> PreparedExportImage {
+    if let Some(deep_adjusted) = adjusted_deep_export(state) {
+        return deep_adjusted;
+    }
+    if let Some(deep) = exact_single_layer_deep_export(state) {
+        return deep;
+    }
+
+    let composite = state.composite();
+    if state.layers.iter().enumerate().any(|(idx, layer)| {
+        state.layer_effectively_visible(idx)
+            && (layer.hdr_metadata.enabled
+                || matches!(
+                    layer.pixel_format,
+                    PixelFormat::RgbaF16 | PixelFormat::RgbaF32
+                ))
+    }) {
+        return PreparedExportImage::RgbaF32 {
+            width: composite.width(),
+            height: composite.height(),
+            pixels: composite
+                .as_raw()
+                .iter()
+                .map(|&v| v as f32 / 255.0)
+                .collect(),
+        };
+    }
+    if state.layers.iter().enumerate().any(|(idx, layer)| {
+        state.layer_effectively_visible(idx) && layer.pixel_format == PixelFormat::RgbaU16
+    }) {
+        return PreparedExportImage::Rgba16 {
+            width: composite.width(),
+            height: composite.height(),
+            pixels: composite
+                .as_raw()
+                .iter()
+                .map(|&v| (v as u16) * 257)
+                .collect(),
+        };
+    }
+    PreparedExportImage::Rgba8(composite)
+}
+
+fn adjusted_deep_export(state: &CanvasState) -> Option<PreparedExportImage> {
+    let visible_layers: Vec<&Layer> = state
+        .layers
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, layer)| state.layer_effectively_visible(idx).then_some(layer))
+        .collect();
+    let base = *visible_layers.first()?;
+    if visible_layers.len() < 2
+        || !matches!(base.content, LayerContent::Raster)
+        || base.opacity < 0.999
+        || base.blend_mode != BlendMode::Normal
+        || base.mask.is_some()
+    {
+        return None;
+    }
+    if !visible_layers
+        .iter()
+        .skip(1)
+        .all(|layer| matches!(layer.content, LayerContent::Adjustment(_)))
+    {
+        return None;
+    }
+    let mut pixels = deep_buffer_to_f32(base.deep_pixels.as_ref()?, state.width, state.height)?;
+    if base
+        .deep_pixels
+        .as_ref()?
+        .to_rgba8(state.width, state.height)?
+        != base.pixels.to_rgba_image()
+    {
+        return None;
+    }
+
+    for layer in visible_layers.iter().skip(1) {
+        let LayerContent::Adjustment(adj) = &layer.content else {
+            return None;
+        };
+        for px in pixels.chunks_exact_mut(4) {
+            let out = adj.apply_to_f32_with_opacity([px[0], px[1], px[2], px[3]], layer.opacity);
+            px.copy_from_slice(&out);
+        }
+    }
+
+    if base.hdr_metadata.enabled
+        || matches!(
+            base.pixel_format,
+            PixelFormat::RgbaF16 | PixelFormat::RgbaF32
+        )
+    {
+        Some(PreparedExportImage::RgbaF32 {
+            width: state.width,
+            height: state.height,
+            pixels,
+        })
+    } else if base.pixel_format == PixelFormat::RgbaU16 {
+        Some(PreparedExportImage::Rgba16 {
+            width: state.width,
+            height: state.height,
+            pixels: pixels
+                .iter()
+                .map(|&v| (v.clamp(0.0, 1.0) * 65535.0).round() as u16)
+                .collect(),
+        })
+    } else {
+        None
+    }
+}
+
+fn deep_buffer_to_f32(deep: &DeepRgbaBuffer, width: u32, height: u32) -> Option<Vec<f32>> {
+    let expected = (width as usize) * (height as usize) * 4;
+    match deep {
+        DeepRgbaBuffer::U8(values) if values.len() == expected => {
+            Some(values.iter().map(|&v| v as f32 / 255.0).collect())
+        }
+        DeepRgbaBuffer::U16(values) if values.len() == expected => {
+            Some(values.iter().map(|&v| v as f32 / 65535.0).collect())
+        }
+        DeepRgbaBuffer::F16(values) if values.len() == expected => {
+            Some(values.iter().map(|&v| f16_bits_to_f32(v)).collect())
+        }
+        DeepRgbaBuffer::F32(values) if values.len() == expected => Some(values.clone()),
+        _ => None,
+    }
+}
+
+fn exact_single_layer_deep_export(state: &CanvasState) -> Option<PreparedExportImage> {
+    let visible_layers: Vec<&Layer> = state
+        .layers
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, layer)| state.layer_effectively_visible(idx).then_some(layer))
+        .collect();
+    let layer = *visible_layers.first()?;
+    if visible_layers.len() != 1
+        || !matches!(layer.content, LayerContent::Raster)
+        || layer.opacity < 0.999
+        || layer.blend_mode != BlendMode::Normal
+        || layer.mask.is_some()
+    {
+        return None;
+    }
+
+    let deep = layer.deep_pixels.as_ref()?;
+    if deep.to_rgba8(state.width, state.height)? != layer.pixels.to_rgba_image() {
+        return None;
+    }
+
+    match deep {
+        DeepRgbaBuffer::U8(pixels) => {
+            RgbaImage::from_raw(state.width, state.height, pixels.clone())
+                .map(PreparedExportImage::Rgba8)
+        }
+        DeepRgbaBuffer::U16(pixels) => Some(PreparedExportImage::Rgba16 {
+            width: state.width,
+            height: state.height,
+            pixels: pixels.clone(),
+        }),
+        DeepRgbaBuffer::F16(pixels) => Some(PreparedExportImage::RgbaF32 {
+            width: state.width,
+            height: state.height,
+            pixels: pixels.iter().map(|&v| f16_bits_to_f32(v)).collect(),
+        }),
+        DeepRgbaBuffer::F32(pixels) => Some(PreparedExportImage::RgbaF32 {
+            width: state.width,
+            height: state.height,
+            pixels: pixels.clone(),
+        }),
+    }
+}
+
+pub fn encode_prepared_and_write(
+    image: PreparedExportImage,
+    path: &Path,
+    format: SaveFormat,
+    quality: u8,
+    tiff_compression: TiffCompression,
+) -> Result<(), ImageError> {
+    match (&image, format) {
+        (
+            PreparedExportImage::Rgba16 {
+                width,
+                height,
+                pixels,
+            },
+            SaveFormat::Png,
+        ) => return write_png16(*width, *height, pixels, path),
+        (
+            PreparedExportImage::Rgba16 {
+                width,
+                height,
+                pixels,
+            },
+            SaveFormat::Tiff,
+        ) => return write_tiff16(*width, *height, pixels, path, tiff_compression),
+        (
+            PreparedExportImage::RgbaF32 {
+                width,
+                height,
+                pixels,
+            },
+            SaveFormat::Tiff,
+        ) => return write_tiff_f32(*width, *height, pixels, path),
+        _ => {}
+    }
+
+    let rgba8 = image.rgba8();
+    encode_and_write(&rgba8, path, format, quality, tiff_compression)
+}
+
+pub fn encode_canvas_state_and_write(
+    state: &CanvasState,
+    path: &Path,
+    format: SaveFormat,
+    quality: u8,
+    tiff_compression: TiffCompression,
+) -> Result<(), ImageError> {
+    encode_prepared_and_write(
+        prepare_export_image(state),
+        path,
+        format,
+        quality,
+        tiff_compression,
+    )
+}
+
+fn write_png16(width: u32, height: u32, pixels: &[u16], path: &Path) -> Result<(), ImageError> {
+    let file = File::create(path)?;
+    let writer = BufWriter::new(file);
+    let mut encoder = png::Encoder::new(writer, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Sixteen);
+    let mut png_writer = encoder
+        .write_header()
+        .map_err(|e| ImageError::IoError(std::io::Error::other(e.to_string())))?;
+    let mut bytes = Vec::with_capacity(pixels.len() * 2);
+    for value in pixels {
+        bytes.extend_from_slice(&value.to_be_bytes());
+    }
+    png_writer
+        .write_image_data(&bytes)
+        .map_err(|e| ImageError::IoError(std::io::Error::other(e.to_string())))?;
+    Ok(())
+}
+
+fn write_tiff16(
+    width: u32,
+    height: u32,
+    pixels: &[u16],
+    path: &Path,
+    tiff_compression: TiffCompression,
+) -> Result<(), ImageError> {
+    let file = File::create(path)?;
+    let mut writer = BufWriter::new(file);
+    let err_map = |e: tiff::TiffError| {
+        ImageError::IoError(std::io::Error::other(format!("TIFF encode error: {}", e)))
+    };
+    let mut tiff_enc = tiff::encoder::TiffEncoder::new(&mut writer).map_err(err_map)?;
+    match tiff_compression {
+        TiffCompression::None => tiff_enc
+            .write_image::<tiff::encoder::colortype::RGBA16>(width, height, pixels)
+            .map_err(err_map)?,
+        TiffCompression::Lzw => tiff_enc
+            .write_image_with_compression::<tiff::encoder::colortype::RGBA16, _>(
+                width,
+                height,
+                tiff::encoder::compression::Lzw,
+                pixels,
+            )
+            .map_err(err_map)?,
+        TiffCompression::Deflate => tiff_enc
+            .write_image_with_compression::<tiff::encoder::colortype::RGBA16, _>(
+                width,
+                height,
+                tiff::encoder::compression::Deflate::default(),
+                pixels,
+            )
+            .map_err(err_map)?,
+    }
+    Ok(())
+}
+
+fn write_tiff_f32(width: u32, height: u32, pixels: &[f32], path: &Path) -> Result<(), ImageError> {
+    let file = File::create(path)?;
+    let mut writer = BufWriter::new(file);
+    let err_map = |e: tiff::TiffError| {
+        ImageError::IoError(std::io::Error::other(format!("TIFF encode error: {}", e)))
+    };
+    let mut tiff_enc = tiff::encoder::TiffEncoder::new(&mut writer).map_err(err_map)?;
+    tiff_enc
+        .write_image::<tiff::encoder::colortype::RGBA32Float>(width, height, pixels)
+        .map_err(err_map)?;
+    Ok(())
+}
 
 /// Encode and write an image to a file.
 /// This is a standalone function (no `&mut self`) so it can be called from

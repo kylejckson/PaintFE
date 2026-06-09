@@ -193,10 +193,7 @@ impl PaintFEApp {
                                     egui::Color32::from_rgb(255, 220, 220),
                                 )
                             } else {
-                                (
-                                    egui::Color32::from_rgb(192, 38, 38),
-                                    egui::Color32::WHITE,
-                                )
+                                (egui::Color32::from_rgb(192, 38, 38), egui::Color32::WHITE)
                             };
 
                             let btn_size = egui::vec2(110.0, 26.0);
@@ -378,7 +375,7 @@ impl PaintFEApp {
                 } else {
                     let project = &mut self.projects[project_index];
                     project.canvas_state.ensure_all_text_layers_rasterized();
-                    let composite = project.canvas_state.composite();
+                    let export_image = crate::io::prepare_export_image(&project.canvas_state);
                     let path = action.path.clone();
                     let format = action.format;
                     let quality = action.quality;
@@ -393,8 +390,8 @@ impl PaintFEApp {
                     self.pending_io_ops += 1;
 
                     rayon::spawn(move || {
-                        match crate::io::encode_and_write(
-                            &composite,
+                        match crate::io::encode_prepared_and_write(
+                            export_image,
                             &path,
                             format,
                             quality,

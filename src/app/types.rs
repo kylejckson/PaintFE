@@ -152,6 +152,7 @@ pub struct PaintFEApp {
     // Floating panel edge tracking: store offset from screen edge so panels
     // move with window resizes while still being user-draggable.
     layers_panel_right_offset: Option<(f32, f32)>, // (offset_from_right, y)
+    layers_panel_size: Option<(f32, f32)>,
     history_panel_right_offset: Option<(f32, f32)>, // (offset_from_right, offset_from_bottom)
     colors_panel_left_offset: Option<(f32, f32)>,  // (x, offset_from_bottom)
     palette_panel_pos: Option<(f32, f32)>,         // (x, y)

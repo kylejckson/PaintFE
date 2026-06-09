@@ -901,6 +901,30 @@ impl SettingsWindow {
                 .weak(),
         );
 
+        // -- Layer Folders --------------------------------------------
+        Self::section_header(ui, "Layer Folder Colors");
+        let mut folder_palette_changed = false;
+        egui::Grid::new("interface_folder_color_grid")
+            .num_columns(2)
+            .spacing([16.0, 6.0])
+            .min_col_width(140.0)
+            .show(ui, |ui| {
+                for (idx, color) in settings.folder_color_palette.iter_mut().enumerate() {
+                    ui.label(format!("Folder {}", idx + 1));
+                    if Self::color_row(ui, "", color) {
+                        folder_palette_changed = true;
+                    }
+                    ui.end_row();
+                }
+            });
+        if folder_palette_changed {
+            settings.save();
+        }
+        if ui.button("Reset Folder Colors").clicked() {
+            settings.folder_color_palette = AppSettings::default_folder_color_palette();
+            settings.save();
+        }
+
         // -- Advanced Customization -----------------------------------
         Self::section_header(ui, "Advanced Customization");
         ui.checkbox(

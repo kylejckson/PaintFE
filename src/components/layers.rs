@@ -1,6 +1,7 @@
-use crate::assets::{Assets, Icon};
+use crate::assets::{AppSettings, Assets, Icon};
 use crate::canvas::{BlendMode, CanvasState, Layer, LayerContent, TiledImage};
 use crate::components::history::{HistoryManager, LayerOpCommand, LayerOperation, SnapshotCommand};
+use crate::ops::canvas_ops::ImageChannel;
 use crate::ops::dialogs::DialogColors;
 use crate::ops::text_layer::{
     EnvelopeWarp, GradientFillEffect, InnerShadowEffect, OutlineEffect, OutlinePosition,
@@ -11,7 +12,7 @@ use egui::{
     Color32, ColorImage, CursorIcon, Id, Pos2, Rect, Sense, TextureHandle, TextureOptions, Vec2,
 };
 use image::Rgba;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 const THUMBNAIL_SIZE: u32 = 40;
@@ -71,11 +72,19 @@ pub struct RenameState {
     pub focus_requested: bool,
 }
 
+#[derive(Default)]
+pub struct FolderRenameState {
+    pub renaming_folder: Option<u64>,
+    pub rename_text: String,
+    pub focus_requested: bool,
+}
+
 /// State for drag-and-drop layer reordering
 #[derive(Default)]
 struct DragState {
     /// Display index currently being dragged (0 = topmost in UI).
     dragging_display_idx: Option<usize>,
+    dragging_folder_id: Option<u64>,
     drag_offset_y: f32,
     origin_display_idx: usize,
     /// Animated visual offsets per display index (elastic slide-out).
@@ -108,7 +117,10 @@ pub struct LayersPanel {
     settings_state: LayerSettingsState,
     peek_state: PeekState,
     rename_state: RenameState,
+    folder_rename_state: FolderRenameState,
     drag_state: DragState,
+    selected_layers: HashSet<usize>,
+    selected_folder: Option<u64>,
     thumbnail_cache: HashMap<usize, ThumbnailCache>,
     last_layer_count: usize,
     /// Layer index to remove from GPU texture cache.
@@ -126,7 +138,7 @@ include!("layers/settings.rs");
 include!("layers/operations.rs");
 
 enum LayerAction {
-    Select,
+    Select { additive: bool },
     StartRename,
     FinishRename,
     CancelRename,
@@ -138,6 +150,8 @@ enum LayerAction {
 enum ContextAction {
     AddNew,
     AddNewTextLayer,
+    AddAdjustment,
+    AddFolder,
     MergeDown,
     MergeDownAsMask,
     AddLayerMaskRevealAll,
@@ -167,4 +181,40 @@ enum ContextAction {
     RasterizeTextLayer,
     TextLayerEffects,
     TextLayerWarp,
+    MoveToFolder(u64),
+    RemoveFromFolder,
+    ExtractChannel(ImageChannel),
+    ReplaceAlphaFromBelowLuminance,
+}
+
+enum FolderAction {
+    Select(u64),
+    BeginDrag(u64),
+    ToggleCollapsed(u64),
+    ToggleVisibility(u64),
+    StartRename(u64),
+    FinishRename,
+    CancelRename,
+    Delete(u64),
+    AddLayer(u64),
+    AddTextLayer(u64),
+    AddFolderAbove(u64),
+    SelectContents(u64),
+    SetColor(u64, Option<u8>),
+}
+
+#[derive(Clone, Copy)]
+enum LayerListRow {
+    Folder(u64),
+    Layer {
+        display_idx: usize,
+        layer_idx: usize,
+    },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FolderDropZone {
+    Above,
+    Inside,
+    Below,
 }

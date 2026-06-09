@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use crate::assets::{Assets, Icon};
-use crate::canvas::{CanvasState, LayerContent, TiledImage};
+use crate::canvas::{CanvasState, LayerContent, LayerFolder, TiledImage};
 
 // ============================================================================
 // COMMAND TRAIT
@@ -168,6 +168,12 @@ impl PixelPatch {
         }
 
         // Invalidate GPU texture cache so the renderer re-uploads the restored pixels.
+        layer.sync_deep_pixels_from_preview_region(
+            min_x,
+            min_y,
+            min_x + self.width,
+            min_y + self.height,
+        );
         layer.invalidate_lod();
         layer.gpu_generation += 1;
 
@@ -304,6 +310,7 @@ pub enum LayerOperation {
         name: String,
         width: u32,
         height: u32,
+        folder_id: Option<u64>,
     },
     /// A layer was deleted (stores the full layer data for restore)
     Delete {
@@ -313,8 +320,13 @@ pub enum LayerOperation {
         mask_enabled: bool,
         name: String,
         visible: bool,
+        folder_id: Option<u64>,
         opacity: f32,
         content: LayerContent,
+        pixel_format: crate::canvas::PixelFormat,
+        hdr_metadata: crate::canvas::HdrMetadata,
+        source_metadata: crate::canvas::ImageMetadata,
+        deep_pixels: Option<crate::experimental::DeepRgbaBuffer>,
     },
     /// Layer was moved from one index to another
     Move { from_index: usize, to_index: usize },
@@ -341,8 +353,13 @@ pub enum LayerOperation {
         mask_enabled: bool,
         name: String,
         visible: bool,
+        folder_id: Option<u64>,
         opacity: f32,
         content: LayerContent,
+        pixel_format: crate::canvas::PixelFormat,
+        hdr_metadata: crate::canvas::HdrMetadata,
+        source_metadata: crate::canvas::ImageMetadata,
+        deep_pixels: Option<crate::experimental::DeepRgbaBuffer>,
     },
 }
 
@@ -381,6 +398,11 @@ impl Command for LayerOpCommand {
                 visible,
                 opacity,
                 content,
+                pixel_format,
+                hdr_metadata,
+                source_metadata,
+                deep_pixels,
+                folder_id,
             } => {
                 // Undo delete = restore the layer
                 let mut layer = Layer::new(
@@ -393,8 +415,13 @@ impl Command for LayerOpCommand {
                 layer.mask = mask.clone();
                 layer.mask_enabled = *mask_enabled;
                 layer.visible = *visible;
+                layer.folder_id = *folder_id;
                 layer.opacity = *opacity;
                 layer.content = content.clone();
+                layer.pixel_format = *pixel_format;
+                layer.hdr_metadata = hdr_metadata.clone();
+                layer.source_metadata = source_metadata.clone();
+                layer.deep_pixels = deep_pixels.clone();
 
                 let insert_idx = (*index).min(canvas.layers.len());
                 canvas.layers.insert(insert_idx, layer);
@@ -453,9 +480,11 @@ impl Command for LayerOpCommand {
                 name,
                 width,
                 height,
+                folder_id,
             } => {
                 // Redo add = add the layer again
-                let layer = Layer::new(name.clone(), *width, *height, Rgba([0, 0, 0, 0]));
+                let mut layer = Layer::new(name.clone(), *width, *height, Rgba([0, 0, 0, 0]));
+                layer.folder_id = *folder_id;
                 let insert_idx = (*index).min(canvas.layers.len());
                 canvas.layers.insert(insert_idx, layer);
             }
@@ -508,6 +537,11 @@ impl Command for LayerOpCommand {
                 visible,
                 opacity,
                 content,
+                pixel_format,
+                hdr_metadata,
+                source_metadata,
+                deep_pixels,
+                folder_id,
                 ..
             } => {
                 // Redo duplicate = restore the duplicated layer
@@ -521,8 +555,13 @@ impl Command for LayerOpCommand {
                 layer.mask = mask.clone();
                 layer.mask_enabled = *mask_enabled;
                 layer.visible = *visible;
+                layer.folder_id = *folder_id;
                 layer.opacity = *opacity;
                 layer.content = content.clone();
+                layer.pixel_format = *pixel_format;
+                layer.hdr_metadata = hdr_metadata.clone();
+                layer.source_metadata = source_metadata.clone();
+                layer.deep_pixels = deep_pixels.clone();
                 let insert_idx = (*new_index).min(canvas.layers.len());
                 canvas.layers.insert(insert_idx, layer);
                 canvas.active_layer_index = insert_idx;
@@ -743,6 +782,8 @@ pub struct CanvasSnapshot {
     pub width: u32,
     pub height: u32,
     pub layers: Vec<LayerSnapshot>,
+    pub layer_folders: Vec<LayerFolder>,
+    pub next_layer_folder_id: u64,
     pub active_layer_index: usize,
     pub selection_mask: Option<image::GrayImage>,
 }
@@ -751,10 +792,17 @@ pub struct CanvasSnapshot {
 pub struct LayerSnapshot {
     pub name: String,
     pub visible: bool,
+    pub folder_id: Option<u64>,
     pub opacity: f32,
     pub blend_mode: crate::canvas::BlendMode,
     pub pixels: TiledImage,
+    pub mask: Option<TiledImage>,
+    pub mask_enabled: bool,
     pub content: LayerContent,
+    pub pixel_format: crate::canvas::PixelFormat,
+    pub hdr_metadata: crate::canvas::HdrMetadata,
+    pub source_metadata: crate::canvas::ImageMetadata,
+    pub deep_pixels: Option<crate::experimental::DeepRgbaBuffer>,
 }
 
 impl CanvasSnapshot {
@@ -764,16 +812,25 @@ impl CanvasSnapshot {
             height: state.height,
             active_layer_index: state.active_layer_index,
             selection_mask: state.selection_mask.clone(),
+            layer_folders: state.layer_folders.clone(),
+            next_layer_folder_id: state.next_layer_folder_id,
             layers: state
                 .layers
                 .iter()
                 .map(|l| LayerSnapshot {
                     name: l.name.clone(),
                     visible: l.visible,
+                    folder_id: l.folder_id,
                     opacity: l.opacity,
                     blend_mode: l.blend_mode,
                     pixels: l.pixels.clone(),
+                    mask: l.mask.clone(),
+                    mask_enabled: l.mask_enabled,
                     content: l.content.clone(),
+                    pixel_format: l.pixel_format,
+                    hdr_metadata: l.hdr_metadata.clone(),
+                    source_metadata: l.source_metadata.clone(),
+                    deep_pixels: l.deep_pixels.clone(),
                 })
                 .collect(),
         }
@@ -783,6 +840,8 @@ impl CanvasSnapshot {
         state.width = self.width;
         state.height = self.height;
         state.active_layer_index = self.active_layer_index;
+        state.layer_folders = self.layer_folders.clone();
+        state.next_layer_folder_id = self.next_layer_folder_id;
         state.layers.clear();
         for snap in &self.layers {
             let mut layer = crate::canvas::Layer::new(
@@ -793,9 +852,16 @@ impl CanvasSnapshot {
             );
             layer.pixels = snap.pixels.clone();
             layer.visible = snap.visible;
+            layer.folder_id = snap.folder_id;
             layer.opacity = snap.opacity;
             layer.blend_mode = snap.blend_mode;
+            layer.mask = snap.mask.clone();
+            layer.mask_enabled = snap.mask_enabled;
             layer.content = snap.content.clone();
+            layer.pixel_format = snap.pixel_format;
+            layer.hdr_metadata = snap.hdr_metadata.clone();
+            layer.source_metadata = snap.source_metadata.clone();
+            layer.deep_pixels = snap.deep_pixels.clone();
             state.layers.push(layer);
         }
         state.selection_mask = self.selection_mask.clone();
@@ -872,6 +938,14 @@ pub struct SingleLayerSnapshotCommand {
     after_blend_mode: crate::canvas::BlendMode,
     before_content: LayerContent,
     after_content: LayerContent,
+    before_pixel_format: crate::canvas::PixelFormat,
+    after_pixel_format: crate::canvas::PixelFormat,
+    before_hdr_metadata: crate::canvas::HdrMetadata,
+    after_hdr_metadata: crate::canvas::HdrMetadata,
+    before_source_metadata: crate::canvas::ImageMetadata,
+    after_source_metadata: crate::canvas::ImageMetadata,
+    before_deep_pixels: Option<crate::experimental::DeepRgbaBuffer>,
+    after_deep_pixels: Option<crate::experimental::DeepRgbaBuffer>,
 }
 
 impl SingleLayerSnapshotCommand {
@@ -895,6 +969,10 @@ impl SingleLayerSnapshotCommand {
             before_opacity,
             before_blend_mode,
             before_content,
+            before_pixel_format,
+            before_hdr_metadata,
+            before_source_metadata,
+            before_deep_pixels,
         ) = if let Some(layer) = state.layers.get(safe_idx) {
             (
                 layer.pixels.clone(),
@@ -903,6 +981,10 @@ impl SingleLayerSnapshotCommand {
                 layer.opacity,
                 layer.blend_mode,
                 layer.content.clone(),
+                layer.pixel_format,
+                layer.hdr_metadata.clone(),
+                layer.source_metadata.clone(),
+                layer.deep_pixels.clone(),
             )
         } else {
             (
@@ -912,6 +994,10 @@ impl SingleLayerSnapshotCommand {
                 1.0,
                 crate::canvas::BlendMode::Normal,
                 LayerContent::Raster,
+                crate::canvas::PixelFormat::RgbaU8,
+                crate::canvas::HdrMetadata::default(),
+                crate::canvas::ImageMetadata::default(),
+                None,
             )
         };
         Self {
@@ -929,6 +1015,14 @@ impl SingleLayerSnapshotCommand {
             after_blend_mode: before_blend_mode,
             before_content: before_content.clone(),
             after_content: before_content,
+            before_pixel_format,
+            after_pixel_format: before_pixel_format,
+            before_hdr_metadata: before_hdr_metadata.clone(),
+            after_hdr_metadata: before_hdr_metadata,
+            before_source_metadata: before_source_metadata.clone(),
+            after_source_metadata: before_source_metadata,
+            before_deep_pixels: before_deep_pixels.clone(),
+            after_deep_pixels: before_deep_pixels,
         }
     }
 
@@ -941,6 +1035,10 @@ impl SingleLayerSnapshotCommand {
             self.after_opacity = layer.opacity;
             self.after_blend_mode = layer.blend_mode;
             self.after_content = layer.content.clone();
+            self.after_pixel_format = layer.pixel_format;
+            self.after_hdr_metadata = layer.hdr_metadata.clone();
+            self.after_source_metadata = layer.source_metadata.clone();
+            self.after_deep_pixels = layer.deep_pixels.clone();
         }
     }
 }
@@ -954,6 +1052,10 @@ impl Command for SingleLayerSnapshotCommand {
             layer.opacity = self.before_opacity;
             layer.blend_mode = self.before_blend_mode;
             layer.content = self.before_content.clone();
+            layer.pixel_format = self.before_pixel_format;
+            layer.hdr_metadata = self.before_hdr_metadata.clone();
+            layer.source_metadata = self.before_source_metadata.clone();
+            layer.deep_pixels = self.before_deep_pixels.clone();
         }
         canvas.mark_dirty(None);
     }
@@ -968,6 +1070,10 @@ impl Command for SingleLayerSnapshotCommand {
             layer.opacity = self.after_opacity;
             layer.blend_mode = self.after_blend_mode;
             layer.content = self.after_content.clone();
+            layer.pixel_format = self.after_pixel_format;
+            layer.hdr_metadata = self.after_hdr_metadata.clone();
+            layer.source_metadata = self.after_source_metadata.clone();
+            layer.deep_pixels = self.after_deep_pixels.clone();
         }
         canvas.mark_dirty(None);
     }

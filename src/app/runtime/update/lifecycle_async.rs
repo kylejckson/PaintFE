@@ -396,7 +396,12 @@ impl PaintFEApp {
                     tiff_compression,
                     update_project_path,
                 } => {
-                    log_info!("FileIO: save complete — project={} path={:?} format={:?}", project_index, path, format);
+                    log_info!(
+                        "FileIO: save complete — project={} path={:?} format={:?}",
+                        project_index,
+                        path,
+                        format
+                    );
                     if let Some(project) = self.projects.get_mut(project_index) {
                         project.file_handler.current_path = Some(path.clone());
                         project.file_handler.last_format = format;
@@ -427,7 +432,12 @@ impl PaintFEApp {
                 } => {
                     self.pending_open_paths
                         .remove(&Self::normalize_open_path(&path));
-                    log_info!("FileIO: animated loaded — path={:?} format={:?} fps={}", path, format, fps);
+                    log_info!(
+                        "FileIO: animated loaded — path={:?} format={:?} fps={}",
+                        path,
+                        format,
+                        fps
+                    );
                     let mut canvas_state = CanvasState::new(width, height);
                     if let Some(layer) = canvas_state.layers.first_mut() {
                         layer.pixels = tiled;
@@ -467,6 +477,7 @@ impl PaintFEApp {
                             let layer = Layer {
                                 name,
                                 visible: true,
+                                folder_id: None,
                                 opacity: 1.0,
                                 blend_mode: BlendMode::Normal,
                                 pixels: tiled,
@@ -475,6 +486,10 @@ impl PaintFEApp {
                                 lod_cache: None,
                                 gpu_generation: 0,
                                 content: crate::canvas::LayerContent::Raster,
+                                pixel_format: crate::canvas::PixelFormat::RgbaU8,
+                                hdr_metadata: crate::canvas::HdrMetadata::default(),
+                                source_metadata: crate::canvas::ImageMetadata::default(),
+                                deep_pixels: None,
                             };
                             project.canvas_state.layers.push(layer);
                         }
@@ -681,4 +696,3 @@ impl PaintFEApp {
         }
     }
 }
-

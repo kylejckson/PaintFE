@@ -17,6 +17,7 @@ pub mod cli;
 pub mod components;
 pub mod config;
 pub mod document;
+pub mod experimental;
 pub mod gpu;
 pub mod io;
 pub mod ipc;

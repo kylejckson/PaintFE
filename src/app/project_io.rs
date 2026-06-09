@@ -517,7 +517,7 @@ impl PaintFEApp {
                 // Static image save — composite on main thread (usually cached),
                 // encode + write on background thread.
                 project.canvas_state.ensure_all_text_layers_rasterized();
-                let composite = project.canvas_state.composite();
+                let export_image = crate::io::prepare_export_image(&project.canvas_state);
                 let path = project.file_handler.current_path.clone().unwrap();
                 let format = project.file_handler.last_format;
                 let quality = project.file_handler.last_quality;
@@ -528,8 +528,8 @@ impl PaintFEApp {
                 }
                 self.pending_io_ops += 1;
                 rayon::spawn(move || {
-                    match crate::io::encode_and_write(
-                        &composite,
+                    match crate::io::encode_prepared_and_write(
+                        export_image,
                         &path,
                         format,
                         quality,
@@ -688,7 +688,7 @@ impl PaintFEApp {
             });
         } else {
             project.canvas_state.ensure_all_text_layers_rasterized();
-            let composite = project.canvas_state.composite();
+            let export_image = crate::io::prepare_export_image(&project.canvas_state);
             let path = project.file_handler.current_path.clone().unwrap();
             let format = project.file_handler.last_format;
             let quality = project.file_handler.last_quality;
@@ -699,8 +699,8 @@ impl PaintFEApp {
             }
             self.pending_io_ops += 1;
             rayon::spawn(move || {
-                match crate::io::encode_and_write(
-                    &composite,
+                match crate::io::encode_prepared_and_write(
+                    export_image,
                     &path,
                     format,
                     quality,

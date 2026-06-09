@@ -119,6 +119,7 @@ impl PaintFEApp {
         // Default: 12px from right edge, 12px below menu bar
         let (right_off, y_pos) = self.layers_panel_right_offset.unwrap_or((264.0, 128.0));
         let pos_x = screen_w - right_off;
+        let panel_size = self.layers_panel_size.unwrap_or((240.0, 200.0));
 
         let hover_id = egui::Id::new("Layers_hover");
         let hover_t = ctx.animate_bool(hover_id, false);
@@ -126,7 +127,7 @@ impl PaintFEApp {
             .open(&mut show)
             .resizable(true)
             .collapsible(false)
-            .default_size(egui::vec2(240.0, 200.0))
+            .default_size(egui::vec2(panel_size.0, panel_size.1))
             .min_width(180.0)
             .min_height(200.0)
             .title_bar(false)
@@ -155,7 +156,8 @@ impl PaintFEApp {
                 self.layers_panel.show(
                     ui,
                     &mut project.canvas_state,
-                    &self.assets,
+                    &mut self.assets,
+                    &self.settings,
                     &mut project.history,
                 );
 
@@ -357,6 +359,7 @@ impl PaintFEApp {
         if let Some(inner_resp) = resp {
             let win_rect = inner_resp.response.rect;
             self.layers_panel_right_offset = Some((screen_w - win_rect.min.x, win_rect.min.y));
+            self.layers_panel_size = Some((win_rect.width(), win_rect.height()));
             let hovered =
                 ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p)));
             self.is_pointer_over_layers_panel = hovered;
