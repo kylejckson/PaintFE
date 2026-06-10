@@ -6,6 +6,31 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.3.0] - 2026-06-10
+
+### Added
+- Added experimental RGBA UI16, RGBA FP16, and RGBA FP32 image payload support.
+- Added HDR metadata handling and tone-mapped preview support.
+- Added editable high-depth image paths so brush edits update 16-bit/HDR buffers.
+- Added adjustment layers with exposure, brightness/contrast, invert, and channel mixer support.
+- Added channel extraction and alpha replacement tools.
+- Added layer folders with collapse, visibility, renaming, drag/reorder, multi-select movement, folder colors, select-contents, and project persistence.
+- Added Preferences controls for customizing the layer folder color palette.
+- Added PFE v3 persistence for folders, adjustment layers, high-depth payloads, HDR metadata, and source metadata.
+- Added 16-bit PNG/TIFF and FP32 HDR TIFF import/export coverage.
+
+### Changed
+- Composite and export paths now respect folder visibility and adjustment layers.
+- Add Layer now inserts relative to the selected layer or selected folder.
+- Layer/folder rename fields now keep Ctrl+A, Enter, and Escape behavior local to text editing.
+- Folder icons now use the existing icon asset inversion path for contrast over folder colors.
+- Mirror mode changes now clear preview state before redrawing.
+
+### Fixed
+- Fixed Linux/KDE crash when opening an image directly from file manager or CLI due to mismatched GPU texture upload dimensions.
+- Fixed Layers panel resized height not persisting across restarts.
+- Fixed stale preview state when toggling mirror modes mid-edit.
+
 ## [1.2.17] - 2026-05-20
 
 ### Added
