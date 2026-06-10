@@ -310,9 +310,17 @@ fn discover_system_cjk_font() -> Option<(String, Vec<u8>)> {
         (
             "system_cjk",
             &[
-                // macOS always has Hiragino
+                // STHeiti — Apple's Traditional Chinese system font (best TC coverage)
+                "/System/Library/Fonts/STHeiti Medium.ttc",
+                "/System/Library/Fonts/STHeiti Light.ttc",
+                // Songti — Apple's serif Chinese font (good TC fallback)
+                "/System/Library/Fonts/Supplemental/Songti.ttc",
+                // Hiragino Sans — Japanese system font (good kanji coverage)
+                "/System/Library/Fonts/Hiragino Sans GB.ttc",
+                // Hiragino Gothic — Japanese (fallback)
                 "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
                 "/System/Library/Fonts/HiraginoSans-W3.ttc",
+                // Arial Unicode — last resort
                 "/Library/Fonts/Arial Unicode.ttf",
             ],
         ),

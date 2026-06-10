@@ -218,6 +218,15 @@ fn match_system_locale(locale: &str) -> Option<String> {
 
     // Try prefix match (e.g., "fr-fr" → "fr", "pt-br" → "pt")
     let primary = lang_part.split('-').next().unwrap_or(lang_part);
+    // For Chinese, check region to distinguish zh-CN vs zh-TW
+    if primary == "zh" {
+        let region = lang_part.split('-').nth(1).unwrap_or("");
+        // Traditional Chinese regions / script tags
+        if matches!(region, "tw" | "hk" | "mo" | "hant") {
+            return Some("zh-TW".to_string());
+        }
+        return Some("zh-CN".to_string());
+    }
     for &(code, _) in LANGUAGES {
         let code_primary = code.split('-').next().unwrap_or(code);
         if code_primary.to_lowercase() == primary {
