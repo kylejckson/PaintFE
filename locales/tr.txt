@@ -268,6 +268,7 @@ common.cancel=İptal
 common.reset=Sıfırla
 common.apply=Uygula
 common.create=Oluştur
+common.delete=Sil
 common.live_preview=Canlı önizleme
 common.preview=▶ Önizleme
 common.width=Genişlik:

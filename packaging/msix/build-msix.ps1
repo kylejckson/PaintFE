@@ -28,6 +28,8 @@ if (-not $SkipBuild) {
     # statically linking vcruntime into the EXE (no Visual C++ Redistributable needed).
     cargo build --release
     if ($LASTEXITCODE -ne 0) { Write-Error "cargo build failed"; exit 1 }
+    dotnet publish paintdotnet-host/src/PaintFE.PaintDotNetHost/PaintFE.PaintDotNetHost.csproj -c Release -r win-x64 --self-contained true -o target/release/paintdotnet-host
+    if ($LASTEXITCODE -ne 0) { Write-Error "plugin host build failed"; exit 1 }
 } else {
     Write-Host "==> [1/5] Skipping build (--SkipBuild)"
 }
@@ -54,6 +56,9 @@ New-Item -ItemType Directory -Force -Path $layout | Out-Null
 
 # Binary
 Copy-Item $bin "$layout\PaintFE.exe"
+if (Test-Path "$repo\target\release\paintdotnet-host") {
+    Copy-Item -Recurse -Force "$repo\target\release\paintdotnet-host" "$layout\paintdotnet-host"
+}
 
 # Manifest — inject version number (raw bytes to guarantee BOM-free UTF-8 output)
 $bytes = [System.IO.File]::ReadAllBytes("$msixDir\AppxManifest.xml")

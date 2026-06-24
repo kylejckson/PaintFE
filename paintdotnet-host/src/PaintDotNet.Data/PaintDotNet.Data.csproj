@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>PaintDotNet.Data</AssemblyName></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../PaintDotNet.Core/PaintDotNet.Core.csproj" /></ItemGroup>
+</Project>

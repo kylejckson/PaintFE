@@ -1,0 +1,42 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PaintDotNet.Base", "src/PaintDotNet.Base/PaintDotNet.Base.csproj", "{21B6598C-173E-4F96-9270-AF7798235201}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PaintDotNet.Core", "src/PaintDotNet.Core/PaintDotNet.Core.csproj", "{44DD3476-28A0-4233-9611-641CA537699A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PaintDotNet.Data", "src/PaintDotNet.Data/PaintDotNet.Data.csproj", "{6692F25F-FAEC-4D03-8632-A29C345C5D74}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PaintDotNet.Effects", "src/PaintDotNet.Effects/PaintDotNet.Effects.csproj", "{8B6E323F-CE1F-4ED9-BD42-273224006508}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PaintFE.PaintDotNetHost", "src/PaintFE.PaintDotNetHost/PaintFE.PaintDotNetHost.csproj", "{988F80C9-4293-4723-AC0B-E5D6007E0451}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{21B6598C-173E-4F96-9270-AF7798235201}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{21B6598C-173E-4F96-9270-AF7798235201}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{21B6598C-173E-4F96-9270-AF7798235201}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{21B6598C-173E-4F96-9270-AF7798235201}.Release|Any CPU.Build.0 = Release|Any CPU
+		{44DD3476-28A0-4233-9611-641CA537699A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{44DD3476-28A0-4233-9611-641CA537699A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{44DD3476-28A0-4233-9611-641CA537699A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{44DD3476-28A0-4233-9611-641CA537699A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6692F25F-FAEC-4D03-8632-A29C345C5D74}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6692F25F-FAEC-4D03-8632-A29C345C5D74}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6692F25F-FAEC-4D03-8632-A29C345C5D74}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6692F25F-FAEC-4D03-8632-A29C345C5D74}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8B6E323F-CE1F-4ED9-BD42-273224006508}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8B6E323F-CE1F-4ED9-BD42-273224006508}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8B6E323F-CE1F-4ED9-BD42-273224006508}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8B6E323F-CE1F-4ED9-BD42-273224006508}.Release|Any CPU.Build.0 = Release|Any CPU
+		{988F80C9-4293-4723-AC0B-E5D6007E0451}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{988F80C9-4293-4723-AC0B-E5D6007E0451}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{988F80C9-4293-4723-AC0B-E5D6007E0451}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{988F80C9-4293-4723-AC0B-E5D6007E0451}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

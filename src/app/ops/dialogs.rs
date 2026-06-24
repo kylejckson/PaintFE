@@ -47,6 +47,10 @@ impl PaintFEApp {
             return;
         }
 
+        if self.process_paintdotnet_plugin_dialog(ctx, &mut dialog) {
+            return;
+        }
+
         self.active_dialog = dialog;
     }
 }
@@ -61,3 +65,4 @@ include!("dialogs/stylize.rs");
 include!("dialogs/render.rs");
 include!("dialogs/glitch_and_artistic.rs");
 include!("dialogs/ai_and_color_selection.rs");
+include!("dialogs/paintdotnet_plugin.rs");

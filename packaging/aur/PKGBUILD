@@ -30,6 +30,7 @@ makedepends=(
     'wayland-protocols'
     'openssl'
     'mesa'
+    'dotnet-sdk-8.0'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')  # replace with real hash before AUR submission: updpkgsums
@@ -45,11 +46,15 @@ build() {
     export RUSTUP_TOOLCHAIN=stable
     export CARGO_TARGET_DIR=target
     cargo build --frozen --release
+    bash paintdotnet-host/publish.sh linux-x64
 }
 
 package() {
     cd "PaintFE-$pkgver"
     install -Dm755 "target/release/PaintFE"                              "$pkgdir/usr/bin/PaintFE"
+    install -d "$pkgdir/usr/lib/paintfe/paintdotnet-host"
+    cp -a target/pdn-host/linux-x64/. "$pkgdir/usr/lib/paintfe/paintdotnet-host/"
+    ln -s /usr/lib/paintfe/paintdotnet-host "$pkgdir/usr/bin/paintdotnet-host"
     install -Dm644 "assets/icons/app_icon.png"                           "$pkgdir/usr/share/icons/hicolor/256x256/apps/PaintFE.png"
     install -Dm644 "packaging/appimage/PaintFE.AppDir/PaintFE.desktop"   "$pkgdir/usr/share/applications/PaintFE.desktop"
     install -Dm644 "LICENSE.md"                                          "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

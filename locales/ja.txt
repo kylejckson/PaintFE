@@ -356,6 +356,7 @@ common.cancel=キャンセル
 common.reset=リセット
 common.apply=適用
 common.create=作成
+common.delete=削除
 common.live_preview=ライブプレビュー
 common.preview=▶ プレビュー
 common.width=幅 :

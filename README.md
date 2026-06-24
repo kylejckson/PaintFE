@@ -88,6 +88,21 @@ Exit `0` = all succeeded. Exit `1` = at least one failed (remaining files still 
 
 ---
 
+## Paint.NET Legacy Plugins (Experimental)
+
+PaintFE can run a limited profile of classic Paint.NET 3.5 CPU effect plugins in
+an optional out-of-process .NET host. Enable it under **Settings → Plugins**, then
+import the plugin DLL and explicitly trust it. Supported plugins use
+`PropertyBasedEffect` with standard numeric, boolean, or list properties.
+
+This is not support for modern Paint.NET GPU effects, file-type plugins, or
+custom WinForms configuration dialogs. Plugin DLLs are executable programs: the
+host isolates crashes from PaintFE, but is not a security sandbox. Only import
+plugins from authors you trust. PaintFE does not contain or redistribute any
+Paint.NET binaries.
+
+---
+
 ## AI Background Removal
 
 One AI feature: local background removal via ONNX. No cloud, no API calls, no data leaves the machine.

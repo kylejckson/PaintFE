@@ -38,6 +38,19 @@ jobs:
       - name: Run Clippy
         run: cargo clippy -- -D warnings
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build Paint.NET compatibility host
+        run: dotnet build paintdotnet-host/src/PaintFE.PaintDotNetHost/PaintFE.PaintDotNetHost.csproj -c Release
+
+      - name: Test compatibility host and fixture plugin
+        shell: pwsh
+        run: |
+          dotnet build paintdotnet-host/tests/LegacyFixture/LegacyFixture.csproj -c Release
+          dotnet run --project paintdotnet-host/src/PaintFE.PaintDotNetHost/PaintFE.PaintDotNetHost.csproj -c Release -- --self-test paintdotnet-host/tests/LegacyFixture/bin/Release/net8.0/LegacyFixture.dll
+
   audit:
     name: Dependency audit
     runs-on: ubuntu-latest

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><AssemblyName>PaintFE.PaintDotNetHost</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../PaintDotNet.Base/PaintDotNet.Base.csproj" />
+    <ProjectReference Include="../PaintDotNet.Core/PaintDotNet.Core.csproj" />
+    <ProjectReference Include="../PaintDotNet.Data/PaintDotNet.Data.csproj" />
+    <ProjectReference Include="../PaintDotNet.Effects/PaintDotNet.Effects.csproj" />
+  </ItemGroup>
+</Project>

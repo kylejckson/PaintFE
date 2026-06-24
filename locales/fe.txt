@@ -268,6 +268,7 @@ common.cancel=Bugger Off
 common.reset=Rewind
 common.apply=Do It
 common.create=Manifest
+common.delete=Banish
 common.live_preview=See it now
 common.preview=▶ Gander
 common.width=Width:

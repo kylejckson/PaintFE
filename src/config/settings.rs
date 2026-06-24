@@ -63,6 +63,9 @@ pub struct AppSettings {
     /// Path to BiRefNet .onnx model file
     pub birefnet_model_path: String,
 
+    // Experimental Paint.NET legacy plugin compatibility.
+    pub paintdotnet_plugins_enabled: bool,
+
     // Debug panel settings
     pub show_debug_panel: bool,
     pub show_tool_info: bool,
@@ -246,6 +249,7 @@ impl Default for AppSettings {
             checkerboard_brightness: 1.0,
             onnx_runtime_path: String::new(),
             birefnet_model_path: String::new(),
+            paintdotnet_plugins_enabled: false,
 
             show_debug_panel: true,
             show_tool_info: true,
@@ -855,6 +859,7 @@ impl AppSettings {
              checkerboard_brightness={}\n\
              onnx_runtime_path={}\n\
              birefnet_model_path={}\n\
+             paintdotnet_plugins_enabled={}\n\
              language={}\n\
              default_canvas_width={}\n\
              default_canvas_height={}\n\
@@ -877,6 +882,7 @@ impl AppSettings {
             self.checkerboard_brightness,
             self.onnx_runtime_path,
             self.birefnet_model_path,
+            self.paintdotnet_plugins_enabled,
             self.language,
             self.default_canvas_width,
             self.default_canvas_height,
@@ -1331,6 +1337,9 @@ impl AppSettings {
                 }
                 "birefnet_model_path" => {
                     s.birefnet_model_path = val.to_string();
+                }
+                "paintdotnet_plugins_enabled" => {
+                    s.paintdotnet_plugins_enabled = val == "true";
                 }
                 "language" => {
                     s.language = val.to_string();

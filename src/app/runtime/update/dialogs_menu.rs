@@ -1385,7 +1385,66 @@ impl PaintFEApp {
                                 }
                                 ui.close();
                             }
+                            if self.settings.paintdotnet_plugins_enabled {
+                                let plugins: Vec<_> = crate::paintdotnet_plugins::PluginManager::load()
+                                    .enabled_plugins()
+                                    .filter(|plugin| plugin.category.eq_ignore_ascii_case("stylize"))
+                                    .cloned()
+                                    .collect();
+                                if !plugins.is_empty() {
+                                    ui.separator();
+                                    for plugin in plugins {
+                                        let label = format!("🧩 {}", plugin.name);
+                                        if ui
+                                            .add_enabled(no_dialog, egui::Button::new(label).frame(false))
+                                            .clicked()
+                                        {
+                                            if let Some(project) = self.active_project()
+                                                && let Some(dialog) = crate::paintdotnet_plugins::PaintDotNetPluginDialog::new(
+                                                    &project.canvas_state,
+                                                    plugin,
+                                                )
+                                            {
+                                                self.active_dialog = ActiveDialog::PaintDotNetPlugin(Box::new(dialog));
+                                            }
+                                            ui.close();
+                                        }
+                                    }
+                                }
+                            }
                         });
+
+                        if self.settings.paintdotnet_plugins_enabled {
+                            let plugins: Vec<_> = crate::paintdotnet_plugins::PluginManager::load()
+                                .enabled_plugins()
+                                .filter(|plugin| !plugin.category.eq_ignore_ascii_case("stylize"))
+                                .cloned()
+                                .collect();
+                            if !plugins.is_empty() {
+                                ui.menu_button(t!("menu.filter.paintdotnet_plugins"), |ui| {
+                                    for plugin in plugins {
+                                        let label = format!("{} · {}", plugin.category, plugin.name);
+                                        if ui
+                                            .add_enabled(
+                                                no_dialog,
+                                                egui::Button::new(label).frame(false),
+                                            )
+                                            .clicked()
+                                        {
+                                            if let Some(project) = self.active_project()
+                                                && let Some(dialog) = crate::paintdotnet_plugins::PaintDotNetPluginDialog::new(
+                                                    &project.canvas_state,
+                                                    plugin,
+                                                )
+                                            {
+                                                self.active_dialog = ActiveDialog::PaintDotNetPlugin(Box::new(dialog));
+                                            }
+                                            ui.close();
+                                        }
+                                    }
+                                });
+                            }
+                        }
 
                         // -- Glitch submenu --
                         ui.menu_button(t!("menu.filter.glitch"), |ui| {

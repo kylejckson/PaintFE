@@ -31,6 +31,8 @@ pub struct SettingsWindow {
     pub rebinding_action: Option<BindableAction>,
     /// Brief status message after theme import/export (cleared on next frame)
     theme_status: Option<(String, f64)>,
+    plugin_manager: crate::paintdotnet_plugins::PluginManager,
+    plugin_status: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -40,6 +42,7 @@ enum SettingsTab {
     Hardware,
     Keybinds,
     AI,
+    Plugins,
 }
 
 impl Default for SettingsWindow {
@@ -60,6 +63,8 @@ impl Default for SettingsWindow {
             staged_keybindings: KeyBindings::default(),
             rebinding_action: None,
             theme_status: None,
+            plugin_manager: crate::paintdotnet_plugins::PluginManager::load(),
+            plugin_status: None,
         }
     }
 }
@@ -79,6 +84,8 @@ impl SettingsWindow {
         self.onnx_probe_result = None;
         self.staged_keybindings = settings.keybindings.clone();
         self.rebinding_action = None;
+        self.plugin_manager = crate::paintdotnet_plugins::PluginManager::load();
+        self.plugin_status = None;
         self.dirty = false;
     }
 
@@ -188,7 +195,7 @@ impl SettingsWindow {
                         ui.set_min_height(available_h);
                         ui.add_space(4.0);
 
-                        let tabs: [(SettingsTab, Icon, String); 5] = [
+                        let tabs: [(SettingsTab, Icon, String); 6] = [
                             (
                                 SettingsTab::General,
                                 Icon::SettingsGeneral,
@@ -210,6 +217,11 @@ impl SettingsWindow {
                                 t!("settings.tab.keybinds"),
                             ),
                             (SettingsTab::AI, Icon::SettingsAI, t!("settings.tab.ai")),
+                            (
+                                SettingsTab::Plugins,
+                                Icon::SettingsAI,
+                                t!("settings.tab.plugins"),
+                            ),
                         ];
                         for (tab, icon, label) in &tabs {
                             let selected = self.active_tab == *tab;
@@ -299,6 +311,9 @@ impl SettingsWindow {
                                     SettingsTab::AI => {
                                         self.show_ai_tab(ui, settings);
                                     }
+                                    SettingsTab::Plugins => {
+                                        self.show_plugins_tab(ui, settings);
+                                    }
                                 }
                             });
                     });
@@ -323,6 +338,106 @@ impl SettingsWindow {
         ui.label(egui::RichText::new(label).strong().size(13.0));
         ui.separator();
         ui.add_space(3.0);
+    }
+
+    fn show_plugins_tab(&mut self, ui: &mut egui::Ui, settings: &mut AppSettings) {
+        Self::section_header(ui, &t!("settings.plugins.title"));
+        ui.label(
+            egui::RichText::new(t!("settings.plugins.warning"))
+                .color(egui::Color32::from_rgb(190, 120, 20)),
+        );
+        ui.add_space(8.0);
+
+        if ui
+            .checkbox(
+                &mut settings.paintdotnet_plugins_enabled,
+                t!("settings.plugins.enable"),
+            )
+            .changed()
+        {
+            settings.save();
+        }
+
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(
+                    settings.paintdotnet_plugins_enabled,
+                    egui::Button::new(t!("settings.plugins.import")),
+                )
+                .clicked()
+                && let Some(paths) = rfd::FileDialog::new()
+                    .add_filter("Paint.NET effect", &["dll"])
+                    .pick_files()
+            {
+                self.plugin_status = Some(
+                    match crate::paintdotnet_plugins::PluginManager::import_files(&paths) {
+                        Ok(plugin) => {
+                            format!("{}: {}", t!("settings.plugins.imported"), plugin.name)
+                        }
+                        Err(error) => error,
+                    },
+                );
+                self.plugin_manager = crate::paintdotnet_plugins::PluginManager::load();
+            }
+            if ui.button(t!("settings.plugins.rescan")).clicked() {
+                self.plugin_manager = crate::paintdotnet_plugins::PluginManager::load();
+                self.plugin_manager.rescan();
+                self.plugin_status = None;
+            }
+        });
+
+        if let Some(status) = &self.plugin_status {
+            ui.label(status);
+        }
+        if let Err(error) = crate::paintdotnet_plugins::host_path() {
+            ui.colored_label(ui.visuals().error_fg_color, error);
+        }
+
+        Self::section_header(ui, &t!("settings.plugins.installed"));
+        if self.plugin_manager.plugins.is_empty() {
+            ui.label(t!("settings.plugins.none"));
+        }
+
+        let mut trust_change: Option<(String, bool)> = None;
+        let mut remove: Option<String> = None;
+        for plugin in &self.plugin_manager.plugins {
+            ui.group(|ui| {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(&plugin.name).strong());
+                    ui.label(format!("{} · {}", plugin.category, plugin.profile));
+                });
+                ui.label(format!(
+                    "SHA-256: {}…",
+                    plugin.sha256.get(..16).unwrap_or(&plugin.sha256)
+                ));
+                if let Some(error) = plugin.display_error() {
+                    ui.colored_label(ui.visuals().error_fg_color, error);
+                }
+                ui.horizontal(|ui| {
+                    let label = if plugin.trusted {
+                        t!("settings.plugins.disable")
+                    } else {
+                        t!("settings.plugins.trust_enable")
+                    };
+                    if ui.button(label).clicked() {
+                        trust_change = Some((plugin.sha256.clone(), !plugin.trusted));
+                    }
+                    if ui.button(t!("common.delete")).clicked() {
+                        remove = Some(plugin.sha256.clone());
+                    }
+                });
+            });
+        }
+        if let Some((hash, value)) = trust_change
+            && let Err(error) = self.plugin_manager.set_trusted_enabled(&hash, value)
+        {
+            self.plugin_status = Some(error);
+        }
+        if let Some(hash) = remove
+            && let Err(error) = self.plugin_manager.remove(&hash)
+        {
+            self.plugin_status = Some(error);
+        }
     }
 
     // -- General Tab -------------------------------------------

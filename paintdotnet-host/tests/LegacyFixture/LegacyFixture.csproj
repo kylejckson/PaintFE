@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>LegacyFixture</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/PaintDotNet.Core/PaintDotNet.Core.csproj" />
+    <ProjectReference Include="../../src/PaintDotNet.Effects/PaintDotNet.Effects.csproj" />
+  </ItemGroup>
+</Project>

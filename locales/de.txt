@@ -268,6 +268,7 @@ common.cancel=Abbrechen
 common.reset=Zurücksetzen
 common.apply=Anwenden
 common.create=Erstellen
+common.delete=Löschen
 common.live_preview=Livevorschau
 common.preview=▶ Vorschau
 common.width=Breite:

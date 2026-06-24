@@ -356,6 +356,7 @@ common.cancel=取消
 common.reset=重置
 common.apply=应用
 common.create=创建
+common.delete=删除
 common.live_preview=实时预览
 common.preview=▶ 预览
 common.width=宽度：

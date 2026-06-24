@@ -88,6 +88,7 @@ pub enum ActiveDialog {
     Vibrance(VibranceDialog),
     // Selection
     ColorRange(ColorRangeDialog),
+    PaintDotNetPlugin(Box<crate::paintdotnet_plugins::PaintDotNetPluginDialog>),
 }
 
 impl ActiveDialog {
@@ -149,6 +150,7 @@ impl ActiveDialog {
             ActiveDialog::BlackAndWhite(_) => "BlackAndWhite",
             ActiveDialog::Vibrance(_) => "Vibrance",
             ActiveDialog::ColorRange(_) => "ColorRange",
+            ActiveDialog::PaintDotNetPlugin(_) => "PaintDotNetPlugin",
         }
     }
 }

@@ -24,6 +24,7 @@ pub mod ipc;
 pub mod linux_key_probe;
 pub mod logger;
 pub mod ops;
+pub mod paintdotnet_plugins;
 pub mod project;
 pub mod render;
 pub mod services;

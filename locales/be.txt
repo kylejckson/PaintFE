@@ -269,6 +269,7 @@ common.cancel=Bail
 common.reset=Restart
 common.apply=Do It
 common.create=Make It
+common.delete=Bin It
 common.live_preview=Live Squiz
 common.preview=▶ Squiz
 common.width=Width:

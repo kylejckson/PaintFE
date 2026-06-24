@@ -21,6 +21,8 @@ rfd = "0.12"         # Native file dialogs (Open/Save)
 rayon = "1.12"        # Parallel processing for faster compositing
 uuid = { version = "1.0", features = ["v4"] }  # Unique identifiers for projects
 serde = { version = "1", features = ["derive"] }  # Serialization framework
+serde_json = "1"
+sha2 = "0.10"
 bincode = "1"        # Binary serialization for .pfe files
 
 gif = "0.13"             # Direct GIF encoder/decoder (multi-frame animation)

@@ -30,6 +30,13 @@ cp "$BIN" "$APPDIR/usr/bin/PaintFE"
 chmod +x "$APPDIR/usr/bin/PaintFE"
 chmod +x "$APPDIR/AppRun"
 
+PDN_HOST_DIR="$REPO_ROOT/target/pdn-host/linux-x64"
+if [ -x "$PDN_HOST_DIR/PaintFE.PaintDotNetHost" ]; then
+  mkdir -p "$APPDIR/usr/bin/paintdotnet-host"
+  cp -a "$PDN_HOST_DIR/." "$APPDIR/usr/bin/paintdotnet-host/"
+  chmod +x "$APPDIR/usr/bin/paintdotnet-host/PaintFE.PaintDotNetHost"
+fi
+
 # Copy icon — adjust path if your icon asset differs
 ICON="$REPO_ROOT/assets/icons/app_icon.png"
 if [ -f "$ICON" ]; then

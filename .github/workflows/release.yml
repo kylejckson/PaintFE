@@ -39,11 +39,20 @@ jobs:
         # (satisfies Microsoft Store policy 10.2.4.1).
         run: cargo build --release
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish Paint.NET plugin host
+        run: dotnet publish paintdotnet-host/src/PaintFE.PaintDotNetHost/PaintFE.PaintDotNetHost.csproj -c Release -r win-x64 --self-contained true -o target/release/paintdotnet-host
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: PaintFE-windows
-          path: target/release/PaintFE.exe
+          path: |
+            target/release/PaintFE.exe
+            target/release/paintdotnet-host
 
   # ── Linux build ────────────────────────────────────────────────────────────
   build-linux:
@@ -84,11 +93,20 @@ jobs:
       - name: Build release
         run: cargo build --release
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish Paint.NET plugin host
+        run: bash paintdotnet-host/publish.sh linux-x64 target/release/paintdotnet-host
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: PaintFE-linux
-          path: target/release/PaintFE
+          path: |
+            target/release/PaintFE
+            target/release/paintdotnet-host
 
   # ── AppImage build ─────────────────────────────────────────────────────────
   build-appimage:
@@ -130,6 +148,13 @@ jobs:
       - name: Build release binary
         run: cargo build --release
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish Paint.NET plugin host
+        run: bash paintdotnet-host/publish.sh linux-x64
+
       - name: Build AppImage
         run: bash packaging/appimage/build-appimage.sh
 
@@ -163,11 +188,20 @@ jobs:
       - name: Build release
         run: cargo build --release
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish Paint.NET plugin host
+        run: bash paintdotnet-host/publish.sh osx-arm64
+
       - name: Create .dmg
         run: |
           mkdir -p dmg_staging
           cp target/release/PaintFE dmg_staging/
+          cp -R target/pdn-host/osx-arm64 dmg_staging/paintdotnet-host
           chmod +x dmg_staging/PaintFE
+          chmod +x dmg_staging/paintdotnet-host/PaintFE.PaintDotNetHost
           hdiutil create -volname "PaintFE" \
             -srcfolder dmg_staging \
             -ov -format UDZO \
@@ -205,11 +239,20 @@ jobs:
       - name: Build release (cross-compile for Intel)
         run: cargo build --release --target x86_64-apple-darwin
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish Paint.NET plugin host
+        run: bash paintdotnet-host/publish.sh osx-x64
+
       - name: Create .dmg
         run: |
           mkdir -p dmg_staging
           cp target/x86_64-apple-darwin/release/PaintFE dmg_staging/
+          cp -R target/pdn-host/osx-x64 dmg_staging/paintdotnet-host
           chmod +x dmg_staging/PaintFE
+          chmod +x dmg_staging/paintdotnet-host/PaintFE.PaintDotNetHost
           hdiutil create -volname "PaintFE" \
             -srcfolder dmg_staging \
             -ov -format UDZO \
@@ -252,6 +295,13 @@ jobs:
       - name: Build release binary
         run: cargo build --release
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish Paint.NET plugin host
+        run: dotnet publish paintdotnet-host/src/PaintFE.PaintDotNetHost/PaintFE.PaintDotNetHost.csproj -c Release -r win-x64 --self-contained true -o target/release/paintdotnet-host
+
       - name: Generate Store icon assets
         shell: powershell
         run: |
@@ -263,6 +313,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path packaging\msix\PackageLayout | Out-Null
           Copy-Item target\release\PaintFE.exe packaging\msix\PackageLayout\
+          Copy-Item -Recurse -Force target\release\paintdotnet-host packaging\msix\PackageLayout\paintdotnet-host
           $tag = "${{ github.ref_name }}".TrimStart('v')
           $ver = "$tag.0"
           # Read raw bytes, strip UTF-8 BOM (EF BB BF) if present, decode, patch, re-encode, write
