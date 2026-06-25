@@ -4,6 +4,15 @@ using System.Runtime.InteropServices;
 namespace PaintDotNet
 {
 
+public interface IPluginSupportInfo
+{
+    string Author { get; }
+    string Copyright { get; }
+    string DisplayName { get; }
+    Version Version { get; }
+    Uri WebsiteUri { get; }
+}
+
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public struct ColorBgra
 {

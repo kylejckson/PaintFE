@@ -7,7 +7,16 @@ namespace LegacyFixture;
 
 public sealed class FixtureEffect()
     : PropertyBasedEffect("Legacy Fixture", null, SubmenuNames.Stylize, EffectFlags.Configurable)
+    , IPluginSupportInfo
 {
+    private static readonly Pair<string, string> SupportName = new("Legacy Fixture", "PaintFE");
+
+    public string Author => SupportName.Second;
+    public string Copyright => "Copyright (c) PaintFE";
+    public string DisplayName => SupportName.First;
+    public Version Version => new(1, 0);
+    public Uri WebsiteUri => new("https://github.com/bluezcha/paintfe");
+
     protected override PropertyCollection OnCreatePropertyCollection() =>
         new([
             new DoubleProperty("Amount", 0.5, 0, 1),

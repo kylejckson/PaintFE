@@ -115,7 +115,14 @@ pub struct NewFileDialog {
     preset: SizePreset,
     focus_width_on_open: bool,
     replace_width_on_first_edit: bool,
+    focused_dimension_input: Option<DimensionInput>,
     clipboard_dims_rx: Option<mpsc::Receiver<Option<(u32, u32)>>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DimensionInput {
+    Width,
+    Height,
 }
 
 impl Default for NewFileDialog {
@@ -133,6 +140,7 @@ impl Default for NewFileDialog {
             preset: SizePreset::Size800x600,
             focus_width_on_open: false,
             replace_width_on_first_edit: false,
+            focused_dimension_input: None,
             clipboard_dims_rx: None,
         }
     }
@@ -155,6 +163,7 @@ impl NewFileDialog {
         self.open = true;
         self.focus_width_on_open = true;
         self.replace_width_on_first_edit = true;
+        self.focused_dimension_input = Some(DimensionInput::Width);
     }
 
     /// Pre-populate width and height from a clipboard image if available.
@@ -371,17 +380,27 @@ impl NewFileDialog {
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 4.0;
                                 let previous_input = self.width_input.clone();
-                                let width_response = ui.add(
+                                let mut width_output =
                                     egui::TextEdit::singleline(&mut self.width_input)
-                                        .desired_width(96.0),
-                                );
+                                        .desired_width(96.0)
+                                        .show(ui);
+                                let width_response = &width_output.response;
+                                if width_response.has_focus()
+                                    || width_response.gained_focus()
+                                    || width_response.clicked()
+                                {
+                                    self.focused_dimension_input = Some(DimensionInput::Width);
+                                }
                                 Self::select_all_text_on_ctrl_a(
                                     ctx,
-                                    &width_response,
+                                    width_response,
+                                    &mut width_output.state,
                                     &self.width_input,
+                                    self.focused_dimension_input == Some(DimensionInput::Width),
                                 );
                                 if self.focus_width_on_open {
                                     width_response.request_focus();
+                                    self.focused_dimension_input = Some(DimensionInput::Width);
                                     self.focus_width_on_open = false;
                                 }
                                 if self.replace_width_on_first_edit && width_response.changed() {
@@ -413,14 +432,23 @@ impl NewFileDialog {
                             ui.label(t!("common.height"));
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 4.0;
-                                let height_response = ui.add(
+                                let mut height_output =
                                     egui::TextEdit::singleline(&mut self.height_input)
-                                        .desired_width(96.0),
-                                );
+                                        .desired_width(96.0)
+                                        .show(ui);
+                                let height_response = &height_output.response;
+                                if height_response.has_focus()
+                                    || height_response.gained_focus()
+                                    || height_response.clicked()
+                                {
+                                    self.focused_dimension_input = Some(DimensionInput::Height);
+                                }
                                 Self::select_all_text_on_ctrl_a(
                                     ctx,
-                                    &height_response,
+                                    height_response,
+                                    &mut height_output.state,
                                     &self.height_input,
+                                    self.focused_dimension_input == Some(DimensionInput::Height),
                                 );
                                 let height_commit = height_response.lost_focus()
                                     || (height_response.has_focus()
@@ -559,23 +587,41 @@ impl NewFileDialog {
         result
     }
 
-    fn select_all_text_on_ctrl_a(ctx: &egui::Context, response: &egui::Response, text: &str) {
-        let select_all = response.has_focus()
+    fn select_all_text_on_ctrl_a(
+        ctx: &egui::Context,
+        response: &egui::Response,
+        state: &mut egui::text_edit::TextEditState,
+        text: &str,
+        dimension_input_active: bool,
+    ) {
+        let select_all = (response.has_focus() || dimension_input_active)
             && ctx.input(|i| {
-                (i.modifiers.ctrl || i.modifiers.command) && i.key_pressed(egui::Key::A)
+                i.events.iter().any(|event| {
+                    matches!(
+                        event,
+                        egui::Event::Key {
+                            key: egui::Key::A,
+                            pressed: true,
+                            modifiers,
+                            ..
+                        } if modifiers.matches_logically(egui::Modifiers::COMMAND)
+                            || modifiers.ctrl
+                            || modifiers.command
+                    )
+                })
             });
         if !select_all {
             return;
         }
 
-        let mut state = egui::TextEdit::load_state(ctx, response.id).unwrap_or_default();
         state
             .cursor
             .set_char_range(Some(egui::text::CCursorRange::two(
                 egui::text::CCursor::default(),
                 egui::text::CCursor::new(text.chars().count()),
             )));
-        state.store(ctx, response.id);
+        state.clone().store(ctx, response.id);
+        ctx.request_repaint();
     }
 
     /// Convert width/height values between units
