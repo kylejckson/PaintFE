@@ -1,0 +1,9 @@
+[advisories]
+# quick-xml 0.39.2 is pulled in by wayland-scanner 0.31.10 through the
+# Linux Wayland/winit stack. Cargo cannot currently move that dependency to
+# quick-xml >=0.41.0 under the compatible winit/egui/eframe constraints.
+# Revisit when the Wayland/winit stack publishes a compatible update.
+ignore = [
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]
