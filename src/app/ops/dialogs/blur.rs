@@ -17,13 +17,22 @@ impl PaintFEApp {
                             (&dlg.original_pixels, &dlg.original_flat)
                         {
                             let radius = dlg.radius;
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Bokeh Blur".to_string(),
                                 idx,
                                 original.clone(),
                                 flat.clone(),
-                                move |img| crate::ops::effects::bokeh_blur_core(img, radius, None),
+                                move |img| {
+                                    crate::ops::effects::bokeh_blur_core(
+                                        img,
+                                        radius,
+                                        selection_mask.as_ref(),
+                                    )
+                                },
                             );
                         }
                     }
@@ -33,12 +42,21 @@ impl PaintFEApp {
                         let idx = dlg.layer_idx;
                         if let Some(flat) = &dlg.original_flat {
                             let radius = dlg.radius;
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             if let Some(project) = self.active_project_mut() {
                                 Self::apply_fullres_effect(
                                     &mut project.canvas_state,
                                     idx,
                                     flat,
-                                    |img| crate::ops::effects::bokeh_blur_core(img, radius, None),
+                                    |img| {
+                                        crate::ops::effects::bokeh_blur_core(
+                                            img,
+                                            radius,
+                                            selection_mask.as_ref(),
+                                        )
+                                    },
                                 );
                             }
                         }
@@ -95,6 +113,9 @@ impl PaintFEApp {
                             (&dlg.original_pixels, &dlg.original_flat)
                         {
                             let (angle, distance) = (dlg.angle, dlg.distance);
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Motion Blur".to_string(),
@@ -103,7 +124,10 @@ impl PaintFEApp {
                                 flat.clone(),
                                 move |img| {
                                     crate::ops::effects::motion_blur_core(
-                                        img, angle, distance, None,
+                                        img,
+                                        angle,
+                                        distance,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -114,14 +138,20 @@ impl PaintFEApp {
                         let idx = dlg.layer_idx;
                         if let Some(flat) = &dlg.original_flat {
                             let (angle, distance) = (dlg.angle, dlg.distance);
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             if let Some(project) = self.active_project_mut() {
                                 Self::apply_fullres_effect(
                                     &mut project.canvas_state,
                                     idx,
                                     flat,
                                     |img| {
-                                        crate::ops::effects::motion_blur_core(
-                                            img, angle, distance, None,
+                                    crate::ops::effects::motion_blur_core(
+                                            img,
+                                            angle,
+                                            distance,
+                                            selection_mask.as_ref(),
                                         )
                                     },
                                 );
@@ -180,13 +210,22 @@ impl PaintFEApp {
                             (&dlg.original_pixels, &dlg.original_flat)
                         {
                             let radius = dlg.radius;
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Box Blur".to_string(),
                                 idx,
                                 original.clone(),
                                 flat.clone(),
-                                move |img| crate::ops::effects::box_blur_core(img, radius, None),
+                                move |img| {
+                                    crate::ops::effects::box_blur_core(
+                                        img,
+                                        radius,
+                                        selection_mask.as_ref(),
+                                    )
+                                },
                             );
                         }
                     }
@@ -195,12 +234,21 @@ impl PaintFEApp {
                         let idx = dlg.layer_idx;
                         if let Some(flat) = &dlg.original_flat {
                             let radius = dlg.radius;
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             if let Some(project) = self.active_project_mut() {
                                 Self::apply_fullres_effect(
                                     &mut project.canvas_state,
                                     idx,
                                     flat,
-                                    |img| crate::ops::effects::box_blur_core(img, radius, None),
+                                    |img| {
+                                        crate::ops::effects::box_blur_core(
+                                            img,
+                                            radius,
+                                            selection_mask.as_ref(),
+                                        )
+                                    },
                                 );
                             }
                         }
@@ -254,6 +302,9 @@ impl PaintFEApp {
                     if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
                     {
                         let (cx, cy, strength, samples, tint, ts) = dlg.current_params();
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         self.spawn_preview_job(
                             ctx.input(|i| i.time),
                             "Zoom Blur".to_string(),
@@ -262,7 +313,14 @@ impl PaintFEApp {
                             flat.clone(),
                             move |img| {
                                 crate::ops::effects::zoom_blur_core(
-                                    img, cx, cy, strength, samples, tint, ts, None,
+                                    img,
+                                    cx,
+                                    cy,
+                                    strength,
+                                    samples,
+                                    tint,
+                                    ts,
+                                    selection_mask.as_ref(),
                                 )
                             },
                         );
@@ -273,6 +331,9 @@ impl PaintFEApp {
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat {
                         let (cx, cy, strength, samples, tint, ts) = dlg.current_params();
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         if let Some(project) = self.active_project_mut() {
                             Self::apply_fullres_effect(
                                 &mut project.canvas_state,
@@ -280,7 +341,14 @@ impl PaintFEApp {
                                 flat,
                                 |img| {
                                     crate::ops::effects::zoom_blur_core(
-                                        img, cx, cy, strength, samples, tint, ts, None,
+                                        img,
+                                        cx,
+                                        cy,
+                                        strength,
+                                        samples,
+                                        tint,
+                                        ts,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );

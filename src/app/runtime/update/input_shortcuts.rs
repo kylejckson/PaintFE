@@ -874,10 +874,27 @@ impl PaintFEApp {
                 self.select_all_canvas();
             }
 
-            // Ctrl+D — Deselect
-            if kb.is_pressed(ctx, BindableAction::Deselect)
-                && let Some(project) = self.active_project_mut()
-            {
+            // Ctrl+D — Commit active overlay/tool state, then deselect.
+            let deselect_pressed = kb.is_pressed(ctx, BindableAction::Deselect);
+            if deselect_pressed {
+                if self.paste_overlay.is_some() {
+                    self.commit_paste_overlay();
+                }
+                self.tools_panel.injected_enter_pressed = true;
+                if self.tools_panel.active_tool == crate::components::tools::Tool::MeshWarp
+                    && self.tools_panel.mesh_warp_state.is_active
+                {
+                    self.tools_panel.mesh_warp_state.commit_pending = true;
+                    self.tools_panel.mesh_warp_state.commit_pending_frame = 0;
+                }
+                if self.tools_panel.active_tool == crate::components::tools::Tool::Liquify
+                    && self.tools_panel.liquify_state.is_active
+                {
+                    self.tools_panel.liquify_state.commit_pending = true;
+                    self.tools_panel.liquify_state.commit_pending_frame = 0;
+                }
+            }
+            if deselect_pressed && let Some(project) = self.active_project_mut() {
                 let sel_before = project.canvas_state.selection_mask.clone();
                 project.canvas_state.clear_selection();
                 project.canvas_state.mark_dirty(None);

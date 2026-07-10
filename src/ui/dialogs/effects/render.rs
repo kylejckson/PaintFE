@@ -181,7 +181,13 @@ impl DropShadowDialog {
                         ui.end_row();
 
                         ui.label("Radius");
-                        if dialog_slider(ui, &mut self.blur_radius, 0.0..=30.0, 0.1, " px", 1) {
+                        let r = ui.add(
+                            egui::Slider::new(&mut self.blur_radius, 0.0..=30.0)
+                                .suffix(" px")
+                                .step_by(0.1)
+                                .max_decimals(1),
+                        );
+                        if track_slider(&r, &mut self.dragging) {
                             changed = true;
                         }
                         ui.end_row();

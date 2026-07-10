@@ -1430,7 +1430,15 @@ impl LayersPanel {
             };
             let eye_response = assets.icon_in_rect(ui, eye_icon, eye_rect, eye_tint);
             if eye_response.clicked() {
-                action = Some(LayerAction::ToggleVisibility);
+                if ui.input(|i| i.modifiers.ctrl) {
+                    if is_this_soloed {
+                        context_action = Some(ContextAction::ShowAll);
+                    } else {
+                        context_action = Some(ContextAction::SoloLayer);
+                    }
+                } else {
+                    action = Some(LayerAction::ToggleVisibility);
+                }
             }
             // Right-click hold: temporary peek (show only this layer while held)
             if eye_response.is_pointer_button_down_on()
@@ -1449,12 +1457,12 @@ impl LayersPanel {
                 }
             }
             if is_this_soloed {
-                eye_response.on_hover_text("Soloed — right-click to unsolo");
+                eye_response.on_hover_text("Soloed - Ctrl-click or right-click to unsolo");
             } else {
                 eye_response.on_hover_text(if layer_visible {
-                    "Hide layer · Right-click hold to peek"
+                    "Hide layer - Ctrl-click to solo - Right-click hold to peek"
                 } else {
-                    "Show layer · Right-click hold to peek"
+                    "Show layer - Ctrl-click to solo - Right-click hold to peek"
                 });
             }
 

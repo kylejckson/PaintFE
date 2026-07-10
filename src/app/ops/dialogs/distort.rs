@@ -14,6 +14,9 @@ impl PaintFEApp {
                     if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
                     {
                         let (cell_size, seed) = (dlg.cell_size, dlg.seed);
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         self.spawn_preview_job(
                             ctx.input(|i| i.time),
                             "Crystallize".to_string(),
@@ -21,7 +24,12 @@ impl PaintFEApp {
                             original.clone(),
                             flat.clone(),
                             move |img| {
-                                crate::ops::effects::crystallize_core(img, cell_size, seed, None)
+                                crate::ops::effects::crystallize_core(
+                                    img,
+                                    cell_size,
+                                    seed,
+                                    selection_mask.as_ref(),
+                                )
                             },
                         );
                     }
@@ -31,6 +39,9 @@ impl PaintFEApp {
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat {
                         let (cell_size, seed) = (dlg.cell_size, dlg.seed);
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         if let Some(project) = self.active_project_mut() {
                             Self::apply_fullres_effect(
                                 &mut project.canvas_state,
@@ -38,7 +49,10 @@ impl PaintFEApp {
                                 flat,
                                 |img| {
                                     crate::ops::effects::crystallize_core(
-                                        img, cell_size, seed, None,
+                                        img,
+                                        cell_size,
+                                        seed,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -90,6 +104,9 @@ impl PaintFEApp {
                             (&dlg.original_pixels, &dlg.original_flat)
                         {
                             let (cell_size, seed) = (dlg.cell_size, dlg.seed);
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Crystallize".to_string(),
@@ -98,7 +115,10 @@ impl PaintFEApp {
                                 flat.clone(),
                                 move |img| {
                                     crate::ops::effects::crystallize_core(
-                                        img, cell_size, seed, None,
+                                        img,
+                                        cell_size,
+                                        seed,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -116,6 +136,9 @@ impl PaintFEApp {
                         let (scale_p, amount, seed) = (dlg.scale, dlg.amount, dlg.seed);
                         let (octaves, roughness) = (dlg.octaves as u32, dlg.roughness);
                         let (pinch, wrap) = (dlg.pinch, dlg.wrap);
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         self.spawn_preview_job(
                             ctx.input(|i| i.time),
                             "Dents".to_string(),
@@ -125,7 +148,7 @@ impl PaintFEApp {
                             move |img| {
                                 crate::ops::effects::dents_core(
                                     img, scale_p, amount, seed, octaves, roughness, pinch, wrap,
-                                    None,
+                                    selection_mask.as_ref(),
                                 )
                             },
                         );
@@ -138,6 +161,9 @@ impl PaintFEApp {
                         let (scale_p, amount, seed) = (dlg.scale, dlg.amount, dlg.seed);
                         let (octaves, roughness) = (dlg.octaves as u32, dlg.roughness);
                         let (pinch, wrap) = (dlg.pinch, dlg.wrap);
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         if let Some(project) = self.active_project_mut() {
                             Self::apply_fullres_effect(
                                 &mut project.canvas_state,
@@ -146,7 +172,8 @@ impl PaintFEApp {
                                 |img| {
                                     crate::ops::effects::dents_core(
                                         img, scale_p, amount, seed, octaves, roughness, pinch,
-                                        wrap, None,
+                                        wrap,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -200,6 +227,9 @@ impl PaintFEApp {
                             let (scale_p, amount, seed) = (dlg.scale, dlg.amount, dlg.seed);
                             let (octaves, roughness) = (dlg.octaves as u32, dlg.roughness);
                             let (pinch, wrap) = (dlg.pinch, dlg.wrap);
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Dents".to_string(),
@@ -209,7 +239,8 @@ impl PaintFEApp {
                                 move |img| {
                                     crate::ops::effects::dents_core(
                                         img, scale_p, amount, seed, octaves, roughness, pinch,
-                                        wrap, None,
+                                        wrap,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -225,13 +256,22 @@ impl PaintFEApp {
                     if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
                     {
                         let block_size = dlg.block_size as u32;
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         self.spawn_preview_job(
                             ctx.input(|i| i.time),
                             "Pixelate".to_string(),
                             idx,
                             original.clone(),
                             flat.clone(),
-                            move |img| crate::ops::effects::pixelate_core(img, block_size, None),
+                            move |img| {
+                                crate::ops::effects::pixelate_core(
+                                    img,
+                                    block_size,
+                                    selection_mask.as_ref(),
+                                )
+                            },
                         );
                     }
                 }
@@ -240,12 +280,21 @@ impl PaintFEApp {
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat {
                         let block_size = dlg.block_size as u32;
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         if let Some(project) = self.active_project_mut() {
                             Self::apply_fullres_effect(
                                 &mut project.canvas_state,
                                 idx,
                                 flat,
-                                |img| crate::ops::effects::pixelate_core(img, block_size, None),
+                                |img| {
+                                    crate::ops::effects::pixelate_core(
+                                        img,
+                                        block_size,
+                                        selection_mask.as_ref(),
+                                    )
+                                },
                             );
                         }
                     }
@@ -295,6 +344,9 @@ impl PaintFEApp {
                             (&dlg.original_pixels, &dlg.original_flat)
                         {
                             let block_size = dlg.block_size as u32;
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Pixelate".to_string(),
@@ -302,7 +354,11 @@ impl PaintFEApp {
                                 original.clone(),
                                 flat.clone(),
                                 move |img| {
-                                    crate::ops::effects::pixelate_core(img, block_size, None)
+                                    crate::ops::effects::pixelate_core(
+                                        img,
+                                        block_size,
+                                        selection_mask.as_ref(),
+                                    )
                                 },
                             );
                         }
@@ -317,13 +373,24 @@ impl PaintFEApp {
                     if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
                     {
                         let amount = dlg.amount;
+                        let origin = (dlg.origin_x / 100.0, dlg.origin_y / 100.0);
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         self.spawn_preview_job(
                             ctx.input(|i| i.time),
                             "Bulge".to_string(),
                             idx,
                             original.clone(),
                             flat.clone(),
-                            move |img| crate::ops::effects::bulge_core(img, amount, None),
+                            move |img| {
+                                crate::ops::effects::bulge_core_at(
+                                    img,
+                                    amount,
+                                    origin,
+                                    selection_mask.as_ref(),
+                                )
+                            },
                         );
                     }
                 }
@@ -332,12 +399,23 @@ impl PaintFEApp {
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat {
                         let amount = dlg.amount;
+                        let origin = (dlg.origin_x / 100.0, dlg.origin_y / 100.0);
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         if let Some(project) = self.active_project_mut() {
                             Self::apply_fullres_effect(
                                 &mut project.canvas_state,
                                 idx,
                                 flat,
-                                |img| crate::ops::effects::bulge_core(img, amount, None),
+                                |img| {
+                                    crate::ops::effects::bulge_core_at(
+                                        img,
+                                        amount,
+                                        origin,
+                                        selection_mask.as_ref(),
+                                    )
+                                },
                             );
                         }
                     }
@@ -387,13 +465,24 @@ impl PaintFEApp {
                             (&dlg.original_pixels, &dlg.original_flat)
                         {
                             let amount = dlg.amount;
+                            let origin = (dlg.origin_x / 100.0, dlg.origin_y / 100.0);
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Bulge".to_string(),
                                 idx,
                                 original.clone(),
                                 flat.clone(),
-                                move |img| crate::ops::effects::bulge_core(img, amount, None),
+                                move |img| {
+                                    crate::ops::effects::bulge_core_at(
+                                        img,
+                                        amount,
+                                        origin,
+                                        selection_mask.as_ref(),
+                                    )
+                                },
                             );
                         }
                     }
@@ -407,13 +496,24 @@ impl PaintFEApp {
                     if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
                     {
                         let angle = dlg.angle;
+                        let origin = (dlg.origin_x / 100.0, dlg.origin_y / 100.0);
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         self.spawn_preview_job(
                             ctx.input(|i| i.time),
                             "Twist".to_string(),
                             idx,
                             original.clone(),
                             flat.clone(),
-                            move |img| crate::ops::effects::twist_core(img, angle, None),
+                            move |img| {
+                                crate::ops::effects::twist_core_at(
+                                    img,
+                                    angle,
+                                    origin,
+                                    selection_mask.as_ref(),
+                                )
+                            },
                         );
                     }
                 }
@@ -422,12 +522,23 @@ impl PaintFEApp {
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat {
                         let angle = dlg.angle;
+                        let origin = (dlg.origin_x / 100.0, dlg.origin_y / 100.0);
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         if let Some(project) = self.active_project_mut() {
                             Self::apply_fullres_effect(
                                 &mut project.canvas_state,
                                 idx,
                                 flat,
-                                |img| crate::ops::effects::twist_core(img, angle, None),
+                                |img| {
+                                    crate::ops::effects::twist_core_at(
+                                        img,
+                                        angle,
+                                        origin,
+                                        selection_mask.as_ref(),
+                                    )
+                                },
                             );
                         }
                     }
@@ -477,13 +588,24 @@ impl PaintFEApp {
                             (&dlg.original_pixels, &dlg.original_flat)
                         {
                             let angle = dlg.angle;
+                            let origin = (dlg.origin_x / 100.0, dlg.origin_y / 100.0);
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Twist".to_string(),
                                 idx,
                                 original.clone(),
                                 flat.clone(),
-                                move |img| crate::ops::effects::twist_core(img, angle, None),
+                                move |img| {
+                                    crate::ops::effects::twist_core_at(
+                                        img,
+                                        angle,
+                                        origin,
+                                        selection_mask.as_ref(),
+                                    )
+                                },
                             );
                         }
                     }

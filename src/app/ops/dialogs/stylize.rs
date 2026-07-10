@@ -14,13 +14,23 @@ impl PaintFEApp {
                     if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
                     {
                         let (radius, intensity) = (dlg.radius, dlg.intensity);
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         self.spawn_preview_job(
                             ctx.input(|i| i.time),
                             "Glow".to_string(),
                             idx,
                             original.clone(),
                             flat.clone(),
-                            move |img| crate::ops::effects::glow_core(img, radius, intensity, None),
+                            move |img| {
+                                crate::ops::effects::glow_core(
+                                    img,
+                                    radius,
+                                    intensity,
+                                    selection_mask.as_ref(),
+                                )
+                            },
                         );
                     }
                 }
@@ -29,12 +39,22 @@ impl PaintFEApp {
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat {
                         let (radius, intensity) = (dlg.radius, dlg.intensity);
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         if let Some(project) = self.active_project_mut() {
                             Self::apply_fullres_effect(
                                 &mut project.canvas_state,
                                 idx,
                                 flat,
-                                |img| crate::ops::effects::glow_core(img, radius, intensity, None),
+                                |img| {
+                                    crate::ops::effects::glow_core(
+                                        img,
+                                        radius,
+                                        intensity,
+                                        selection_mask.as_ref(),
+                                    )
+                                },
                             );
                         }
                     }
@@ -84,6 +104,9 @@ impl PaintFEApp {
                             (&dlg.original_pixels, &dlg.original_flat)
                         {
                             let (radius, intensity) = (dlg.radius, dlg.intensity);
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Glow".to_string(),
@@ -91,7 +114,12 @@ impl PaintFEApp {
                                 original.clone(),
                                 flat.clone(),
                                 move |img| {
-                                    crate::ops::effects::glow_core(img, radius, intensity, None)
+                                    crate::ops::effects::glow_core(
+                                        img,
+                                        radius,
+                                        intensity,
+                                        selection_mask.as_ref(),
+                                    )
                                 },
                             );
                         }
@@ -106,13 +134,23 @@ impl PaintFEApp {
                     if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
                     {
                         let (amount, radius) = (dlg.amount, dlg.radius);
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         self.spawn_preview_job(
                             ctx.input(|i| i.time),
                             "Sharpen".to_string(),
                             idx,
                             original.clone(),
                             flat.clone(),
-                            move |img| crate::ops::effects::sharpen_core(img, amount, radius, None),
+                            move |img| {
+                                crate::ops::effects::sharpen_core(
+                                    img,
+                                    amount,
+                                    radius,
+                                    selection_mask.as_ref(),
+                                )
+                            },
                         );
                     }
                 }
@@ -121,12 +159,22 @@ impl PaintFEApp {
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat {
                         let (amount, radius) = (dlg.amount, dlg.radius);
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         if let Some(project) = self.active_project_mut() {
                             Self::apply_fullres_effect(
                                 &mut project.canvas_state,
                                 idx,
                                 flat,
-                                |img| crate::ops::effects::sharpen_core(img, amount, radius, None),
+                                |img| {
+                                    crate::ops::effects::sharpen_core(
+                                        img,
+                                        amount,
+                                        radius,
+                                        selection_mask.as_ref(),
+                                    )
+                                },
                             );
                         }
                     }
@@ -176,6 +224,9 @@ impl PaintFEApp {
                             (&dlg.original_pixels, &dlg.original_flat)
                         {
                             let (amount, radius) = (dlg.amount, dlg.radius);
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Sharpen".to_string(),
@@ -183,7 +234,12 @@ impl PaintFEApp {
                                 original.clone(),
                                 flat.clone(),
                                 move |img| {
-                                    crate::ops::effects::sharpen_core(img, amount, radius, None)
+                                    crate::ops::effects::sharpen_core(
+                                        img,
+                                        amount,
+                                        radius,
+                                        selection_mask.as_ref(),
+                                    )
                                 },
                             );
                         }
@@ -198,6 +254,9 @@ impl PaintFEApp {
                     if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
                     {
                         let (amount, softness) = (dlg.amount, dlg.softness);
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         self.spawn_preview_job(
                             ctx.input(|i| i.time),
                             "Vignette".to_string(),
@@ -205,7 +264,12 @@ impl PaintFEApp {
                             original.clone(),
                             flat.clone(),
                             move |img| {
-                                crate::ops::effects::vignette_core(img, amount, softness, None)
+                                crate::ops::effects::vignette_core(
+                                    img,
+                                    amount,
+                                    softness,
+                                    selection_mask.as_ref(),
+                                )
                             },
                         );
                     }
@@ -215,13 +279,21 @@ impl PaintFEApp {
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat {
                         let (amount, softness) = (dlg.amount, dlg.softness);
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         if let Some(project) = self.active_project_mut() {
                             Self::apply_fullres_effect(
                                 &mut project.canvas_state,
                                 idx,
                                 flat,
                                 |img| {
-                                    crate::ops::effects::vignette_core(img, amount, softness, None)
+                                    crate::ops::effects::vignette_core(
+                                        img,
+                                        amount,
+                                        softness,
+                                        selection_mask.as_ref(),
+                                    )
                                 },
                             );
                         }
@@ -272,6 +344,9 @@ impl PaintFEApp {
                             (&dlg.original_pixels, &dlg.original_flat)
                         {
                             let (amount, softness) = (dlg.amount, dlg.softness);
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Vignette".to_string(),
@@ -279,7 +354,12 @@ impl PaintFEApp {
                                 original.clone(),
                                 flat.clone(),
                                 move |img| {
-                                    crate::ops::effects::vignette_core(img, amount, softness, None)
+                                    crate::ops::effects::vignette_core(
+                                        img,
+                                        amount,
+                                        softness,
+                                        selection_mask.as_ref(),
+                                    )
                                 },
                             );
                         }
@@ -295,6 +375,9 @@ impl PaintFEApp {
                     {
                         let (dot_size, angle) = (dlg.dot_size, dlg.angle);
                         let shape = dlg.halftone_shape();
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         self.spawn_preview_job(
                             ctx.input(|i| i.time),
                             "Halftone".to_string(),
@@ -303,7 +386,11 @@ impl PaintFEApp {
                             flat.clone(),
                             move |img| {
                                 crate::ops::effects::halftone_core(
-                                    img, dot_size, angle, shape, None,
+                                    img,
+                                    dot_size,
+                                    angle,
+                                    shape,
+                                    selection_mask.as_ref(),
                                 )
                             },
                         );
@@ -315,6 +402,9 @@ impl PaintFEApp {
                     if let Some(flat) = &dlg.original_flat {
                         let (dot_size, angle) = (dlg.dot_size, dlg.angle);
                         let shape = dlg.halftone_shape();
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         if let Some(project) = self.active_project_mut() {
                             Self::apply_fullres_effect(
                                 &mut project.canvas_state,
@@ -322,7 +412,11 @@ impl PaintFEApp {
                                 flat,
                                 |img| {
                                     crate::ops::effects::halftone_core(
-                                        img, dot_size, angle, shape, None,
+                                        img,
+                                        dot_size,
+                                        angle,
+                                        shape,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -375,6 +469,9 @@ impl PaintFEApp {
                         {
                             let (dot_size, angle) = (dlg.dot_size, dlg.angle);
                             let shape = dlg.halftone_shape();
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Halftone".to_string(),
@@ -383,7 +480,11 @@ impl PaintFEApp {
                                 flat.clone(),
                                 move |img| {
                                     crate::ops::effects::halftone_core(
-                                        img, dot_size, angle, shape, None,
+                                        img,
+                                        dot_size,
+                                        angle,
+                                        shape,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );

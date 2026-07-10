@@ -338,11 +338,13 @@ impl PixelateDialog {
 
 effect_dialog_base!(BulgeDialog {
     amount: f32 = 0.0,
+    origin_x: f32 = 50.0,
+    origin_y: f32 = 50.0,
     first_open: bool = true
 });
 
 impl BulgeDialog {
-    pub fn show(&mut self, ctx: &egui::Context) -> DialogResult<f32> {
+    pub fn show(&mut self, ctx: &egui::Context) -> DialogResult<(f32, f32, f32)> {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
@@ -376,6 +378,36 @@ impl BulgeDialog {
                                 .color(colors.text_muted),
                         );
                         ui.end_row();
+
+                        ui.label("Origin X");
+                        let r = ui.add(
+                            egui::Slider::new(&mut self.origin_x, 0.0..=100.0)
+                                .suffix("%")
+                                .max_decimals(0),
+                        );
+                        if track_slider(&r, &mut self.dragging) {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Origin Y");
+                        let r = ui.add(
+                            egui::Slider::new(&mut self.origin_y, 0.0..=100.0)
+                                .suffix("%")
+                                .max_decimals(0),
+                        );
+                        if track_slider(&r, &mut self.dragging) {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Origin");
+                        if ui.small_button("Center").clicked() {
+                            self.origin_x = 50.0;
+                            self.origin_y = 50.0;
+                            changed = true;
+                        }
+                        ui.end_row();
                     });
 
                 accent_separator(ui, &colors);
@@ -386,7 +418,7 @@ impl BulgeDialog {
 
                 let (ok, cancel) = dialog_footer(ui, &colors);
                 if ok {
-                    result = DialogResult::Ok(self.amount);
+                    result = DialogResult::Ok((self.amount, self.origin_x / 100.0, self.origin_y / 100.0));
                 }
                 if cancel {
                     result = DialogResult::Cancel;
@@ -400,11 +432,13 @@ impl BulgeDialog {
 
 effect_dialog_base!(TwistDialog {
     angle: f32 = 0.0,
+    origin_x: f32 = 50.0,
+    origin_y: f32 = 50.0,
     first_open: bool = true
 });
 
 impl TwistDialog {
-    pub fn show(&mut self, ctx: &egui::Context) -> DialogResult<f32> {
+    pub fn show(&mut self, ctx: &egui::Context) -> DialogResult<(f32, f32, f32)> {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
@@ -459,6 +493,36 @@ impl TwistDialog {
                             }
                         });
                         ui.end_row();
+
+                        ui.label("Origin X");
+                        let r = ui.add(
+                            egui::Slider::new(&mut self.origin_x, 0.0..=100.0)
+                                .suffix("%")
+                                .max_decimals(0),
+                        );
+                        if track_slider(&r, &mut self.dragging) {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Origin Y");
+                        let r = ui.add(
+                            egui::Slider::new(&mut self.origin_y, 0.0..=100.0)
+                                .suffix("%")
+                                .max_decimals(0),
+                        );
+                        if track_slider(&r, &mut self.dragging) {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Origin");
+                        if ui.small_button("Center").clicked() {
+                            self.origin_x = 50.0;
+                            self.origin_y = 50.0;
+                            changed = true;
+                        }
+                        ui.end_row();
                     });
 
                 accent_separator(ui, &colors);
@@ -469,7 +533,7 @@ impl TwistDialog {
 
                 let (ok, cancel) = dialog_footer(ui, &colors);
                 if ok {
-                    result = DialogResult::Ok(self.angle);
+                    result = DialogResult::Ok((self.angle, self.origin_x / 100.0, self.origin_y / 100.0));
                 }
                 if cancel {
                     result = DialogResult::Cancel;

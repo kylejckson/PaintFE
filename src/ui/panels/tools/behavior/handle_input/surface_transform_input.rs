@@ -546,8 +546,8 @@ impl ToolsPanel {
                             if let Some(ref mut p) = self.shapes_state.placed {
                                 match p.handle_dragging {
                                     Some(ShapeHandle::Move) => {
-                                        p.cx = (pos_f.0 - p.drag_offset[0]).round();
-                                        p.cy = (pos_f.1 - p.drag_offset[1]).round();
+                                        p.cx = pos_f.0 - p.drag_offset[0];
+                                        p.cy = pos_f.1 - p.drag_offset[1];
                                         need_preview = true;
                                     }
                                     Some(ShapeHandle::Rotate) => {
@@ -598,8 +598,6 @@ impl ToolsPanel {
                                                     p.cy = ay
                                                         + center_local.0 * sin_r
                                                         + center_local.1 * cos_r;
-                                                    p.cx = p.cx.round();
-                                                    p.cy = p.cy.round();
                                                     p.hh = new_hh;
                                                 }
                                                 ShapeHandle::Left | ShapeHandle::Right => {
@@ -614,8 +612,6 @@ impl ToolsPanel {
                                                     p.cy = ay
                                                         + center_local.0 * sin_r
                                                         + center_local.1 * cos_r;
-                                                    p.cx = p.cx.round();
-                                                    p.cy = p.cy.round();
                                                     p.hw = new_hw;
                                                 }
                                                 _ => {}
@@ -642,10 +638,10 @@ impl ToolsPanel {
                                                 ax + (-anchor_lx) * cos_r - (-anchor_ly) * sin_r;
                                             let new_cy =
                                                 ay + (-anchor_lx) * sin_r + (-anchor_ly) * cos_r;
-                                            p.cx = new_cx.round();
-                                            p.cy = new_cy.round();
-                                            p.hw = lx.max(0.5).round().max(0.5);
-                                            p.hh = ly.max(0.5).round().max(0.5);
+                                            p.cx = new_cx;
+                                            p.cy = new_cy;
+                                            p.hw = lx.max(0.5);
+                                            p.hh = ly.max(0.5);
                                         }
                                         need_preview = true;
                                     }

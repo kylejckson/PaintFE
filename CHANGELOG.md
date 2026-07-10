@@ -6,6 +6,23 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.3.3] - 2026-07-10
+
+### Added
+- Added Ctrl-click solo toggling from layer visibility icons.
+- Added selectable origin controls for Bulge/Pinch and Twist.
+- Added resize cursor feedback for Move Selection and placed shape handles.
+
+### Changed
+- Ctrl+D now commits active paste/tool edits before clearing the selection.
+- Drop Shadow radius previews now update on slider release or manual preview instead of continuously while dragging.
+- Placed shapes now move and resize smoothly without per-frame pixel snapping.
+
+### Fixed
+- Fixed Pinch distortion behavior.
+- Fixed selection-aware effect dialogs so effects respect the active selection mask.
+- Fixed stale empty text previews after clearing or moving empty text.
+
 ## [1.3.2] - 2026-07-08
 
 ### Added

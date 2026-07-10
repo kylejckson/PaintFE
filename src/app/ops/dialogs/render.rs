@@ -24,6 +24,9 @@ impl PaintFEApp {
                         ];
                         let style = dlg.grid_style();
                         let opacity = dlg.opacity;
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         self.spawn_preview_job(
                             ctx.input(|i| i.time),
                             "Grid".to_string(),
@@ -32,7 +35,14 @@ impl PaintFEApp {
                             flat.clone(),
                             move |img| {
                                 crate::ops::effects::grid_core(
-                                    img, cw, ch, lw, c, style, opacity, None,
+                                    img,
+                                    cw,
+                                    ch,
+                                    lw,
+                                    c,
+                                    style,
+                                    opacity,
+                                    selection_mask.as_ref(),
                                 )
                             },
                         );
@@ -53,6 +63,9 @@ impl PaintFEApp {
                         ];
                         let style = dlg.grid_style();
                         let opacity = dlg.opacity;
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         if let Some(project) = self.active_project_mut() {
                             Self::apply_fullres_effect(
                                 &mut project.canvas_state,
@@ -60,7 +73,14 @@ impl PaintFEApp {
                                 flat,
                                 |img| {
                                     crate::ops::effects::grid_core(
-                                        img, cw, ch, lw, c, style, opacity, None,
+                                        img,
+                                        cw,
+                                        ch,
+                                        lw,
+                                        c,
+                                        style,
+                                        opacity,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -122,6 +142,9 @@ impl PaintFEApp {
                             ];
                             let style = dlg.grid_style();
                             let opacity = dlg.opacity;
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Grid".to_string(),
@@ -130,7 +153,14 @@ impl PaintFEApp {
                                 flat.clone(),
                                 move |img| {
                                     crate::ops::effects::grid_core(
-                                        img, cw, ch, lw, c, style, opacity, None,
+                                        img,
+                                        cw,
+                                        ch,
+                                        lw,
+                                        c,
+                                        style,
+                                        opacity,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -156,6 +186,9 @@ impl PaintFEApp {
                             255,
                         ];
                         let opacity = dlg.opacity;
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         self.spawn_preview_job(
                             ctx.input(|i| i.time),
                             "Drop Shadow".to_string(),
@@ -164,7 +197,14 @@ impl PaintFEApp {
                             flat.clone(),
                             move |img| {
                                 crate::ops::effects::shadow_core(
-                                    img, ox, oy, br, widen, c, opacity, None,
+                                    img,
+                                    ox,
+                                    oy,
+                                    br,
+                                    widen,
+                                    c,
+                                    opacity,
+                                    selection_mask.as_ref(),
                                 )
                             },
                         );
@@ -185,6 +225,9 @@ impl PaintFEApp {
                             255,
                         ];
                         let opacity = dlg.opacity;
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         if let Some(project) = self.active_project_mut() {
                             Self::apply_fullres_effect(
                                 &mut project.canvas_state,
@@ -192,7 +235,14 @@ impl PaintFEApp {
                                 flat,
                                 |img| {
                                     crate::ops::effects::shadow_core(
-                                        img, ox, oy, br, widen, c, opacity, None,
+                                        img,
+                                        ox,
+                                        oy,
+                                        br,
+                                        widen,
+                                        c,
+                                        opacity,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -254,6 +304,9 @@ impl PaintFEApp {
                                 255,
                             ];
                             let opacity = dlg.opacity;
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Drop Shadow".to_string(),
@@ -262,7 +315,14 @@ impl PaintFEApp {
                                 flat.clone(),
                                 move |img| {
                                     crate::ops::effects::shadow_core(
-                                        img, ox, oy, br, widen, c, opacity, None,
+                                        img,
+                                        ox,
+                                        oy,
+                                        br,
+                                        widen,
+                                        c,
+                                        opacity,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -286,6 +346,9 @@ impl PaintFEApp {
                         ];
                         let mode = dlg.outline_mode();
                         let anti_alias = dlg.anti_alias;
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         self.spawn_preview_job(
                             ctx.input(|i| i.time),
                             "Outline".to_string(),
@@ -294,7 +357,12 @@ impl PaintFEApp {
                             flat.clone(),
                             move |img| {
                                 crate::ops::effects::outline_core(
-                                    img, width, c, mode, anti_alias, None,
+                                    img,
+                                    width,
+                                    c,
+                                    mode,
+                                    anti_alias,
+                                    selection_mask.as_ref(),
                                 )
                             },
                         );
@@ -316,6 +384,9 @@ impl PaintFEApp {
                         ];
                         let mode = dlg.outline_mode();
                         let anti_alias = dlg.anti_alias;
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         self.spawn_filter_job(
                             ctx.input(|i| i.time),
                             "Outline".to_string(),
@@ -324,7 +395,12 @@ impl PaintFEApp {
                             flat.clone(),
                             move |img| {
                                 crate::ops::effects::outline_core(
-                                    img, width, c, mode, anti_alias, None,
+                                    img,
+                                    width,
+                                    c,
+                                    mode,
+                                    anti_alias,
+                                    selection_mask.as_ref(),
                                 )
                             },
                         );
@@ -365,6 +441,9 @@ impl PaintFEApp {
                             ];
                             let mode = dlg.outline_mode();
                             let anti_alias = dlg.anti_alias;
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Outline".to_string(),
@@ -373,7 +452,12 @@ impl PaintFEApp {
                                 flat.clone(),
                                 move |img| {
                                     crate::ops::effects::outline_core(
-                                        img, width, c, mode, anti_alias, None,
+                                        img,
+                                        width,
+                                        c,
+                                        mode,
+                                        anti_alias,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -396,13 +480,23 @@ impl PaintFEApp {
                             (primary[2] * 255.0) as u8,
                             255,
                         ];
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         self.spawn_preview_job(
                             ctx.input(|i| i.time),
                             "Canvas Border".to_string(),
                             idx,
                             original.clone(),
                             flat.clone(),
-                            move |img| crate::ops::effects::canvas_border_core(img, width, c, None),
+                            move |img| {
+                                crate::ops::effects::canvas_border_core(
+                                    img,
+                                    width,
+                                    c,
+                                    selection_mask.as_ref(),
+                                )
+                            },
                         );
                     }
                 }
@@ -418,12 +512,22 @@ impl PaintFEApp {
                             (primary[2] * 255.0) as u8,
                             255,
                         ];
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         if let Some(project) = self.active_project_mut() {
                             Self::apply_fullres_effect(
                                 &mut project.canvas_state,
                                 idx,
                                 flat,
-                                |img| crate::ops::effects::canvas_border_core(img, width, c, None),
+                                |img| {
+                                    crate::ops::effects::canvas_border_core(
+                                        img,
+                                        width,
+                                        c,
+                                        selection_mask.as_ref(),
+                                    )
+                                },
                             );
                         }
                     }
@@ -480,6 +584,9 @@ impl PaintFEApp {
                                 (primary[2] * 255.0) as u8,
                                 255,
                             ];
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Canvas Border".to_string(),
@@ -487,7 +594,12 @@ impl PaintFEApp {
                                 original.clone(),
                                 flat.clone(),
                                 move |img| {
-                                    crate::ops::effects::canvas_border_core(img, width, c, None)
+                                    crate::ops::effects::canvas_border_core(
+                                        img,
+                                        width,
+                                        c,
+                                        selection_mask.as_ref(),
+                                    )
                                 },
                             );
                         }

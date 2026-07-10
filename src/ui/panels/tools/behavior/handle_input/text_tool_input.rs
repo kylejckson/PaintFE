@@ -1,4 +1,16 @@
 impl ToolsPanel {
+    fn clear_text_preview_cache(&mut self, canvas_state: &mut CanvasState) {
+        self.text_state.cached_raster_buf.clear();
+        self.text_state.cached_raster_w = 0;
+        self.text_state.cached_raster_h = 0;
+        self.text_state.cached_raster_off_x = 0;
+        self.text_state.cached_raster_off_y = 0;
+        self.text_state.cached_raster_origin = None;
+        self.text_state.cached_raster_key.clear();
+        self.text_state.preview_dirty = true;
+        canvas_state.clear_preview_state();
+    }
+
     #[allow(clippy::too_many_arguments, unused_variables)]
     fn handle_text_tool_input(
         &mut self,
@@ -94,6 +106,7 @@ impl ToolsPanel {
                 // Escape: cancel editing
                 if escape_pressed && self.text_state.is_editing {
                     self.text_state.text.clear();
+                    self.clear_text_preview_cache(canvas_state);
                     self.text_state.cursor_pos = 0;
                     self.text_state.is_editing = false;
                     self.text_state.editing_text_layer = false;
@@ -516,6 +529,7 @@ impl ToolsPanel {
                                 td.mark_dirty();
                             }
                             self.text_state.text.clear();
+                            self.clear_text_preview_cache(canvas_state);
                             self.text_state.cursor_pos = 0;
                             self.text_state.is_editing = false;
                             self.text_state.editing_text_layer = false;
@@ -1341,6 +1355,7 @@ impl ToolsPanel {
                                         Some(canvas_state.active_layer_index);
                                     self.text_state.active_block_id = None;
                                     self.text_state.text.clear();
+                                    self.clear_text_preview_cache(canvas_state);
                                     self.text_state.cursor_pos = 0;
                                     self.text_state.preview_dirty = true;
                                     self.restore_raster_style();
@@ -1366,6 +1381,7 @@ impl ToolsPanel {
                                     Some(canvas_state.active_layer_index);
                                 self.text_state.active_block_id = None;
                                 self.text_state.text.clear();
+                                self.clear_text_preview_cache(canvas_state);
                                 self.text_state.cursor_pos = 0;
                                 self.text_state.preview_dirty = true;
                                 self.restore_raster_style();
@@ -1414,6 +1430,7 @@ impl ToolsPanel {
                                     Some(canvas_state.active_layer_index);
                                 self.text_state.active_block_id = None;
                                 self.text_state.text.clear();
+                                self.clear_text_preview_cache(canvas_state);
                                 self.text_state.cursor_pos = 0;
                                 self.text_state.preview_dirty = true;
                                 self.restore_raster_style();

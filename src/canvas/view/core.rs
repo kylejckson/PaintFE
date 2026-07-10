@@ -2232,8 +2232,27 @@ impl Canvas {
                         | Tool::PerspectiveCrop
                         | Tool::MagicWand
                         | Tool::ColorRemover
-                        | Tool::Shapes
                         | Tool::Gradient => egui::CursorIcon::Crosshair,
+                        Tool::Shapes => {
+                            if is_dragging {
+                                egui::CursorIcon::Grabbing
+                            } else if let (Some(pos), Some(placed)) =
+                                (mouse_pos, tools.shapes_state.placed.as_ref())
+                            {
+                                if let Some((cx, cy)) =
+                                    self.screen_to_canvas_f32(pos, canvas_rect, state)
+                                {
+                                    shape_handle_cursor(
+                                        shape_handle_at_canvas(placed, (cx, cy), self.zoom),
+                                    )
+                                    .unwrap_or(egui::CursorIcon::Crosshair)
+                                } else {
+                                    egui::CursorIcon::Crosshair
+                                }
+                            } else {
+                                egui::CursorIcon::Crosshair
+                            }
+                        }
                         // Line tool: move cursor when on pan handle, crosshair otherwise
                         Tool::Line => {
                             if line_pan_dragging {
@@ -2255,6 +2274,18 @@ impl Canvas {
                         Tool::MovePixels | Tool::MoveSelection => {
                             if is_dragging {
                                 egui::CursorIcon::Grabbing
+                            } else if tool == Tool::MoveSelection {
+                                if let (Some(pos), Some(mask)) =
+                                    (mouse_pos, state.selection_mask.as_ref())
+                                {
+                                    selection_mask_bounds(mask)
+                                        .and_then(|bounds| {
+                                            selection_handle_cursor(pos, image_rect, self.zoom, bounds)
+                                        })
+                                        .unwrap_or(egui::CursorIcon::Move)
+                                } else {
+                                    egui::CursorIcon::Move
+                                }
                             } else {
                                 egui::CursorIcon::Move
                             }
@@ -3049,4 +3080,137 @@ fn selection_mask_bounds(mask: &image::GrayImage) -> Option<(u32, u32, u32, u32)
         }
     }
     (min_x < max_x && min_y < max_y).then_some((min_x, min_y, max_x, max_y))
+}
+
+fn selection_handle_cursor(
+    pos: Pos2,
+    image_rect: Rect,
+    zoom: f32,
+    bounds: (u32, u32, u32, u32),
+) -> Option<egui::CursorIcon> {
+    let (x0, y0, x1, y1) = bounds;
+    let rect = Rect::from_min_max(
+        Pos2::new(
+            image_rect.min.x + x0 as f32 * zoom,
+            image_rect.min.y + y0 as f32 * zoom,
+        ),
+        Pos2::new(
+            image_rect.min.x + x1 as f32 * zoom,
+            image_rect.min.y + y1 as f32 * zoom,
+        ),
+    );
+    let r = (6.0_f32).max(4.0 * zoom.sqrt());
+    let points = [
+        (rect.left_top(), egui::CursorIcon::ResizeNwSe),
+        (rect.right_top(), egui::CursorIcon::ResizeNeSw),
+        (rect.right_bottom(), egui::CursorIcon::ResizeNwSe),
+        (rect.left_bottom(), egui::CursorIcon::ResizeNeSw),
+        (
+            Pos2::new(rect.center().x, rect.top()),
+            egui::CursorIcon::ResizeVertical,
+        ),
+        (
+            Pos2::new(rect.right(), rect.center().y),
+            egui::CursorIcon::ResizeHorizontal,
+        ),
+        (
+            Pos2::new(rect.center().x, rect.bottom()),
+            egui::CursorIcon::ResizeVertical,
+        ),
+        (
+            Pos2::new(rect.left(), rect.center().y),
+            egui::CursorIcon::ResizeHorizontal,
+        ),
+    ];
+    points
+        .iter()
+        .find_map(|(p, cursor)| (pos.distance(*p) <= r).then_some(*cursor))
+        .or_else(|| rect.contains(pos).then_some(egui::CursorIcon::Move))
+}
+
+fn shape_handle_at_canvas(
+    placed: &crate::ops::shapes::PlacedShape,
+    pos: (f32, f32),
+    zoom: f32,
+) -> Option<crate::ops::shapes::ShapeHandle> {
+    use crate::ops::shapes::ShapeHandle;
+    let hit_radius = (8.0 / zoom).max(2.0);
+    let cos_r = placed.rotation.cos();
+    let sin_r = placed.rotation.sin();
+    let corners = [
+        (-placed.hw, -placed.hh),
+        (placed.hw, -placed.hh),
+        (placed.hw, placed.hh),
+        (-placed.hw, placed.hh),
+    ];
+    let corners = corners.map(|(cx, cy)| {
+        (
+            cx * cos_r - cy * sin_r + placed.cx,
+            cx * sin_r + cy * cos_r + placed.cy,
+        )
+    });
+    let top = (
+        (corners[0].0 + corners[1].0) * 0.5,
+        (corners[0].1 + corners[1].1) * 0.5,
+    );
+    let right = (
+        (corners[1].0 + corners[2].0) * 0.5,
+        (corners[1].1 + corners[2].1) * 0.5,
+    );
+    let bottom = (
+        (corners[2].0 + corners[3].0) * 0.5,
+        (corners[2].1 + corners[3].1) * 0.5,
+    );
+    let left = (
+        (corners[3].0 + corners[0].0) * 0.5,
+        (corners[3].1 + corners[0].1) * 0.5,
+    );
+    let dir = (top.0 - placed.cx, top.1 - placed.cy);
+    let dir_len = (dir.0 * dir.0 + dir.1 * dir.1).sqrt().max(0.001);
+    let rot_offset = 20.0 / zoom;
+    let rotate = (
+        top.0 + (dir.0 / dir_len) * rot_offset,
+        top.1 + (dir.1 / dir_len) * rot_offset,
+    );
+    let near = |p: (f32, f32)| {
+        let dx = pos.0 - p.0;
+        let dy = pos.1 - p.1;
+        (dx * dx + dy * dy).sqrt() <= hit_radius
+    };
+    if near(rotate) {
+        return Some(ShapeHandle::Rotate);
+    }
+    for (handle, point) in [
+        (ShapeHandle::TopLeft, corners[0]),
+        (ShapeHandle::TopRight, corners[1]),
+        (ShapeHandle::BottomRight, corners[2]),
+        (ShapeHandle::BottomLeft, corners[3]),
+        (ShapeHandle::Top, top),
+        (ShapeHandle::Right, right),
+        (ShapeHandle::Bottom, bottom),
+        (ShapeHandle::Left, left),
+    ] {
+        if near(point) {
+            return Some(handle);
+        }
+    }
+    let dx = pos.0 - placed.cx;
+    let dy = pos.1 - placed.cy;
+    let lx = (dx * cos_r + dy * sin_r).abs();
+    let ly = (-dx * sin_r + dy * cos_r).abs();
+    (lx <= placed.hw + hit_radius && ly <= placed.hh + hit_radius).then_some(ShapeHandle::Move)
+}
+
+fn shape_handle_cursor(
+    handle: Option<crate::ops::shapes::ShapeHandle>,
+) -> Option<egui::CursorIcon> {
+    use crate::ops::shapes::ShapeHandle;
+    Some(match handle? {
+        ShapeHandle::Move => egui::CursorIcon::Move,
+        ShapeHandle::Top | ShapeHandle::Bottom => egui::CursorIcon::ResizeVertical,
+        ShapeHandle::Left | ShapeHandle::Right => egui::CursorIcon::ResizeHorizontal,
+        ShapeHandle::TopLeft | ShapeHandle::BottomRight => egui::CursorIcon::ResizeNwSe,
+        ShapeHandle::TopRight | ShapeHandle::BottomLeft => egui::CursorIcon::ResizeNeSw,
+        ShapeHandle::Rotate => egui::CursorIcon::Alias,
+    })
 }

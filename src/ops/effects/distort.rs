@@ -394,11 +394,21 @@ pub fn bulge_from_flat(
 }
 
 pub fn bulge_core(flat: &RgbaImage, amount: f32, mask: Option<&GrayImage>) -> RgbaImage {
+    bulge_core_at(flat, amount, (0.5, 0.5), mask)
+}
+
+pub fn bulge_core_at(
+    flat: &RgbaImage,
+    amount: f32,
+    origin: (f32, f32),
+    mask: Option<&GrayImage>,
+) -> RgbaImage {
     let w = flat.width() as f32;
     let h = flat.height() as f32;
-    let cx = w / 2.0;
-    let cy = h / 2.0;
-    let max_r = cx.min(cy);
+    let cx = origin.0.clamp(0.0, 1.0) * (w - 1.0).max(0.0);
+    let cy = origin.1.clamp(0.0, 1.0) * (h - 1.0).max(0.0);
+    let max_r = cx.max(w - cx).max(cy.max(h - cy)).max(1.0);
+    let strength = amount.abs().max(0.0001);
 
     apply_per_pixel(flat, mask, |x, y, _r, _g, _b, _a| {
         let dx = x as f32 - cx;
@@ -411,14 +421,13 @@ pub fn bulge_core(flat: &RgbaImage, amount: f32, mask: Option<&GrayImage>) -> Rg
             return (p[0], p[1], p[2], p[3]);
         }
 
-        // Spherical distortion
-        let power = (1.0 - norm).powf(amount.abs());
+        let falloff = 1.0 - norm;
         let factor = if amount > 0.0 {
-            // Bulge out
-            norm * (1.0 - power) + power
+            1.0 - falloff * strength * 0.5
+        } else if amount < 0.0 {
+            1.0 + falloff * strength * 0.5
         } else {
-            // Pinch in
-            power
+            1.0
         };
         let src_x = cx + dx * factor;
         let src_y = cy + dy * factor;
@@ -449,11 +458,22 @@ pub fn twist_from_flat(
 }
 
 pub fn twist_core(flat: &RgbaImage, angle_deg: f32, mask: Option<&GrayImage>) -> RgbaImage {
+    twist_core_at(flat, angle_deg, (0.5, 0.5), mask)
+}
+
+pub fn twist_core_at(
+    flat: &RgbaImage,
+    angle_deg: f32,
+    origin: (f32, f32),
+    mask: Option<&GrayImage>,
+) -> RgbaImage {
     let w = flat.width() as f32;
     let h = flat.height() as f32;
-    let cx = w / 2.0;
-    let cy = h / 2.0;
-    let max_r = (cx * cx + cy * cy).sqrt();
+    let cx = origin.0.clamp(0.0, 1.0) * (w - 1.0).max(0.0);
+    let cy = origin.1.clamp(0.0, 1.0) * (h - 1.0).max(0.0);
+    let max_r = ((cx.max(w - cx)).powi(2) + (cy.max(h - cy)).powi(2))
+        .sqrt()
+        .max(1.0);
     let twist_amount = angle_deg.to_radians();
 
     apply_per_pixel(flat, mask, |x, y, _r, _g, _b, _a| {

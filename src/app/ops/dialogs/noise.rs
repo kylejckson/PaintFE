@@ -19,6 +19,9 @@ impl PaintFEApp {
                         let seed = dlg.seed;
                         let noise_scale = dlg.scale;
                         let octaves = dlg.octaves as u32;
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         self.spawn_preview_job(
                             ctx.input(|i| i.time),
                             "Add Noise".to_string(),
@@ -34,7 +37,7 @@ impl PaintFEApp {
                                     seed,
                                     noise_scale,
                                     octaves,
-                                    None,
+                                    selection_mask.as_ref(),
                                 )
                             },
                         );
@@ -50,6 +53,9 @@ impl PaintFEApp {
                         let seed = dlg.seed;
                         let noise_scale = dlg.scale;
                         let octaves = dlg.octaves as u32;
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         if let Some(project) = self.active_project_mut() {
                             Self::apply_fullres_effect(
                                 &mut project.canvas_state,
@@ -64,7 +70,7 @@ impl PaintFEApp {
                                         seed,
                                         noise_scale,
                                         octaves,
-                                        None,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -121,6 +127,9 @@ impl PaintFEApp {
                             let seed = dlg.seed;
                             let noise_scale = dlg.scale;
                             let octaves = dlg.octaves as u32;
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Add Noise".to_string(),
@@ -136,7 +145,7 @@ impl PaintFEApp {
                                         seed,
                                         noise_scale,
                                         octaves,
-                                        None,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -152,6 +161,9 @@ impl PaintFEApp {
                     if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
                     {
                         let (strength, radius) = (dlg.strength, dlg.radius as u32);
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         self.spawn_preview_job(
                             ctx.input(|i| i.time),
                             "Reduce Noise".to_string(),
@@ -159,7 +171,12 @@ impl PaintFEApp {
                             original.clone(),
                             flat.clone(),
                             move |img| {
-                                crate::ops::effects::reduce_noise_core(img, strength, radius, None)
+                                crate::ops::effects::reduce_noise_core(
+                                    img,
+                                    strength,
+                                    radius,
+                                    selection_mask.as_ref(),
+                                )
                             },
                         );
                     }
@@ -170,6 +187,9 @@ impl PaintFEApp {
                     if let Some(flat) = &dlg.original_flat {
                         let strength = dlg.strength;
                         let radius = dlg.radius as u32;
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         if let Some(project) = self.active_project_mut() {
                             Self::apply_fullres_effect(
                                 &mut project.canvas_state,
@@ -177,7 +197,10 @@ impl PaintFEApp {
                                 flat,
                                 |img| {
                                     crate::ops::effects::reduce_noise_core(
-                                        img, strength, radius, None,
+                                        img,
+                                        strength,
+                                        radius,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -229,6 +252,9 @@ impl PaintFEApp {
                             (&dlg.original_pixels, &dlg.original_flat)
                         {
                             let (strength, radius) = (dlg.strength, dlg.radius as u32);
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Reduce Noise".to_string(),
@@ -237,7 +263,10 @@ impl PaintFEApp {
                                 flat.clone(),
                                 move |img| {
                                     crate::ops::effects::reduce_noise_core(
-                                        img, strength, radius, None,
+                                        img,
+                                        strength,
+                                        radius,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -255,13 +284,22 @@ impl PaintFEApp {
                             (&dlg.original_pixels, &dlg.original_flat)
                         {
                             let radius = dlg.radius as u32;
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
                                 "Median Filter".to_string(),
                                 idx,
                                 original.clone(),
                                 flat.clone(),
-                                move |img| crate::ops::effects::median_core(img, radius, None),
+                                move |img| {
+                                    crate::ops::effects::median_core(
+                                        img,
+                                        radius,
+                                        selection_mask.as_ref(),
+                                    )
+                                },
                             );
                         }
                     }
