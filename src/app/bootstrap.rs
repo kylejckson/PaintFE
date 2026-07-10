@@ -171,6 +171,7 @@ impl PaintFEApp {
             tools_panel_pos: None,
             last_screen_size: (0.0, 0.0),
             ui_cursor_blocking_rects: Vec::new(),
+            ui_pointer_capture_active: false,
             is_move_pixels_active: false,
             is_pointer_over_layers_panel: false,
             filter_sender,

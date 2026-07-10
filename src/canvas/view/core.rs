@@ -166,6 +166,7 @@ impl Canvas {
             "",
             false,
             false,
+            false,
         );
     }
 
@@ -187,6 +188,7 @@ impl Canvas {
         io_ops_start_time: Option<f64>,
         filter_status_description: &str,
         pointer_over_blocking_ui: bool,
+        ui_blocks_canvas_input: bool,
         live_window_resize: bool,
     ) {
         // FPS tracking: measure time since last frame
@@ -1856,7 +1858,8 @@ impl Canvas {
                 });
             let ui_blocking = egui::Popup::is_any_open(ui.ctx())
                 || pointer_over_egui_with_touch
-                || pointer_over_blocking_ui;
+                || pointer_over_blocking_ui
+                || ui_blocks_canvas_input;
 
             // Get mouse position and check if over canvas.
             // On Wayland with a graphics tablet the stylus may route events as
@@ -1879,7 +1882,7 @@ impl Canvas {
             });
             let pointer_over_canvas = mouse_pos.is_some_and(|pos| canvas_rect.contains(pos));
             let raw_pointer_button_on_canvas = ui.input(|i| {
-                if pointer_over_egui || pointer_over_blocking_ui {
+                if pointer_over_egui || pointer_over_blocking_ui || ui_blocks_canvas_input {
                     return false;
                 }
                 i.events.iter().any(|e| match e {
@@ -1900,6 +1903,7 @@ impl Canvas {
                 == crate::components::tools::Tool::Fill
                 && !pointer_over_egui
                 && !pointer_over_blocking_ui
+                && !ui_blocks_canvas_input
             {
                 ui.input(|i| {
                     i.events
@@ -2034,7 +2038,8 @@ impl Canvas {
             let text_drag_override = (text_handles_active
                 || tools.text_state.text_box_drag.is_some())
                 && !pointer_over_egui_with_touch
-                && !pointer_over_blocking_ui;
+                && !pointer_over_blocking_ui
+                && !ui_blocks_canvas_input;
             let keyboard_finalize_pressed =
                 ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape));
             let pending_tool_commit = tools.mesh_warp_state.commit_pending
@@ -2084,6 +2089,7 @@ impl Canvas {
                     primary_color_f32,
                     secondary_color_f32,
                     Some(&mut self.gpu_renderer),
+                    ui_blocks_canvas_input,
                 );
 
                 // Consume zoom/pan action emitted by the Zoom or Pan tool
@@ -2191,7 +2197,8 @@ impl Canvas {
                 && !modal_open
                 && !egui::Popup::is_any_open(ui.ctx())
                 && !pointer_over_egui_with_touch
-                && !pointer_over_blocking_ui;
+                && !pointer_over_blocking_ui
+                && !ui_blocks_canvas_input;
             {
                 // Only override cursor when mouse is truly over just the canvas ÔÇö
                 // not when a dialog, menu, popup, or floating panel is on top.
@@ -2204,6 +2211,7 @@ impl Canvas {
                     && !modal_open
                     && !egui::Popup::is_any_open(ui.ctx())
                     && ((!pointer_over_egui_with_touch && !pointer_over_blocking_ui)
+                        && !ui_blocks_canvas_input
                         || text_handle_cursor)
                     && let Some(tool) = active_tool_for_cursor
                 {
@@ -2323,6 +2331,7 @@ impl Canvas {
                     ui.ctx().set_cursor_icon(cursor);
                 } else if pointer_over_egui_with_touch
                     || pointer_over_blocking_ui
+                    || ui_blocks_canvas_input
                     || !pointer_over_image_for_cursor
                 {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Default);

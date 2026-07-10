@@ -6,6 +6,11 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.3.4] - 2026-07-10
+
+### Fixed
+- Fixed canvas tools painting or transforming through floating panel resize drags. Fixes #92.
+
 ## [1.3.3] - 2026-07-10
 
 ### Added

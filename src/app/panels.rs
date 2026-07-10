@@ -5,18 +5,40 @@ impl PaintFEApp {
 
     fn remember_ui_cursor_rect(&mut self, rect: egui::Rect) {
         if rect.is_positive() {
-            self.ui_cursor_blocking_rects.push(rect);
+            self.ui_cursor_blocking_rects.push(rect.expand(12.0));
         }
     }
 
     fn pointer_over_cursor_blocking_ui(&self, ctx: &egui::Context) -> bool {
         ctx.input(|i| {
-            i.pointer.hover_pos().is_some_and(|pos| {
-                self.ui_cursor_blocking_rects
-                    .iter()
-                    .any(|rect| rect.contains(pos))
-            })
+            i.pointer
+                .hover_pos()
+                .or_else(|| i.pointer.interact_pos())
+                .is_some_and(|pos| {
+                    self.ui_cursor_blocking_rects
+                        .iter()
+                        .any(|rect| rect.contains(pos))
+                })
         })
+    }
+
+    fn update_ui_pointer_capture(&mut self, ctx: &egui::Context) -> bool {
+        let any_down = ctx.input(|i| i.pointer.any_down());
+        if !any_down {
+            self.ui_pointer_capture_active = false;
+            return false;
+        }
+
+        let pointer_started = ctx.input(|i| i.pointer.any_pressed());
+        let over_blocking_ui = self.pointer_over_cursor_blocking_ui(ctx);
+        let over_egui_ui = ctx.is_pointer_over_egui();
+        let egui_owns_pointer = ctx.egui_wants_pointer_input() && over_egui_ui;
+
+        if pointer_started && (over_blocking_ui || egui_owns_pointer) {
+            self.ui_pointer_capture_active = true;
+        }
+
+        self.ui_pointer_capture_active || over_blocking_ui
     }
 
     fn restore_default_cursor_over_ui(&self, ctx: &egui::Context) {

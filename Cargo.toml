@@ -1,6 +1,6 @@
 [package]
 name = "PaintFE"
-version = "1.3.3"
+version = "1.3.4"
 edition = "2024"
 
 [lib]

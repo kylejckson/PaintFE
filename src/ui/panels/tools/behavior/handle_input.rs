@@ -14,6 +14,7 @@ impl ToolsPanel {
         primary_color_f32: [f32; 4],
         secondary_color_f32: [f32; 4],
         mut gpu_renderer: Option<&mut crate::gpu::GpuRenderer>,
+        ui_blocks_canvas_input: bool,
     ) {
         let mut stroke_event: Option<StrokeEvent> = None;
 
@@ -323,11 +324,15 @@ impl ToolsPanel {
                 .or_else(|| i.pointer.interact_pos())
                 .is_some_and(|p| canvas_rect.contains(p))
         });
-        let pointer_over_egui = ui.ctx().is_pointer_over_egui();
+        let pointer_over_egui = ui.ctx().is_pointer_over_egui() || ui_blocks_canvas_input;
         if is_primary_pressed || is_secondary_pressed {
             self.canvas_pointer_active = pointer_over_canvas && !pointer_over_egui;
         }
-        let pointer_allowed = self.canvas_pointer_active || (pointer_over_canvas && !pointer_over_egui);
+        if ui_blocks_canvas_input {
+            self.canvas_pointer_active = false;
+        }
+        let pointer_allowed =
+            self.canvas_pointer_active || (pointer_over_canvas && !pointer_over_egui);
         if !pointer_allowed {
             is_primary_down = false;
             is_primary_released = false;

@@ -1,5 +1,7 @@
 impl PaintFEApp {
     fn update_runtime_input(&mut self, ctx: &egui::Context) -> bool {
+        let ui_blocks_canvas_input = self.update_ui_pointer_capture(ctx);
+
         // --- Drag-and-Drop: open dropped image files as new projects ---
         {
             let shortcut_paste_present = ctx.input(|i| {
@@ -1513,6 +1515,8 @@ impl PaintFEApp {
             // On Wayland with a tablet, also check for active Touch events since
             // is_pointer_over_egui() relies on interact_pos() which isn't updated by Touch.
             let over_ui = ctx.is_pointer_over_egui()
+                || self.pointer_over_cursor_blocking_ui(ctx)
+                || ui_blocks_canvas_input
                 || ctx.input(|i| {
                     i.events.iter().any(|e| {
                         matches!(
@@ -1567,6 +1571,8 @@ impl PaintFEApp {
             // On Wayland with a tablet, also check for active Touch events since
             // is_pointer_over_egui() relies on interact_pos() which isn't updated by Touch.
             let over_ui = ctx.is_pointer_over_egui()
+                || self.pointer_over_cursor_blocking_ui(ctx)
+                || ui_blocks_canvas_input
                 || ctx.input(|i| {
                     i.events.iter().any(|e| {
                         matches!(

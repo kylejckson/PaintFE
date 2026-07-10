@@ -218,6 +218,7 @@ impl PaintFEApp {
                 };
                 painter.add(egui::Shape::mesh(mesh));
 
+                let ui_blocks_canvas_input = self.update_ui_pointer_capture(ctx);
                 let pointer_over_blocking_ui = self.pointer_over_cursor_blocking_ui(ctx);
                 if let Some(project) = self.projects.get_mut(self.active_project_index) {
                     let primary_color_f32 = self.colors_panel.get_primary_color_f32();
@@ -274,6 +275,7 @@ impl PaintFEApp {
                         self.io_ops_start_time,
                         &self.filter_status_description,
                         pointer_over_blocking_ui,
+                        ui_blocks_canvas_input,
                         live_window_resize,
                     );
                     if let Some(overlay) = self.paste_overlay.as_mut()
