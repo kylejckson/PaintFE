@@ -680,20 +680,9 @@ impl PaintFEApp {
         let mut zoom_amount = 0.0;
 
         // Check if any floating window/widget is under the pointer.
-        // On Wayland with a tablet, also check for active Touch events since
-        // is_pointer_over_egui() relies on interact_pos() which isn't updated by Touch.
-        let pointer_over_widget = ctx.is_pointer_over_egui()
-            || ctx.input(|i| {
-                i.events.iter().any(|e| {
-                    matches!(
-                        e,
-                        egui::Event::Touch {
-                            phase: egui::TouchPhase::Start | egui::TouchPhase::Move,
-                            ..
-                        }
-                    )
-                })
-            });
+        let pointer_over_widget = egui::Popup::is_any_open(ctx)
+            || self.pointer_over_cursor_blocking_ui(ctx)
+            || self.ui_pointer_capture_active;
 
         if !modal_open {
             ctx.input_mut(|i| {

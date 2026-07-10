@@ -6,6 +6,16 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.3.5] - 2026-07-10
+
+### Changed
+- Upgraded egui/eframe to 0.35.0 and migrated PaintFE's root app layout to the new `eframe::App::ui` flow. Fixes #91.
+
+### Fixed
+- Fixed canvas input handling after the egui 0.35 migration so the canvas no longer self-blocks tool clicks.
+- Fixed floating panel resize cursors and prevented resize drags from leaking through to canvas tools.
+- Fixed off-canvas line and shape edit handles so placed lines/shapes can be adjusted when handles sit outside the image bounds.
+
 ## [1.3.4] - 2026-07-10
 
 ### Fixed

@@ -167,6 +167,7 @@ pub struct PaintFEApp {
     tools_panel_pos: Option<(f32, f32)>,           // (x, y) absolute
     last_screen_size: (f32, f32),
     ui_cursor_blocking_rects: Vec<egui::Rect>,
+    ui_cursor_blocking_rects_next: Vec<egui::Rect>,
     ui_pointer_capture_active: bool,
 
     // True while a MovePixels overlay is active.

@@ -1,4 +1,93 @@
 impl ToolsPanel {
+    fn pointer_over_off_canvas_edit_handle(
+        &self,
+        screen_pos: egui::Pos2,
+        canvas_rect: Rect,
+        zoom: f32,
+    ) -> bool {
+        let to_screen = |cx: f32, cy: f32| -> egui::Pos2 {
+            egui::pos2(canvas_rect.min.x + cx * zoom, canvas_rect.min.y + cy * zoom)
+        };
+
+        if self.active_tool == Tool::Line && self.line_state.line_tool.stage == LineStage::Editing
+        {
+            let handle_radius = 8.0;
+            for point in self.line_state.line_tool.control_points {
+                if (to_screen(point.x, point.y) - screen_pos).length() < handle_radius {
+                    return true;
+                }
+            }
+
+            let p0 = self.line_state.line_tool.control_points[0];
+            let pan_handle = to_screen(p0.x, p0.y) + egui::vec2(-22.0, -22.0);
+            return (pan_handle - screen_pos).length() < 10.0;
+        }
+
+        if self.active_tool == Tool::Shapes
+            && let Some(placed) = self.shapes_state.placed.as_ref()
+        {
+            let cos_r = placed.rotation.cos();
+            let sin_r = placed.rotation.sin();
+            let corners_local = [
+                (-placed.hw, -placed.hh),
+                (placed.hw, -placed.hh),
+                (placed.hw, placed.hh),
+                (-placed.hw, placed.hh),
+            ];
+            let corners: Vec<egui::Pos2> = corners_local
+                .iter()
+                .map(|(cx, cy)| {
+                    to_screen(
+                        cx * cos_r - cy * sin_r + placed.cx,
+                        cx * sin_r + cy * cos_r + placed.cy,
+                    )
+                })
+                .collect();
+
+            let handle_radius = 10.0;
+            if corners
+                .iter()
+                .any(|corner| (*corner - screen_pos).length() < handle_radius)
+            {
+                return true;
+            }
+
+            let edge_handles = [
+                egui::pos2(
+                    (corners[0].x + corners[1].x) * 0.5,
+                    (corners[0].y + corners[1].y) * 0.5,
+                ),
+                egui::pos2(
+                    (corners[1].x + corners[2].x) * 0.5,
+                    (corners[1].y + corners[2].y) * 0.5,
+                ),
+                egui::pos2(
+                    (corners[2].x + corners[3].x) * 0.5,
+                    (corners[2].y + corners[3].y) * 0.5,
+                ),
+                egui::pos2(
+                    (corners[3].x + corners[0].x) * 0.5,
+                    (corners[3].y + corners[0].y) * 0.5,
+                ),
+            ];
+            if edge_handles
+                .iter()
+                .any(|handle| (*handle - screen_pos).length() < handle_radius)
+            {
+                return true;
+            }
+
+            let top_mid = edge_handles[0];
+            let center = to_screen(placed.cx, placed.cy);
+            let dir = top_mid - center;
+            let dir_len = dir.length().max(0.001);
+            let rot_handle = top_mid + dir / dir_len * 20.0;
+            return (rot_handle - screen_pos).length() < handle_radius;
+        }
+
+        false
+    }
+
     pub fn handle_input(
         &mut self,
         ui: &egui::Ui,
@@ -324,15 +413,22 @@ impl ToolsPanel {
                 .or_else(|| i.pointer.interact_pos())
                 .is_some_and(|p| canvas_rect.contains(p))
         });
-        let pointer_over_egui = ui.ctx().is_pointer_over_egui() || ui_blocks_canvas_input;
+        let pointer_over_egui = ui_blocks_canvas_input;
+        let pointer_over_edit_handle = ui.input(|i| {
+            i.pointer
+                .hover_pos()
+                .or_else(|| i.pointer.interact_pos())
+                .is_some_and(|p| self.pointer_over_off_canvas_edit_handle(p, canvas_rect, zoom))
+        });
         if is_primary_pressed || is_secondary_pressed {
-            self.canvas_pointer_active = pointer_over_canvas && !pointer_over_egui;
+            self.canvas_pointer_active =
+                (pointer_over_canvas || pointer_over_edit_handle) && !pointer_over_egui;
         }
         if ui_blocks_canvas_input {
             self.canvas_pointer_active = false;
         }
-        let pointer_allowed =
-            self.canvas_pointer_active || (pointer_over_canvas && !pointer_over_egui);
+        let pointer_allowed = self.canvas_pointer_active
+            || ((pointer_over_canvas || pointer_over_edit_handle) && !pointer_over_egui);
         if !pointer_allowed {
             is_primary_down = false;
             is_primary_released = false;

@@ -1840,8 +1840,9 @@ impl Canvas {
 
         // Handle tool input - Call every frame while mouse button is held
         if let Some(tools) = tools {
-            // Only block input if there's a modal window/popup or pointer is over any UI element
-            let pointer_over_egui = ui.ctx().is_pointer_over_egui();
+            // `is_pointer_over_egui` includes the root/central canvas panel in egui 0.35.
+            // Canvas tools must only be blocked by explicit floating/top UI capture.
+            let pointer_over_egui = false;
             // On Wayland the stylus may fire Touch events instead of Pointer events,
             // so also check for active Touch events when determining if pointer is over egui.
             let pointer_over_egui_with_touch = pointer_over_egui

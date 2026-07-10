@@ -1,6 +1,6 @@
 impl PaintFEApp {
     fn update_runtime_input(&mut self, ctx: &egui::Context) -> bool {
-        let ui_blocks_canvas_input = self.update_ui_pointer_capture(ctx);
+        let ui_blocks_canvas_input = self.ui_pointer_capture_active;
 
         // --- Drag-and-Drop: open dropped image files as new projects ---
         {
@@ -119,20 +119,9 @@ impl PaintFEApp {
         // Handle scroll wheel zoom — only when mouse is over the canvas and NOT over a widget.
         let mut should_zoom = false;
         let mut zoom_amount = 0.0;
-        // On Wayland with a tablet, also check for active Touch events since
-        // is_pointer_over_egui() relies on interact_pos() which isn't updated by Touch.
-        let pointer_over_widget = ctx.is_pointer_over_egui()
-            || ctx.input(|i| {
-                i.events.iter().any(|e| {
-                    matches!(
-                        e,
-                        egui::Event::Touch {
-                            phase: egui::TouchPhase::Start | egui::TouchPhase::Move,
-                            ..
-                        }
-                    )
-                })
-            });
+        let pointer_over_widget = egui::Popup::is_any_open(ctx)
+            || self.pointer_over_cursor_blocking_ui(ctx)
+            || ui_blocks_canvas_input;
 
         if !modal_open {
             ctx.input_mut(|i| {
@@ -1512,22 +1501,9 @@ impl PaintFEApp {
                     .hover_pos()
                     .is_some_and(|pos| canvas_rect.is_some_and(|r| r.contains(pos)))
             });
-            // On Wayland with a tablet, also check for active Touch events since
-            // is_pointer_over_egui() relies on interact_pos() which isn't updated by Touch.
-            let over_ui = ctx.is_pointer_over_egui()
+            let over_ui = egui::Popup::is_any_open(ctx)
                 || self.pointer_over_cursor_blocking_ui(ctx)
-                || ui_blocks_canvas_input
-                || ctx.input(|i| {
-                    i.events.iter().any(|e| {
-                        matches!(
-                            e,
-                            egui::Event::Touch {
-                                phase: egui::TouchPhase::Start | egui::TouchPhase::Move,
-                                ..
-                            }
-                        )
-                    })
-                });
+                || ui_blocks_canvas_input;
 
             if primary_pressed && over_canvas && !over_ui {
                 // Extract pixels into overlay and blank the source area.
@@ -1568,22 +1544,9 @@ impl PaintFEApp {
                     .hover_pos()
                     .is_some_and(|pos| canvas_rect.is_some_and(|r| r.contains(pos)))
             });
-            // On Wayland with a tablet, also check for active Touch events since
-            // is_pointer_over_egui() relies on interact_pos() which isn't updated by Touch.
-            let over_ui = ctx.is_pointer_over_egui()
+            let over_ui = egui::Popup::is_any_open(ctx)
                 || self.pointer_over_cursor_blocking_ui(ctx)
-                || ui_blocks_canvas_input
-                || ctx.input(|i| {
-                    i.events.iter().any(|e| {
-                        matches!(
-                            e,
-                            egui::Event::Touch {
-                                phase: egui::TouchPhase::Start | egui::TouchPhase::Move,
-                                ..
-                            }
-                        )
-                    })
-                });
+                || ui_blocks_canvas_input;
 
             // Compute current canvas position from mouse (without borrowing self mutably).
             let cur_canvas_pos: Option<(i32, i32)> =

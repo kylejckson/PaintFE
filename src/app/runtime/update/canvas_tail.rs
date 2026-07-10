@@ -1,5 +1,10 @@
 impl PaintFEApp {
-    fn show_runtime_canvas_tail(&mut self, ctx: &egui::Context, modal_open: bool) {
+    fn show_runtime_canvas_tail(
+        &mut self,
+        ctx: &egui::Context,
+        root_ui: &mut egui::Ui,
+        modal_open: bool,
+    ) {
         if let Some(mask) = self.pending_selection_reassert.take()
             && let Some(project) = self.active_project_mut()
         {
@@ -29,7 +34,7 @@ impl PaintFEApp {
         let shelf_resp = egui::Panel::top("tool_shelf_strip")
             .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(shelf_margin as i8)))
             .min_size(30.0) // Allow growth so controls don't get vertically clipped on newer egui metrics
-            .show(ctx, |ui| {
+            .show(root_ui, |ui| {
                 let shelf_frame = self.theme.tool_shelf_frame();
                 shelf_frame.show(ui, |ui| {
                     ui.set_width(ui.available_width());
@@ -200,7 +205,7 @@ impl PaintFEApp {
                 fill: canvas_bg_bottom,
                 ..Default::default()
             })
-            .show(ctx, |ui| {
+            .show(root_ui, |ui| {
                 // Draw subtle gradient background over the solid fill
                 let rect = ui.max_rect();
                 let painter = ui.painter();
@@ -402,7 +407,7 @@ impl PaintFEApp {
         self.show_floating_colors_panel(ctx, screen_size_changed);
         self.show_floating_palette_panel(ctx, screen_size_changed);
         self.show_floating_script_editor(ctx, screen_size_changed);
-        self.restore_default_cursor_over_ui(ctx);
+        self.publish_ui_cursor_blocking_rects();
         if self.palette_reposition_settle_frames > 0 {
             self.palette_reposition_settle_frames -= 1;
         }

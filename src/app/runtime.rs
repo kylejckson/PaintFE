@@ -1,8 +1,4 @@
 impl eframe::App for PaintFEApp {
-    fn ui(&mut self, _ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        // App uses fn update() directly
-    }
-
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         let c = self.theme.canvas_bg_bottom;
         [
@@ -13,11 +9,12 @@ impl eframe::App for PaintFEApp {
         ]
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.update_runtime_lifecycle_async(ctx);
-        let modal_open = self.update_runtime_input(ctx);
-        self.show_runtime_dialogs_menu(ctx);
-        self.show_runtime_canvas_tail(ctx, modal_open);
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        self.update_runtime_lifecycle_async(&ctx);
+        let modal_open = self.update_runtime_input(&ctx);
+        self.show_runtime_dialogs_menu(&ctx, ui);
+        self.show_runtime_canvas_tail(&ctx, ui, modal_open);
     }
 }
 

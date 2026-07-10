@@ -1,7 +1,7 @@
 include!("dialogs_menu/modal_flow.rs");
 
 impl PaintFEApp {
-    fn show_runtime_dialogs_menu(&mut self, ctx: &egui::Context) {
+    fn show_runtime_dialogs_menu(&mut self, ctx: &egui::Context, root_ui: &mut egui::Ui) {
         self.reset_ui_cursor_blocking_rects();
         let modal_open = self.handle_runtime_modal_flow(ctx);
 
@@ -12,7 +12,7 @@ impl PaintFEApp {
         let menu_resp = egui::Panel::top("menu_bar")
             .frame(self.theme.menu_frame())
             .exact_size(28.0)
-            .show(ctx, |ui| {
+            .show(root_ui, |ui| {
                 egui::MenuBar::new().ui(ui, |ui| {
                     ui.menu_button(t!("menu.file"), |ui| {
                         if self
@@ -1817,7 +1817,7 @@ impl PaintFEApp {
         #[allow(deprecated)]
         let toolbar_resp = egui::Panel::top("toolbar_tabs")
             .frame(self.theme.toolbar_frame())
-            .show(ctx, |ui| {
+            .show(root_ui, |ui| {
                 ui.horizontal(|ui| {
                     // === File Actions ===
                     if self.assets.small_icon_button(ui, Icon::New).clicked() {
