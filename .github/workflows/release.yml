@@ -444,6 +444,7 @@ jobs:
           name: PaintFE ${{ github.ref_name }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
           files: |
             dist/windows/PaintFE.exe
             dist/linux/PaintFE

@@ -1244,12 +1244,12 @@ impl AppSettings {
     pub fn load() -> Self {
         #[cfg(not(target_arch = "wasm32"))]
         let content = {
-        let Some(path) = Self::settings_path() else {
-            return Self::default();
-        };
-        let Ok(content) = std::fs::read_to_string(&path) else {
-            return Self::default();
-        };
+            let Some(path) = Self::settings_path() else {
+                return Self::default();
+            };
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                return Self::default();
+            };
             content
         };
         #[cfg(target_arch = "wasm32")]

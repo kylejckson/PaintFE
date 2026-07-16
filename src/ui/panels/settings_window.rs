@@ -250,7 +250,7 @@ impl SettingsWindow {
                             // Font upload / Google Fonts only exist on web —
                             // desktop already has full OS font-store access.
                             #[cfg(target_arch = "wasm32")]
-                                (SettingsTab::Fonts, Icon::Text, "Fonts".to_string()),
+                            (SettingsTab::Fonts, Icon::Text, "Fonts".to_string()),
                         ];
                         for (tab, icon, label) in &tabs {
                             let selected = self.active_tab == *tab;
@@ -933,8 +933,9 @@ impl SettingsWindow {
     ) {
         // Poll the browser file picker for an imported theme file.
         #[cfg(target_arch = "wasm32")]
-        if let Some((_name, bytes)) =
-            crate::web_bridge::drain_pending("theme_import").into_iter().next()
+        if let Some((_name, bytes)) = crate::web_bridge::drain_pending("theme_import")
+            .into_iter()
+            .next()
         {
             match String::from_utf8(bytes) {
                 Ok(content) => {
@@ -2212,8 +2213,9 @@ impl SettingsWindow {
     #[cfg(target_arch = "wasm32")]
     fn show_fonts_tab(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         // Poll the browser file picker for an uploaded font.
-        if let Some((name, bytes)) =
-            crate::web_bridge::drain_pending("font_upload").into_iter().next()
+        if let Some((name, bytes)) = crate::web_bridge::drain_pending("font_upload")
+            .into_iter()
+            .next()
         {
             let family = std::path::Path::new(&name)
                 .file_stem()
@@ -2241,7 +2243,10 @@ impl SettingsWindow {
         }
         if let Some(err) = &self.font_upload_error {
             ui.add_space(4.0);
-            ui.colored_label(egui::Color32::from_rgb(220, 60, 60), format!("\u{274C} {err}"));
+            ui.colored_label(
+                egui::Color32::from_rgb(220, 60, 60),
+                format!("\u{274C} {err}"),
+            );
         }
 
         Self::section_header(ui, "GOOGLE FONTS");
@@ -2422,20 +2427,38 @@ impl SettingsWindow {
                 let name = action.display_name();
                 ui.label(egui::RichText::new(name).size(12.0));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if *action == BindableAction::BrushResizeDragModifier {
+                    if matches!(
+                        action,
+                        BindableAction::BrushResizeDragModifier
+                            | BindableAction::SelectionPreserveAspectModifier
+                    ) {
                         let mut current = self
                             .staged_keybindings
                             .get(*action)
                             .cloned()
-                            .unwrap_or_else(|| KeyCombo::modifiers_only(false, true, false));
-                        egui::ComboBox::from_id_salt("brush_resize_drag_modifier")
+                            .unwrap_or_else(|| {
+                                if *action == BindableAction::SelectionPreserveAspectModifier {
+                                    KeyCombo::modifiers_only(false, false, true)
+                                } else {
+                                    KeyCombo::modifiers_only(false, true, false)
+                                }
+                            });
+                        egui::ComboBox::from_id_salt(format!("modifier_binding_{action:?}"))
                             .selected_text(current.display())
                             .show_ui(ui, |ui| {
-                                let options = [
-                                    ("Shift", KeyCombo::modifiers_only(false, true, false)),
-                                    ("Ctrl", KeyCombo::modifiers_only(true, false, false)),
-                                    ("Alt", KeyCombo::modifiers_only(false, false, true)),
-                                ];
+                                let options: Vec<(&str, KeyCombo)> =
+                                    if *action == BindableAction::SelectionPreserveAspectModifier {
+                                        vec![
+                                            ("Alt", KeyCombo::modifiers_only(false, false, true)),
+                                            ("Ctrl", KeyCombo::modifiers_only(true, false, false)),
+                                        ]
+                                    } else {
+                                        vec![
+                                            ("Shift", KeyCombo::modifiers_only(false, true, false)),
+                                            ("Ctrl", KeyCombo::modifiers_only(true, false, false)),
+                                            ("Alt", KeyCombo::modifiers_only(false, false, true)),
+                                        ]
+                                    };
                                 for (label, combo) in options {
                                     ui.selectable_value(&mut current, combo, label);
                                 }

@@ -46,6 +46,8 @@ pub struct CanvasState {
     /// Selection mask – 0 = unselected, 255 = fully selected.
     /// Dimensions must match (width, height).
     pub selection_mask: Option<GrayImage>,
+    /// Semantic full-canvas selection. Avoids allocating/scanning a canvas-sized mask.
+    pub selection_all: bool,
     /// LOD composite texture for zoomed-out rendering (zoom < 0.5).
     pub lod_composite_cache: Option<egui::TextureHandle>,
     /// Generation counter for LOD cache validity.
@@ -108,6 +110,8 @@ pub struct CanvasState {
     /// Bounding box of the selected region in canvas coordinates
     /// (used to position the overlay texture).
     pub selection_overlay_bounds: Option<(u32, u32, u32, u32)>,
+    /// Bounds-only preview used while interactively resizing a selection.
+    pub selection_transform_preview_bounds: Option<(u32, u32, u32, u32)>,
     /// Short-lived fill overlays used to visually bridge preview commits.
     pub fill_commit_overlays: Vec<FillCommitOverlay>,
     /// Cached border segments in canvas coordinates: (line_pos, seg_start, seg_end).
@@ -163,6 +167,7 @@ impl CanvasState {
             preview_mask_reveal: false,
             dirty_generation: 0,
             selection_mask: None,
+            selection_all: false,
             lod_composite_cache: None,
             lod_generation: 0,
             preview_dirty_rect: None,
@@ -183,6 +188,7 @@ impl CanvasState {
             selection_overlay_built_generation: 0,
             selection_overlay_anim_offset: -1.0,
             selection_overlay_bounds: None,
+            selection_transform_preview_bounds: None,
             fill_commit_overlays: Vec::new(),
             selection_border_h_segs: Vec::new(),
             selection_border_v_segs: Vec::new(),
@@ -196,7 +202,9 @@ impl CanvasState {
     }
 
     pub fn layer_folder(&self, folder_id: u64) -> Option<&LayerFolder> {
-        self.layer_folders.iter().find(|folder| folder.id == folder_id)
+        self.layer_folders
+            .iter()
+            .find(|folder| folder.id == folder_id)
     }
 
     pub fn layer_folder_mut(&mut self, folder_id: u64) -> Option<&mut LayerFolder> {
@@ -234,6 +242,7 @@ impl CanvasState {
         self.preview_replaces_layer = false;
         self.preview_targets_mask = false;
         self.preview_mask_reveal = false;
+        self.selection_transform_preview_bounds = None;
     }
 
     pub fn push_fill_commit_overlay(
@@ -1590,24 +1599,45 @@ impl CanvasState {
     /// Clear (remove) the current selection.
     pub fn clear_selection(&mut self) {
         self.selection_mask = None;
+        self.selection_all = false;
         self.invalidate_selection_overlay();
         self.selection_overlay_texture = None;
         self.selection_overlay_bounds = None;
+        self.selection_transform_preview_bounds = None;
     }
 
     /// Invalidate the cached selection overlay texture so it gets rebuilt
     /// on the next frame.  Call this whenever `selection_mask` changes.
     pub fn invalidate_selection_overlay(&mut self) {
+        if self.selection_mask.is_some() {
+            self.selection_all = false;
+        }
         self.selection_overlay_generation = self.selection_overlay_generation.wrapping_add(1);
     }
 
     /// Returns `true` when there is an active selection mask.
     pub fn has_selection(&self) -> bool {
-        self.selection_mask.is_some()
+        self.selection_all || self.selection_mask.is_some()
+    }
+
+    /// Materialize the semantic full selection only for operations that need pixels.
+    pub fn materialize_full_selection(&mut self) {
+        if self.selection_all {
+            self.selection_mask = Some(GrayImage::from_pixel(self.width, self.height, Luma([255])));
+            self.selection_all = false;
+        }
     }
 
     /// Return tight bounds of the current selection mask as (min_x, min_y, max_x, max_y).
     pub fn selection_mask_bounds(&self) -> Option<(u32, u32, u32, u32)> {
+        if self.selection_all {
+            return (self.width > 0 && self.height > 0).then_some((
+                0,
+                0,
+                self.width - 1,
+                self.height - 1,
+            ));
+        }
         let mask = self.selection_mask.as_ref()?;
         let w = mask.width();
         let h = mask.height();
@@ -1645,6 +1675,10 @@ impl CanvasState {
     /// The mask is shifted; pixels that move off-canvas are clipped,
     /// and newly-exposed areas are unselected (0).
     pub fn translate_selection(&mut self, dx: i32, dy: i32) {
+        if self.selection_all {
+            self.selection_mask = Some(GrayImage::from_pixel(self.width, self.height, Luma([255])));
+            self.selection_all = false;
+        }
         let mask = match self.selection_mask.as_ref() {
             Some(m) => m,
             None => return,
@@ -1679,6 +1713,20 @@ impl CanvasState {
     pub fn apply_selection_shape(&mut self, shape: &SelectionShape, mode: SelectionMode) {
         let w = self.width;
         let h = self.height;
+
+        if self.selection_all {
+            match mode {
+                SelectionMode::Replace => {
+                    self.selection_mask = None;
+                    self.selection_all = false;
+                }
+                SelectionMode::Add => return,
+                SelectionMode::Subtract | SelectionMode::Intersect => {
+                    self.selection_mask = Some(GrayImage::from_pixel(w, h, Luma([255])));
+                    self.selection_all = false;
+                }
+            }
+        }
 
         // Ensure a mask exists (for Add/Subtract we start from the current one).
         let mask = self
@@ -1756,6 +1804,14 @@ impl CanvasState {
 
     /// Delete (make transparent) the selected pixels on the active layer.
     pub fn delete_selected_pixels(&mut self) {
+        if self.selection_all {
+            if let Some(layer) = self.layers.get_mut(self.active_layer_index) {
+                layer.pixels.clear();
+                layer.sync_all_deep_pixels_from_preview();
+                self.mark_dirty(None);
+            }
+            return;
+        }
         let mask = match &self.selection_mask {
             Some(m) => m.clone(),
             None => return,
@@ -1786,6 +1842,14 @@ impl CanvasState {
 
     /// Fill the selected area on the active layer with a solid colour.
     pub fn fill_selected_pixels(&mut self, color: Rgba<u8>) {
+        if self.selection_all {
+            if let Some(layer) = self.layers.get_mut(self.active_layer_index) {
+                layer.pixels.fill(color);
+                layer.sync_all_deep_pixels_from_preview();
+                self.mark_dirty(None);
+            }
+            return;
+        }
         let mask = match &self.selection_mask {
             Some(m) => m.clone(),
             None => return,

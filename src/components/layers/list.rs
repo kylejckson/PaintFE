@@ -1,5 +1,8 @@
 impl LayersPanel {
-    fn folder_color(folder: &crate::canvas::LayerFolder, settings: &AppSettings) -> Option<Color32> {
+    fn folder_color(
+        folder: &crate::canvas::LayerFolder,
+        settings: &AppSettings,
+    ) -> Option<Color32> {
         folder
             .color_index
             .and_then(|idx| settings.folder_color_palette.get(idx as usize).copied())
@@ -16,8 +19,7 @@ impl LayersPanel {
     }
 
     fn readable_text_for_bg(color: Color32) -> Color32 {
-        let lum =
-            0.2126 * color.r() as f32 + 0.7152 * color.g() as f32 + 0.0722 * color.b() as f32;
+        let lum = 0.2126 * color.r() as f32 + 0.7152 * color.g() as f32 + 0.0722 * color.b() as f32;
         if lum > 150.0 {
             Color32::from_rgb(24, 26, 30)
         } else {
@@ -26,8 +28,7 @@ impl LayersPanel {
     }
 
     fn icon_dark_for_text(color: Color32) -> bool {
-        let lum =
-            0.2126 * color.r() as f32 + 0.7152 * color.g() as f32 + 0.0722 * color.b() as f32;
+        let lum = 0.2126 * color.r() as f32 + 0.7152 * color.g() as f32 + 0.0722 * color.b() as f32;
         lum > 150.0
     }
 
@@ -237,7 +238,11 @@ impl LayersPanel {
                     && self.drag_state.dragging_folder_id.is_none()
                 {
                     hovered_row.and_then(|(row, rel)| match row {
-                        LayerListRow::Folder(id) if Self::folder_drop_zone(rel) == FolderDropZone::Inside => Some(id),
+                        LayerListRow::Folder(id)
+                            if Self::folder_drop_zone(rel) == FolderDropZone::Inside =>
+                        {
+                            Some(id)
+                        }
                         LayerListRow::Layer { layer_idx, .. } => {
                             canvas_state.layers[layer_idx].folder_id
                         }
@@ -359,7 +364,8 @@ impl LayersPanel {
                                     folder_id,
                                     canvas_state,
                                     history,
-                                ) {
+                                )
+                            {
                                 self.selected_layers = new_selection.into_iter().collect();
                             }
                         } else if target != drag_didx {
@@ -382,7 +388,12 @@ impl LayersPanel {
                                     self.selected_layers = new_selection.into_iter().collect();
                                 }
                             } else {
-                                self.move_layer(from_layer_idx, to_layer_idx, canvas_state, history);
+                                self.move_layer(
+                                    from_layer_idx,
+                                    to_layer_idx,
+                                    canvas_state,
+                                    history,
+                                );
                                 self.selected_layers.clear();
                                 self.selected_layers.insert(to_layer_idx);
                             }
@@ -511,7 +522,10 @@ impl LayersPanel {
                         layer_to_add_top = true;
                         ui.close();
                     }
-                    if assets.menu_item(ui, Icon::Rename, "Add Text Layer").clicked() {
+                    if assets
+                        .menu_item(ui, Icon::Rename, "Add Text Layer")
+                        .clicked()
+                    {
                         layer_to_add_text_top = true;
                         ui.close();
                     }
@@ -524,7 +538,10 @@ impl LayersPanel {
                         layer_to_add_adjustment = true;
                         ui.close();
                     }
-                    if assets.menu_item(ui, Icon::MenuFileOpen, "Add Folder").clicked() {
+                    if assets
+                        .menu_item(ui, Icon::MenuFileOpen, "Add Folder")
+                        .clicked()
+                    {
                         layer_to_add_folder_top = true;
                         ui.close();
                     }
@@ -595,8 +612,7 @@ impl LayersPanel {
                                 }
                                 FolderAction::FinishRename => {
                                     if let Some(id) = self.folder_rename_state.renaming_folder {
-                                        let new_name =
-                                            self.folder_rename_state.rename_text.clone();
+                                        let new_name = self.folder_rename_state.rename_text.clone();
                                         self.rename_layer_folder(
                                             id,
                                             new_name,
@@ -709,7 +725,8 @@ impl LayersPanel {
                                     if !self.selected_layers.insert(layer_idx) {
                                         self.selected_layers.remove(&layer_idx);
                                         if self.selected_layers.is_empty() {
-                                            self.selected_layers.insert(canvas_state.active_layer_index);
+                                            self.selected_layers
+                                                .insert(canvas_state.active_layer_index);
                                         }
                                     }
                                 } else {
@@ -987,8 +1004,7 @@ impl LayersPanel {
                 }
                 if layer_to_add_top {
                     self.selected_folder = None;
-                    canvas_state.active_layer_index =
-                        canvas_state.layers.len().saturating_sub(1);
+                    canvas_state.active_layer_index = canvas_state.layers.len().saturating_sub(1);
                     self.add_new_layer(canvas_state, history);
                 }
                 if layer_to_add_text {
@@ -996,8 +1012,7 @@ impl LayersPanel {
                 }
                 if layer_to_add_text_top {
                     self.selected_folder = None;
-                    canvas_state.active_layer_index =
-                        canvas_state.layers.len().saturating_sub(1);
+                    canvas_state.active_layer_index = canvas_state.layers.len().saturating_sub(1);
                     self.add_new_text_layer(canvas_state, history);
                 }
                 if layer_to_add_adjustment {
@@ -1008,8 +1023,7 @@ impl LayersPanel {
                 }
                 if layer_to_add_folder_top {
                     self.selected_folder = None;
-                    canvas_state.active_layer_index =
-                        canvas_state.layers.len().saturating_sub(1);
+                    canvas_state.active_layer_index = canvas_state.layers.len().saturating_sub(1);
                     self.add_layer_folder(canvas_state, history);
                 }
                 if let Some((layer_idx, folder_id)) = layer_to_folder {
@@ -1173,7 +1187,10 @@ impl LayersPanel {
                 action = Some(FolderAction::AddLayer(folder_id));
                 ui.close();
             }
-            if assets.menu_item(ui, Icon::Rename, "Add Text Layer").clicked() {
+            if assets
+                .menu_item(ui, Icon::Rename, "Add Text Layer")
+                .clicked()
+            {
                 action = Some(FolderAction::AddTextLayer(folder_id));
                 ui.close();
             }
@@ -1246,7 +1263,11 @@ impl LayersPanel {
                 .menu_item(
                     ui,
                     Icon::MoveDown,
-                    if folder.collapsed { "Expand" } else { "Collapse" },
+                    if folder.collapsed {
+                        "Expand"
+                    } else {
+                        "Collapse"
+                    },
                 )
                 .clicked()
             {
@@ -1284,7 +1305,8 @@ impl LayersPanel {
         // Copy the values we need from the layer to avoid borrow conflicts
         let layer_visible = canvas_state.layers[layer_idx].visible;
         let layer_name = canvas_state.layers[layer_idx].name.clone();
-        let is_active = self.selected_folder.is_none() && layer_idx == canvas_state.active_layer_index;
+        let is_active =
+            self.selected_folder.is_none() && layer_idx == canvas_state.active_layer_index;
         let is_renaming = self.rename_state.renaming_layer == Some(layer_idx);
 
         let mut action: Option<LayerAction> = None;
@@ -1504,6 +1526,8 @@ impl LayersPanel {
                         });
                     (enter, escape)
                 });
+                let enter_pressed = enter_pressed
+                    || (response.has_focus() && crate::windows_key_probe::enter_down_realtime());
                 if escape_pressed {
                     action = Some(LayerAction::CancelRename);
                 } else if enter_pressed || response.lost_focus() {
@@ -1624,27 +1648,30 @@ impl LayersPanel {
             }
             ui.separator();
             if !canvas_state.layer_folders.is_empty() {
-                ui.menu_button(format!("{} Move to Folder", Icon::MenuFileOpen.emoji()), |ui| {
-                    for folder in &canvas_state.layer_folders {
-                        if assets
-                            .menu_item(ui, Icon::MenuFileOpen, &folder.name)
-                            .clicked()
-                        {
-                            context_action = Some(ContextAction::MoveToFolder(folder.id));
-                            ui.close();
+                ui.menu_button(
+                    format!("{} Move to Folder", Icon::MenuFileOpen.emoji()),
+                    |ui| {
+                        for folder in &canvas_state.layer_folders {
+                            if assets
+                                .menu_item(ui, Icon::MenuFileOpen, &folder.name)
+                                .clicked()
+                            {
+                                context_action = Some(ContextAction::MoveToFolder(folder.id));
+                                ui.close();
+                            }
                         }
-                    }
-                    if canvas_state.layers[layer_idx].folder_id.is_some() {
-                        ui.separator();
-                        if assets
-                            .menu_item(ui, Icon::MoveDown, "Remove from Folder")
-                            .clicked()
-                        {
-                            context_action = Some(ContextAction::RemoveFromFolder);
-                            ui.close();
+                        if canvas_state.layers[layer_idx].folder_id.is_some() {
+                            ui.separator();
+                            if assets
+                                .menu_item(ui, Icon::MoveDown, "Remove from Folder")
+                                .clicked()
+                            {
+                                context_action = Some(ContextAction::RemoveFromFolder);
+                                ui.close();
+                            }
                         }
-                    }
-                });
+                    },
+                );
                 ui.separator();
             }
             ui.menu_button(

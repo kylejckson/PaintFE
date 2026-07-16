@@ -96,7 +96,8 @@ impl ToolsPanel {
                                 .map(|ratio| match ratio {
                                     SelectionAspectRatio::Fixed(ratio) => ratio,
                                     SelectionAspectRatio::Image => {
-                                        canvas_state.width as f32 / canvas_state.height.max(1) as f32
+                                        canvas_state.width as f32
+                                            / canvas_state.height.max(1) as f32
                                     }
                                 })
                         } else {
@@ -135,6 +136,7 @@ impl ToolsPanel {
                         let max_y = (raw_max_y as u32).min(canvas_state.height.saturating_sub(1));
 
                         let sel_before = canvas_state.selection_mask.clone();
+                        let sel_before_all = canvas_state.selection_all;
 
                         // Allow single-pixel selections for pixel art accuracy.
                         // Deselect only happens on a zero-size drag (start == end,
@@ -158,21 +160,24 @@ impl ToolsPanel {
                             };
 
                             canvas_state.apply_selection_shape(&shape, effective_mode);
-                            canvas_state.mark_dirty(None);
                         } else {
                             // Zero-size click => deselect
                             canvas_state.clear_selection();
-                            canvas_state.mark_dirty(None);
                         }
 
                         let sel_after = canvas_state.selection_mask.clone();
+                        let sel_after_all = canvas_state.selection_all;
                         let tool_name = match self.active_tool {
                             Tool::RectangleSelect => "Rectangle Select",
                             _ => "Ellipse Select",
                         };
                         self.pending_history_commands
-                            .push(Box::new(SelectionCommand::new(
-                                tool_name, sel_before, sel_after,
+                            .push(Box::new(SelectionCommand::new_states(
+                                tool_name,
+                                sel_before,
+                                sel_before_all,
+                                sel_after,
+                                sel_after_all,
                             )));
                     }
 

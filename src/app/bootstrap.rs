@@ -25,15 +25,19 @@ impl PaintFEApp {
             // DM Sans — primary proportional UI font (~47 KB, Latin + Latin Ext)
             fonts.font_data.insert(
                 "dm_sans".to_owned(),
-                egui::FontData::from_static(include_bytes!("../../assets/fonts/DMSans-Regular.ttf"))
-                    .into(),
+                egui::FontData::from_static(include_bytes!(
+                    "../../assets/fonts/DMSans-Regular.ttf"
+                ))
+                .into(),
             );
 
             // Noto Sans — fallback for Cyrillic, Greek, Thai (~556 KB)
             fonts.font_data.insert(
                 "noto_sans".to_owned(),
-                egui::FontData::from_static(include_bytes!("../../assets/fonts/NotoSans-Regular.ttf"))
-                    .into(),
+                egui::FontData::from_static(include_bytes!(
+                    "../../assets/fonts/NotoSans-Regular.ttf"
+                ))
+                .into(),
             );
 
             // JetBrains Mono — monospace for badges, tags, script editor (~110 KB)
@@ -200,6 +204,8 @@ impl PaintFEApp {
             active_dialog: ActiveDialog::default(),
             paste_overlay: None,
             pending_paste_request: None,
+            clipboard_paste_receiver: None,
+            pending_clipboard_cursor: None,
             paste_transform_undo: Vec::new(),
             paste_transform_redo: Vec::new(),
             move_pixels_before: None,
@@ -208,6 +214,8 @@ impl PaintFEApp {
             move_sel_handle: None,
             move_sel_start_mask: None,
             move_sel_start_bounds: None,
+            move_sel_preserved_ratio: None,
+            move_sel_ratio_lock_active: false,
             pending_selection_reassert: None,
             layers_panel_right_offset: None,
             layers_panel_size: None,
@@ -321,14 +329,17 @@ impl PaintFEApp {
             use base64::Engine;
             for (name, cat, b64) in &app.settings.custom_brush_tips {
                 if let Ok(png_data) = base64::engine::general_purpose::STANDARD.decode(b64) {
-                    app.assets.load_brush_tip(&cc.egui_ctx, name, cat, &png_data);
+                    app.assets
+                        .load_brush_tip(&cc.egui_ctx, name, cat, &png_data);
                 }
             }
             for (name, cat, b64) in &app.settings.custom_shapes {
                 if let Ok(path_data) = base64::engine::general_purpose::STANDARD.decode(b64)
                     && let Ok(path_data) = String::from_utf8(path_data)
                 {
-                    let _ = app.assets.load_custom_shape(&cc.egui_ctx, name, cat, &path_data);
+                    let _ = app
+                        .assets
+                        .load_custom_shape(&cc.egui_ctx, name, cat, &path_data);
                 }
             }
         }
@@ -343,7 +354,12 @@ impl PaintFEApp {
         }
         app.last_window_state_fingerprint = app.compute_window_state_fingerprint();
         app.last_window_state_observed_fingerprint = app.last_window_state_fingerprint;
-        log_info!("Startup: PaintFE initialized (theme={:?} preset={:?} projects={})", app.theme.mode, app.settings.theme_preset, app.projects.len());
+        log_info!(
+            "Startup: PaintFE initialized (theme={:?} preset={:?} projects={})",
+            app.theme.mode,
+            app.settings.theme_preset,
+            app.projects.len()
+        );
         app
     }
 
@@ -540,23 +556,12 @@ impl PaintFEApp {
         }
     }
 
-    fn queue_paste_from_clipboard(&mut self, cursor_canvas: Option<(f32, f32)>) {
+    fn apply_clipboard_payload(
+        &mut self,
+        payload: crate::ops::clipboard::ClipboardImageForPaste,
+        cursor_canvas: Option<(f32, f32)>,
+    ) {
         let cutout_enabled = self.settings.clipboard_copy_transparent_cutout;
-        let payload = if let Some(payload) = crate::ops::clipboard::get_clipboard_image_for_paste()
-        {
-            payload
-        } else if let Some(img) = crate::ops::clipboard::get_clipboard_image_pub() {
-                crate::ops::clipboard::ClipboardImageForPaste {
-                    image: img,
-                    source: ClipboardImageSource::Internal,
-                    origin_center: None,
-                    overwrite_transparent_pixels: true,
-                    overwrite_mask: None,
-                }
-            } else {
-                return;
-            };
-
         let overwrite = match payload.source {
             ClipboardImageSource::Internal => payload.overwrite_transparent_pixels,
             ClipboardImageSource::External => {
@@ -574,6 +579,33 @@ impl PaintFEApp {
             overwrite,
             payload.overwrite_mask,
         );
+    }
+
+    fn queue_paste_from_clipboard(
+        &mut self,
+        _ctx: &egui::Context,
+        cursor_canvas: Option<(f32, f32)>,
+    ) {
+        #[cfg(target_arch = "wasm32")]
+        if let Some(payload) = crate::ops::clipboard::get_clipboard_image_for_paste() {
+            self.apply_clipboard_payload(payload, cursor_canvas);
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if self.clipboard_paste_receiver.is_some() {
+                return;
+            }
+            let (sender, receiver) = mpsc::channel();
+            let repaint = _ctx.clone();
+            self.clipboard_paste_receiver = Some(receiver);
+            self.pending_clipboard_cursor = cursor_canvas;
+            std::thread::spawn(move || {
+                let payload = crate::ops::clipboard::get_clipboard_image_for_paste();
+                let _ = sender.send(payload);
+                repaint.request_repaint();
+            });
+        }
     }
 
     fn apply_pending_paste_request(&mut self, request: PendingPasteRequest, resize_canvas: bool) {
@@ -613,8 +645,7 @@ impl PaintFEApp {
             // path and use the GPU-accelerated path instead (which supports preview
             // downscaling during interaction).
             let needs_overwrite = request.overwrite_transparent_pixels
-                && (request.overwrite_mask.is_some()
-                    || request.image.pixels().any(|p| p[3] < 255));
+                && (request.overwrite_mask.is_some() || request.image.pixels().any(|p| p[3] < 255));
             let mut overlay = if request.use_source_center {
                 let center = request
                     .source_center
@@ -624,7 +655,8 @@ impl PaintFEApp {
                 o.overwrite_mask = request.overwrite_mask;
                 o
             } else if let Some((cx, cy)) = request.cursor_canvas {
-                let mut o = PasteOverlay::from_image_at(request.image, cw, ch, egui::Pos2::new(cx, cy));
+                let mut o =
+                    PasteOverlay::from_image_at(request.image, cw, ch, egui::Pos2::new(cx, cy));
                 o.overwrite_transparent_pixels = needs_overwrite;
                 o.overwrite_mask = request.overwrite_mask;
                 o
@@ -1089,5 +1121,3 @@ impl PaintFEApp {
         self.settings.save();
     }
 }
-
-

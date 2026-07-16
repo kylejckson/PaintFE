@@ -622,6 +622,7 @@ keybind.tool_lasso=なげなわ
 keybind.tool_color_remover=カラーリムーバー
 keybind.tool_mesh_warp=メッシュワープ
 keybind.brush_resize_drag_modifier=ブラシサイズ変更ドラッグ修飾キー
+keybind.selection_preserve_aspect_modifier=選択範囲の縦横比固定修飾キー
 keybind.brush_size_decrease=ブラシサイズを縮小
 keybind.close_file=ファイルを閉じる
 keybind.brush_size_increase=ブラシサイズを拡大

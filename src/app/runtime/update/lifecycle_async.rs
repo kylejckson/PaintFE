@@ -55,6 +55,16 @@ impl PaintFEApp {
             }
         }
 
+        if let Some(receiver) = self.clipboard_paste_receiver.as_ref()
+            && let Ok(payload) = receiver.try_recv()
+        {
+            self.clipboard_paste_receiver = None;
+            let cursor = self.pending_clipboard_cursor.take();
+            if let Some(payload) = payload {
+                self.apply_clipboard_payload(payload, cursor);
+            }
+        }
+
         // --- Single-instance IPC: open files sent from other PaintFE invocations ---
         {
             let current_time = ctx.input(|i| i.time);
@@ -91,22 +101,24 @@ impl PaintFEApp {
                         let path = dir.join(format!("{}.autosave.pfe", safe_name));
                         let pfe_data = crate::io::build_pfe(&project.canvas_state);
                         let proj_name = project.name.clone();
-                        crate::par_compat::spawn(move || match crate::io::write_pfe(&pfe_data, &path) {
-                            Ok(()) => {
-                                crate::logger::write(
-                                    "INFO",
-                                    &format!(
-                                        "Auto-save OK  \"{}\"  →  {}",
-                                        proj_name,
-                                        path.display()
-                                    ),
-                                );
-                            }
-                            Err(e) => {
-                                crate::logger::write(
-                                    "ERROR",
-                                    &format!("Auto-save FAILED for \"{}\": {}", proj_name, e),
-                                );
+                        crate::par_compat::spawn(move || {
+                            match crate::io::write_pfe(&pfe_data, &path) {
+                                Ok(()) => {
+                                    crate::logger::write(
+                                        "INFO",
+                                        &format!(
+                                            "Auto-save OK  \"{}\"  →  {}",
+                                            proj_name,
+                                            path.display()
+                                        ),
+                                    );
+                                }
+                                Err(e) => {
+                                    crate::logger::write(
+                                        "ERROR",
+                                        &format!("Auto-save FAILED for \"{}\": {}", proj_name, e),
+                                    );
+                                }
                             }
                         });
                     }

@@ -3,8 +3,8 @@
 // ============================================================================
 
 use crate::canvas::{CanvasState, TiledImage};
-use image::{GrayImage, Rgba, RgbaImage};
 use crate::par_compat::*;
+use image::{GrayImage, Rgba, RgbaImage};
 
 fn apply_spatial_effect<F>(flat: &RgbaImage, mask: Option<&GrayImage>, processor: F) -> RgbaImage
 where

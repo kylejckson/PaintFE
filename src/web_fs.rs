@@ -113,7 +113,9 @@ pub fn trigger_download(filename: &str, bytes: &[u8]) {
         let blob = web_sys::Blob::new_with_u8_array_sequence(&parts)?;
         let url = web_sys::Url::create_object_url_with_blob(&blob)?;
 
-        let anchor = document.create_element("a")?.dyn_into::<web_sys::HtmlAnchorElement>()?;
+        let anchor = document
+            .create_element("a")?
+            .dyn_into::<web_sys::HtmlAnchorElement>()?;
         anchor.set_href(&url);
         anchor.set_download(filename);
         anchor.style().set_property("display", "none").ok();

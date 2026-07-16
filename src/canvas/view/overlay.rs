@@ -405,6 +405,82 @@ impl Canvas {
     /// draw it as a single GPU-composited quad.  The border segments are
     /// still drawn with immediate-mode lines since they're already
     /// merged into relatively few segments.
+    fn draw_selection_transform_preview(
+        &self,
+        painter: &egui::Painter,
+        image_rect: Rect,
+        bounds: (u32, u32, u32, u32),
+    ) {
+        let (x0, y0, x1, y1) = bounds;
+        let rect = Rect::from_min_max(
+            Pos2::new(
+                image_rect.min.x + x0 as f32 * self.zoom,
+                image_rect.min.y + y0 as f32 * self.zoom,
+            ),
+            Pos2::new(
+                image_rect.min.x + (x1 + 1) as f32 * self.zoom,
+                image_rect.min.y + (y1 + 1) as f32 * self.zoom,
+            ),
+        );
+        painter.rect_filled(
+            rect,
+            0.0,
+            Color32::from_rgba_premultiplied(255, 255, 255, 12),
+        );
+        painter.rect_stroke(
+            rect,
+            0.0,
+            egui::Stroke::new(3.5, Color32::from_rgba_premultiplied(0, 0, 0, 210)),
+            egui::StrokeKind::Middle,
+        );
+        painter.rect_stroke(
+            rect,
+            0.0,
+            egui::Stroke::new(1.5, Color32::WHITE),
+            egui::StrokeKind::Middle,
+        );
+    }
+
+    fn draw_full_selection_overlay(
+        &self,
+        painter: &egui::Painter,
+        image_rect: Rect,
+        state: &mut CanvasState,
+    ) {
+        let rect = image_rect.intersect(painter.clip_rect());
+        if rect.is_negative() {
+            return;
+        }
+        painter.rect_filled(
+            rect,
+            0.0,
+            Color32::from_rgba_premultiplied(255, 255, 255, 12),
+        );
+        painter.rect_stroke(
+            image_rect,
+            0.0,
+            egui::Stroke::new(3.5, Color32::from_rgba_premultiplied(0, 0, 0, 210)),
+            egui::StrokeKind::Inside,
+        );
+        painter.rect_stroke(
+            image_rect,
+            0.0,
+            egui::Stroke::new(1.5, Color32::WHITE),
+            egui::StrokeKind::Inside,
+        );
+        state.selection_overlay_bounds = (state.width > 0 && state.height > 0).then_some((
+            0,
+            0,
+            state.width - 1,
+            state.height - 1,
+        ));
+        state.selection_overlay_built_generation = state.selection_overlay_generation;
+        state.selection_border_built_generation = state.selection_overlay_generation;
+        state.selection_overlay_texture = None;
+        state.selection_border_h_segs.clear();
+        state.selection_border_v_segs.clear();
+    }
+
     fn draw_selection_overlay(
         &self,
         painter: &egui::Painter,
@@ -860,9 +936,9 @@ impl Canvas {
                 for x in 0..cols {
                     if (x + y) % 2 != 0 {
                         pixels[y * cols + x] = dark;
+                    }
+                }
             }
-        }
-    }
 
             let image = ColorImage {
                 size: [cols, rows],
@@ -1131,4 +1207,3 @@ impl Canvas {
         Some((cx, cy))
     }
 }
-

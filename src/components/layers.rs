@@ -7,13 +7,13 @@ use crate::ops::text_layer::{
     EnvelopeWarp, GradientFillEffect, InnerShadowEffect, OutlineEffect, OutlinePosition,
     ShadowEffect, TextEffects, TextWarp, TextureFillEffect,
 };
+use crate::time_compat::Instant;
 use eframe::egui;
 use egui::{
     Color32, ColorImage, CursorIcon, Id, Pos2, Rect, Sense, TextureHandle, TextureOptions, Vec2,
 };
 use image::Rgba;
 use std::collections::{HashMap, HashSet};
-use crate::time_compat::Instant;
 
 const THUMBNAIL_SIZE: u32 = 40;
 const MAX_RECOMMENDED_LAYERS: usize = 200;

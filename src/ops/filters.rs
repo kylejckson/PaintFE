@@ -3,8 +3,8 @@
 // ============================================================================
 
 use crate::canvas::{CanvasState, TiledImage};
-use image::{RgbaImage, imageops};
 use crate::par_compat::*;
+use image::{RgbaImage, imageops};
 
 /// Apply a Gaussian blur to the active layer.
 /// `sigma` controls the blur radius / strength.

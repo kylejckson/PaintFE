@@ -967,7 +967,8 @@ pub fn generate_preview(
         SaveFormat::Webp => {
             #[cfg(not(target_arch = "wasm32"))]
             {
-                let encoder = webp::Encoder::from_rgba(image.as_raw(), image.width(), image.height());
+                let encoder =
+                    webp::Encoder::from_rgba(image.as_raw(), image.width(), image.height());
                 let encoded = if webp_lossless {
                     encoder.encode_lossless()
                 } else {

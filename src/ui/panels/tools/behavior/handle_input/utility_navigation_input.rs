@@ -448,21 +448,23 @@ impl ToolsPanel {
                     self.lasso_state.dragging = false;
                     let pts = std::mem::take(&mut self.lasso_state.points);
                     let sel_before = canvas_state.selection_mask.clone();
+                    let sel_before_all = canvas_state.selection_all;
                     if pts.len() >= 3 {
                         // Scanline-fill the polygon into the selection mask
                         Self::apply_lasso_selection(canvas_state, &pts, effective_mode);
-                        canvas_state.mark_dirty(None);
                     } else {
                         // Tiny lasso -> deselect
                         canvas_state.clear_selection();
-                        canvas_state.mark_dirty(None);
                     }
                     let sel_after = canvas_state.selection_mask.clone();
+                    let sel_after_all = canvas_state.selection_all;
                     self.pending_history_commands
-                        .push(Box::new(SelectionCommand::new(
+                        .push(Box::new(SelectionCommand::new_states(
                             "Lasso Select",
                             sel_before,
+                            sel_before_all,
                             sel_after,
+                            sel_after_all,
                         )));
                     ui.ctx().request_repaint();
                 }
@@ -728,4 +730,3 @@ impl ToolsPanel {
         }
     }
 }
-

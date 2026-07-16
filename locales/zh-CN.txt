@@ -622,6 +622,7 @@ keybind.tool_lasso=套索工具
 keybind.tool_color_remover=颜色去除工具
 keybind.tool_mesh_warp=网格变形工具
 keybind.brush_resize_drag_modifier=画笔大小拖拽快捷键
+keybind.selection_preserve_aspect_modifier=选区保持宽高比修饰键
 keybind.brush_size_decrease=缩小画笔
 keybind.brush_size_increase=放大画笔
 keybind.close_file=关闭文件

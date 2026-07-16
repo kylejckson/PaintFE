@@ -406,10 +406,7 @@ impl PaintFEApp {
             // Ctrl+Y — Redo (also Ctrl+Shift+Z for Linux muscle memory)
             let redo_from_binding = kb.is_pressed(ctx, BindableAction::Redo);
             let redo_from_ctrl_shift_z = ctx.input_mut(|i| {
-                i.consume_key(
-                    egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
-                    egui::Key::Z,
-                )
+                i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::Z)
             });
             if redo_from_binding || redo_from_ctrl_shift_z {
                 if let Some(overlay) = self.paste_overlay.as_mut()
@@ -541,11 +538,8 @@ impl PaintFEApp {
                     .active_project()
                     .is_some_and(|p| p.canvas_state.has_selection());
                 let transparent_cutout = self.settings.clipboard_copy_transparent_cutout;
-                let mut cut_applied = false;
                 if has_sel {
-                    self.do_snapshot_op("Cut Selection", |s| {
-                        cut_applied = crate::ops::clipboard::cut_selection(s, transparent_cutout);
-                    });
+                    self.cut_selection_with_history(transparent_cutout);
                 }
             }
 
@@ -673,7 +667,7 @@ impl PaintFEApp {
                 } else {
                     None
                 };
-                self.queue_paste_from_clipboard(cursor_canvas);
+                self.queue_paste_from_clipboard(ctx, cursor_canvas);
             }
 
             let enter_vk_edge = vk_probe.enter_press_count != self.prev_vk_enter_press_count;
@@ -866,7 +860,10 @@ impl PaintFEApp {
             // Ctrl+A — Select All (skip when a text editor has focus)
             let script_editor_open = self.window_visibility.script_editor;
             let text_edit_focused = ctx.text_edit_focused();
-            if !script_editor_open && !text_edit_focused && kb.is_pressed(ctx, BindableAction::SelectAll) {
+            if !script_editor_open
+                && !text_edit_focused
+                && kb.is_pressed(ctx, BindableAction::SelectAll)
+            {
                 self.select_all_canvas();
             }
 
@@ -892,11 +889,15 @@ impl PaintFEApp {
             }
             if deselect_pressed && let Some(project) = self.active_project_mut() {
                 let sel_before = project.canvas_state.selection_mask.clone();
+                let sel_before_all = project.canvas_state.selection_all;
                 project.canvas_state.clear_selection();
-                project.canvas_state.mark_dirty(None);
-                if sel_before.is_some() {
-                    project.history.push(Box::new(SelectionCommand::new(
-                        "Deselect", sel_before, None,
+                if sel_before.is_some() || sel_before_all {
+                    project.history.push(Box::new(SelectionCommand::new_states(
+                        "Deselect",
+                        sel_before,
+                        sel_before_all,
+                        None,
+                        false,
                     )));
                 }
             }
@@ -1535,6 +1536,21 @@ impl PaintFEApp {
             }
         }
 
+        if self.tools_panel.active_tool != crate::components::tools::Tool::MoveSelection
+            && self.move_sel_dragging
+        {
+            if let Some(project) = self.active_project_mut() {
+                project.canvas_state.selection_transform_preview_bounds = None;
+            }
+            self.move_sel_dragging = false;
+            self.move_sel_last_canvas = None;
+            self.move_sel_handle = None;
+            self.move_sel_start_mask = None;
+            self.move_sel_start_bounds = None;
+            self.move_sel_preserved_ratio = None;
+            self.move_sel_ratio_lock_active = false;
+        }
+
         // -- Move Selection tool: drag to translate the selection mask --
         if !modal_open
             && self.tools_panel.active_tool == crate::components::tools::Tool::MoveSelection
@@ -1576,6 +1592,9 @@ impl PaintFEApp {
                 && !over_ui
                 && let Some(cp) = cur_canvas_pos
             {
+                if let Some(project) = self.active_project_mut() {
+                    project.canvas_state.materialize_full_selection();
+                }
                 self.move_sel_dragging = true;
                 self.move_sel_last_canvas = Some(cp);
                 self.move_sel_start_mask = self
@@ -1588,6 +1607,11 @@ impl PaintFEApp {
                 self.move_sel_handle = self
                     .move_sel_start_bounds
                     .and_then(|b| Self::hit_selection_handle(cp, b, self.canvas.zoom));
+                self.move_sel_preserved_ratio = None;
+                self.move_sel_ratio_lock_active = false;
+                if let Some(project) = self.active_project_mut() {
+                    project.canvas_state.selection_transform_preview_bounds = None;
+                }
             }
 
             if primary_down
@@ -1595,7 +1619,9 @@ impl PaintFEApp {
                 && let Some((cx, cy)) = cur_canvas_pos
                 && let Some((lx, ly)) = self.move_sel_last_canvas
             {
-                if self.move_sel_handle.unwrap_or(crate::ops::shapes::ShapeHandle::Move)
+                if self
+                    .move_sel_handle
+                    .unwrap_or(crate::ops::shapes::ShapeHandle::Move)
                     == crate::ops::shapes::ShapeHandle::Move
                 {
                     let dx = cx - lx;
@@ -1606,34 +1632,81 @@ impl PaintFEApp {
                         }
                         self.move_sel_last_canvas = Some((cx, cy));
                     }
-                } else if let (Some(start_mask), Some(start_bounds), Some(handle)) = (
-                    self.move_sel_start_mask.clone(),
+                } else if let (Some(canvas_dimensions), Some(start_bounds), Some(handle)) = (
+                    self.move_sel_start_mask
+                        .as_ref()
+                        .map(|mask| mask.dimensions()),
                     self.move_sel_start_bounds,
                     self.move_sel_handle,
                 ) {
                     let shift = ctx.input(|i| i.modifiers.shift);
-                    if let Some(new_mask) =
-                        Self::resize_selection_mask_from_handle(
-                            &start_mask,
-                            start_bounds,
-                            handle,
-                            (cx, cy),
-                            shift,
-                            self.tools_panel.move_anti_aliasing,
-                        )
-                        && let Some(project) = self.active_project_mut()
+                    let preserve_ratio_modifier = self
+                        .settings
+                        .keybindings
+                        .is_held(ctx, BindableAction::SelectionPreserveAspectModifier);
+                    let ratio_lock_active = preserve_ratio_modifier && !shift;
+                    if ratio_lock_active && !self.move_sel_ratio_lock_active {
+                        let current_bounds = self
+                            .active_project()
+                            .and_then(|project| {
+                                project
+                                    .canvas_state
+                                    .selection_transform_preview_bounds
+                                    .or_else(|| project.canvas_state.selection_mask_bounds())
+                            })
+                            .unwrap_or(start_bounds);
+                        let width = current_bounds.2.saturating_sub(current_bounds.0) + 1;
+                        let height = current_bounds.3.saturating_sub(current_bounds.1) + 1;
+                        self.move_sel_preserved_ratio = Some(width as f32 / height.max(1) as f32);
+                    } else if !ratio_lock_active {
+                        self.move_sel_preserved_ratio = None;
+                    }
+                    self.move_sel_ratio_lock_active = ratio_lock_active;
+
+                    let aspect_ratio = if shift {
+                        Some(1.0)
+                    } else {
+                        self.move_sel_preserved_ratio
+                    };
+                    if let Some(preview_bounds) = Self::selection_resize_bounds_from_handle(
+                        start_bounds,
+                        handle,
+                        (cx, cy),
+                        aspect_ratio,
+                        canvas_dimensions,
+                    ) && let Some(project) = self.active_project_mut()
                     {
-                        project.canvas_state.selection_mask = Some(new_mask);
-                        project.canvas_state.invalidate_selection_overlay();
-                        project.canvas_state.mark_dirty(None);
+                        project.canvas_state.selection_transform_preview_bounds =
+                            Some(preview_bounds);
+                        ctx.request_repaint();
                     }
                 }
             }
 
             if primary_released {
+                let preview_bounds = self
+                    .active_project()
+                    .and_then(|project| project.canvas_state.selection_transform_preview_bounds);
+                let resize_handle = self.move_sel_handle;
+                let source_bounds = self.move_sel_start_bounds;
+                let anti_alias = self.tools_panel.move_anti_aliasing;
                 if let Some(before) = self.move_sel_start_mask.take()
                     && let Some(project) = self.active_project_mut()
                 {
+                    project.canvas_state.selection_transform_preview_bounds = None;
+                    if resize_handle
+                        .is_some_and(|handle| handle != crate::ops::shapes::ShapeHandle::Move)
+                        && let Some(target_bounds) = preview_bounds
+                    {
+                        project.canvas_state.selection_mask =
+                            Some(Self::resize_selection_mask_to_bounds(
+                                &before,
+                                source_bounds.unwrap_or(target_bounds),
+                                target_bounds,
+                                anti_alias,
+                            ));
+                        project.canvas_state.invalidate_selection_overlay();
+                    }
                     let after = project.canvas_state.selection_mask.clone();
                     if after.as_ref() != Some(&before) {
                         project.history.push(Box::new(
@@ -1649,6 +1722,8 @@ impl PaintFEApp {
                 self.move_sel_last_canvas = None;
                 self.move_sel_handle = None;
                 self.move_sel_start_bounds = None;
+                self.move_sel_preserved_ratio = None;
+                self.move_sel_ratio_lock_active = false;
             }
         }
 
@@ -1684,14 +1759,46 @@ impl PaintFEApp {
         let py = pos.1 as f32;
         let tol = (8.0 / zoom.max(1.0)).max(1.5);
         let pts = [
-            (crate::ops::shapes::ShapeHandle::TopLeft, x0 as f32, y0 as f32),
-            (crate::ops::shapes::ShapeHandle::Top, (x0 + x1) as f32 * 0.5, y0 as f32),
-            (crate::ops::shapes::ShapeHandle::TopRight, x1 as f32, y0 as f32),
-            (crate::ops::shapes::ShapeHandle::Right, x1 as f32, (y0 + y1) as f32 * 0.5),
-            (crate::ops::shapes::ShapeHandle::BottomRight, x1 as f32, y1 as f32),
-            (crate::ops::shapes::ShapeHandle::Bottom, (x0 + x1) as f32 * 0.5, y1 as f32),
-            (crate::ops::shapes::ShapeHandle::BottomLeft, x0 as f32, y1 as f32),
-            (crate::ops::shapes::ShapeHandle::Left, x0 as f32, (y0 + y1) as f32 * 0.5),
+            (
+                crate::ops::shapes::ShapeHandle::TopLeft,
+                x0 as f32,
+                y0 as f32,
+            ),
+            (
+                crate::ops::shapes::ShapeHandle::Top,
+                (x0 + x1) as f32 * 0.5,
+                y0 as f32,
+            ),
+            (
+                crate::ops::shapes::ShapeHandle::TopRight,
+                x1 as f32,
+                y0 as f32,
+            ),
+            (
+                crate::ops::shapes::ShapeHandle::Right,
+                x1 as f32,
+                (y0 + y1) as f32 * 0.5,
+            ),
+            (
+                crate::ops::shapes::ShapeHandle::BottomRight,
+                x1 as f32,
+                y1 as f32,
+            ),
+            (
+                crate::ops::shapes::ShapeHandle::Bottom,
+                (x0 + x1) as f32 * 0.5,
+                y1 as f32,
+            ),
+            (
+                crate::ops::shapes::ShapeHandle::BottomLeft,
+                x0 as f32,
+                y1 as f32,
+            ),
+            (
+                crate::ops::shapes::ShapeHandle::Left,
+                x0 as f32,
+                (y0 + y1) as f32 * 0.5,
+            ),
         ];
         for (h, x, y) in pts {
             if (px - x).abs() <= tol && (py - y).abs() <= tol {
@@ -1705,56 +1812,173 @@ impl PaintFEApp {
         }
     }
 
-    fn resize_selection_mask_from_handle(
-        start_mask: &image::GrayImage,
+    fn selection_resize_bounds_from_handle(
         bounds: (u32, u32, u32, u32),
         handle: crate::ops::shapes::ShapeHandle,
         pos: (i32, i32),
-        shift: bool,
-        anti_alias: bool,
-    ) -> Option<image::GrayImage> {
-        use image::imageops;
-        let (cw, ch) = start_mask.dimensions();
+        aspect_ratio: Option<f32>,
+        canvas_dimensions: (u32, u32),
+    ) -> Option<(u32, u32, u32, u32)> {
+        let (cw, ch) = canvas_dimensions;
+        if cw == 0 || ch == 0 {
+            return None;
+        }
         let (x0, y0, x1, y1) = bounds;
+        let px = pos.0.clamp(0, cw.saturating_sub(1) as i32) as f32;
+        let py = pos.1.clamp(0, ch.saturating_sub(1) as i32) as f32;
+
+        if let Some(ratio) = aspect_ratio.filter(|ratio| ratio.is_finite() && *ratio > 0.0) {
+            let fit_ratio = |raw_w: f32, raw_h: f32| -> (f32, f32) {
+                let raw_w = raw_w.max(1.0);
+                let raw_h = raw_h.max(1.0);
+                if raw_w / raw_h >= ratio {
+                    (raw_w, raw_w / ratio)
+                } else {
+                    (raw_h * ratio, raw_h)
+                }
+            };
+            let limit_size = |w: f32, h: f32, max_w: f32, max_h: f32| {
+                let scale = (max_w / w).min(max_h / h).min(1.0);
+                ((w * scale).max(1.0), (h * scale).max(1.0))
+            };
+
+            let constrained = match handle {
+                crate::ops::shapes::ShapeHandle::TopLeft
+                | crate::ops::shapes::ShapeHandle::TopRight
+                | crate::ops::shapes::ShapeHandle::BottomLeft
+                | crate::ops::shapes::ShapeHandle::BottomRight => {
+                    let (ax, ay) = match handle {
+                        crate::ops::shapes::ShapeHandle::TopLeft => (x1 as f32, y1 as f32),
+                        crate::ops::shapes::ShapeHandle::TopRight => (x0 as f32, y1 as f32),
+                        crate::ops::shapes::ShapeHandle::BottomLeft => (x1 as f32, y0 as f32),
+                        _ => (x0 as f32, y0 as f32),
+                    };
+                    let sx = if px >= ax { 1.0 } else { -1.0 };
+                    let sy = if py >= ay { 1.0 } else { -1.0 };
+                    let (w, h) = fit_ratio((px - ax).abs() + 1.0, (py - ay).abs() + 1.0);
+                    let max_w = if sx > 0.0 { cw as f32 - ax } else { ax + 1.0 };
+                    let max_h = if sy > 0.0 { ch as f32 - ay } else { ay + 1.0 };
+                    let (w, h) = limit_size(w, h, max_w, max_h);
+                    let mx = ax + sx * (w.round() - 1.0).max(0.0);
+                    let my = ay + sy * (h.round() - 1.0).max(0.0);
+                    (
+                        ax.min(mx).round() as u32,
+                        ay.min(my).round() as u32,
+                        ax.max(mx).round() as u32,
+                        ay.max(my).round() as u32,
+                    )
+                }
+                crate::ops::shapes::ShapeHandle::Left | crate::ops::shapes::ShapeHandle::Right => {
+                    let anchor_x = if handle == crate::ops::shapes::ShapeHandle::Left {
+                        x1 as f32
+                    } else {
+                        x0 as f32
+                    };
+                    let sx = if px >= anchor_x { 1.0 } else { -1.0 };
+                    let center_y = (y0 + y1) as f32 * 0.5;
+                    let raw_w = (px - anchor_x).abs() + 1.0;
+                    let raw_h = raw_w / ratio;
+                    let max_w = if sx > 0.0 {
+                        cw as f32 - anchor_x
+                    } else {
+                        anchor_x + 1.0
+                    };
+                    let max_h = 2.0 * center_y.min(ch.saturating_sub(1) as f32 - center_y) + 1.0;
+                    let (w, h) = limit_size(raw_w, raw_h, max_w, max_h);
+                    let moving_x = anchor_x + sx * (w.round() - 1.0).max(0.0);
+                    let top = (center_y - (h.round() - 1.0) * 0.5).round();
+                    let bottom = top + h.round() - 1.0;
+                    (
+                        anchor_x.min(moving_x).round() as u32,
+                        top.max(0.0) as u32,
+                        anchor_x.max(moving_x).round() as u32,
+                        bottom.min(ch.saturating_sub(1) as f32) as u32,
+                    )
+                }
+                crate::ops::shapes::ShapeHandle::Top | crate::ops::shapes::ShapeHandle::Bottom => {
+                    let anchor_y = if handle == crate::ops::shapes::ShapeHandle::Top {
+                        y1 as f32
+                    } else {
+                        y0 as f32
+                    };
+                    let sy = if py >= anchor_y { 1.0 } else { -1.0 };
+                    let center_x = (x0 + x1) as f32 * 0.5;
+                    let raw_h = (py - anchor_y).abs() + 1.0;
+                    let raw_w = raw_h * ratio;
+                    let max_h = if sy > 0.0 {
+                        ch as f32 - anchor_y
+                    } else {
+                        anchor_y + 1.0
+                    };
+                    let max_w = 2.0 * center_x.min(cw.saturating_sub(1) as f32 - center_x) + 1.0;
+                    let (w, h) = limit_size(raw_w, raw_h, max_w, max_h);
+                    let moving_y = anchor_y + sy * (h.round() - 1.0).max(0.0);
+                    let left = (center_x - (w.round() - 1.0) * 0.5).round();
+                    let right = left + w.round() - 1.0;
+                    (
+                        left.max(0.0) as u32,
+                        anchor_y.min(moving_y).round() as u32,
+                        right.min(cw.saturating_sub(1) as f32) as u32,
+                        anchor_y.max(moving_y).round() as u32,
+                    )
+                }
+                _ => return None,
+            };
+            return Some(constrained);
+        }
+
         let mut nx0 = x0 as i32;
         let mut ny0 = y0 as i32;
         let mut nx1 = x1 as i32;
         let mut ny1 = y1 as i32;
         match handle {
-            crate::ops::shapes::ShapeHandle::TopLeft => { nx0 = pos.0; ny0 = pos.1; }
-            crate::ops::shapes::ShapeHandle::TopRight => { nx1 = pos.0; ny0 = pos.1; }
-            crate::ops::shapes::ShapeHandle::BottomRight => { nx1 = pos.0; ny1 = pos.1; }
-            crate::ops::shapes::ShapeHandle::BottomLeft => { nx0 = pos.0; ny1 = pos.1; }
+            crate::ops::shapes::ShapeHandle::TopLeft => {
+                nx0 = pos.0;
+                ny0 = pos.1;
+            }
+            crate::ops::shapes::ShapeHandle::TopRight => {
+                nx1 = pos.0;
+                ny0 = pos.1;
+            }
+            crate::ops::shapes::ShapeHandle::BottomRight => {
+                nx1 = pos.0;
+                ny1 = pos.1;
+            }
+            crate::ops::shapes::ShapeHandle::BottomLeft => {
+                nx0 = pos.0;
+                ny1 = pos.1;
+            }
             crate::ops::shapes::ShapeHandle::Top => ny0 = pos.1,
             crate::ops::shapes::ShapeHandle::Right => nx1 = pos.0,
             crate::ops::shapes::ShapeHandle::Bottom => ny1 = pos.1,
             crate::ops::shapes::ShapeHandle::Left => nx0 = pos.0,
             _ => return None,
         }
-        if shift && matches!(handle, crate::ops::shapes::ShapeHandle::TopLeft | crate::ops::shapes::ShapeHandle::TopRight | crate::ops::shapes::ShapeHandle::BottomLeft | crate::ops::shapes::ShapeHandle::BottomRight) {
-            let w = (nx1 - nx0).abs();
-            let h = (ny1 - ny0).abs();
-            let s = w.max(h).max(1);
-            match handle {
-                crate::ops::shapes::ShapeHandle::TopLeft => { nx0 = nx1 - s; ny0 = ny1 - s; }
-                crate::ops::shapes::ShapeHandle::TopRight => { nx1 = nx0 + s; ny0 = ny1 - s; }
-                crate::ops::shapes::ShapeHandle::BottomRight => { nx1 = nx0 + s; ny1 = ny0 + s; }
-                crate::ops::shapes::ShapeHandle::BottomLeft => { nx0 = nx1 - s; ny1 = ny0 + s; }
-                _ => {}
-            }
-        }
-        let left = nx0.min(nx1).clamp(0, cw as i32);
-        let right = nx0.max(nx1).clamp(0, cw as i32);
-        let top = ny0.min(ny1).clamp(0, ch as i32);
-        let bottom = ny0.max(ny1).clamp(0, ch as i32);
-        if right <= left || bottom <= top {
+        let left = nx0.min(nx1).clamp(0, cw.saturating_sub(1) as i32);
+        let right = nx0.max(nx1).clamp(0, cw.saturating_sub(1) as i32);
+        let top = ny0.min(ny1).clamp(0, ch.saturating_sub(1) as i32);
+        let bottom = ny0.max(ny1).clamp(0, ch.saturating_sub(1) as i32);
+        if right < left || bottom < top {
             return None;
         }
-        let src = imageops::crop_imm(start_mask, x0, y0, x1 - x0, y1 - y0).to_image();
+        Some((left as u32, top as u32, right as u32, bottom as u32))
+    }
+
+    fn resize_selection_mask_to_bounds(
+        start_mask: &image::GrayImage,
+        source_bounds: (u32, u32, u32, u32),
+        target_bounds: (u32, u32, u32, u32),
+        anti_alias: bool,
+    ) -> image::GrayImage {
+        use image::imageops;
+        let (cw, ch) = start_mask.dimensions();
+        let (x0, y0, x1, y1) = source_bounds;
+        let (left, top, right, bottom) = target_bounds;
+        let src = imageops::crop_imm(start_mask, x0, y0, x1 - x0 + 1, y1 - y0 + 1).to_image();
         let resized = imageops::resize(
             &src,
-            (right - left) as u32,
-            (bottom - top) as u32,
+            right - left + 1,
+            bottom - top + 1,
             if anti_alias {
                 imageops::FilterType::Triangle
             } else {
@@ -1763,7 +1987,6 @@ impl PaintFEApp {
         );
         let mut out = image::GrayImage::from_pixel(cw, ch, image::Luma([0u8]));
         imageops::overlay(&mut out, &resized, left as i64, top as i64);
-        Some(out)
+        out
     }
 }
-

@@ -1,3 +1,19 @@
+fn text_move_handle_canvas_pos(
+    origin: [f32; 2],
+    alignment: crate::ops::text::TextAlignment,
+    font_size: f32,
+    zoom: f32,
+) -> (f32, f32) {
+    // Radius is 6 px and the box padding reaches 4 px left of the origin.
+    // A 17 px center offset leaves the requested 7 px visual gap.
+    let offset = 17.0 / zoom.max(0.001);
+    match alignment {
+        crate::ops::text::TextAlignment::Left => (origin[0] - offset, origin[1] + font_size * 0.5),
+        crate::ops::text::TextAlignment::Center => (origin[0], origin[1] - offset),
+        crate::ops::text::TextAlignment::Right => (origin[0] + offset, origin[1] + font_size * 0.5),
+    }
+}
+
 impl ToolsPanel {
     pub fn update_gradient_if_dirty(
         &mut self,
@@ -353,8 +369,6 @@ impl ToolsPanel {
         if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
             && let crate::canvas::LayerContent::Text(ref td) = layer.content
         {
-            let dotted_color =
-                Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 70);
             for block in &td.blocks {
                 if Some(block.id) == self.text_state.active_block_id {
                     continue; // Active block gets full overlay below
@@ -387,6 +401,8 @@ impl ToolsPanel {
                 let sw = (bw + pad * 2.0) * zoom;
                 let sh = (bh + pad * 2.0) * zoom;
                 let r = egui::Rect::from_min_size(Pos2::new(sx, sy), egui::vec2(sw, sh));
+                let halo = Color32::from_rgba_premultiplied(0, 0, 0, 210);
+                let light = Color32::from_rgba_premultiplied(255, 255, 255, 235);
                 if block.rotation.abs() > 0.001 {
                     let center = r.center();
                     let corners = [
@@ -395,10 +411,12 @@ impl ToolsPanel {
                         rotate_screen_point(r.right_bottom(), center, block.rotation),
                         rotate_screen_point(r.left_bottom(), center, block.rotation),
                     ];
-                    draw_dotted_quad(painter, corners, dotted_color, 1.0, 4.0, 3.0);
+                    draw_dotted_quad(painter, corners, halo, 3.0, 4.0, 3.0);
+                    draw_dotted_quad(painter, corners, light, 1.0, 4.0, 3.0);
                 } else {
                     // Draw dotted outline
-                    draw_dotted_rect(painter, r, dotted_color, 1.0, 4.0, 3.0);
+                    draw_dotted_rect(painter, r, halo, 3.0, 4.0, 3.0);
+                    draw_dotted_rect(painter, r, light, 1.0, 4.0, 3.0);
                 }
             }
         }
@@ -571,7 +589,6 @@ impl ToolsPanel {
 
         let accent_semi = Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 180);
         let accent_fill = Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 200);
-        let accent_faint = Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 120);
 
         // Border outline (rotated if needed)
         if has_rot {
@@ -581,18 +598,24 @@ impl ToolsPanel {
                 rotate_screen_point(border_rect.right_bottom(), rot_pivot, block_rotation),
                 rotate_screen_point(border_rect.left_bottom(), rot_pivot, block_rotation),
             ];
-            let stroke = egui::Stroke::new(1.0, accent_semi);
-            painter.line_segment([c[0], c[1]], stroke);
-            painter.line_segment([c[1], c[2]], stroke);
-            painter.line_segment([c[2], c[3]], stroke);
-            painter.line_segment([c[3], c[0]], stroke);
-        } else {
-            painter.rect_stroke(
-                border_rect,
-                0.0,
+            for stroke in [
+                egui::Stroke::new(4.0, Color32::from_rgba_premultiplied(0, 0, 0, 210)),
+                egui::Stroke::new(2.0, Color32::WHITE),
                 egui::Stroke::new(1.0, accent_semi),
-                egui::StrokeKind::Middle,
-            );
+            ] {
+                painter.line_segment([c[0], c[1]], stroke);
+                painter.line_segment([c[1], c[2]], stroke);
+                painter.line_segment([c[2], c[3]], stroke);
+                painter.line_segment([c[3], c[0]], stroke);
+            }
+        } else {
+            for stroke in [
+                egui::Stroke::new(4.0, Color32::from_rgba_premultiplied(0, 0, 0, 210)),
+                egui::Stroke::new(2.0, Color32::WHITE),
+                egui::Stroke::new(1.0, accent_semi),
+            ] {
+                painter.rect_stroke(border_rect, 0.0, stroke, egui::StrokeKind::Middle);
+            }
         }
 
         // --- Resize handles, rotation handle, delete button (text layer only) ---
@@ -616,6 +639,11 @@ impl ToolsPanel {
                     c,
                     egui::vec2(handle_size * 2.0, handle_size * 2.0),
                 );
+                painter.rect_filled(
+                    hr.expand(2.0),
+                    2.0,
+                    Color32::from_rgba_premultiplied(0, 0, 0, 220),
+                );
                 painter.rect_filled(hr, 1.0, accent_fill);
                 painter.rect_stroke(hr, 1.0, handle_stroke, egui::StrokeKind::Middle);
             }
@@ -635,7 +663,19 @@ impl ToolsPanel {
             } else {
                 rot_handle_base
             };
-            painter.line_segment([rot_base, rot_center], egui::Stroke::new(1.0, accent_faint));
+            painter.line_segment(
+                [rot_base, rot_center],
+                egui::Stroke::new(3.0, Color32::from_rgba_premultiplied(0, 0, 0, 210)),
+            );
+            painter.line_segment(
+                [rot_base, rot_center],
+                egui::Stroke::new(1.0, Color32::WHITE),
+            );
+            painter.circle_filled(
+                rot_center,
+                7.5,
+                Color32::from_rgba_premultiplied(0, 0, 0, 220),
+            );
             painter.circle_filled(rot_center, 5.0, accent_fill);
             painter.circle_stroke(rot_center, 5.0, egui::Stroke::new(1.0, Color32::WHITE));
             // Small rotation icon (curved arrow hint)
@@ -687,24 +727,10 @@ impl ToolsPanel {
 
         // Move handle (cross circle ÔÇö existing)
         let handle_radius_screen = 6.0;
-        let handle_offset_canvas = 10.0 / zoom;
-        let (handle_screen_x, handle_screen_y) = {
-            use crate::ops::text::TextAlignment;
-            match self.text_state.alignment {
-                TextAlignment::Left => (
-                    canvas_rect.min.x + (origin[0] - handle_offset_canvas) * zoom,
-                    canvas_rect.min.y + (origin[1] + font_size * 0.5) * zoom,
-                ),
-                TextAlignment::Center => (
-                    canvas_rect.min.x + origin[0] * zoom,
-                    canvas_rect.min.y + (origin[1] - handle_offset_canvas) * zoom,
-                ),
-                TextAlignment::Right => (
-                    canvas_rect.min.x + (origin[0] + handle_offset_canvas) * zoom,
-                    canvas_rect.min.y + (origin[1] + font_size * 0.5) * zoom,
-                ),
-            }
-        };
+        let (handle_canvas_x, handle_canvas_y) =
+            text_move_handle_canvas_pos(origin, self.text_state.alignment, font_size, zoom);
+        let handle_screen_x = canvas_rect.min.x + handle_canvas_x * zoom;
+        let handle_screen_y = canvas_rect.min.y + handle_canvas_y * zoom;
         let handle_pos_raw = Pos2::new(handle_screen_x, handle_screen_y);
         let handle_pos = if has_rot {
             rotate_screen_point(handle_pos_raw, rot_pivot, block_rotation)
@@ -712,6 +738,11 @@ impl ToolsPanel {
             handle_pos_raw
         };
 
+        painter.circle_filled(
+            handle_pos,
+            handle_radius_screen + 2.5,
+            Color32::from_rgba_premultiplied(0, 0, 0, 220),
+        );
         painter.circle_filled(handle_pos, handle_radius_screen, accent_fill);
         painter.circle_stroke(
             handle_pos,
@@ -759,7 +790,11 @@ impl ToolsPanel {
         };
         painter.line_segment(
             [handle_pos, connector_target],
-            egui::Stroke::new(1.0, accent_faint),
+            egui::Stroke::new(3.0, Color32::from_rgba_premultiplied(0, 0, 0, 210)),
+        );
+        painter.line_segment(
+            [handle_pos, connector_target],
+            egui::Stroke::new(1.0, Color32::WHITE),
         );
 
         // Selection highlight (text layer only)
@@ -1133,4 +1168,3 @@ impl ToolsPanel {
             .request_repaint_after(std::time::Duration::from_millis(500));
     }
 }
-

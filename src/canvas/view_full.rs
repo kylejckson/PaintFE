@@ -40,6 +40,13 @@ pub struct Canvas {
     paste_layers_below_cache: Option<egui::TextureHandle>,
     /// Cached texture for overwrite-mode paste preview of the active layer.
     paste_overwrite_preview_cache: Option<egui::TextureHandle>,
+    /// Transform represented by the exact overwrite preview texture.
+    paste_overwrite_transform_cache: Option<crate::ops::clipboard::PasteOverlayTransform>,
+    /// Static active-layer texture used for the fast approximate overwrite
+    /// preview while a transform gesture is in progress.
+    paste_overwrite_base_cache: Option<egui::TextureHandle>,
+    /// Canvas generation represented by the static paste-session textures.
+    paste_static_cache_generation: u64,
     /// Cached texture for brush tip cursor overlay (reused across frames).
     brush_tip_cursor_tex: Option<egui::TextureHandle>,
     /// Second pass texture (inverted) for visibility on all backgrounds.

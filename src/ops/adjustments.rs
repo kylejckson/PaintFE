@@ -8,8 +8,8 @@
 // ============================================================================
 
 use crate::canvas::{CanvasState, TiledImage};
-use image::RgbaImage;
 use crate::par_compat::*;
+use image::RgbaImage;
 
 // ============================================================================
 // HELPER: selection-aware per-pixel transform
@@ -1480,6 +1480,9 @@ fn vibrance_pixel(r: f32, g: f32, b: f32, a: f32, v: f32) -> (f32, f32, f32, f32
 
 /// Feathers (blurs) the selection mask by `radius` pixels using a box blur approximation.
 pub fn feather_selection(state: &mut CanvasState, radius: f32) {
+    if state.selection_all {
+        return;
+    }
     let mask = match state.selection_mask.take() {
         Some(m) => m,
         None => return,
@@ -1529,6 +1532,9 @@ pub fn feather_selection(state: &mut CanvasState, radius: f32) {
 
 /// Expands (dilates) the selection mask by `radius` pixels.
 pub fn expand_selection(state: &mut CanvasState, radius: i32) {
+    if state.selection_all {
+        return;
+    }
     let mask = match state.selection_mask.take() {
         Some(m) => m,
         None => return,
@@ -1573,6 +1579,9 @@ pub fn expand_selection(state: &mut CanvasState, radius: i32) {
 
 /// Contracts (erodes) the selection mask by `radius` pixels.
 pub fn contract_selection(state: &mut CanvasState, radius: i32) {
+    if state.selection_all {
+        return;
+    }
     let mask = match state.selection_mask.take() {
         Some(m) => m,
         None => return,

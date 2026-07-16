@@ -46,8 +46,7 @@ impl Canvas {
 
         let (region_image, [rx, ry]) = state.composite_partial(rect);
         let [rw, rh] = region_image.size;
-        if rw == 0 || rh == 0 || rx + rw > state.width as usize || ry + rh > state.height as usize
-        {
+        if rw == 0 || rh == 0 || rx + rw > state.width as usize || ry + rh > state.height as usize {
             return;
         }
 
@@ -112,6 +111,9 @@ impl Canvas {
             paste_layers_above_cache: None,
             paste_layers_below_cache: None,
             paste_overwrite_preview_cache: None,
+            paste_overwrite_transform_cache: None,
+            paste_overwrite_base_cache: None,
+            paste_static_cache_generation: u64::MAX,
             brush_tip_cursor_tex: None,
             brush_tip_cursor_tex_inv: None,
             brush_tip_cursor_key: (String::new(), 0, 0),
@@ -313,14 +315,10 @@ impl Canvas {
             Self::flush_committed_preview_region(ui, state, texture_options);
             let pixels_dirty = state.dirty_rect.is_some() || state.composite_cache.is_none();
             let defer_live_resize_composite = live_window_resize && state.composite_cache.is_some();
-            let has_visible_adjustment = state
-                .layers
-                .iter()
-                .enumerate()
-                .any(|(idx, l)| {
-                    state.layer_effectively_visible(idx)
-                        && matches!(l.content, LayerContent::Adjustment(_))
-                });
+            let has_visible_adjustment = state.layers.iter().enumerate().any(|(idx, l)| {
+                state.layer_effectively_visible(idx)
+                    && matches!(l.content, LayerContent::Adjustment(_))
+            });
 
             // Plan A: filter_changed (zoom crosses 2.0├ù threshold) doesn't
             // require GPU recomposite ÔÇö the pixels haven't changed, only the
@@ -800,6 +798,9 @@ impl Canvas {
             self.paste_layers_above_cache = None;
             self.paste_layers_below_cache = None;
             self.paste_overwrite_preview_cache = None;
+            self.paste_overwrite_transform_cache = None;
+            self.paste_overwrite_base_cache = None;
+            self.paste_static_cache_generation = u64::MAX;
             self.gpu_renderer.clear_layers();
             return;
         }
@@ -1266,7 +1267,7 @@ impl Canvas {
         let anim_time = ui.input(|i| i.time);
 
         // Keep repainting so marching ants stay animated even when mouse is idle.
-        let has_selection_mask = state.selection_mask.is_some();
+        let has_selection_mask = state.has_selection();
         let has_selection_drag = tools.as_ref().is_some_and(|t| t.selection_state.dragging);
         let selection_needs_animation = has_selection_mask
             && (state.selection_overlay_built_generation != state.selection_overlay_generation
@@ -1278,7 +1279,11 @@ impl Canvas {
         // 1. Draw the committed selection mask (if any).
         //    Temporarily take the mask to avoid borrow conflict with `&mut state`
         //    (needed for the overlay texture cache).  Put it back afterwards.
-        if let Some(mask) = state.selection_mask.take() {
+        if let Some(bounds) = state.selection_transform_preview_bounds {
+            self.draw_selection_transform_preview(&painter, image_rect, bounds);
+        } else if state.selection_all {
+            self.draw_full_selection_overlay(&painter, image_rect, state);
+        } else if let Some(mask) = state.selection_mask.take() {
             // Switch to "tool-active" visual mode when a drawing tool is
             // selected (not a selection tool).  This hides the hatch fill so
             // the user can see what they're painting.
@@ -1306,8 +1311,9 @@ impl Canvas {
         if tools
             .as_ref()
             .is_some_and(|t| t.active_tool == crate::components::tools::Tool::MoveSelection)
-            && let Some(mask) = state.selection_mask.as_ref()
-            && let Some((x0, y0, x1, y1)) = selection_mask_bounds(mask)
+            && let Some((x0, y0, x1, y1)) = state
+                .selection_transform_preview_bounds
+                .or_else(|| state.selection_mask_bounds())
         {
             let min = Pos2::new(
                 (image_rect.min.x + x0 as f32 * self.zoom).round(),
@@ -1406,85 +1412,113 @@ impl Canvas {
         // ====================================================================
         let mut paste_consumed_input = false;
         let mut paste_context_result: Option<PasteAction> = None;
+        let mut paste_cursor: Option<egui::CursorIcon> = None;
         if let Some(ref mut overlay) = paste_overlay {
+            if self.paste_static_cache_generation != state.dirty_generation {
+                self.paste_layers_above_cache = None;
+                self.paste_layers_below_cache = None;
+                self.paste_overwrite_preview_cache = None;
+                self.paste_overwrite_transform_cache = None;
+                self.paste_overwrite_base_cache = None;
+                self.paste_static_cache_generation = state.dirty_generation;
+            }
             let is_dark = ui.visuals().dark_mode;
             let accent = self.selection_stroke; // theme accent colour
             let clipped_painter = painter.with_clip_rect(image_rect);
             if overlay.overwrite_transparent_pixels {
-                if let Some(below_image) = state.composite_layers_below_active() {
-                    let tex = if let Some(ref mut existing) = self.paste_layers_below_cache {
-                        existing.set(
-                            below_image,
-                            TextureOptions {
-                                magnification: TextureFilter::Nearest,
-                                minification: TextureFilter::Nearest,
-                                ..Default::default()
-                            },
-                        );
-                        existing.id()
-                    } else {
-                        let handle = ui.ctx().load_texture(
-                            "paste_layers_below",
-                            below_image,
-                            TextureOptions {
-                                magnification: TextureFilter::Nearest,
-                                minification: TextureFilter::Nearest,
-                                ..Default::default()
-                            },
-                        );
-                        let id = handle.id();
-                        self.paste_layers_below_cache = Some(handle);
-                        id
-                    };
+                if self.paste_layers_below_cache.is_none()
+                    && let Some(below_image) = state.composite_layers_below_active()
+                {
+                    let handle = ui.ctx().load_texture(
+                        "paste_layers_below",
+                        below_image,
+                        TextureOptions {
+                            magnification: TextureFilter::Nearest,
+                            minification: TextureFilter::Nearest,
+                            ..Default::default()
+                        },
+                    );
+                    self.paste_layers_below_cache = Some(handle);
+                }
+                if let Some(tex) = self.paste_layers_below_cache.as_ref() {
                     let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-                    clipped_painter.image(tex, image_rect, uv, Color32::WHITE);
-                } else {
-                    self.paste_layers_below_cache = None;
+                    clipped_painter.image(tex.id(), image_rect, uv, Color32::WHITE);
                 }
 
-                if let Some(active_layer) = state.layers.get(state.active_layer_index) {
-                    let base = active_layer.pixels.to_rgba_image();
-                    let preview = overlay.render_replacement_preview(&base);
-                    let color_image = egui::ColorImage::from_rgba_unmultiplied(
-                        [state.width as usize, state.height as usize],
-                        preview.as_raw(),
-                    );
-                    let tex = if let Some(ref mut existing) = self.paste_overwrite_preview_cache {
-                        existing.set(
+                let overwrite_interacting = overlay.active_handle.is_some();
+                if overwrite_interacting {
+                    // Transparent-overwrite semantics require replacement rather
+                    // than ordinary alpha blending. During a gesture, show a fast
+                    // GPU approximation over a cached active layer; the exact
+                    // replacement preview is rebuilt once interaction stops.
+                    if self.paste_overwrite_base_cache.is_none()
+                        && let Some(active_layer) = state.layers.get(state.active_layer_index)
+                    {
+                        let base = active_layer.pixels.to_rgba_image();
+                        let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                            [state.width as usize, state.height as usize],
+                            base.as_raw(),
+                        );
+                        self.paste_overwrite_base_cache = Some(ui.ctx().load_texture(
+                            "paste_overwrite_base",
                             color_image,
                             TextureOptions {
                                 magnification: TextureFilter::Nearest,
                                 minification: TextureFilter::Nearest,
                                 ..Default::default()
                             },
+                        ));
+                    }
+                    if let Some(tex) = self.paste_overwrite_base_cache.as_ref() {
+                        let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                        clipped_painter.image(tex.id(), image_rect, uv, Color32::WHITE);
+                    }
+                    overlay.ensure_gpu_texture(ui.ctx());
+                    overlay.draw_gpu(&clipped_painter, image_rect, self.zoom);
+                } else if let Some(active_layer) = state.layers.get(state.active_layer_index) {
+                    let transform = overlay.transform();
+                    if self.paste_overwrite_transform_cache != Some(transform)
+                        || self.paste_overwrite_preview_cache.is_none()
+                    {
+                        let base = active_layer.pixels.to_rgba_image();
+                        let preview = overlay.render_replacement_preview(&base);
+                        let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                            [state.width as usize, state.height as usize],
+                            preview.as_raw(),
                         );
-                        existing.id()
-                    } else {
-                        let handle = ui.ctx().load_texture(
-                            "paste_overwrite_preview",
-                            color_image,
-                            TextureOptions {
-                                magnification: TextureFilter::Nearest,
-                                minification: TextureFilter::Nearest,
-                                ..Default::default()
-                            },
-                        );
-                        let id = handle.id();
-                        self.paste_overwrite_preview_cache = Some(handle);
-                        id
-                    };
+                        if let Some(ref mut existing) = self.paste_overwrite_preview_cache {
+                            existing.set(
+                                color_image,
+                                TextureOptions {
+                                    magnification: TextureFilter::Nearest,
+                                    minification: TextureFilter::Nearest,
+                                    ..Default::default()
+                                },
+                            );
+                        } else {
+                            self.paste_overwrite_preview_cache = Some(ui.ctx().load_texture(
+                                "paste_overwrite_preview",
+                                color_image,
+                                TextureOptions {
+                                    magnification: TextureFilter::Nearest,
+                                    minification: TextureFilter::Nearest,
+                                    ..Default::default()
+                                },
+                            ));
+                        }
+                        self.paste_overwrite_transform_cache = Some(transform);
+                    }
+                    let tex = self.paste_overwrite_preview_cache.as_ref().unwrap().id();
                     let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
                     clipped_painter.image(tex, image_rect, uv, Color32::WHITE);
                 }
             } else {
                 self.paste_layers_below_cache = None;
                 self.paste_overwrite_preview_cache = None;
-                // Upload/re-upload the source texture when scale changes (once).
-                // The GPU handles rotation + translation via a textured mesh.
-                // Pass interaction state so large images use a lower-res preview
-                // during drag to keep the UI responsive.
-                let is_interacting = overlay.active_handle.is_some();
-                overlay.ensure_gpu_texture(ui.ctx(), is_interacting);
+                self.paste_overwrite_transform_cache = None;
+                // Upload the source once. The GPU handles scale, rotation, and
+                // translation by moving the textured mesh vertices.
+                overlay.ensure_gpu_texture(ui.ctx());
 
                 // Draw the transformed paste image via GPU mesh, clipped to canvas bounds
                 // so pasted images larger than the canvas don't extend beyond it.
@@ -1499,33 +1533,25 @@ impl Canvas {
                 .skip(state.active_layer_index + 1)
                 .any(|l| l.visible);
             if has_layers_above {
-                if let Some(above_image) = state.composite_layers_above() {
-                    let tex = if let Some(ref mut existing) = self.paste_layers_above_cache {
-                        existing.set(
-                            above_image,
-                            TextureOptions {
-                                magnification: TextureFilter::Nearest,
-                                minification: TextureFilter::Nearest,
-                                ..Default::default()
-                            },
-                        );
-                        existing.id()
-                    } else {
-                        let handle = ui.ctx().load_texture(
-                            "paste_layers_above",
-                            above_image,
-                            TextureOptions {
-                                magnification: TextureFilter::Nearest,
-                                minification: TextureFilter::Nearest,
-                                ..Default::default()
-                            },
-                        );
-                        let id = handle.id();
-                        self.paste_layers_above_cache = Some(handle);
-                        id
-                    };
+                // Layers cannot be edited while a paste overlay owns input, so
+                // this composite is static for the overlay session.
+                if self.paste_layers_above_cache.is_none()
+                    && let Some(above_image) = state.composite_layers_above()
+                {
+                    let handle = ui.ctx().load_texture(
+                        "paste_layers_above",
+                        above_image,
+                        TextureOptions {
+                            magnification: TextureFilter::Nearest,
+                            minification: TextureFilter::Nearest,
+                            ..Default::default()
+                        },
+                    );
+                    self.paste_layers_above_cache = Some(handle);
+                }
+                if let Some(tex) = self.paste_layers_above_cache.as_ref() {
                     let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-                    clipped_painter.image(tex, image_rect, uv, Color32::WHITE);
+                    clipped_painter.image(tex.id(), image_rect, uv, Color32::WHITE);
                 }
             } else {
                 // No layers above ÔÇö drop cache
@@ -1581,7 +1607,17 @@ impl Canvas {
             }
 
             // Handle interaction (move, resize, rotate).
-            paste_consumed_input = overlay.handle_input(ui, image_rect, self.zoom);
+            let paste_input_blocked = modal_open
+                || egui::Popup::is_any_open(ui.ctx())
+                || pointer_over_blocking_ui
+                || ui_blocks_canvas_input;
+            paste_consumed_input =
+                overlay.handle_input(ui, image_rect, canvas_rect, self.zoom, paste_input_blocked);
+            if (!paste_input_blocked || overlay.active_handle.is_some())
+                && let Some(pos) = ui.input(|i| i.pointer.interact_pos())
+            {
+                paste_cursor = overlay.cursor_icon(pos, image_rect, self.zoom);
+            }
 
             // Auto-open context menu when requested (e.g. right after paste).
             if self.open_paste_menu {
@@ -1600,6 +1636,8 @@ impl Canvas {
                         .clicked()
                     {
                         overlay.interpolation = *interp;
+                        self.paste_overwrite_preview_cache = None;
+                        self.paste_overwrite_transform_cache = None;
                         ui.close();
                     }
                 }
@@ -1634,6 +1672,9 @@ impl Canvas {
             self.paste_layers_above_cache = None;
             self.paste_layers_below_cache = None;
             self.paste_overwrite_preview_cache = None;
+            self.paste_overwrite_transform_cache = None;
+            self.paste_overwrite_base_cache = None;
+            self.paste_static_cache_generation = u64::MAX;
             // Close any orphaned paste context-menu popup.
             // If commit/cancel happened while the context menu was still open,
             // the popup ID remains registered in egui memory and permanently
@@ -1791,34 +1832,6 @@ impl Canvas {
             .is_some_and(|t| t.active_tool == crate::components::tools::Tool::ColorPicker);
         // Extract active tool for cursor icon mapping
         let active_tool_for_cursor = tools.as_ref().map(|t| t.active_tool);
-        // Extract text tool handle state for cursor icon
-        let text_hovering_handle = tools.as_ref().is_some_and(|t| t.text_state.hovering_handle);
-        let text_dragging_handle = tools.as_ref().is_some_and(|t| t.text_state.dragging_handle);
-        let text_hovering_rotation = tools
-            .as_ref()
-            .is_some_and(|t| t.text_state.hovering_rotation_handle);
-        let text_hovering_resize = tools
-            .as_ref()
-            .and_then(|t| t.text_state.hovering_resize_handle);
-        let text_resizing = tools
-            .as_ref()
-            .and_then(|t| match t.text_state.text_box_drag {
-                Some(
-                    dt @ (crate::components::tools::TextBoxDragType::ResizeLeft
-                    | crate::components::tools::TextBoxDragType::ResizeRight
-                    | crate::components::tools::TextBoxDragType::ResizeTopLeft
-                    | crate::components::tools::TextBoxDragType::ResizeTopRight
-                    | crate::components::tools::TextBoxDragType::ResizeBottomLeft
-                    | crate::components::tools::TextBoxDragType::ResizeBottomRight),
-                ) => Some(dt),
-                _ => None,
-            });
-        let text_rotating = tools.as_ref().is_some_and(|t| {
-            matches!(
-                t.text_state.text_box_drag,
-                Some(crate::components::tools::TextBoxDragType::Rotate)
-            )
-        });
         // Extract line tool pan-handle state for cursor icon
         let line_pan_hovering = tools.as_ref().is_some_and(|t| {
             t.active_tool == crate::components::tools::Tool::Line
@@ -2123,6 +2136,7 @@ impl Canvas {
                     &raw_motion_events,
                     &painter,
                     image_rect,
+                    canvas_rect,
                     self.zoom,
                     primary_color_f32,
                     secondary_color_f32,
@@ -2229,8 +2243,39 @@ impl Canvas {
             // ====================================================================
             // TOOL-SPECIFIC CURSOR ICON
             // ====================================================================
+            // Re-read text interaction state after handle_input so cursor
+            // feedback reflects this frame's hit-test instead of the prior one.
+            let text_hovering_handle = tools.text_state.hovering_handle;
+            let text_dragging_handle = tools.text_state.dragging_handle;
+            let text_hovering_rotation = tools.text_state.hovering_rotation_handle;
+            let text_hovering_resize = tools.text_state.hovering_resize_handle;
+            let text_resizing = match tools.text_state.text_box_drag {
+                Some(
+                    dt @ (crate::components::tools::TextBoxDragType::ResizeLeft
+                    | crate::components::tools::TextBoxDragType::ResizeRight
+                    | crate::components::tools::TextBoxDragType::ResizeTopLeft
+                    | crate::components::tools::TextBoxDragType::ResizeTopRight
+                    | crate::components::tools::TextBoxDragType::ResizeBottomLeft
+                    | crate::components::tools::TextBoxDragType::ResizeBottomRight),
+                ) => Some(dt),
+                _ => None,
+            };
+            let text_rotating = matches!(
+                tools.text_state.text_box_drag,
+                Some(crate::components::tools::TextBoxDragType::Rotate)
+            );
             let pointer_over_image_for_cursor =
                 mouse_pos.is_some_and(|pos| image_rect.contains(pos));
+            let shape_handle_cursor_outside = if tools.active_tool
+                == crate::components::tools::Tool::Shapes
+                && let (Some(pos), Some(placed)) = (mouse_pos, tools.shapes_state.placed.as_ref())
+                && canvas_rect.contains(pos)
+            {
+                let canvas_pos = self.screen_to_canvas_unclamped(pos, canvas_rect, state);
+                shape_handle_at_canvas(placed, canvas_pos, self.zoom).is_some()
+            } else {
+                false
+            };
             let cursor_visual_allowed = pointer_over_image_for_cursor
                 && !modal_open
                 && !egui::Popup::is_any_open(ui.ctx())
@@ -2244,8 +2289,10 @@ impl Canvas {
                 let text_handle_cursor = text_hovering_rotation
                     || text_rotating
                     || text_hovering_resize.is_some()
-                    || text_resizing.is_some();
-                if (cursor_visual_allowed || text_handle_cursor)
+                    || text_resizing.is_some()
+                    || text_hovering_handle
+                    || text_dragging_handle;
+                if (cursor_visual_allowed || text_handle_cursor || shape_handle_cursor_outside)
                     && !modal_open
                     && !egui::Popup::is_any_open(ui.ctx())
                     && ((!pointer_over_egui_with_touch && !pointer_over_blocking_ui)
@@ -2285,16 +2332,12 @@ impl Canvas {
                             } else if let (Some(pos), Some(placed)) =
                                 (mouse_pos, tools.shapes_state.placed.as_ref())
                             {
-                                if let Some((cx, cy)) =
-                                    self.screen_to_canvas_f32(pos, canvas_rect, state)
-                                {
-                                    shape_handle_cursor(
-                                        shape_handle_at_canvas(placed, (cx, cy), self.zoom),
-                                    )
-                                    .unwrap_or(egui::CursorIcon::Crosshair)
-                                } else {
-                                    egui::CursorIcon::Crosshair
-                                }
+                                let canvas_pos =
+                                    self.screen_to_canvas_unclamped(pos, canvas_rect, state);
+                                shape_handle_cursor(shape_handle_at_canvas(
+                                    placed, canvas_pos, self.zoom,
+                                ))
+                                .unwrap_or(egui::CursorIcon::Crosshair)
                             } else {
                                 egui::CursorIcon::Crosshair
                             }
@@ -2326,7 +2369,9 @@ impl Canvas {
                                 {
                                     selection_mask_bounds(mask)
                                         .and_then(|bounds| {
-                                            selection_handle_cursor(pos, image_rect, self.zoom, bounds)
+                                            selection_handle_cursor(
+                                                pos, image_rect, self.zoom, bounds,
+                                            )
                                         })
                                         .unwrap_or(egui::CursorIcon::Move)
                                 } else {
@@ -2373,6 +2418,11 @@ impl Canvas {
                     || !pointer_over_image_for_cursor
                 {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+                }
+                // Paste transforms own the pointer independently of the active
+                // tool, so their current-frame handle cursor has final priority.
+                if let Some(cursor) = paste_cursor {
+                    ui.ctx().set_cursor_icon(cursor);
                 }
             }
 

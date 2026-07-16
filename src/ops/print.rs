@@ -32,7 +32,9 @@ pub fn print_image(composite: &RgbaImage) -> Result<(), String> {
         .open_with_url_and_target("about:blank", "_blank")
         .map_err(|_| "Failed to open print window".to_string())?
         .ok_or("Browser blocked the print window (pop-up blocker?)".to_string())?;
-    let document = print_window.document().ok_or("print window has no document")?;
+    let document = print_window
+        .document()
+        .ok_or("print window has no document")?;
     document.set_title("PaintFE — Print");
     let body = document.body().ok_or("print window has no body")?;
     let html = format!(

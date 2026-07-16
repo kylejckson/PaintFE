@@ -5,12 +5,11 @@
 use crate::canvas::{CanvasState, TiledImage};
 use crate::log_info;
 use crate::ops::transform::Interpolation;
+use crate::par_compat::*;
 use eframe::egui;
 use egui::{Color32, Pos2, Rect, Stroke, Vec2};
 use image::{GrayImage, Luma, Rgba, RgbaImage, imageops};
-use crate::par_compat::*;
-use std::sync::Mutex;
-use crate::time_compat::Instant;
+use std::sync::{Arc, Mutex};
 
 #[cfg(target_os = "linux")]
 use image::ImageFormat;
@@ -34,12 +33,12 @@ pub enum ClipboardImageSource {
 
 #[derive(Clone)]
 struct ClipboardPayload {
-    image: RgbaImage,
+    image: Arc<RgbaImage>,
     source: ClipboardImageSource,
     origin_center: Option<Pos2>,
     overwrite_transparent_pixels: bool,
     overwrite_mask: Option<GrayImage>,
-    copied_at: Instant,
+    system_sequence: Option<u32>,
 }
 
 pub struct ClipboardImageForPaste {
@@ -58,12 +57,12 @@ fn set_clipboard_image(
     overwrite_mask: Option<GrayImage>,
 ) {
     *APP_CLIPBOARD.lock().unwrap_or_else(|e| e.into_inner()) = Some(ClipboardPayload {
-        image: img,
+        image: Arc::new(img),
         source: ClipboardImageSource::Internal,
         origin_center,
         overwrite_transparent_pixels,
         overwrite_mask,
-        copied_at: Instant::now(),
+        system_sequence: clipboard_sequence(),
     });
 }
 
@@ -74,12 +73,40 @@ fn copy_image_to_clipboard(
     overwrite_mask: Option<GrayImage>,
 ) {
     set_clipboard_image(
-        img.clone(),
+        img,
         origin_center,
         overwrite_transparent_pixels,
         overwrite_mask,
     );
-    copy_to_system_clipboard(&img);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let image = APP_CLIPBOARD
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(|payload| Arc::clone(&payload.image));
+        if let Some(image) = image {
+            std::thread::spawn(move || {
+                copy_to_system_clipboard(&image);
+                let sequence = clipboard_sequence();
+                let mut clipboard = APP_CLIPBOARD.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(payload) = clipboard.as_mut()
+                    && Arc::ptr_eq(&payload.image, &image)
+                {
+                    payload.system_sequence = sequence;
+                }
+            });
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    if let Some(image) = APP_CLIPBOARD
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .map(|payload| Arc::clone(&payload.image))
+    {
+        copy_to_system_clipboard(&image);
+    }
 }
 
 /// Retrieve a clone from the app clipboard.
@@ -88,7 +115,7 @@ fn get_clipboard_image() -> Option<RgbaImage> {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .as_ref()
-        .map(|p| p.image.clone())
+        .map(|p| (*p.image).clone())
 }
 
 fn get_clipboard_payload() -> Option<ClipboardPayload> {
@@ -112,6 +139,19 @@ fn images_match(a: &RgbaImage, b: &RgbaImage) -> bool {
 pub fn get_clipboard_image_for_paste() -> Option<ClipboardImageForPaste> {
     let internal = get_clipboard_payload();
 
+    if let Some(payload) = internal.as_ref()
+        && payload.system_sequence.is_some()
+        && payload.system_sequence == clipboard_sequence()
+    {
+        return Some(ClipboardImageForPaste {
+            image: (*payload.image).clone(),
+            source: payload.source,
+            origin_center: payload.origin_center,
+            overwrite_transparent_pixels: payload.overwrite_transparent_pixels,
+            overwrite_mask: payload.overwrite_mask.clone(),
+        });
+    }
+
     let system = get_from_system_clipboard();
 
     if let Some(system_img) = system {
@@ -119,7 +159,7 @@ pub fn get_clipboard_image_for_paste() -> Option<ClipboardImageForPaste> {
             && images_match(&system_img, &internal_payload.image)
         {
             return Some(ClipboardImageForPaste {
-                image: internal_payload.image.clone(),
+                image: (*internal_payload.image).clone(),
                 source: internal_payload.source,
                 origin_center: internal_payload.origin_center,
                 overwrite_transparent_pixels: internal_payload.overwrite_transparent_pixels,
@@ -136,12 +176,22 @@ pub fn get_clipboard_image_for_paste() -> Option<ClipboardImageForPaste> {
     }
 
     internal.map(|payload| ClipboardImageForPaste {
-        image: payload.image,
+        image: (*payload.image).clone(),
         source: payload.source,
         origin_center: payload.origin_center,
         overwrite_transparent_pixels: payload.overwrite_transparent_pixels,
         overwrite_mask: payload.overwrite_mask,
     })
+}
+
+#[cfg(target_os = "windows")]
+fn clipboard_sequence() -> Option<u32> {
+    Some(unsafe { winapi::um::winuser::GetClipboardSequenceNumber() })
+}
+
+#[cfg(not(target_os = "windows"))]
+fn clipboard_sequence() -> Option<u32> {
+    None
 }
 
 pub fn has_clipboard_image() -> bool {
@@ -256,6 +306,7 @@ pub fn copy_to_system_clipboard(img: &RgbaImage) {
 ///   1. Raw image data (e.g. Print Screen, copied from another image editor).
 ///   2. Text on clipboard that happens to be a valid image file path.
 ///   3. A file copied in Explorer (CF_HDROP file list) — Windows-specific.
+///
 /// Returns the most recent image captured by the browser's native `paste`
 /// event (installed once at startup, see `web_clipboard::install_paste_listener`).
 /// Reading the OS clipboard directly (`navigator.clipboard.read()`) requires
@@ -564,16 +615,30 @@ pub fn copy_selection(state: &CanvasState, transparent_cutout: bool) -> bool {
         "Clipboard: copy selection (transparent_cutout={})",
         transparent_cutout
     );
-    let mask = match &state.selection_mask {
-        Some(m) => m,
-        None => return false,
-    };
     let idx = state.active_layer_index;
     if idx >= state.layers.len() {
         return false;
     }
 
     let layer = &state.layers[idx];
+    if state.selection_all {
+        let clip = layer.pixels.to_rgba_image();
+        copy_image_to_clipboard(
+            clip,
+            Some(Pos2::new(
+                state.width as f32 * 0.5,
+                state.height as f32 * 0.5,
+            )),
+            transparent_cutout,
+            None,
+        );
+        return true;
+    }
+
+    let mask = match &state.selection_mask {
+        Some(m) => m,
+        None => return false,
+    };
     let (mw, mh) = (mask.width(), mask.height());
     let mask_raw = mask.as_raw();
 
@@ -795,13 +860,8 @@ pub struct PasteOverlay {
 
     // --- GPU texture cache ---
     /// Cached GPU texture of the source image for GPU-accelerated rendering.
-    /// Re-uploaded only when the source or scale changes.
+    /// Uploaded once; scale, rotation, and translation are mesh transforms.
     pub gpu_texture: Option<egui::TextureHandle>,
-    /// Scale at which the GPU texture was last uploaded.
-    gpu_texture_scale: Option<(f32, f32)>,
-    /// Whether the current GPU texture is at reduced (preview) resolution.
-    /// When true, a full-res re-upload is needed after interaction ends.
-    gpu_texture_is_preview: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -853,8 +913,6 @@ impl PasteOverlay {
             cached_scaled: None,
             cached_preview: None,
             gpu_texture: None,
-            gpu_texture_scale: None,
-            gpu_texture_is_preview: false,
             source,
         }
     }
@@ -932,7 +990,6 @@ impl PasteOverlay {
     fn invalidate_cache(&mut self) {
         self.cached_scaled = None;
         self.cached_preview = None;
-        self.gpu_texture_scale = None;
     }
 
     /// Start a paste from the app clipboard. Returns None if clipboard is empty.
@@ -1272,62 +1329,18 @@ impl PasteOverlay {
     //  GPU-accelerated rendering
     // -----------------------------------------------------------------------
 
-    /// Ensure the GPU texture for the source image is uploaded & up-to-date.
-    /// Re-uploads when the scale changes (re-scales on CPU once, then the GPU
-    /// handles rotation + translation for free).
-    ///
-    /// When `interacting` is true and the image is large, a lower-resolution
-    /// preview texture is uploaded to keep the UI responsive.  When interaction
-    /// stops the texture is re-uploaded at full resolution.
-    pub fn ensure_gpu_texture(&mut self, ctx: &egui::Context, interacting: bool) {
-        let need_upload = match &self.gpu_texture_scale {
-            Some((sx, sy)) => {
-                (sx - self.scale_x).abs() > 0.0001 || (sy - self.scale_y).abs() > 0.0001
-            }
-            None => true,
-        };
-
-        // If we have a preview-quality texture and interaction ended, force re-upload.
-        let need_fullres = !interacting && self.gpu_texture_is_preview;
-
-        if !need_upload && !need_fullres && self.gpu_texture.is_some() {
+    /// Ensure the source image is uploaded once. Interactive transforms only
+    /// move the textured quad, so resize/rotate never trigger CPU resampling or
+    /// a texture upload.
+    pub fn ensure_gpu_texture(&mut self, ctx: &egui::Context) {
+        if self.gpu_texture.is_some() {
             return;
         }
 
-        // Scale on CPU (only when scale changes, not every frame).
-        let src_w = self.source.width() as f32;
-        let src_h = self.source.height() as f32;
-        let scaled_w = (src_w * self.scale_x).round().max(1.0) as u32;
-        let scaled_h = (src_h * self.scale_y).round().max(1.0) as u32;
-
-        // During interaction, if the scaled image is large, downscale for
-        // the preview texture to keep things smooth.  The quad's UV mapping
-        // stretches the low-res texture to the correct screen size.
-        let max_preview_dim: u32 = 1280;
-        let (upload_w, upload_h, is_preview) =
-            if interacting && (scaled_w > max_preview_dim || scaled_h > max_preview_dim) {
-                let ratio = (max_preview_dim as f32 / scaled_w as f32)
-                    .min(max_preview_dim as f32 / scaled_h as f32);
-                let pw = (scaled_w as f32 * ratio).round().max(1.0) as u32;
-                let ph = (scaled_h as f32 * ratio).round().max(1.0) as u32;
-                (pw, ph, true)
-            } else {
-                (scaled_w, scaled_h, false)
-            };
-
-        let scaled = if upload_w == self.source.width() && upload_h == self.source.height() {
-            self.source.clone()
-        } else {
-            imageops::resize(
-                &self.source,
-                upload_w,
-                upload_h,
-                imageops::FilterType::Nearest,
-            )
-        };
-
         // Convert to egui ColorImage.
-        let raw = scaled.as_raw();
+        let upload_w = self.source.width();
+        let upload_h = self.source.height();
+        let raw = self.source.as_raw();
         let pixels: Vec<egui::Color32> = raw
             .par_chunks_exact(4)
             .map(|px| egui::Color32::from_rgba_unmultiplied(px[0], px[1], px[2], px[3]))
@@ -1358,8 +1371,6 @@ impl PasteOverlay {
             let tex = ctx.load_texture("paste_overlay_gpu", image_data, tex_options);
             self.gpu_texture = Some(tex);
         }
-        self.gpu_texture_scale = Some((self.scale_x, self.scale_y));
-        self.gpu_texture_is_preview = is_preview;
     }
 
     /// Draw the paste overlay image using GPU-accelerated textured mesh.
@@ -1649,6 +1660,30 @@ impl PasteOverlay {
         None
     }
 
+    /// Cursor for the currently active or hovered transform handle.
+    pub fn cursor_icon(
+        &self,
+        screen_pos: Pos2,
+        image_rect: Rect,
+        zoom: f32,
+    ) -> Option<egui::CursorIcon> {
+        let handle = self
+            .active_handle
+            .or_else(|| self.hit_test(screen_pos, image_rect, zoom))?;
+        use egui::CursorIcon;
+        Some(match handle {
+            HandleKind::Move | HandleKind::Anchor if self.active_handle.is_some() => {
+                CursorIcon::Grabbing
+            }
+            HandleKind::Move | HandleKind::Anchor => CursorIcon::Grab,
+            HandleKind::Top | HandleKind::Bottom => CursorIcon::ResizeVertical,
+            HandleKind::Left | HandleKind::Right => CursorIcon::ResizeHorizontal,
+            HandleKind::TopLeft | HandleKind::BottomRight => CursorIcon::ResizeNwSe,
+            HandleKind::TopRight | HandleKind::BottomLeft => CursorIcon::ResizeNeSw,
+            HandleKind::Rotate => CursorIcon::Alias,
+        })
+    }
+
     /// Test if a screen point is inside the rotated bounding rectangle.
     fn point_in_rotated_rect(&self, screen_pos: Pos2, image_rect: Rect, zoom: f32) -> bool {
         // Un-rotate the point around the center, then test axis-aligned rect.
@@ -1671,7 +1706,14 @@ impl PasteOverlay {
     // -----------------------------------------------------------------------
 
     /// Process mouse interaction. Returns true if the overlay consumed the event.
-    pub fn handle_input(&mut self, ui: &egui::Ui, image_rect: Rect, zoom: f32) -> bool {
+    pub fn handle_input(
+        &mut self,
+        ui: &egui::Ui,
+        image_rect: Rect,
+        workspace_rect: Rect,
+        zoom: f32,
+        input_blocked: bool,
+    ) -> bool {
         let mouse_pos = match ui.input(|i| {
             i.pointer.interact_pos().or_else(|| {
                 i.events.iter().rev().find_map(|e| match e {
@@ -1694,6 +1736,12 @@ impl PasteOverlay {
         let primary_pressed = ui.input(|i| i.pointer.primary_pressed());
         let primary_released = ui.input(|i| i.pointer.any_released());
         self.shift_held = ui.input(|i| i.modifiers.shift);
+
+        // New grabs are allowed anywhere in the unobstructed workspace, even
+        // outside the document. An active grab keeps pointer capture to release.
+        if self.active_handle.is_none() && (input_blocked || !workspace_rect.contains(mouse_pos)) {
+            return false;
+        }
 
         // Start drag.
         if primary_pressed && let Some(handle) = self.hit_test(mouse_pos, image_rect, zoom) {
@@ -2366,8 +2414,7 @@ mod web_clipboard {
                 }
             });
 
-            document
-                .add_event_listener_with_callback("paste", closure.as_ref().unchecked_ref())?;
+            document.add_event_listener_with_callback("paste", closure.as_ref().unchecked_ref())?;
             // Leak intentionally: one global listener for the app's lifetime.
             closure.forget();
             Ok(())

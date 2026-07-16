@@ -27,9 +27,9 @@ pub mod logger;
 pub mod ops;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod paintdotnet_plugins;
+pub mod par_compat;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod pdn;
-pub mod par_compat;
 pub mod project;
 pub mod render;
 pub mod services;
@@ -38,10 +38,10 @@ pub mod signal_widgets;
 pub mod theme;
 pub mod time_compat;
 pub mod ui;
-pub mod windows_key_probe;
 #[cfg(target_arch = "wasm32")]
 pub mod web_bridge;
 #[cfg(target_arch = "wasm32")]
 pub mod web_fs;
 #[cfg(target_arch = "wasm32")]
 pub mod web_storage;
+pub mod windows_key_probe;

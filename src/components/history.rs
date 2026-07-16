@@ -795,6 +795,7 @@ pub struct CanvasSnapshot {
     pub next_layer_folder_id: u64,
     pub active_layer_index: usize,
     pub selection_mask: Option<image::GrayImage>,
+    pub selection_all: bool,
 }
 
 #[derive(Clone)]
@@ -822,6 +823,7 @@ impl CanvasSnapshot {
             height: state.height,
             active_layer_index: state.active_layer_index,
             selection_mask: state.selection_mask.clone(),
+            selection_all: state.selection_all,
             layer_folders: state.layer_folders.clone(),
             next_layer_folder_id: state.next_layer_folder_id,
             layers: state
@@ -877,6 +879,7 @@ impl CanvasSnapshot {
             state.layers.push(layer);
         }
         state.selection_mask = self.selection_mask.clone();
+        state.selection_all = self.selection_all;
         state.composite_cache = None;
         state.clear_preview_state();
         state.invalidate_selection_overlay();
@@ -1248,6 +1251,8 @@ pub struct SelectionCommand {
     description: String,
     before: Option<Arc<image::GrayImage>>,
     after: Option<Arc<image::GrayImage>>,
+    before_all: bool,
+    after_all: bool,
 }
 
 impl SelectionCommand {
@@ -1256,25 +1261,45 @@ impl SelectionCommand {
         before: Option<image::GrayImage>,
         after: Option<image::GrayImage>,
     ) -> Self {
+        Self::new_states(description, before, false, after, false)
+    }
+
+    pub fn new_states(
+        description: impl Into<String>,
+        before: Option<image::GrayImage>,
+        before_all: bool,
+        after: Option<image::GrayImage>,
+        after_all: bool,
+    ) -> Self {
         Self {
             description: description.into(),
             before: before.map(Arc::new),
             after: after.map(Arc::new),
+            before_all,
+            after_all,
         }
+    }
+
+    pub fn new_all(
+        description: impl Into<String>,
+        before: Option<image::GrayImage>,
+        before_all: bool,
+    ) -> Self {
+        Self::new_states(description, before, before_all, None, true)
     }
 }
 
 impl Command for SelectionCommand {
     fn undo(&self, canvas: &mut CanvasState) {
         canvas.selection_mask = self.before.as_ref().map(|a| (**a).clone());
+        canvas.selection_all = self.before_all;
         canvas.invalidate_selection_overlay();
-        canvas.mark_dirty(None);
     }
 
     fn redo(&self, canvas: &mut CanvasState) {
         canvas.selection_mask = self.after.as_ref().map(|a| (**a).clone());
+        canvas.selection_all = self.after_all;
         canvas.invalidate_selection_overlay();
-        canvas.mark_dirty(None);
     }
 
     fn description(&self) -> String {
@@ -1288,6 +1313,85 @@ impl Command for SelectionCommand {
                 .unwrap_or(0)
         }
         mask_size(&self.before) + mask_size(&self.after)
+    }
+}
+
+// ============================================================================
+// CUT SELECTION COMMAND - one layer plus semantic selection state
+// ============================================================================
+
+pub struct CutSelectionCommand {
+    layer_index: usize,
+    before_pixels: TiledImage,
+    after_pixels: Option<TiledImage>,
+    before_content: LayerContent,
+    after_content: Option<LayerContent>,
+    before_selection: Option<image::GrayImage>,
+    before_selection_all: bool,
+}
+
+impl CutSelectionCommand {
+    pub fn new(state: &CanvasState) -> Option<Self> {
+        let layer = state.layers.get(state.active_layer_index)?;
+        Some(Self {
+            layer_index: state.active_layer_index,
+            before_pixels: layer.pixels.clone(),
+            after_pixels: None,
+            before_content: layer.content.clone(),
+            after_content: None,
+            before_selection: state.selection_mask.clone(),
+            before_selection_all: state.selection_all,
+        })
+    }
+
+    pub fn set_after(&mut self, state: &CanvasState) {
+        if let Some(layer) = state.layers.get(self.layer_index) {
+            self.after_pixels = Some(layer.pixels.clone());
+            self.after_content = Some(layer.content.clone());
+        }
+    }
+}
+
+impl Command for CutSelectionCommand {
+    fn undo(&self, canvas: &mut CanvasState) {
+        if let Some(layer) = canvas.layers.get_mut(self.layer_index) {
+            layer.pixels = self.before_pixels.clone();
+            layer.content = self.before_content.clone();
+        }
+        canvas.selection_mask = self.before_selection.clone();
+        canvas.selection_all = self.before_selection_all;
+        canvas.invalidate_selection_overlay();
+        canvas.mark_dirty(None);
+    }
+
+    fn redo(&self, canvas: &mut CanvasState) {
+        if let (Some(layer), Some(pixels)) = (
+            canvas.layers.get_mut(self.layer_index),
+            self.after_pixels.as_ref(),
+        ) {
+            layer.pixels = pixels.clone();
+            if let Some(content) = self.after_content.as_ref() {
+                layer.content = content.clone();
+            }
+        }
+        canvas.clear_selection();
+        canvas.mark_dirty(None);
+    }
+
+    fn description(&self) -> String {
+        "Cut Selection".to_owned()
+    }
+
+    fn memory_size(&self) -> usize {
+        self.before_pixels.memory_bytes()
+            + self
+                .after_pixels
+                .as_ref()
+                .map_or(0, TiledImage::memory_bytes)
+            + self
+                .before_selection
+                .as_ref()
+                .map_or(0, |mask| mask.as_raw().len())
     }
 }
 

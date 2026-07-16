@@ -15,11 +15,11 @@
 //! work normally (they are captured via a custom panic hook and mirrored to the
 //! log file).
 
+use crate::time_compat::{SystemTime, UNIX_EPOCH};
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
-use crate::time_compat::{SystemTime, UNIX_EPOCH};
 
 static LOG_FILE: OnceLock<Mutex<File>> = OnceLock::new();
 static LOG_PATH: OnceLock<PathBuf> = OnceLock::new();

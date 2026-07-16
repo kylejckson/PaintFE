@@ -6,6 +6,34 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.3.7] - 2026-07-16
+
+- Made selections, clipboard operations, pasted-image transforms, and text editing significantly smoother on large canvases.
+- Improved transform controls with off-canvas interaction, adaptive high-contrast outlines, and correct resize/grab cursors.
+- Added rebindable aspect-preserving selection resizing and Enter-to-confirm layer renaming.
+
+### Added
+- Added aspect-preserving resizing in selection edit mode. Hold Alt while resizing to preserve the selection's aspect ratio at the moment the resize begins.
+- Added a rebindable "Selection Preserve Aspect Modifier" setting, with Alt as the default and Ctrl available as an alternative.
+- Added native modifier-state handling to make held shortcuts more reliable during pointer drags.
+
+### Changed
+- Optimized Select All on large canvases by representing a full-canvas selection without allocating and processing a full-resolution selection mask.
+- Reduced stalls during large image copy, cut, and paste operations.
+- Improved pasted-image movement and resizing by caching expensive compositing work during interactive transforms.
+- Improved text-box and text-layer responsiveness on large canvases by reducing expensive per-frame rasterization and preview work.
+- Moved the text tool's drag handle farther left to separate it from the resize area.
+- Updated transform overlays to remain interactive outside the canvas unless covered by a floating panel, widget, or upper application UI.
+- Added adaptive light-and-dark transform outlines so text and image controls remain visible over bright, dark, or mixed images.
+
+### Fixed
+- Fixed missing resize and grab cursors on pasted images, text boxes, handles, and anchor controls.
+- Fixed image, shape, selection, and text handles becoming inaccessible when positioned outside the canvas.
+- Fixed selection aspect locking not reliably detecting held modifier keys.
+- Fixed Enter not confirming a layer name while renaming it.
+- Fixed strict Clippy failures affecting general and macOS CI jobs.
+- Fixed additional platform-specific Clippy warnings in WebAssembly builds.
+
 ## [1.3.6] - 2026-07-11
 
 ### Added

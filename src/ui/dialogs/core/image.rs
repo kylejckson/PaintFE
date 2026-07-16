@@ -137,7 +137,9 @@ impl ResizeImageDialog {
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
 
-                if paint_dialog_header(ui, &colors, "\u{1F4D0}", &t!("dialog.resize_image")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F4D0}", &t!("dialog.resize_image")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 // -- Preset (own grid so it doesn't misalign the dims columns) --
@@ -442,7 +444,9 @@ impl ResizeCanvasDialog {
             .show(ctx, |ui| {
                 ui.set_min_width(340.0);
 
-                if paint_dialog_header(ui, &colors, "\u{1F532}", &t!("dialog.resize_canvas")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F532}", &t!("dialog.resize_canvas")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 // -- Dimensions section --
@@ -813,7 +817,9 @@ impl GaussianBlurDialog {
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
 
-                if paint_dialog_header(ui, &colors, "\u{1F4A7}", &t!("dialog.gaussian_blur")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F4A7}", &t!("dialog.gaussian_blur")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 // -- Parameters --
@@ -1004,7 +1010,8 @@ impl AddBrushTipDialog {
         self.image_height = 0;
 
         // Check extension
-        let ext = path.extension()
+        let ext = path
+            .extension()
             .and_then(|e| e.to_str())
             .map(|e| e.to_lowercase())
             .unwrap_or_default();
@@ -1046,7 +1053,8 @@ impl AddBrushTipDialog {
                 if img.width() > 256 || img.height() > 256 {
                     self.error_message = format!(
                         "Image is {}x{} — large images may impact performance. Recommended: 128x128.",
-                        img.width(), img.height()
+                        img.width(),
+                        img.height()
                     );
                     // Still valid, just warn
                 }
@@ -1067,12 +1075,15 @@ impl AddBrushTipDialog {
         }
 
         #[cfg(target_arch = "wasm32")]
-        if let Some((name, data)) =
-            crate::web_bridge::drain_pending("brush_tip").into_iter().next()
+        if let Some((name, data)) = crate::web_bridge::drain_pending("brush_tip")
+            .into_iter()
+            .next()
         {
             self.selected_path = Some(std::path::PathBuf::from(&name));
             if self.name.is_empty()
-                && let Some(stem) = std::path::Path::new(&name).file_stem().and_then(|s| s.to_str())
+                && let Some(stem) = std::path::Path::new(&name)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
             {
                 self.name = stem.to_string();
             }
@@ -1090,7 +1101,12 @@ impl AddBrushTipDialog {
             .show(ctx, |ui| {
                 ui.set_min_width(400.0);
 
-                if super::paint_dialog_header_with_texture(ui, &colors, self.brush_icon_texture.as_ref(), "New Brush Tip") {
+                if super::paint_dialog_header_with_texture(
+                    ui,
+                    &colors,
+                    self.brush_icon_texture.as_ref(),
+                    "New Brush Tip",
+                ) {
                     self.open = false;
                     return;
                 }
@@ -1102,7 +1118,7 @@ impl AddBrushTipDialog {
                 ui.label(
                     egui::RichText::new(
                         "Recommended file size: 128\u{00D7}128 px. Black pixels are treated as \
-                         transparent; white pixels define the brush area."
+                         transparent; white pixels define the brush area.",
                     )
                     .size(12.0)
                     .color(colors.text_muted),
@@ -1113,8 +1129,11 @@ impl AddBrushTipDialog {
                 super::section_label(ui, &colors, "BRUSH NAME");
                 ui.add_space(2.0);
                 ui.horizontal(|ui| {
-                    ui.add_sized([280.0, 22.0], egui::TextEdit::singleline(&mut self.name)
-                        .hint_text("Enter brush tip name..."));
+                    ui.add_sized(
+                        [280.0, 22.0],
+                        egui::TextEdit::singleline(&mut self.name)
+                            .hint_text("Enter brush tip name..."),
+                    );
                 });
                 ui.add_space(6.0);
 
@@ -1122,14 +1141,20 @@ impl AddBrushTipDialog {
                 super::section_label(ui, &colors, "IMAGE FILE");
                 ui.add_space(2.0);
                 ui.horizontal(|ui| {
-                    let path_text = self.selected_path
+                    let path_text = self
+                        .selected_path
                         .as_ref()
                         .and_then(|p| p.file_name())
                         .and_then(|n| n.to_str())
                         .unwrap_or("No file selected");
-                    ui.add_sized([250.0, 22.0], egui::Label::new(
-                        egui::RichText::new(path_text).size(12.0).color(colors.text_muted)
-                    ));
+                    ui.add_sized(
+                        [250.0, 22.0],
+                        egui::Label::new(
+                            egui::RichText::new(path_text)
+                                .size(12.0)
+                                .color(colors.text_muted),
+                        ),
+                    );
                     #[cfg(not(target_arch = "wasm32"))]
                     if ui.button("Browse...").clicked()
                         && let Some(path) = rfd::FileDialog::new()
@@ -1201,36 +1226,39 @@ impl AddBrushTipDialog {
                                     self.image_height as f32 * scale,
                                 );
                                 let sized = egui::load::SizedTexture::from_handle(tex);
-                                let preview_rect = ui.allocate_exact_size(preview_size, egui::Sense::hover()).0;
+                                let preview_rect =
+                                    ui.allocate_exact_size(preview_size, egui::Sense::hover()).0;
                                 egui::Image::from_texture(sized)
                                     .fit_to_exact_size(preview_size)
                                     .paint_at(ui, preview_rect);
                             }
                             ui.add_space(8.0);
                             ui.vertical(|ui| {
-                                ui.label(egui::RichText::new("\u{2705} Valid").color(
-                                    egui::Color32::from_rgb(80, 200, 80)
-                                ));
+                                ui.label(
+                                    egui::RichText::new("\u{2705} Valid")
+                                        .color(egui::Color32::from_rgb(80, 200, 80)),
+                                );
                                 ui.label(format!("{}x{} px", self.image_width, self.image_height));
                                 if !self.error_message.is_empty() {
                                     ui.label(
                                         egui::RichText::new(&self.error_message)
                                             .size(11.0)
-                                            .color(egui::Color32::from_rgb(220, 180, 50))
+                                            .color(egui::Color32::from_rgb(220, 180, 50)),
                                     );
                                 }
                             });
                         });
                     } else {
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("\u{274C} Invalid").color(
-                                egui::Color32::from_rgb(220, 60, 60)
-                            ));
+                            ui.label(
+                                egui::RichText::new("\u{274C} Invalid")
+                                    .color(egui::Color32::from_rgb(220, 60, 60)),
+                            );
                             if !self.error_message.is_empty() {
                                 ui.label(
                                     egui::RichText::new(&self.error_message)
                                         .size(11.0)
-                                        .color(egui::Color32::from_rgb(220, 60, 60))
+                                        .color(egui::Color32::from_rgb(220, 60, 60)),
                                 );
                             }
                         });
@@ -1310,7 +1338,11 @@ impl AddShapeDialog {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn validate_file(&mut self, ctx: &egui::Context, path: &std::path::Path) {
-        let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()).unwrap_or_default();
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase())
+            .unwrap_or_default();
         if ext != "svg" {
             self.error_message.clear();
             self.valid = false;
@@ -1336,9 +1368,9 @@ impl AddShapeDialog {
         self.valid = false;
         self.svg_path_data = None;
         self.preview_texture = None;
-        let path_data = match crate::ops::shapes::extract_svg_path_data(text)
-            .and_then(|d| crate::ops::shapes::parse_custom_shape("Preview", "Custom", &d).map(|_| d))
-        {
+        let path_data = match crate::ops::shapes::extract_svg_path_data(text).and_then(|d| {
+            crate::ops::shapes::parse_custom_shape("Preview", "Custom", &d).map(|_| d)
+        }) {
             Ok(d) => d,
             Err(e) => {
                 self.error_message = e;
@@ -1346,11 +1378,18 @@ impl AddShapeDialog {
             }
         };
         let preview = crate::ops::shapes::parse_custom_shape("Preview", "Custom", &path_data)
-            .map(|s| crate::ops::shapes::render_custom_shape_icon(&s, 96, ctx.global_style().visuals.dark_mode))
+            .map(|s| {
+                crate::ops::shapes::render_custom_shape_icon(
+                    &s,
+                    96,
+                    ctx.global_style().visuals.dark_mode,
+                )
+            })
             .ok();
         if let Some(pixels) = preview {
             let ci = egui::ColorImage::from_rgba_unmultiplied([96, 96], &pixels);
-            self.preview_texture = Some(ctx.load_texture("shape_preview", ci, egui::TextureOptions::LINEAR));
+            self.preview_texture =
+                Some(ctx.load_texture("shape_preview", ci, egui::TextureOptions::LINEAR));
         }
         self.svg_path_data = Some(path_data);
         self.valid = true;
@@ -1362,12 +1401,15 @@ impl AddShapeDialog {
         }
 
         #[cfg(target_arch = "wasm32")]
-        if let Some((name, data)) =
-            crate::web_bridge::drain_pending("custom_shape").into_iter().next()
+        if let Some((name, data)) = crate::web_bridge::drain_pending("custom_shape")
+            .into_iter()
+            .next()
         {
             self.selected_path = Some(std::path::PathBuf::from(&name));
             if self.name.is_empty()
-                && let Some(stem) = std::path::Path::new(&name).file_stem().and_then(|s| s.to_str())
+                && let Some(stem) = std::path::Path::new(&name)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
             {
                 self.name = stem.to_string();
             }
@@ -1434,10 +1476,9 @@ impl AddShapeDialog {
                             .set_file_name("paintfe_pentagon_shape.svg")
                             .add_filter("SVG Shape", &["svg"])
                             .save_file()
+                        && let Err(e) = std::fs::write(&path, example_svg)
                     {
-                        if let Err(e) = std::fs::write(&path, example_svg) {
-                            self.error_message = format!("Cannot write example: {e}");
-                        }
+                        self.error_message = format!("Cannot write example: {e}");
                     }
                 });
                 if self.selected_path.is_some() {

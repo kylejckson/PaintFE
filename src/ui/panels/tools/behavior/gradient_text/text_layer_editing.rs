@@ -148,13 +148,44 @@ impl ToolsPanel {
                 self.text_state.width_scale,
                 self.text_state.height_scale,
             );
+            let preview_width = active_max_width.unwrap_or_else(|| {
+                metrics
+                    .line_advances
+                    .iter()
+                    .map(|line| line.iter().sum::<f32>())
+                    .fold(self.text_state.font_size * 2.0, f32::max)
+            });
+            let visual_line_count = metrics
+                .line_advances
+                .iter()
+                .map(Vec::len)
+                .sum::<usize>()
+                .max(1);
+            let preview_height = metrics.line_height * visual_line_count as f32;
             self.text_state.cached_line_advances = metrics.line_advances;
             self.text_state.cached_line_height = metrics.line_height;
             canvas_state.clear_preview_state();
             self.sync_text_layer_run_style(canvas_state);
             let idx = canvas_state.active_layer_index;
             canvas_state.force_rasterize_text_layer(idx);
-            canvas_state.mark_dirty(None);
+            // Text edits affect a block-sized region, not the entire canvas.
+            // Include generous effect/rotation padding and the previous dirty
+            // area so removed glyph pixels are also recomposited.
+            let pad = self.text_state.font_size * 3.0 + 8.0;
+            let min_x = match self.text_state.alignment {
+                crate::ops::text::TextAlignment::Left => origin[0],
+                crate::ops::text::TextAlignment::Center => origin[0] - preview_width * 0.5,
+                crate::ops::text::TextAlignment::Right => origin[0] - preview_width,
+            };
+            let current_bounds = egui::Rect::from_min_size(
+                egui::pos2(min_x - pad, origin[1] - pad),
+                egui::vec2(preview_width + pad * 2.0, preview_height + pad * 2.0),
+            );
+            let dirty = canvas_state
+                .preview_stroke_bounds
+                .map_or(current_bounds, |old| old.union(current_bounds));
+            canvas_state.preview_stroke_bounds = Some(current_bounds);
+            canvas_state.mark_dirty(Some(dirty));
             self.text_state.preview_dirty = false;
             return;
         }

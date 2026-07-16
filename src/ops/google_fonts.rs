@@ -87,10 +87,8 @@ pub fn fetch(family: &'static str, slug: &'static str, ctx: egui::Context) {
         let result = fetch_ttf_bytes(slug).await;
         match result {
             Ok(bytes) => {
-                match crate::ops::text::custom_fonts::register_from_bytes(
-                    family.to_string(),
-                    bytes,
-                ) {
+                match crate::ops::text::custom_fonts::register_from_bytes(family.to_string(), bytes)
+                {
                     Ok(()) => set_status(family, FetchStatus::Done),
                     Err(e) => set_status(family, FetchStatus::Failed(e)),
                 }
@@ -131,7 +129,9 @@ async fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
     if !resp.ok() {
         return Err(format!("HTTP {}", resp.status()));
     }
-    let buf_promise = resp.array_buffer().map_err(|_| "no response body".to_string())?;
+    let buf_promise = resp
+        .array_buffer()
+        .map_err(|_| "no response body".to_string())?;
     let buf = JsFuture::from(buf_promise)
         .await
         .map_err(|_| "failed to read response body".to_string())?;

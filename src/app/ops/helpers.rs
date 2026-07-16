@@ -165,6 +165,38 @@ impl PaintFEApp {
         }
     }
 
+    fn cut_selection_with_history(&mut self, transparent_cutout: bool) -> bool {
+        let Some(project) = self.active_project_mut() else {
+            return false;
+        };
+        let Some(mut command) =
+            crate::components::history::CutSelectionCommand::new(&project.canvas_state)
+        else {
+            return false;
+        };
+
+        let idx = project.canvas_state.active_layer_index;
+        if project
+            .canvas_state
+            .layers
+            .get(idx)
+            .is_some_and(|layer| layer.is_text_layer())
+        {
+            project.canvas_state.force_rasterize_text_layer(idx);
+            if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
+                layer.content = crate::canvas::LayerContent::Raster;
+            }
+        }
+
+        if !crate::ops::clipboard::cut_selection(&mut project.canvas_state, transparent_cutout) {
+            return false;
+        }
+        command.set_after(&project.canvas_state);
+        project.history.push(Box::new(command));
+        project.mark_dirty();
+        true
+    }
+
     /// Commit the active paste overlay.
     fn commit_paste_overlay(&mut self) {
         if let Some(overlay) = self.paste_overlay.take() {
@@ -310,19 +342,21 @@ impl PaintFEApp {
             let w = project.canvas_state.width;
             let h = project.canvas_state.height;
             let sel_before = project.canvas_state.selection_mask.clone();
-            let mask = image::GrayImage::from_pixel(w, h, image::Luma([255u8]));
+            let sel_before_all = project.canvas_state.selection_all;
 
-            if sel_before.as_ref() == Some(&mask) {
+            if sel_before_all {
                 return;
             }
 
-            project.canvas_state.selection_mask = Some(mask.clone());
+            project.canvas_state.selection_mask = None;
+            project.canvas_state.selection_all = true;
             project.canvas_state.invalidate_selection_overlay();
-            project.canvas_state.mark_dirty(None);
-            project.history.push(Box::new(SelectionCommand::new(
+            project.canvas_state.selection_overlay_bounds =
+                (w > 0 && h > 0).then_some((0, 0, w - 1, h - 1));
+            project.history.push(Box::new(SelectionCommand::new_all(
                 "Select All",
                 sel_before,
-                Some(mask),
+                sel_before_all,
             )));
         }
     }
@@ -462,6 +496,4 @@ impl PaintFEApp {
         state.layers[layer_idx].pixels = TiledImage::from_rgba_image(&result);
         state.mark_dirty(None);
     }
-
 }
-

@@ -14,6 +14,9 @@ mod imp {
     const VK_CONTROL: usize = 0x11;
     const VK_LCONTROL: usize = 0xA2;
     const VK_RCONTROL: usize = 0xA3;
+    const VK_MENU: usize = 0x12;
+    const VK_LMENU: usize = 0xA4;
+    const VK_RMENU: usize = 0xA5;
     const VK_C: usize = 0x43;
     const VK_X: usize = 0x58;
     const VK_V: usize = 0x56;
@@ -152,6 +155,31 @@ mod imp {
     pub fn is_live_resize() -> bool {
         LIVE_RESIZE_ACTIVE.load(Ordering::Relaxed)
     }
+
+    /// Poll physical Ctrl state directly. This remains reliable when a pointer
+    /// capture prevents normal modifier/key messages from reaching egui.
+    pub fn ctrl_down_realtime() -> bool {
+        use winapi::um::winuser::GetAsyncKeyState;
+        unsafe {
+            (GetAsyncKeyState(VK_CONTROL as i32) as u16 & 0x8000) != 0
+                || (GetAsyncKeyState(VK_LCONTROL as i32) as u16 & 0x8000) != 0
+                || (GetAsyncKeyState(VK_RCONTROL as i32) as u16 & 0x8000) != 0
+        }
+    }
+
+    pub fn alt_down_realtime() -> bool {
+        use winapi::um::winuser::GetAsyncKeyState;
+        unsafe {
+            (GetAsyncKeyState(VK_MENU as i32) as u16 & 0x8000) != 0
+                || (GetAsyncKeyState(VK_LMENU as i32) as u16 & 0x8000) != 0
+                || (GetAsyncKeyState(VK_RMENU as i32) as u16 & 0x8000) != 0
+        }
+    }
+
+    pub fn enter_down_realtime() -> bool {
+        use winapi::um::winuser::GetAsyncKeyState;
+        unsafe { (GetAsyncKeyState(VK_RETURN as i32) as u16 & 0x8000) != 0 }
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -184,6 +212,21 @@ mod imp {
     pub fn is_live_resize() -> bool {
         false
     }
+
+    pub fn ctrl_down_realtime() -> bool {
+        false
+    }
+
+    pub fn alt_down_realtime() -> bool {
+        false
+    }
+
+    pub fn enter_down_realtime() -> bool {
+        false
+    }
 }
 
-pub use imp::{KeyProbeSnapshot, is_live_resize, is_vk_down, observe_windows_message, snapshot};
+pub use imp::{
+    KeyProbeSnapshot, alt_down_realtime, ctrl_down_realtime, enter_down_realtime, is_live_resize,
+    is_vk_down, observe_windows_message, snapshot,
+};

@@ -148,6 +148,9 @@ pub struct PaintFEApp {
     // Paste overlay (floating pasted image being manipulated)
     paste_overlay: Option<PasteOverlay>,
     pending_paste_request: Option<PendingPasteRequest>,
+    clipboard_paste_receiver:
+        Option<mpsc::Receiver<Option<crate::ops::clipboard::ClipboardImageForPaste>>>,
+    pending_clipboard_cursor: Option<(f32, f32)>,
     paste_transform_undo: Vec<crate::ops::clipboard::PasteOverlayTransform>,
     paste_transform_redo: Vec<crate::ops::clipboard::PasteOverlayTransform>,
     move_pixels_before: Option<crate::components::history::CanvasSnapshot>,
@@ -158,6 +161,8 @@ pub struct PaintFEApp {
     move_sel_handle: Option<crate::ops::shapes::ShapeHandle>,
     move_sel_start_mask: Option<image::GrayImage>,
     move_sel_start_bounds: Option<(u32, u32, u32, u32)>,
+    move_sel_preserved_ratio: Option<f32>,
+    move_sel_ratio_lock_active: bool,
     pending_selection_reassert: Option<image::GrayImage>,
 
     // Floating panel edge tracking: store offset from screen edge so panels
@@ -166,9 +171,9 @@ pub struct PaintFEApp {
     layers_panel_size: Option<(f32, f32)>,
     history_panel_right_offset: Option<(f32, f32)>, // (offset_from_right, offset_from_bottom)
     history_panel_size: Option<(f32, f32)>,
-    colors_panel_left_offset: Option<(f32, f32)>,  // (x, offset_from_bottom)
-    palette_panel_pos: Option<(f32, f32)>,         // (x, y)
-    tools_panel_pos: Option<(f32, f32)>,           // (x, y) absolute
+    colors_panel_left_offset: Option<(f32, f32)>, // (x, offset_from_bottom)
+    palette_panel_pos: Option<(f32, f32)>,        // (x, y)
+    tools_panel_pos: Option<(f32, f32)>,          // (x, y) absolute
     last_screen_size: (f32, f32),
     ui_cursor_blocking_rects: Vec<egui::Rect>,
     ui_cursor_blocking_rects_next: Vec<egui::Rect>,

@@ -63,12 +63,12 @@ pub fn open_picker(tag: &'static str, accept: &str, multiple: bool) {
                 let Some(file) = files.get(i) else { continue };
                 let name = file.name();
                 wasm_bindgen_futures::spawn_local(async move {
-                    if let Ok(buf) =
-                        wasm_bindgen_futures::JsFuture::from(file.array_buffer()).await
+                    if let Ok(buf) = wasm_bindgen_futures::JsFuture::from(file.array_buffer()).await
                     {
                         let array = js_sys::Uint8Array::new(&buf);
                         let bytes = array.to_vec();
-                        PENDING.with(|p| p.borrow_mut().entry(tag).or_default().push((name, bytes)));
+                        PENDING
+                            .with(|p| p.borrow_mut().entry(tag).or_default().push((name, bytes)));
                         wake();
                     }
                 });

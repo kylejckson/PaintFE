@@ -3,8 +3,8 @@
 // ============================================================================
 
 use crate::canvas::{CanvasState, Layer, TiledImage};
-use image::{GrayImage, Luma, Rgba, RgbaImage, imageops};
 use crate::par_compat::*;
+use image::{GrayImage, Luma, Rgba, RgbaImage, imageops};
 
 #[derive(Clone, Copy)]
 enum SelectionCanvasTransform {

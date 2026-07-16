@@ -1,4 +1,6 @@
 use crate::components::dialogs::TiffCompression;
+#[cfg(target_arch = "wasm32")]
+use crate::web_fs::File;
 use image::ImageEncoder;
 use image::codecs::bmp::BmpEncoder;
 use image::codecs::jpeg::JpegEncoder;
@@ -9,8 +11,6 @@ use image::{DynamicImage, ImageError, Rgba, RgbaImage};
 use rfd::FileDialog;
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs::File;
-#[cfg(target_arch = "wasm32")]
-use crate::web_fs::File;
 use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
@@ -775,6 +775,7 @@ pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
         preview_mask_reveal: false,
         dirty_generation: 0,
         selection_mask: None,
+        selection_all: false,
         lod_composite_cache: None,
         lod_generation: 0,
         preview_dirty_rect: None,
@@ -795,6 +796,7 @@ pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
         selection_overlay_built_generation: 0,
         selection_overlay_anim_offset: -1.0,
         selection_overlay_bounds: None,
+        selection_transform_preview_bounds: None,
         fill_commit_overlays: Vec::new(),
         selection_border_h_segs: Vec::new(),
         selection_border_v_segs: Vec::new(),
@@ -917,6 +919,7 @@ fn load_pfe_v3(raw: &[u8]) -> Result<CanvasState, PfeError> {
         preview_mask_reveal: false,
         dirty_generation: 0,
         selection_mask: None,
+        selection_all: false,
         lod_composite_cache: None,
         lod_generation: 0,
         preview_dirty_rect: None,
@@ -937,6 +940,7 @@ fn load_pfe_v3(raw: &[u8]) -> Result<CanvasState, PfeError> {
         selection_overlay_built_generation: 0,
         selection_overlay_anim_offset: -1.0,
         selection_overlay_bounds: None,
+        selection_transform_preview_bounds: None,
         fill_commit_overlays: Vec::new(),
         selection_border_h_segs: Vec::new(),
         selection_border_v_segs: Vec::new(),
@@ -1068,6 +1072,7 @@ fn load_pfe_v2(raw: &[u8]) -> Result<CanvasState, PfeError> {
         preview_mask_reveal: false,
         dirty_generation: 0,
         selection_mask: None,
+        selection_all: false,
         lod_composite_cache: None,
         lod_generation: 0,
         preview_dirty_rect: None,
@@ -1088,6 +1093,7 @@ fn load_pfe_v2(raw: &[u8]) -> Result<CanvasState, PfeError> {
         selection_overlay_built_generation: 0,
         selection_overlay_anim_offset: -1.0,
         selection_overlay_bounds: None,
+        selection_transform_preview_bounds: None,
         fill_commit_overlays: Vec::new(),
         selection_border_h_segs: Vec::new(),
         selection_border_v_segs: Vec::new(),
@@ -1189,6 +1195,7 @@ fn load_pfe_v1(raw: &[u8]) -> Result<CanvasState, PfeError> {
         preview_mask_reveal: false,
         dirty_generation: 0,
         selection_mask: None,
+        selection_all: false,
         lod_composite_cache: None,
         lod_generation: 0,
         preview_dirty_rect: None,
@@ -1209,6 +1216,7 @@ fn load_pfe_v1(raw: &[u8]) -> Result<CanvasState, PfeError> {
         selection_overlay_built_generation: 0,
         selection_overlay_anim_offset: -1.0,
         selection_overlay_bounds: None,
+        selection_transform_preview_bounds: None,
         fill_commit_overlays: Vec::new(),
         selection_border_h_segs: Vec::new(),
         selection_border_v_segs: Vec::new(),
@@ -1307,6 +1315,7 @@ fn load_pfe_v0(raw: &[u8]) -> Result<CanvasState, PfeError> {
         preview_mask_reveal: false,
         dirty_generation: 0,
         selection_mask: None,
+        selection_all: false,
         lod_composite_cache: None,
         lod_generation: 0,
         preview_dirty_rect: None,
@@ -1327,6 +1336,7 @@ fn load_pfe_v0(raw: &[u8]) -> Result<CanvasState, PfeError> {
         selection_overlay_built_generation: 0,
         selection_overlay_anim_offset: -1.0,
         selection_overlay_bounds: None,
+        selection_transform_preview_bounds: None,
         fill_commit_overlays: Vec::new(),
         selection_border_h_segs: Vec::new(),
         selection_border_v_segs: Vec::new(),

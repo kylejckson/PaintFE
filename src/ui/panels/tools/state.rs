@@ -1460,6 +1460,9 @@ pub struct TextToolState {
     pub text_box_drag_start_origin: [f32; 2],
     /// Block rotation at drag start (for rotation handle).
     pub text_box_drag_start_rotation: f32,
+    /// Last time a live text-box resize/rotation requested a quality raster.
+    /// Geometry and handles update every frame; expensive glyph work is paced.
+    pub text_box_last_raster_time: f64,
     /// The max_width for the active text block (None = natural width).
     pub active_block_max_width: Option<f32>,
     /// The max_height for the active text block (None = auto-height from content).
@@ -1570,6 +1573,7 @@ impl Default for TextToolState {
             text_box_drag_start_height: None,
             text_box_drag_start_origin: [0.0; 2],
             text_box_drag_start_rotation: 0.0,
+            text_box_last_raster_time: 0.0,
             active_block_max_width: None,
             active_block_max_height: None,
             active_block_height: 0.0,

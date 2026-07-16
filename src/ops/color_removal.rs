@@ -1,5 +1,5 @@
-use image::{GrayImage, Rgba, RgbaImage};
 use crate::par_compat::*;
+use image::{GrayImage, Rgba, RgbaImage};
 use std::collections::VecDeque;
 
 #[derive(Clone, Copy, Debug)]

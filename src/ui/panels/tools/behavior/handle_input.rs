@@ -99,6 +99,7 @@ impl ToolsPanel {
         raw_motion_events: &[(f32, f32)],
         painter: &egui::Painter,
         canvas_rect: Rect,
+        workspace_rect: Rect,
         zoom: f32,
         primary_color_f32: [f32; 4],
         secondary_color_f32: [f32; 4],
@@ -411,7 +412,7 @@ impl ToolsPanel {
             i.pointer
                 .hover_pos()
                 .or_else(|| i.pointer.interact_pos())
-                .is_some_and(|p| canvas_rect.contains(p))
+                .is_some_and(|p| workspace_rect.contains(p))
         });
         let pointer_over_egui = ui_blocks_canvas_input;
         let pointer_over_edit_handle = ui.input(|i| {
@@ -542,6 +543,7 @@ impl ToolsPanel {
                 raw_motion_events,
                 painter,
                 canvas_rect,
+                workspace_rect,
                 zoom,
                 primary_color_f32,
                 secondary_color_f32,

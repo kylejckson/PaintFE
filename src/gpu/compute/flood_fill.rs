@@ -360,369 +360,381 @@ impl GpuFloodFillPipeline {
         // path instead of hanging.
         #[cfg(target_arch = "wasm32")]
         {
-            let _ = (ctx, flat_rgba, input_key, target_color, seed_x, seed_y, w, h, distance_mode, connectivity, out);
-            return false;
+            let _ = (
+                ctx,
+                flat_rgba,
+                input_key,
+                target_color,
+                seed_x,
+                seed_y,
+                w,
+                h,
+                distance_mode,
+                connectivity,
+                out,
+            );
+            false
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-        let device = &ctx.device;
-        let queue = &ctx.queue;
+            let device = &ctx.device;
+            let queue = &ctx.queue;
 
-        self.ensure_buffers(device, w, h);
+            self.ensure_buffers(device, w, h);
 
-        // Upload input RGBA texture if changed
-        if self.cached_input_tex.is_none() || self.cached_input_key != input_key {
-            self.cached_input_tex = Some(upload_rgba(
-                device,
-                queue,
-                flat_rgba,
-                w,
-                h,
-                "flood_input_rgba",
-            ));
-            self.cached_input_key = input_key;
-        }
+            // Upload input RGBA texture if changed
+            if self.cached_input_tex.is_none() || self.cached_input_key != input_key {
+                self.cached_input_tex = Some(upload_rgba(
+                    device,
+                    queue,
+                    flat_rgba,
+                    w,
+                    h,
+                    "flood_input_rgba",
+                ));
+                self.cached_input_key = input_key;
+            }
 
-        let wg_x = w.div_ceil(16);
-        let wg_y = h.div_ceil(16);
+            let wg_x = w.div_ceil(16);
+            let wg_y = h.div_ceil(16);
 
-        // === Phase 1: Compute per-pixel color distances ===
-        let cd_params = FloodColorDistGpuParams {
-            target_r: target_color[0] as u32,
-            target_g: target_color[1] as u32,
-            target_b: target_color[2] as u32,
-            target_a: target_color[3] as u32,
-            distance_mode: if distance_mode == WandDistanceMode::Perceptual {
-                1
-            } else {
-                0
-            },
-            width: w,
-            height: h,
-            _pad0: 0,
-        };
-        let cd_params_bytes = bytemuck::bytes_of(&cd_params);
-        let cd_params_buf = self.cached_params_buf_cd.get_or_insert_with(|| {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("flood_cd_params"),
-                contents: cd_params_bytes,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            })
-        });
-        queue.write_buffer(cd_params_buf, 0, cd_params_bytes);
-
-        let input_view = self
-            .cached_input_tex
-            .as_ref()
-            .unwrap()
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let color_dist_buf = self.cached_color_dist_buf.as_ref().unwrap();
-        let flood_a_buf = self.cached_flood_a_buf.as_ref().unwrap();
-        let flood_b_buf = self.cached_flood_b_buf.as_ref().unwrap();
-        let changed_buf = self.cached_changed_buf.as_ref().unwrap();
-
-        let cd_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("flood_cd_bg"),
-            layout: &self.color_dist_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&input_view),
+            // === Phase 1: Compute per-pixel color distances ===
+            let cd_params = FloodColorDistGpuParams {
+                target_r: target_color[0] as u32,
+                target_g: target_color[1] as u32,
+                target_b: target_color[2] as u32,
+                target_a: target_color[3] as u32,
+                distance_mode: if distance_mode == WandDistanceMode::Perceptual {
+                    1
+                } else {
+                    0
                 },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: color_dist_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: cd_params_buf.as_entire_binding(),
-                },
-            ],
-        });
-
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("flood_cd_encoder"),
-        });
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("flood_cd_pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.color_dist_pipeline);
-            pass.set_bind_group(0, &cd_bg, &[]);
-            pass.dispatch_workgroups(wg_x, wg_y, 1);
-        }
-        queue.submit(std::iter::once(encoder.finish()));
-
-        // === Phase 2: Initialize flood distances ===
-        let init_params = FloodInitGpuParams {
-            seed_x,
-            seed_y,
-            width: w,
-            height: h,
-        };
-        let init_params_bytes = bytemuck::bytes_of(&init_params);
-        let init_params_buf = self.cached_params_buf_init.get_or_insert_with(|| {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("flood_init_params"),
-                contents: init_params_bytes,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            })
-        });
-        queue.write_buffer(init_params_buf, 0, init_params_bytes);
-
-        let init_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("flood_init_bg"),
-            layout: &self.flood_init_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: color_dist_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: flood_a_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: init_params_buf.as_entire_binding(),
-                },
-            ],
-        });
-
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("flood_init_encoder"),
-        });
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("flood_init_pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.flood_init_pipeline);
-            pass.set_bind_group(0, &init_bg, &[]);
-            pass.dispatch_workgroups(wg_x, wg_y, 1);
-        }
-        queue.submit(std::iter::once(encoder.finish()));
-
-        // === Phase 3: Iterative relaxation with step_size=1 ONLY ===
-        // Must use step_size=1 for correct 4-connected flood fill.
-        // Large step sizes (JFA-style) jump over barriers, connecting
-        // disconnected regions and creating power-of-2. grid artifacts.
-        // Number of passes = w+h (upper bound on grid graph diameter).
-        let num_passes = (w + h) as usize;
-
-        // Pre-create param buffers for both ping-pong directions.
-        // These are immutable — no write_buffer needed between passes.
-        let params_buf_fwd = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("flood_step_params_fwd"),
-            contents: bytemuck::bytes_of(&FloodStepGpuParams {
                 width: w,
                 height: h,
-                step_size: 1,
-                direction: 0,
-                connectivity: if connectivity == FloodConnectivity::Eight {
-                    8
-                } else {
-                    4
-                },
-            }),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-        let params_buf_bwd = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("flood_step_params_bwd"),
-            contents: bytemuck::bytes_of(&FloodStepGpuParams {
-                width: w,
-                height: h,
-                step_size: 1,
-                direction: 1,
-                connectivity: if connectivity == FloodConnectivity::Eight {
-                    8
-                } else {
-                    4
-                },
-            }),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+                _pad0: 0,
+            };
+            let cd_params_bytes = bytemuck::bytes_of(&cd_params);
+            let cd_params_buf = self.cached_params_buf_cd.get_or_insert_with(|| {
+                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("flood_cd_params"),
+                    contents: cd_params_bytes,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                })
+            });
+            queue.write_buffer(cd_params_buf, 0, cd_params_bytes);
 
-        // Two bind groups sharing the same storage buffers but different uniform params.
-        let bg_fwd = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("flood_step_bg_fwd"),
-            layout: &self.flood_step_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: color_dist_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: flood_a_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: flood_b_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: params_buf_fwd.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: changed_buf.as_entire_binding(),
-                },
-            ],
-        });
-        let bg_bwd = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("flood_step_bg_bwd"),
-            layout: &self.flood_step_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: color_dist_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: flood_a_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: flood_b_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: params_buf_bwd.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: changed_buf.as_entire_binding(),
-                },
-            ],
-        });
+            let input_view = self
+                .cached_input_tex
+                .as_ref()
+                .unwrap()
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            let color_dist_buf = self.cached_color_dist_buf.as_ref().unwrap();
+            let flood_a_buf = self.cached_flood_a_buf.as_ref().unwrap();
+            let flood_b_buf = self.cached_flood_b_buf.as_ref().unwrap();
+            let changed_buf = self.cached_changed_buf.as_ref().unwrap();
 
-        // Batch passes into encoder submissions.
-        // Multiple compute passes per encoder are correct here — wgpu inserts
-        // implicit storage-buffer barriers at compute pass boundaries, and we
-        // use pre-built bind groups (no write_buffer between passes).
-        let batch_size = 64;
-        let mut direction = 0u32;
-        let mut chunk_start = 0usize;
-        while chunk_start < num_passes {
-            let chunk_end = num_passes.min(chunk_start + batch_size);
-
-            // Reset convergence flag for this batch.
-            queue.write_buffer(changed_buf, 0, bytemuck::bytes_of(&0u32));
+            let cd_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("flood_cd_bg"),
+                layout: &self.color_dist_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&input_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: color_dist_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: cd_params_buf.as_entire_binding(),
+                    },
+                ],
+            });
 
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("flood_step_batch"),
+                label: Some("flood_cd_encoder"),
             });
-            for _ in chunk_start..chunk_end {
-                {
-                    let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                        label: Some("flood_step_pass"),
-                        timestamp_writes: None,
-                    });
-                    pass.set_pipeline(&self.flood_step_pipeline);
-                    if direction == 0 {
-                        pass.set_bind_group(0, &bg_fwd, &[]);
-                    } else {
-                        pass.set_bind_group(0, &bg_bwd, &[]);
-                    }
-                    pass.dispatch_workgroups(wg_x, wg_y, 1);
-                }
-                direction ^= 1;
+            {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("flood_cd_pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.color_dist_pipeline);
+                pass.set_bind_group(0, &cd_bg, &[]);
+                pass.dispatch_workgroups(wg_x, wg_y, 1);
             }
             queue.submit(std::iter::once(encoder.finish()));
 
-            // If nothing changed in this batch, flood distances converged.
-            let changed_staging = self.cached_changed_staging_buf.as_ref().unwrap();
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("flood_changed_readback_encoder"),
+            // === Phase 2: Initialize flood distances ===
+            let init_params = FloodInitGpuParams {
+                seed_x,
+                seed_y,
+                width: w,
+                height: h,
+            };
+            let init_params_bytes = bytemuck::bytes_of(&init_params);
+            let init_params_buf = self.cached_params_buf_init.get_or_insert_with(|| {
+                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("flood_init_params"),
+                    contents: init_params_bytes,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                })
             });
-            encoder.copy_buffer_to_buffer(changed_buf, 0, changed_staging, 0, 4);
+            queue.write_buffer(init_params_buf, 0, init_params_bytes);
+
+            let init_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("flood_init_bg"),
+                layout: &self.flood_init_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: color_dist_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: flood_a_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: init_params_buf.as_entire_binding(),
+                    },
+                ],
+            });
+
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("flood_init_encoder"),
+            });
+            {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("flood_init_pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.flood_init_pipeline);
+                pass.set_bind_group(0, &init_bg, &[]);
+                pass.dispatch_workgroups(wg_x, wg_y, 1);
+            }
             queue.submit(std::iter::once(encoder.finish()));
 
-            let changed_slice = changed_staging.slice(..);
-            let (tx_changed, rx_changed) = std::sync::mpsc::channel();
-            changed_slice.map_async(wgpu::MapMode::Read, move |result| {
-                let _ = tx_changed.send(result);
+            // === Phase 3: Iterative relaxation with step_size=1 ONLY ===
+            // Must use step_size=1 for correct 4-connected flood fill.
+            // Large step sizes (JFA-style) jump over barriers, connecting
+            // disconnected regions and creating power-of-2. grid artifacts.
+            // Number of passes = w+h (upper bound on grid graph diameter).
+            let num_passes = (w + h) as usize;
+
+            // Pre-create param buffers for both ping-pong directions.
+            // These are immutable — no write_buffer needed between passes.
+            let params_buf_fwd = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("flood_step_params_fwd"),
+                contents: bytemuck::bytes_of(&FloodStepGpuParams {
+                    width: w,
+                    height: h,
+                    step_size: 1,
+                    direction: 0,
+                    connectivity: if connectivity == FloodConnectivity::Eight {
+                        8
+                    } else {
+                        4
+                    },
+                }),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+            let params_buf_bwd = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("flood_step_params_bwd"),
+                contents: bytemuck::bytes_of(&FloodStepGpuParams {
+                    width: w,
+                    height: h,
+                    step_size: 1,
+                    direction: 1,
+                    connectivity: if connectivity == FloodConnectivity::Eight {
+                        8
+                    } else {
+                        4
+                    },
+                }),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+            // Two bind groups sharing the same storage buffers but different uniform params.
+            let bg_fwd = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("flood_step_bg_fwd"),
+                layout: &self.flood_step_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: color_dist_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: flood_a_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: flood_b_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: params_buf_fwd.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: changed_buf.as_entire_binding(),
+                    },
+                ],
+            });
+            let bg_bwd = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("flood_step_bg_bwd"),
+                layout: &self.flood_step_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: color_dist_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: flood_a_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: flood_b_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: params_buf_bwd.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: changed_buf.as_entire_binding(),
+                    },
+                ],
+            });
+
+            // Batch passes into encoder submissions.
+            // Multiple compute passes per encoder are correct here — wgpu inserts
+            // implicit storage-buffer barriers at compute pass boundaries, and we
+            // use pre-built bind groups (no write_buffer between passes).
+            let batch_size = 64;
+            let mut direction = 0u32;
+            let mut chunk_start = 0usize;
+            while chunk_start < num_passes {
+                let chunk_end = num_passes.min(chunk_start + batch_size);
+
+                // Reset convergence flag for this batch.
+                queue.write_buffer(changed_buf, 0, bytemuck::bytes_of(&0u32));
+
+                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("flood_step_batch"),
+                });
+                for _ in chunk_start..chunk_end {
+                    {
+                        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                            label: Some("flood_step_pass"),
+                            timestamp_writes: None,
+                        });
+                        pass.set_pipeline(&self.flood_step_pipeline);
+                        if direction == 0 {
+                            pass.set_bind_group(0, &bg_fwd, &[]);
+                        } else {
+                            pass.set_bind_group(0, &bg_bwd, &[]);
+                        }
+                        pass.dispatch_workgroups(wg_x, wg_y, 1);
+                    }
+                    direction ^= 1;
+                }
+                queue.submit(std::iter::once(encoder.finish()));
+
+                // If nothing changed in this batch, flood distances converged.
+                let changed_staging = self.cached_changed_staging_buf.as_ref().unwrap();
+                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("flood_changed_readback_encoder"),
+                });
+                encoder.copy_buffer_to_buffer(changed_buf, 0, changed_staging, 0, 4);
+                queue.submit(std::iter::once(encoder.finish()));
+
+                let changed_slice = changed_staging.slice(..);
+                let (tx_changed, rx_changed) = std::sync::mpsc::channel();
+                changed_slice.map_async(wgpu::MapMode::Read, move |result| {
+                    let _ = tx_changed.send(result);
+                });
+                let _ = device.poll(wgpu::PollType::Wait {
+                    submission_index: None,
+                    timeout: None,
+                });
+
+                let changed_value = match rx_changed.recv() {
+                    Ok(Ok(())) => {
+                        let mapped = changed_slice.get_mapped_range();
+                        let vals: &[u32] = bytemuck::cast_slice(&mapped);
+                        let changed = vals.first().copied().unwrap_or(1);
+                        drop(mapped);
+                        changed_staging.unmap();
+                        changed
+                    }
+                    Ok(Err(_)) | Err(_) => 1,
+                };
+
+                if changed_value == 0 {
+                    break;
+                }
+
+                chunk_start = chunk_end;
+            }
+
+            // === Phase 4: Read back result ===
+            // The final distances are in flood_a (if direction==0) or flood_b (if direction==1)
+            let result_buf = if direction == 0 {
+                flood_a_buf
+            } else {
+                flood_b_buf
+            };
+
+            let staging = self.cached_staging_buf.as_ref().unwrap();
+            let buf_size = (w as u64) * (h as u64) * 4;
+
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("flood_readback_encoder"),
+            });
+            encoder.copy_buffer_to_buffer(result_buf, 0, staging, 0, buf_size);
+            queue.submit(std::iter::once(encoder.finish()));
+
+            let slice = staging.slice(..);
+            let (tx, rx) = std::sync::mpsc::channel();
+            slice.map_async(wgpu::MapMode::Read, move |result| {
+                let _ = tx.send(result);
             });
             let _ = device.poll(wgpu::PollType::Wait {
                 submission_index: None,
                 timeout: None,
             });
 
-            let changed_value = match rx_changed.recv() {
-                Ok(Ok(())) => {
-                    let mapped = changed_slice.get_mapped_range();
-                    let vals: &[u32] = bytemuck::cast_slice(&mapped);
-                    let changed = vals.first().copied().unwrap_or(1);
-                    drop(mapped);
-                    changed_staging.unmap();
-                    changed
+            match rx.recv() {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    eprintln!("[GPU] GpuFloodFillPipeline readback map error: {:?}", e);
+                    out.clear();
+                    return false;
                 }
-                Ok(Err(_)) | Err(_) => 1,
-            };
-
-            if changed_value == 0 {
-                break;
+                Err(e) => {
+                    eprintln!("[GPU] GpuFloodFillPipeline readback channel error: {:?}", e);
+                    out.clear();
+                    return false;
+                }
             }
 
-            chunk_start = chunk_end;
-        }
-
-        // === Phase 4: Read back result ===
-        // The final distances are in flood_a (if direction==0) or flood_b (if direction==1)
-        let result_buf = if direction == 0 {
-            flood_a_buf
-        } else {
-            flood_b_buf
-        };
-
-        let staging = self.cached_staging_buf.as_ref().unwrap();
-        let buf_size = (w as u64) * (h as u64) * 4;
-
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("flood_readback_encoder"),
-        });
-        encoder.copy_buffer_to_buffer(result_buf, 0, staging, 0, buf_size);
-        queue.submit(std::iter::once(encoder.finish()));
-
-        let slice = staging.slice(..);
-        let (tx, rx) = std::sync::mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |result| {
-            let _ = tx.send(result);
-        });
-        let _ = device.poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: None,
-        });
-
-        match rx.recv() {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => {
-                eprintln!("[GPU] GpuFloodFillPipeline readback map error: {:?}", e);
-                out.clear();
-                return false;
+            let mapped = slice.get_mapped_range();
+            let n = (w * h) as usize;
+            out.clear();
+            out.resize(n, 0);
+            // Storage buffer contains u32 per pixel; extract low byte (0–255)
+            let src: &[u32] = bytemuck::cast_slice(&mapped[..n * 4]);
+            for (i, &val) in src.iter().enumerate() {
+                out[i] = val.min(255) as u8;
             }
-            Err(e) => {
-                eprintln!("[GPU] GpuFloodFillPipeline readback channel error: {:?}", e);
-                out.clear();
-                return false;
-            }
-        }
 
-        let mapped = slice.get_mapped_range();
-        let n = (w * h) as usize;
-        out.clear();
-        out.resize(n, 0);
-        // Storage buffer contains u32 per pixel; extract low byte (0–255)
-        let src: &[u32] = bytemuck::cast_slice(&mapped[..n * 4]);
-        for (i, &val) in src.iter().enumerate() {
-            out[i] = val.min(255) as u8;
-        }
-
-        drop(mapped);
-        staging.unmap();
-        true
+            drop(mapped);
+            staging.unmap();
+            true
         }
     }
 
@@ -742,139 +754,148 @@ impl GpuFloodFillPipeline {
         // See compute_flood_distances above: blocking readback can't work on web.
         #[cfg(target_arch = "wasm32")]
         {
-            let _ = (ctx, flat_rgba, input_key, target_color, w, h, distance_mode, out);
-            return false;
+            let _ = (
+                ctx,
+                flat_rgba,
+                input_key,
+                target_color,
+                w,
+                h,
+                distance_mode,
+                out,
+            );
+            false
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-        let device = &ctx.device;
-        let queue = &ctx.queue;
+            let device = &ctx.device;
+            let queue = &ctx.queue;
 
-        self.ensure_buffers(device, w, h);
+            self.ensure_buffers(device, w, h);
 
-        if self.cached_input_tex.is_none() || self.cached_input_key != input_key {
-            self.cached_input_tex = Some(upload_rgba(
-                device,
-                queue,
-                flat_rgba,
-                w,
-                h,
-                "flood_input_rgba",
-            ));
-            self.cached_input_key = input_key;
-        }
+            if self.cached_input_tex.is_none() || self.cached_input_key != input_key {
+                self.cached_input_tex = Some(upload_rgba(
+                    device,
+                    queue,
+                    flat_rgba,
+                    w,
+                    h,
+                    "flood_input_rgba",
+                ));
+                self.cached_input_key = input_key;
+            }
 
-        let cd_params = FloodColorDistGpuParams {
-            target_r: target_color[0] as u32,
-            target_g: target_color[1] as u32,
-            target_b: target_color[2] as u32,
-            target_a: target_color[3] as u32,
-            distance_mode: if distance_mode == WandDistanceMode::Perceptual {
-                1
-            } else {
-                0
-            },
-            width: w,
-            height: h,
-            _pad0: 0,
-        };
-        let cd_params_bytes = bytemuck::bytes_of(&cd_params);
-        let cd_params_buf = self.cached_params_buf_cd.get_or_insert_with(|| {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("flood_cd_params"),
-                contents: cd_params_bytes,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            })
-        });
-        queue.write_buffer(cd_params_buf, 0, cd_params_bytes);
-
-        let input_view = self
-            .cached_input_tex
-            .as_ref()
-            .unwrap()
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let color_dist_buf = self.cached_color_dist_buf.as_ref().unwrap();
-
-        let cd_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("flood_cd_bg"),
-            layout: &self.color_dist_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&input_view),
+            let cd_params = FloodColorDistGpuParams {
+                target_r: target_color[0] as u32,
+                target_g: target_color[1] as u32,
+                target_b: target_color[2] as u32,
+                target_a: target_color[3] as u32,
+                distance_mode: if distance_mode == WandDistanceMode::Perceptual {
+                    1
+                } else {
+                    0
                 },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: color_dist_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: cd_params_buf.as_entire_binding(),
-                },
-            ],
-        });
-
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("flood_global_cd_encoder"),
-        });
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("flood_global_cd_pass"),
-                timestamp_writes: None,
+                width: w,
+                height: h,
+                _pad0: 0,
+            };
+            let cd_params_bytes = bytemuck::bytes_of(&cd_params);
+            let cd_params_buf = self.cached_params_buf_cd.get_or_insert_with(|| {
+                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("flood_cd_params"),
+                    contents: cd_params_bytes,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                })
             });
-            pass.set_pipeline(&self.color_dist_pipeline);
-            pass.set_bind_group(0, &cd_bg, &[]);
-            pass.dispatch_workgroups(w.div_ceil(16), h.div_ceil(16), 1);
-        }
+            queue.write_buffer(cd_params_buf, 0, cd_params_bytes);
 
-        // Copy color_dist to staging for readback
-        let staging = self.cached_staging_buf.as_ref().unwrap();
-        let buf_size = (w as u64) * (h as u64) * 4;
-        encoder.copy_buffer_to_buffer(color_dist_buf, 0, staging, 0, buf_size);
-        queue.submit(std::iter::once(encoder.finish()));
+            let input_view = self
+                .cached_input_tex
+                .as_ref()
+                .unwrap()
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            let color_dist_buf = self.cached_color_dist_buf.as_ref().unwrap();
 
-        let slice = staging.slice(..);
-        let (tx, rx) = std::sync::mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |result| {
-            let _ = tx.send(result);
-        });
-        let _ = device.poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: None,
-        });
+            let cd_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("flood_cd_bg"),
+                layout: &self.color_dist_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&input_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: color_dist_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: cd_params_buf.as_entire_binding(),
+                    },
+                ],
+            });
 
-        match rx.recv() {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => {
-                eprintln!(
-                    "[GPU] GpuFloodFillPipeline global readback map error: {:?}",
-                    e
-                );
-                out.clear();
-                return false;
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("flood_global_cd_encoder"),
+            });
+            {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("flood_global_cd_pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.color_dist_pipeline);
+                pass.set_bind_group(0, &cd_bg, &[]);
+                pass.dispatch_workgroups(w.div_ceil(16), h.div_ceil(16), 1);
             }
-            Err(e) => {
-                eprintln!(
-                    "[GPU] GpuFloodFillPipeline global readback channel error: {:?}",
-                    e
-                );
-                out.clear();
-                return false;
+
+            // Copy color_dist to staging for readback
+            let staging = self.cached_staging_buf.as_ref().unwrap();
+            let buf_size = (w as u64) * (h as u64) * 4;
+            encoder.copy_buffer_to_buffer(color_dist_buf, 0, staging, 0, buf_size);
+            queue.submit(std::iter::once(encoder.finish()));
+
+            let slice = staging.slice(..);
+            let (tx, rx) = std::sync::mpsc::channel();
+            slice.map_async(wgpu::MapMode::Read, move |result| {
+                let _ = tx.send(result);
+            });
+            let _ = device.poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            });
+
+            match rx.recv() {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    eprintln!(
+                        "[GPU] GpuFloodFillPipeline global readback map error: {:?}",
+                        e
+                    );
+                    out.clear();
+                    return false;
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[GPU] GpuFloodFillPipeline global readback channel error: {:?}",
+                        e
+                    );
+                    out.clear();
+                    return false;
+                }
             }
-        }
 
-        let mapped = slice.get_mapped_range();
-        let n = (w * h) as usize;
-        out.clear();
-        out.resize(n, 0);
-        let src: &[u32] = bytemuck::cast_slice(&mapped[..n * 4]);
-        for (i, &val) in src.iter().enumerate() {
-            out[i] = val.min(255) as u8;
-        }
+            let mapped = slice.get_mapped_range();
+            let n = (w * h) as usize;
+            out.clear();
+            out.resize(n, 0);
+            let src: &[u32] = bytemuck::cast_slice(&mapped[..n * 4]);
+            for (i, &val) in src.iter().enumerate() {
+                out[i] = val.min(255) as u8;
+            }
 
-        drop(mapped);
-        staging.unmap();
-        true
+            drop(mapped);
+            staging.unmap();
+            true
         }
     }
 }
@@ -1123,4 +1144,3 @@ impl GpuGradientPipeline {
         staging.unmap();
     }
 }
-

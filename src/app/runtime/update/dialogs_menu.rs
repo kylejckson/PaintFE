@@ -255,9 +255,7 @@ impl PaintFEApp {
                         {
                             let transparent_cutout =
                                 self.settings.clipboard_copy_transparent_cutout;
-                            self.do_snapshot_op("Cut Selection", |s| {
-                                crate::ops::clipboard::cut_selection(s, transparent_cutout);
-                            });
+                            self.cut_selection_with_history(transparent_cutout);
                             ui.close();
                         }
                         if self
@@ -298,7 +296,7 @@ impl PaintFEApp {
                             } else {
                                 None
                             };
-                            self.queue_paste_from_clipboard(cursor_canvas);
+                            self.queue_paste_from_clipboard(ui.ctx(), cursor_canvas);
                             ui.close();
                         }
                         if self
@@ -358,7 +356,6 @@ impl PaintFEApp {
                         {
                             if let Some(project) = self.active_project_mut() {
                                 project.canvas_state.clear_selection();
-                                project.canvas_state.mark_dirty(None);
                             }
                             ui.close();
                         }
@@ -375,20 +372,16 @@ impl PaintFEApp {
                             if let Some(project) = self.active_project_mut() {
                                 let w = project.canvas_state.width;
                                 let h = project.canvas_state.height;
-                                if let Some(ref mask) = project.canvas_state.selection_mask {
+                                if project.canvas_state.selection_all {
+                                    project.canvas_state.clear_selection();
+                                } else if let Some(ref mask) = project.canvas_state.selection_mask {
                                     let inverted = image::GrayImage::from_fn(w, h, |x, y| {
                                         let v = mask.get_pixel(x, y).0[0];
                                         image::Luma([255u8 - v])
                                     });
                                     project.canvas_state.selection_mask = Some(inverted);
-                                } else {
-                                    // No selection = select all
-                                    let mask =
-                                        image::GrayImage::from_pixel(w, h, image::Luma([255u8]));
-                                    project.canvas_state.selection_mask = Some(mask);
                                 }
                                 project.canvas_state.invalidate_selection_overlay();
-                                project.canvas_state.mark_dirty(None);
                             }
                             ui.close();
                         }
@@ -2175,20 +2168,21 @@ impl PaintFEApp {
 
                                                 // Always reserve the size-label slot so the
                                                 // tab row doesn't jitter when switching projects.
-                                                let dim_text = egui::RichText::new(format!(
-                                                    "{}x{}",
-                                                    cw, ch
-                                                ))
-                                                .size(10.0)
-                                                .color(match self.theme.mode {
-                                                    crate::theme::ThemeMode::Dark => {
-                                                        egui::Color32::from_gray(80)
-                                                    }
-                                                    crate::theme::ThemeMode::Light => {
-                                                        egui::Color32::from_gray(160)
-                                                    }
-                                                });
-                                                ui.add_visible(is_active, egui::Label::new(dim_text));
+                                                let dim_text =
+                                                    egui::RichText::new(format!("{}x{}", cw, ch))
+                                                        .size(10.0)
+                                                        .color(match self.theme.mode {
+                                                            crate::theme::ThemeMode::Dark => {
+                                                                egui::Color32::from_gray(80)
+                                                            }
+                                                            crate::theme::ThemeMode::Light => {
+                                                                egui::Color32::from_gray(160)
+                                                            }
+                                                        });
+                                                ui.add_visible(
+                                                    is_active,
+                                                    egui::Label::new(dim_text),
+                                                );
 
                                                 // Close button -- always visible (subtle when not hovered)
                                                 // Previously gated on `is_active || was_hovered` which caused the
@@ -2266,7 +2260,10 @@ impl PaintFEApp {
                                                 tab_rect.left() + 2.0,
                                                 tab_rect.bottom() - 3.0,
                                             ),
-                                            egui::pos2(tab_rect.right() - 2.0, tab_rect.bottom() - 1.0),
+                                            egui::pos2(
+                                                tab_rect.right() - 2.0,
+                                                tab_rect.bottom() - 1.0,
+                                            ),
                                         );
                                         let stripe_alpha = (active_t * 255.0) as u8;
                                         let stripe_color = egui::Color32::from_rgba_unmultiplied(
@@ -2491,6 +2488,5 @@ impl PaintFEApp {
             );
             painter.rect_filled(line_rect, 0.0, line_color);
         }
-
     }
 }

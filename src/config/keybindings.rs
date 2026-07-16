@@ -203,6 +203,7 @@ pub enum BindableAction {
     ToolMeshWarp,
     // Brush
     BrushResizeDragModifier,
+    SelectionPreserveAspectModifier,
     BrushSizeDecrease,
     BrushSizeIncrease,
     // Color — instant (no dialog)
@@ -303,6 +304,9 @@ impl BindableAction {
             Self::ToolColorRemover => t!("keybind.tool_color_remover"),
             Self::ToolMeshWarp => t!("keybind.tool_mesh_warp"),
             Self::BrushResizeDragModifier => t!("keybind.brush_resize_drag_modifier"),
+            Self::SelectionPreserveAspectModifier => {
+                t!("keybind.selection_preserve_aspect_modifier")
+            }
             Self::BrushSizeDecrease => t!("keybind.brush_size_decrease"),
             Self::BrushSizeIncrease => t!("keybind.brush_size_increase"),
             // Color
@@ -396,7 +400,8 @@ impl BindableAction {
             | Self::ToolShapes
             | Self::ToolLasso
             | Self::ToolColorRemover
-            | Self::ToolMeshWarp => t!("keybind_category.tools"),
+            | Self::ToolMeshWarp
+            | Self::SelectionPreserveAspectModifier => t!("keybind_category.tools"),
             Self::BrushResizeDragModifier | Self::BrushSizeDecrease | Self::BrushSizeIncrease => {
                 t!("keybind_category.brush")
             }
@@ -490,6 +495,7 @@ impl BindableAction {
             ToolColorRemover,
             ToolMeshWarp,
             BrushResizeDragModifier,
+            SelectionPreserveAspectModifier,
             BrushSizeDecrease,
             BrushSizeIncrease,
             // Color
@@ -612,6 +618,10 @@ impl Default for KeyBindings {
             BrushResizeDragModifier,
             KeyCombo::modifiers_only(false, true, false),
         );
+        map.insert(
+            SelectionPreserveAspectModifier,
+            KeyCombo::modifiers_only(false, false, true),
+        );
         map.insert(BrushSizeDecrease, KeyCombo::text("["));
         map.insert(BrushSizeIncrease, KeyCombo::text("]"));
 
@@ -699,6 +709,9 @@ impl KeyBindings {
             "ToolColorRemover" => Some(BindableAction::ToolColorRemover),
             "ToolMeshWarp" => Some(BindableAction::ToolMeshWarp),
             "BrushResizeDragModifier" => Some(BindableAction::BrushResizeDragModifier),
+            "SelectionPreserveAspectModifier" => {
+                Some(BindableAction::SelectionPreserveAspectModifier)
+            }
             "BrushSizeDecrease" => Some(BindableAction::BrushSizeDecrease),
             "BrushSizeIncrease" => Some(BindableAction::BrushSizeIncrease),
             "ColorAutoLevels" => Some(BindableAction::ColorAutoLevels),
@@ -896,6 +909,39 @@ impl KeyBindings {
         } else {
             false
         }
+    }
+
+    /// Check whether a binding is continuously held, including modifier-only actions.
+    pub fn is_held(&self, ctx: &egui::Context, action: BindableAction) -> bool {
+        let Some(combo) = self.bindings.get(&action) else {
+            return false;
+        };
+        let (egui_ctrl, egui_shift, egui_alt, egui_key_down) = ctx.input(|i| {
+            (
+                i.modifiers.ctrl || i.modifiers.command,
+                i.modifiers.shift,
+                i.modifiers.alt,
+                combo.key.is_none_or(|key| i.key_down(key)),
+            )
+        });
+        let ctrl = egui_ctrl
+            || crate::windows_key_probe::ctrl_down_realtime()
+            || crate::linux_key_probe::snapshot().ctrl_down;
+        let alt = egui_alt || crate::windows_key_probe::alt_down_realtime();
+        #[cfg(target_os = "windows")]
+        let native_key_down = combo
+            .key
+            .and_then(egui_key_to_windows_vk)
+            .is_some_and(crate::windows_key_probe::is_vk_down);
+        #[cfg(not(target_os = "windows"))]
+        let native_key_down = false;
+        let key_down = combo.key.is_none() || egui_key_down || native_key_down;
+
+        key_down
+            && combo.text_char.is_none()
+            && combo.ctrl == ctrl
+            && combo.shift == egui_shift
+            && combo.alt == alt
     }
 }
 
