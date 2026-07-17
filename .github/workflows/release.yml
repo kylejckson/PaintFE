@@ -277,11 +277,7 @@ jobs:
           path: PaintFE-macOS-x86_64.dmg
 
   # ── MSIX build (Microsoft Store submission package) ────────────────────────
-  # NOTE: The MSIX is NOT attached to the GitHub Release — it contains
-  #       placeholder Publisher info and must be submitted manually via
-  #       Partner Center (partner.microsoft.com). Microsoft re-signs it there.
-  #       Download the artifact from the Actions tab after each release run,
-  #       then upload to Partner Center → Your App → Submissions → New submission.
+  # The package is uploaded to Partner Center by publish-microsoft-store below.
   build-msix:
     name: Build (MSIX / MS Store)
     runs-on: windows-latest
@@ -367,6 +363,52 @@ jobs:
           name: PaintFE-msix-store-submission
           path: PaintFE.msix
           retention-days: 30
+
+  # ── Microsoft Store draft ─────────────────────────────────────────────────
+  # Protected by the GitHub "microsoft-store" environment. Keep --noCommit for
+  # the first run so the package can be inspected in Partner Center before it is
+  # submitted for certification.
+  publish-microsoft-store:
+    name: Create Microsoft Store Draft
+    needs: build-msix
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: windows-latest
+    environment: microsoft-store
+    permissions:
+      contents: read
+    steps:
+      - name: Download MSIX
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: PaintFE-msix-store-submission
+          path: store-package
+
+      - name: Install Microsoft Store Developer CLI
+        uses: microsoft/microsoft-store-apppublisher@v1.1
+
+      - name: Configure Partner Center access
+        shell: pwsh
+        env:
+          TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          SELLER_ID: ${{ secrets.SELLER_ID }}
+          CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+        run: |
+          msstore reconfigure `
+            --tenantId "$env:TENANT_ID" `
+            --sellerId "$env:SELLER_ID" `
+            --clientId "$env:CLIENT_ID" `
+            --clientSecret "$env:CLIENT_SECRET"
+
+      - name: Upload Store draft
+        shell: pwsh
+        env:
+          STORE_PRODUCT_ID: ${{ vars.MS_STORE_PRODUCT_ID }}
+        run: |
+          msstore publish `
+            "${{ github.workspace }}\store-package\PaintFE.msix" `
+            --appId "$env:STORE_PRODUCT_ID" `
+            --noCommit
 
   # ── Create GitHub Release ──────────────────────────────────────────────────
   release:

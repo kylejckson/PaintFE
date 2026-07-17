@@ -6,6 +6,27 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.3.8] - 2026-07-17
+
+- Made canvas rendering significantly faster and lighter on large 4K and 8K projects.
+- Improved Fill Bucket, blur effects, filters, and adjustments to reduce stalls and memory use.
+- Reduced GPU memory pressure while preserving support for large images and multi-layer projects.
+
+### Changed
+- Kept normal canvas compositing on the GPU instead of reading completed frames back into system memory and uploading them again.
+- Combined normal layer compositing into a single GPU render pass and reused uniform buffers between frames.
+- Removed unnecessary per-layer mipmap generation, reducing layer texture memory use by roughly 25 percent.
+- Limited retained temporary GPU textures to 128 MB and reduced duplicate textures kept for each size.
+- Moved connected Fill Bucket processing to an asynchronous path so large fills no longer monopolize the interface.
+- Improved Box Blur with a sliding-window implementation whose processing cost no longer grows with the blur radius.
+- Improved Bokeh Blur by reusing row sums instead of sampling the complete disc kernel for every pixel.
+- Reduced temporary memory use during Gaussian Blur.
+- Applied common pixel adjustments directly to populated image tiles instead of flattening and rebuilding the entire layer.
+
+### Fixed
+- Fixed the mouse cursor disappearing over Layer Options, including adjustment layer options.
+- Fixed the same cursor and canvas input leak in the brush-tip context menu.
+
 ## [1.3.7] - 2026-07-16
 
 - Made selections, clipboard operations, pasted-image transforms, and text editing significantly smoother on large canvases.
