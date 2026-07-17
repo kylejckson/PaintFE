@@ -33,7 +33,6 @@ impl GpuContext {
     // `CreationContext::wgpu_render_state`, threaded down through
     // `Canvas::new`) — it's already proven to work, and initialization is
     // fully synchronous from here since eframe did the async setup already.
-    #[cfg(target_arch = "wasm32")]
     pub fn from_egui_render_state(rs: &eframe::egui_wgpu::RenderState) -> Self {
         let limits = rs.adapter.limits();
         Self {

@@ -2,6 +2,7 @@ impl LayersPanel {
     /// Show the layer settings popup window (Options menu).
     /// For text layers this includes Effects and Warp tabs.
     fn show_layer_settings_popup(&mut self, ui: &mut egui::Ui, canvas_state: &mut CanvasState) {
+        self.settings_popup_rect = None;
         if let Some(layer_idx) = self.settings_state.editing_layer {
             if layer_idx >= canvas_state.layers.len() {
                 self.settings_state.editing_layer = None;
@@ -21,7 +22,7 @@ impl LayersPanel {
             };
             let win_width = if is_text { 340.0 } else { 280.0 };
 
-            egui::Window::new("layer_settings_popup_win")
+            let popup = egui::Window::new("layer_settings_popup_win")
                 .id(Id::new("layer_settings_popup"))
                 .title_bar(false)
                 .collapsible(false)
@@ -168,6 +169,17 @@ impl LayersPanel {
                         }
                     }
                 });
+
+            if let Some(popup) = popup {
+                let rect = popup.response.rect;
+                self.settings_popup_rect = Some(rect);
+                if ui
+                    .ctx()
+                    .input(|i| i.pointer.hover_pos().is_some_and(|pos| rect.contains(pos)))
+                {
+                    ui.ctx().set_cursor_icon(CursorIcon::Default);
+                }
+            }
 
             if !open {
                 self.settings_state.editing_layer = None;

@@ -145,6 +145,8 @@ pub struct Compositor {
     /// Cached per-layer uniform buffers and bind groups for `composite_layers_blended`.
     /// Grows to match layer count; reused across frames via `queue.write_buffer()`.
     cached_blend_slots: Vec<(wgpu::Buffer, wgpu::BindGroup)>,
+    /// Cached uniforms for the common normal-blend fast path.
+    cached_view_slots: Vec<(wgpu::Buffer, wgpu::BindGroup)>,
 }
 
 impl Compositor {
@@ -446,6 +448,7 @@ impl Compositor {
             sampler_nearest,
             output_format,
             cached_blend_slots: Vec::new(),
+            cached_view_slots: Vec::new(),
         }
     }
 
@@ -642,7 +645,7 @@ impl Compositor {
 
     /// Legacy composite (normal blend only, hardware alpha blending).
     pub fn composite_layers(
-        &self,
+        &mut self,
         ctx: &GpuContext,
         output_view: &wgpu::TextureView,
         layers: &[(f32, &LayerTexture)],
@@ -653,9 +656,37 @@ impl Compositor {
             label: Some("composite_encoder"),
         });
 
+        for (layer_i, (opacity, _)) in layers.iter().enumerate() {
+            let uniforms = ViewUniforms::identity(*opacity);
+            if layer_i >= self.cached_view_slots.len() {
+                let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("view_uniform_buf"),
+                    contents: bytemuck::bytes_of(&uniforms),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+                let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("view_uniform_bg"),
+                    layout: &self.view_bind_group_layout,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: buffer.as_entire_binding(),
+                    }],
+                });
+                self.cached_view_slots.push((buffer, bind_group));
+            } else {
+                queue.write_buffer(
+                    &self.cached_view_slots[layer_i].0,
+                    0,
+                    bytemuck::bytes_of(&uniforms),
+                );
+            }
+        }
+
+        // Normal layers use hardware premultiplied-alpha blending. All draws
+        // share one render pass instead of loading/storing a 4K target per layer.
         {
-            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("clear_pass"),
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("normal_layers_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: output_view,
                     resolve_target: None,
@@ -670,33 +701,12 @@ impl Compositor {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-        }
-
-        for (opacity, layer_tex) in layers.iter() {
-            let uniforms = ViewUniforms::identity(*opacity);
-            let (view_bg, _buf) = self.create_view_bind_group(device, queue, &uniforms);
-
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("layer_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: output_view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &view_bg, &[]);
-            pass.set_bind_group(1, &layer_tex.bind_group, &[]);
-            pass.draw(0..6, 0..1);
+            for (layer_i, (_, layer_tex)) in layers.iter().enumerate() {
+                pass.set_bind_group(0, &self.cached_view_slots[layer_i].1, &[]);
+                pass.set_bind_group(1, &layer_tex.bind_group, &[]);
+                pass.draw(0..6, 0..1);
+            }
         }
 
         queue.submit(std::iter::once(encoder.finish()));

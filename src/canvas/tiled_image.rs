@@ -899,6 +899,39 @@ impl TiledImage {
 
     // ---- bulk operations ----------------------------------------------------
 
+    /// Transform populated chunks in parallel without flattening the image.
+    /// The callback must preserve zero alpha so sparse transparent chunks can
+    /// remain unallocated.
+    pub fn par_map_populated<F>(&mut self, transform: F)
+    where
+        F: Fn(u32, u32, Rgba<u8>) -> Rgba<u8> + Sync,
+    {
+        let chunks_per_row = self.chunks_per_row;
+        let width = self.width;
+        let height = self.height;
+        self.chunks
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(index, slot)| {
+                let Some(arc) = slot.as_mut() else {
+                    return;
+                };
+                let cx = index as u32 % chunks_per_row;
+                let cy = index as u32 / chunks_per_row;
+                let base_x = cx * CHUNK_SIZE;
+                let base_y = cy * CHUNK_SIZE;
+                let valid_w = CHUNK_SIZE.min(width - base_x);
+                let valid_h = CHUNK_SIZE.min(height - base_y);
+                let chunk = Arc::make_mut(arc);
+                for ly in 0..valid_h {
+                    for lx in 0..valid_w {
+                        let pixel = *chunk.get_pixel(lx, ly);
+                        chunk.put_pixel(lx, ly, transform(base_x + lx, base_y + ly, pixel));
+                    }
+                }
+            });
+    }
+
     /// Fill every pixel with `color`.
     pub fn fill(&mut self, color: Rgba<u8>) {
         for slot in &mut self.chunks {

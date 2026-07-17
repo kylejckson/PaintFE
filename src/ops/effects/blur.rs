@@ -29,20 +29,22 @@ pub fn bokeh_blur_core(flat: &RgbaImage, radius: f32, mask: Option<&GrayImage>) 
         return flat.clone();
     }
 
-    // Build disc kernel (coordinates + weights).
+    // Build one horizontal span per kernel row. Maintaining a sliding sum for
+    // each span reduces a disc convolution from O(radius² * pixels) to
+    // O(radius * pixels), while preserving the exact equal-weight disc kernel.
     let r = radius.ceil() as i32;
     let r2 = radius * radius;
-    let mut offsets: Vec<(i32, i32, f32)> = Vec::new();
+    let mut spans: Vec<(i32, i32)> = Vec::new();
+    let mut sample_count = 0usize;
     for dy in -r..=r {
-        for dx in -r..=r {
-            let d2 = (dx * dx + dy * dy) as f32;
-            if d2 <= r2 {
-                // Bokeh uses equal weight (disc average).
-                offsets.push((dx, dy, 1.0));
-            }
+        let remaining = r2 - (dy * dy) as f32;
+        if remaining >= 0.0 {
+            let span = remaining.sqrt().floor() as i32;
+            spans.push((dy, span));
+            sample_count += (span * 2 + 1) as usize;
         }
     }
-    let inv_count = 1.0 / offsets.len() as f32;
+    let inv_count = 1.0 / sample_count as f32;
 
     let src_raw = flat.as_raw();
     let mut dst_raw = vec![0u8; w * h * 4];
@@ -55,34 +57,57 @@ pub fn bokeh_blur_core(flat: &RgbaImage, radius: f32, mask: Option<&GrayImage>) 
         .par_chunks_mut(stride)
         .enumerate()
         .for_each(|(y, row_out)| {
+            let mut row_sums = vec![[0u32; 4]; spans.len()];
+            for (span_index, &(dy, span)) in spans.iter().enumerate() {
+                let sy = (y as i32 + dy).clamp(0, h as i32 - 1) as usize;
+                for dx in -span..=span {
+                    let sx = dx.clamp(0, w as i32 - 1) as usize;
+                    let si = sy * stride + sx * 4;
+                    for c in 0..4 {
+                        row_sums[span_index][c] += src_raw[si + c] as u32;
+                    }
+                }
+            }
             for x in 0..w {
                 let pi = x * 4;
-                if let Some(mr) = mask_raw
+                let masked_out = if let Some(mr) = mask_raw
                     && x < mask_w
                     && y < mask_h
                     && mr[y * mask_w + x] == 0
                 {
                     let src_off = y * stride + pi;
                     row_out[pi..pi + 4].copy_from_slice(&src_raw[src_off..src_off + 4]);
-                    continue;
+                    true
+                } else {
+                    false
+                };
+                if !masked_out {
+                    let totals = row_sums.iter().fold([0u64; 4], |mut total, sum| {
+                        for c in 0..4 {
+                            total[c] += sum[c] as u64;
+                        }
+                        total
+                    });
+                    for c in 0..4 {
+                        row_out[pi + c] = (totals[c] as f32 * inv_count)
+                            .round()
+                            .clamp(0.0, 255.0) as u8;
+                    }
                 }
-                let mut r_sum = 0.0f32;
-                let mut g_sum = 0.0f32;
-                let mut b_sum = 0.0f32;
-                let mut a_sum = 0.0f32;
-                for &(dx, dy, _wt) in &offsets {
-                    let sx = (x as i32 + dx).clamp(0, w as i32 - 1) as usize;
-                    let sy = (y as i32 + dy).clamp(0, h as i32 - 1) as usize;
-                    let si = sy * stride + sx * 4;
-                    r_sum += src_raw[si] as f32;
-                    g_sum += src_raw[si + 1] as f32;
-                    b_sum += src_raw[si + 2] as f32;
-                    a_sum += src_raw[si + 3] as f32;
+                if x + 1 < w {
+                    for (span_index, &(dy, span)) in spans.iter().enumerate() {
+                        let sy = (y as i32 + dy).clamp(0, h as i32 - 1) as usize;
+                        let remove_x = (x as i32 - span).clamp(0, w as i32 - 1) as usize;
+                        let add_x = (x as i32 + span + 1).clamp(0, w as i32 - 1) as usize;
+                        let remove_i = sy * stride + remove_x * 4;
+                        let add_i = sy * stride + add_x * 4;
+                        for c in 0..4 {
+                            row_sums[span_index][c] = row_sums[span_index][c]
+                                - src_raw[remove_i + c] as u32
+                                + src_raw[add_i + c] as u32;
+                        }
+                    }
                 }
-                row_out[pi] = (r_sum * inv_count).round().clamp(0.0, 255.0) as u8;
-                row_out[pi + 1] = (g_sum * inv_count).round().clamp(0.0, 255.0) as u8;
-                row_out[pi + 2] = (b_sum * inv_count).round().clamp(0.0, 255.0) as u8;
-                row_out[pi + 3] = (a_sum * inv_count).round().clamp(0.0, 255.0) as u8;
             }
         });
 
@@ -217,79 +242,77 @@ pub fn box_blur_core(flat: &RgbaImage, radius: f32, mask: Option<&GrayImage>) ->
 
     let r = radius.ceil() as usize;
     let kernel_size = r * 2 + 1;
-    let inv_k = 1.0 / (kernel_size as f32);
+    let divisor = kernel_size as u32;
     let src_raw = flat.as_raw();
 
-    // Separable: horizontal pass
-    let mut h_buf = vec![0.0f32; w * h * 4];
+    // Sliding-window separable blur: O(width * height), independent of radius.
+    // Keep the intermediate as bytes to halve peak memory versus two f32 frames.
+    let mut h_buf = vec![0u8; w * h * 4];
     h_buf
         .par_chunks_mut(w * 4)
         .enumerate()
         .for_each(|(y, row_out)| {
-            for x in 0..w {
-                let mut sums = [0.0f32; 4];
-                for k in 0..kernel_size {
-                    let sx = (x as i32 + k as i32 - r as i32).clamp(0, w as i32 - 1) as usize;
-                    let si = y * w * 4 + sx * 4;
-                    for c in 0..4 {
-                        sums[c] += src_raw[si + c] as f32;
-                    }
+            let row = &src_raw[y * w * 4..(y + 1) * w * 4];
+            let mut sums = [0u32; 4];
+            for k in 0..kernel_size {
+                let sx = (k as i32 - r as i32).clamp(0, w as i32 - 1) as usize;
+                for c in 0..4 {
+                    sums[c] += row[sx * 4 + c] as u32;
                 }
+            }
+            for x in 0..w {
                 let oi = x * 4;
                 for c in 0..4 {
-                    row_out[oi + c] = sums[c] * inv_k;
+                    row_out[oi + c] = ((sums[c] + divisor / 2) / divisor) as u8;
+                }
+                if x + 1 < w {
+                    let remove_x = (x as i32 - r as i32).clamp(0, w as i32 - 1) as usize;
+                    let add_x = (x as i32 + r as i32 + 1).clamp(0, w as i32 - 1) as usize;
+                    for c in 0..4 {
+                        sums[c] = sums[c] - row[remove_x * 4 + c] as u32
+                            + row[add_x * 4 + c] as u32;
+                    }
                 }
             }
         });
 
-    // Vertical pass
-    let mut v_buf = vec![0.0f32; w * h * 4];
-    v_buf
-        .par_chunks_mut(w * 4)
-        .enumerate()
-        .for_each(|(y, row_out)| {
-            for x in 0..w {
-                let mut sums = [0.0f32; 4];
-                for k in 0..kernel_size {
-                    let sy = (y as i32 + k as i32 - r as i32).clamp(0, h as i32 - 1) as usize;
-                    let si = sy * w * 4 + x * 4;
-                    for c in 0..4 {
-                        sums[c] += h_buf[si + c];
-                    }
-                }
-                let oi = x * 4;
-                for c in 0..4 {
-                    row_out[oi + c] = sums[c] * inv_k;
-                }
-            }
-        });
-
-    // Apply mask
+    // Vertical sliding pass, applying the selection mask directly into output.
     let mask_raw = mask.map(|m| m.as_raw().as_slice());
     let mask_w = mask.map_or(0, |m| m.width() as usize);
     let mask_h = mask.map_or(0, |m| m.height() as usize);
     let mut dst_raw = vec![0u8; w * h * 4];
-    dst_raw
-        .par_chunks_mut(w * 4)
-        .enumerate()
-        .for_each(|(y, row_out)| {
-            for x in 0..w {
-                let pi = x * 4;
-                if let Some(mr) = mask_raw
-                    && x < mask_w
-                    && y < mask_h
-                    && mr[y * mask_w + x] == 0
-                {
-                    let si = y * w * 4 + pi;
-                    row_out[pi..pi + 4].copy_from_slice(&src_raw[si..si + 4]);
-                    continue;
-                }
-                let vi = y * w * 4 + pi;
+    for x in 0..w {
+        let mut sums = [0u32; 4];
+        for k in 0..kernel_size {
+            let sy = (k as i32 - r as i32).clamp(0, h as i32 - 1) as usize;
+            let si = (sy * w + x) * 4;
+            for c in 0..4 {
+                sums[c] += h_buf[si + c] as u32;
+            }
+        }
+        for y in 0..h {
+            let oi = (y * w + x) * 4;
+            if mask_raw.is_some_and(|mr| {
+                x < mask_w && y < mask_h && mr[y * mask_w + x] == 0
+            }) {
+                dst_raw[oi..oi + 4].copy_from_slice(&src_raw[oi..oi + 4]);
+            } else {
                 for c in 0..4 {
-                    row_out[pi + c] = v_buf[vi + c].round().clamp(0.0, 255.0) as u8;
+                    dst_raw[oi + c] = ((sums[c] + divisor / 2) / divisor) as u8;
                 }
             }
-        });
+            if y + 1 < h {
+                let remove_y = (y as i32 - r as i32).clamp(0, h as i32 - 1) as usize;
+                let add_y = (y as i32 + r as i32 + 1).clamp(0, h as i32 - 1) as usize;
+                let remove_i = (remove_y * w + x) * 4;
+                let add_i = (add_y * w + x) * 4;
+                for c in 0..4 {
+                    sums[c] = sums[c] - h_buf[remove_i + c] as u32
+                        + h_buf[add_i + c] as u32;
+                }
+            }
+        }
+    }
 
     RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap()
 }

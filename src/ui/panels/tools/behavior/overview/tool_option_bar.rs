@@ -359,13 +359,14 @@ impl ToolsPanel {
             }
 
             // Show right-click context menu if active
+            self.cursor_blocking_rect = None;
             if let Some((ref ctx_tip, cx, cy)) = self.brush_tip_context_menu.clone() {
                 let ctx_id = ui.make_persistent_id("brush_tip_ctx_menu");
                 let ctx_rect = egui::Rect::from_min_size(
                     egui::pos2(cx, cy),
                     egui::vec2(120.0, 0.0),
                 );
-                egui::Area::new(ctx_id)
+                let menu = egui::Area::new(ctx_id)
                     .fixed_pos(ctx_rect.min)
                     .order(egui::Order::Foreground)
                     .show(ui.ctx(), |ui| {
@@ -379,10 +380,18 @@ impl ToolsPanel {
                             }
                         });
                     });
+                let menu_rect = menu.response.rect;
+                self.cursor_blocking_rect = Some(menu_rect);
+                if ui
+                    .ctx()
+                    .input(|i| i.pointer.hover_pos().is_some_and(|pos| menu_rect.contains(pos)))
+                {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+                }
                 // Close context menu on any click outside
                 if ui.input(|i| i.pointer.any_click())
                     && let Some(pointer_pos) = ui.input(|i| i.pointer.latest_pos())
-                    && !ctx_rect.contains(pointer_pos)
+                    && !menu_rect.contains(pointer_pos)
                 {
                     self.brush_tip_context_menu = None;
                 }

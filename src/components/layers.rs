@@ -115,6 +115,8 @@ pub enum LayerAppAction {
 #[derive(Default)]
 pub struct LayersPanel {
     settings_state: LayerSettingsState,
+    /// Floating child window that must block canvas input/cursor handling.
+    pub settings_popup_rect: Option<Rect>,
     peek_state: PeekState,
     rename_state: RenameState,
     folder_rename_state: FolderRenameState,

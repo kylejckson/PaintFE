@@ -192,7 +192,7 @@ use super::compute::{
     GpuMagicWandPipeline, GpuMedianPipeline, GpuMeshWarpDisplacementPipeline,
 };
 use super::pool::TexturePool;
-use super::texture::{LayerTexture, MipmapPipeline};
+use super::texture::LayerTexture;
 
 /// Tracks which region of a layer is dirty and needs re-upload.
 #[derive(Clone, Debug)]
@@ -224,7 +224,6 @@ pub struct GpuRenderer {
     pub flood_fill_pipeline: GpuFloodFillPipeline,
     pub liquify_pipeline: GpuLiquifyPipeline,
     pub mesh_warp_disp_pipeline: GpuMeshWarpDisplacementPipeline,
-    pub mipmap_pipeline: MipmapPipeline,
     pub texture_pool: TexturePool,
     layer_textures: HashMap<usize, GpuLayerState>,
     /// Output (composited) texture — recycled between frames.
@@ -267,8 +266,7 @@ impl GpuRenderer {
     /// Web entry point: build a renderer from eframe's own wgpu device
     /// (see `GpuContext::from_egui_render_state`) instead of requesting a
     /// second adapter, which can't be done synchronously in the browser.
-    #[cfg(target_arch = "wasm32")]
-    pub fn new_for_web(rs: &eframe::egui_wgpu::RenderState) -> Self {
+    pub fn new_for_egui(rs: &eframe::egui_wgpu::RenderState) -> Self {
         Self::from_context(GpuContext::from_egui_render_state(rs))
     }
 
@@ -287,8 +285,6 @@ impl GpuRenderer {
         let flood_fill_pipeline = GpuFloodFillPipeline::new(&ctx.device);
         let liquify_pipeline = GpuLiquifyPipeline::new(&ctx.device);
         let mesh_warp_disp_pipeline = GpuMeshWarpDisplacementPipeline::new(&ctx.device);
-        let mipmap_pipeline = MipmapPipeline::new(&ctx.device);
-
         Self {
             ctx,
             compositor,
@@ -303,7 +299,6 @@ impl GpuRenderer {
             flood_fill_pipeline,
             liquify_pipeline,
             mesh_warp_disp_pipeline,
-            mipmap_pipeline,
             texture_pool: TexturePool::new(),
             layer_textures: HashMap::new(),
             output_texture: None,
@@ -346,7 +341,10 @@ impl GpuRenderer {
             return;
         }
 
-        let mip_levels = LayerTexture::mip_level_count(width, height);
+        // Layer textures are always sampled 1:1 by the compositor. Generating a
+        // complete mip chain per layer costs another ~33% VRAM and turns every
+        // upload into a cascade of compute passes without improving display LOD.
+        let mip_levels = 1;
         let texture = if let Some(recycled) = self.texture_pool.acquire(width, height, mip_levels) {
             let view = recycled.create_view(&wgpu::TextureViewDescriptor::default());
             let sampler = self.compositor.sampler_for_zoom(1.0);
@@ -376,14 +374,6 @@ impl GpuRenderer {
                 mip_levels,
             };
             lt.upload_full(&self.ctx.queue, data);
-            self.mipmap_pipeline.generate(
-                &self.ctx.device,
-                &self.ctx.queue,
-                &lt.texture,
-                width,
-                height,
-                mip_levels,
-            );
             lt
         } else {
             let sampler = self.compositor.sampler_for_zoom(1.0);
@@ -395,7 +385,7 @@ impl GpuRenderer {
                 width,
                 height,
                 data,
-                Some(&self.mipmap_pipeline),
+                None,
             )
         };
 
@@ -818,9 +808,55 @@ impl GpuRenderer {
         canvas_h: u32,
         layer_info: &[(usize, f32, bool, u8)],
         use_linear_filter: bool,
-    ) -> Option<(wgpu::TextureView, &wgpu::Sampler)> {
+    ) -> Option<(wgpu::TextureView, u64)> {
         if !self.available {
             return None;
+        }
+
+        let all_normal = layer_info
+            .iter()
+            .filter(|(_, _, visible, _)| *visible)
+            .all(|(_, _, _, blend_mode)| *blend_mode == 0);
+
+        if all_normal {
+            if self.output_texture.is_none()
+                || self.output_width != canvas_w
+                || self.output_height != canvas_h
+            {
+                self.output_texture =
+                    Some(self.ctx.device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("normal_composite_output"),
+                        size: wgpu::Extent3d {
+                            width: canvas_w,
+                            height: canvas_h,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: self.compositor.output_format,
+                        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                            | wgpu::TextureUsages::TEXTURE_BINDING
+                            | wgpu::TextureUsages::COPY_SRC,
+                        view_formats: &[],
+                    }));
+                self.output_width = canvas_w;
+                self.output_height = canvas_h;
+            }
+            let output = self.output_texture.as_ref().unwrap();
+            let output_view = output.create_view(&wgpu::TextureViewDescriptor::default());
+            let normal_layers: Vec<(f32, &LayerTexture)> = layer_info
+                .iter()
+                .filter_map(|(idx, opacity, visible, _)| {
+                    visible
+                        .then(|| self.layer_textures.get(idx).map(|s| (*opacity, &s.texture)))
+                        .flatten()
+                })
+                .collect();
+            self.compositor
+                .composite_layers(&self.ctx, &output_view, &normal_layers);
+            let key = ((canvas_w as u64) << 32) | canvas_h as u64;
+            return Some((output_view, key));
         }
 
         self.ensure_ping_pong(canvas_w, canvas_h);
@@ -856,13 +892,9 @@ impl GpuRenderer {
             self.ping_pong[1].as_ref().unwrap()
         };
         let result_view = result_tex.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = if use_linear_filter {
-            &self.compositor.sampler_linear
-        } else {
-            &self.compositor.sampler_nearest
-        };
-
-        Some((result_view, sampler))
+        let _ = use_linear_filter;
+        let key = ((result_idx as u64 + 1) << 62) | ((canvas_w as u64) << 31) | canvas_h as u64;
+        Some((result_view, key))
     }
 
     /// Get access to context for external rendering

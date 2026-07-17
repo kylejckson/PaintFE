@@ -158,7 +158,9 @@ impl Canvas {
 
         let clipped_painter = painter.with_clip_rect(viewport);
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-        if let Some(texture) = &state.composite_cache {
+        if let Some(texture) = self.native_composite_texture {
+            clipped_painter.image(texture, image_rect, uv, tint);
+        } else if let Some(texture) = &state.composite_cache {
             clipped_painter.image(texture.id(), image_rect, uv, tint);
         }
     }

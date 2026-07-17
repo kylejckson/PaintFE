@@ -25,59 +25,19 @@ where
     if layer_idx >= state.layers.len() {
         return;
     }
-    let layer = &mut state.layers[layer_idx];
-    let w = layer.pixels.width() as usize;
-    let h = layer.pixels.height() as usize;
-    if w == 0 || h == 0 {
-        return;
-    }
-
-    let flat = layer.pixels.to_rgba_image();
-    let src_raw = flat.as_raw();
-    let mut dst_raw = vec![0u8; w * h * 4];
-    let stride = w * 4;
-
-    let mask_raw = state.selection_mask.as_ref().map(|m| m.as_raw().as_slice());
-    let mask_w = state
-        .selection_mask
-        .as_ref()
-        .map_or(0, |m| m.width() as usize);
-    let mask_h = state
-        .selection_mask
-        .as_ref()
-        .map_or(0, |m| m.height() as usize);
-
-    dst_raw
-        .par_chunks_mut(stride)
-        .enumerate()
-        .for_each(|(y, row_out)| {
-            let row_in = &src_raw[y * stride..(y + 1) * stride];
-            for x in 0..w {
-                let pi = x * 4;
-                // Check selection mask
-                if let Some(mr) = mask_raw
-                    && x < mask_w
-                    && y < mask_h
-                    && mr[y * mask_w + x] == 0
-                {
-                    row_out[pi..pi + 4].copy_from_slice(&row_in[pi..pi + 4]);
-                    continue;
-                }
-                let r = row_in[pi] as f32;
-                let g = row_in[pi + 1] as f32;
-                let b = row_in[pi + 2] as f32;
-                let a = row_in[pi + 3] as f32;
-                let (nr, ng, nb, na) = transform(r, g, b, a);
-                row_out[pi] = nr.round().clamp(0.0, 255.0) as u8;
-                row_out[pi + 1] = ng.round().clamp(0.0, 255.0) as u8;
-                row_out[pi + 2] = nb.round().clamp(0.0, 255.0) as u8;
-                row_out[pi + 3] = na.round().clamp(0.0, 255.0) as u8;
-            }
-        });
-
-    let out = RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap();
-    let layer = &mut state.layers[layer_idx];
-    layer.pixels = TiledImage::from_rgba_image(&out);
+    let mask = state.selection_mask.as_ref();
+    state.layers[layer_idx].pixels.par_map_populated(|x, y, p| {
+        if mask.is_some_and(|m| x < m.width() && y < m.height() && m.get_pixel(x, y)[0] == 0) {
+            return p;
+        }
+        let (nr, ng, nb, na) = transform(p[0] as f32, p[1] as f32, p[2] as f32, p[3] as f32);
+        image::Rgba([
+            nr.round().clamp(0.0, 255.0) as u8,
+            ng.round().clamp(0.0, 255.0) as u8,
+            nb.round().clamp(0.0, 255.0) as u8,
+            na.round().clamp(0.0, 255.0) as u8,
+        ])
+    });
     state.mark_dirty(None);
 }
 
@@ -160,7 +120,13 @@ pub fn invert_colors(state: &mut CanvasState, layer_idx: usize) {
 
 /// Invert the alpha channel. RGB is preserved.
 pub fn invert_alpha(state: &mut CanvasState, layer_idx: usize) {
-    apply_pixel_transform(state, layer_idx, |r, g, b, a| (r, g, b, 255.0 - a));
+    if layer_idx >= state.layers.len() {
+        return;
+    }
+    let original = state.layers[layer_idx].pixels.to_rgba_image();
+    apply_pixel_transform_from_flat(state, layer_idx, &original, |r, g, b, a| {
+        (r, g, b, 255.0 - a)
+    });
 }
 
 /// Apply a sepia tone effect.

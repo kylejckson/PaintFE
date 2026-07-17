@@ -64,6 +64,7 @@ impl PaintFEApp {
 
     /// Show the floating Tools panel (minimalist vertical strip) - anchored to left edge
     fn show_floating_tools_panel(&mut self, ctx: &egui::Context, _screen_size_changed: bool) {
+        self.tools_panel.cursor_blocking_rect = None;
         let mut show = self.window_visibility.tools;
         let mut close_clicked = false;
 
@@ -148,6 +149,9 @@ impl PaintFEApp {
                 ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p)));
             ctx.animate_bool(hover_id, hovered);
         }
+        if let Some(rect) = self.tools_panel.cursor_blocking_rect {
+            self.remember_ui_cursor_rect(rect);
+        }
 
         if close_clicked {
             show = false;
@@ -157,6 +161,7 @@ impl PaintFEApp {
 
     /// Show the floating Layers panel
     fn show_floating_layers_panel(&mut self, ctx: &egui::Context, _screen_size_changed: bool) {
+        self.layers_panel.settings_popup_rect = None;
         let mut show = self.window_visibility.layers;
         let mut close_clicked = false;
         self.is_pointer_over_layers_panel = false;
@@ -427,6 +432,9 @@ impl PaintFEApp {
                 ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p)));
             self.is_pointer_over_layers_panel = hovered;
             ctx.animate_bool(hover_id, hovered);
+        }
+        if let Some(rect) = self.layers_panel.settings_popup_rect {
+            self.remember_ui_cursor_rect(rect);
         }
 
         if close_clicked {

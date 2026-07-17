@@ -1904,6 +1904,8 @@ pub struct ToolsPanel {
     pub pending_delete_brush_tip: Option<String>,
     /// Right-click context menu state for brush tip picker: (tip_name, screen_pos_x, screen_pos_y)
     pub brush_tip_context_menu: Option<(String, f32, f32)>,
+    /// Floating child UI that must block canvas input/cursor handling.
+    pub cursor_blocking_rect: Option<egui::Rect>,
     canvas_pointer_active: bool,
 }
 
@@ -1961,6 +1963,7 @@ impl Default for ToolsPanel {
             pending_open_add_brush_tip: false,
             pending_delete_brush_tip: None,
             brush_tip_context_menu: None,
+            cursor_blocking_rect: None,
             canvas_pointer_active: false,
         }
     }

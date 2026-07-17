@@ -80,18 +80,21 @@ impl Canvas {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn new(preferred_gpu: &str) -> Self {
         let gpu_renderer = crate::gpu::GpuRenderer::new(preferred_gpu);
-        Self::from_gpu_renderer(gpu_renderer)
+        Self::from_gpu_renderer(gpu_renderer, None)
     }
 
-    /// Web entry point: build the canvas reusing eframe's own wgpu device
-    /// (see `GpuRenderer::new_for_web`) instead of requesting a fresh
-    /// adapter, which can't be done synchronously in the browser.
-    #[cfg(target_arch = "wasm32")]
-    pub fn new_for_web(rs: &eframe::egui_wgpu::RenderState) -> Self {
-        Self::from_gpu_renderer(crate::gpu::GpuRenderer::new_for_web(rs))
+    /// Build on eframe's device so compositor textures can be shown directly.
+    pub fn new_for_render_state(rs: &eframe::egui_wgpu::RenderState) -> Self {
+        Self::from_gpu_renderer(
+            crate::gpu::GpuRenderer::new_for_egui(rs),
+            Some(rs.clone()),
+        )
     }
 
-    fn from_gpu_renderer(gpu_renderer: crate::gpu::GpuRenderer) -> Self {
+    fn from_gpu_renderer(
+        gpu_renderer: crate::gpu::GpuRenderer,
+        egui_render_state: Option<eframe::egui_wgpu::RenderState>,
+    ) -> Self {
         Self {
             zoom: 1.0,
             pan_offset: Vec2::ZERO,
@@ -103,6 +106,9 @@ impl Canvas {
             paste_context_action: None,
             open_paste_menu: false,
             gpu_renderer,
+            egui_render_state,
+            native_composite_texture: None,
+            native_composite_key: None,
             frame_times: VecDeque::with_capacity(60),
             fps: 0.0,
             fill_recalc_active: false,
@@ -313,8 +319,12 @@ impl Canvas {
         {
             let gpu = &mut self.gpu_renderer;
             Self::flush_committed_preview_region(ui, state, texture_options);
-            let pixels_dirty = state.dirty_rect.is_some() || state.composite_cache.is_none();
-            let defer_live_resize_composite = live_window_resize && state.composite_cache.is_some();
+            let has_display_texture =
+                state.composite_cache.is_some() || self.native_composite_texture.is_some();
+            let pixels_dirty = state.dirty_rect.is_some()
+                || !has_display_texture
+                || (filter_changed && self.native_composite_texture.is_some());
+            let defer_live_resize_composite = live_window_resize && has_display_texture;
             let has_visible_adjustment = state.layers.iter().enumerate().any(|(idx, l)| {
                 state.layer_effectively_visible(idx)
                     && matches!(l.content, LayerContent::Adjustment(_))
@@ -326,10 +336,13 @@ impl Canvas {
             let needs_reupload_only =
                 filter_changed && !pixels_dirty && !state.composite_cpu_buffer.is_empty();
 
-            // Browser WebGPU readback completion is asynchronous to the
-            // eframe frame loop. Keep web presentation on the CPU composite
-            // path so imported and committed layers are uploaded reliably.
-            if pixels_dirty && (has_visible_adjustment || cfg!(target_arch = "wasm32")) {
+            if pixels_dirty && (has_visible_adjustment || state.cmyk_preview) {
+                if let (Some(rs), Some(id)) =
+                    (self.egui_render_state.as_ref(), self.native_composite_texture.take())
+                {
+                    rs.renderer.write().free_texture(&id);
+                    self.native_composite_key = None;
+                }
                 gpu.async_readback.cancel_pending();
                 let composite = state.composite();
                 let mut pixels = Vec::with_capacity((state.width * state.height) as usize);
@@ -464,6 +477,47 @@ impl Canvas {
                     ));
                 }
 
+                // Preferred path: compositor output stays on eframe's device and
+                // is registered directly as an egui texture. No readback or
+                // ColorImage upload is performed during normal editing.
+                let native_presented = if let Some(rs) = self.egui_render_state.as_ref() {
+                    if let Some((view, source_key)) = gpu.composite_to_gpu(
+                        state.width,
+                        state.height,
+                        &layer_info,
+                        use_linear_filter,
+                    ) {
+                        let filter = if use_linear_filter {
+                            wgpu::FilterMode::Linear
+                        } else {
+                            wgpu::FilterMode::Nearest
+                        };
+                        let mut renderer = rs.renderer.write();
+                        if let Some(id) = self.native_composite_texture {
+                            if self.native_composite_key != Some((source_key, use_linear_filter)) {
+                                renderer.update_egui_texture_from_wgpu_texture(
+                                    &rs.device, &view, filter, id,
+                                );
+                            }
+                        } else {
+                            self.native_composite_texture = Some(
+                                renderer.register_native_texture(&rs.device, &view, filter),
+                            );
+                        }
+                        self.native_composite_key = Some((source_key, use_linear_filter));
+                        gpu.async_readback.cancel_pending();
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
+                if native_presented {
+                    state.dirty_rect = None;
+                } else {
+
                 // B1: Async double-buffered readback.  GPU composites the full
                 // canvas (fast, stays on GPU) and copies to a staging buffer.
                 // We read from the PREVIOUS frame's staging buffer (non-blocking,
@@ -591,6 +645,7 @@ impl Canvas {
                     ui.ctx().request_repaint();
                 }
                 state.dirty_rect = None;
+                }
             } else if pixels_dirty && defer_live_resize_composite {
                 if let Some((pixels, rx, ry, rw, rh, is_full)) =
                     gpu.async_readback.try_read(&gpu.ctx.device)

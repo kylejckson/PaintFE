@@ -1304,39 +1304,26 @@ impl ToolsPanel {
         canvas_state.preview_blend_mode = BlendMode::Normal;
         canvas_state.preview_force_composite = fill_color_u8.0[3] < 255;
 
-        // GPU path: compute flood distances synchronously on GPU, build index, render preview
-        if let Some(gpu) = gpu_renderer {
+        // A connected GPU fill needs up to width+height full-frame relaxation
+        // passes plus blocking convergence readbacks. On 4K canvases that can
+        // monopolize the UI thread for seconds. Keep the single-pass global
+        // distance map on GPU, but run connected minimax flood asynchronously.
+        if global_fill && let Some(gpu) = gpu_renderer {
             let flat_rgba =
                 Self::cached_active_layer_rgba(&mut self.fill_state.cached_flat_rgba, canvas_state);
             if let Some(flat_rgba) = flat_rgba {
                 let input_key = flat_rgba.as_ref().as_ptr() as usize;
                 let mut distances = Vec::new();
-                let ok = if global_fill {
-                    gpu.flood_fill_pipeline.compute_global_distances(
-                        &gpu.ctx,
-                        flat_rgba.as_ref(),
-                        input_key,
-                        target_color.0,
-                        canvas_state.width,
-                        canvas_state.height,
-                        self.fill_state.distance_mode,
-                        &mut distances,
-                    )
-                } else {
-                    gpu.flood_fill_pipeline.compute_flood_distances(
-                        &gpu.ctx,
-                        flat_rgba.as_ref(),
-                        input_key,
-                        target_color.0,
-                        start_pos.0,
-                        start_pos.1,
-                        canvas_state.width,
-                        canvas_state.height,
-                        self.fill_state.distance_mode,
-                        self.fill_state.connectivity,
-                        &mut distances,
-                    )
-                };
+                let ok = gpu.flood_fill_pipeline.compute_global_distances(
+                    &gpu.ctx,
+                    flat_rgba.as_ref(),
+                    input_key,
+                    target_color.0,
+                    canvas_state.width,
+                    canvas_state.height,
+                    self.fill_state.distance_mode,
+                    &mut distances,
+                );
                 if ok {
                     let region_index = ThresholdRegionIndex::from_distances(
                         distances,
@@ -1353,7 +1340,7 @@ impl ToolsPanel {
             }
         }
 
-        // CPU fallback: spawn async rayon task for Dijkstra
+        // Connected fill (and GPU fallback): async bucketed minimax flood.
         self.maybe_spawn_fill_preview(canvas_state, None);
     }
 

@@ -250,14 +250,11 @@ fn parallel_gaussian_blur(src: &RgbaImage, sigma: f32) -> RgbaImage {
     let radius = kernel.len() / 2;
     let src_raw = src.as_raw();
 
-    // Convert to f32 buffer (4 channels interleaved).
     let pixel_count = w * h * 4;
-    let mut buf_in: Vec<f32> = Vec::with_capacity(pixel_count);
-    for &b in src_raw.iter() {
-        buf_in.push(b as f32);
-    }
 
-    // --- Horizontal pass (parallel by row) ---
+    // Keep only the precision-bearing intermediate in f32. Reading the first
+    // pass from u8 and writing the final pass directly to u8 cuts peak working
+    // memory from three 4-channel f32 frames to one.
     let mut buf_h = vec![0.0f32; pixel_count];
     buf_h
         .par_chunks_mut(w * 4)
@@ -274,10 +271,10 @@ fn parallel_gaussian_blur(src: &RgbaImage, sigma: f32) -> RgbaImage {
                         .max(0)
                         .min(w as isize - 1) as usize;
                     let idx = row_in_start + sx * 4;
-                    r += buf_in[idx] * kv;
-                    g += buf_in[idx + 1] * kv;
-                    b += buf_in[idx + 2] * kv;
-                    a += buf_in[idx + 3] * kv;
+                    r += src_raw[idx] as f32 * kv;
+                    g += src_raw[idx + 1] as f32 * kv;
+                    b += src_raw[idx + 2] as f32 * kv;
+                    a += src_raw[idx + 3] as f32 * kv;
                 }
                 let out_idx = x * 4;
                 row_out[out_idx] = r;
@@ -287,9 +284,8 @@ fn parallel_gaussian_blur(src: &RgbaImage, sigma: f32) -> RgbaImage {
             }
         });
 
-    // --- Vertical pass (parallel by row) ---
-    let mut buf_v = vec![0.0f32; pixel_count];
-    buf_v
+    let mut dst_raw = vec![0u8; pixel_count];
+    dst_raw
         .par_chunks_mut(w * 4)
         .enumerate()
         .for_each(|(y, row_out)| {
@@ -309,18 +305,13 @@ fn parallel_gaussian_blur(src: &RgbaImage, sigma: f32) -> RgbaImage {
                     a += buf_h[idx + 3] * kv;
                 }
                 let out_idx = x * 4;
-                row_out[out_idx] = r;
-                row_out[out_idx + 1] = g;
-                row_out[out_idx + 2] = b;
-                row_out[out_idx + 3] = a;
+                row_out[out_idx] = r.round().clamp(0.0, 255.0) as u8;
+                row_out[out_idx + 1] = g.round().clamp(0.0, 255.0) as u8;
+                row_out[out_idx + 2] = b.round().clamp(0.0, 255.0) as u8;
+                row_out[out_idx + 3] = a.round().clamp(0.0, 255.0) as u8;
             }
         });
 
-    // Convert back to u8.
-    let dst_raw: Vec<u8> = buf_v
-        .iter()
-        .map(|&v| v.round().clamp(0.0, 255.0) as u8)
-        .collect();
     RgbaImage::from_raw(w as u32, h as u32, dst_raw).unwrap()
 }
 

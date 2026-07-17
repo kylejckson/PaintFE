@@ -23,6 +23,10 @@ pub struct Canvas {
     pub open_paste_menu: bool,
     /// GPU renderer (always initialised — uses software fallback if no hardware).
     pub gpu_renderer: crate::gpu::GpuRenderer,
+    /// Shared eframe renderer state enables direct presentation of compositor output.
+    egui_render_state: Option<eframe::egui_wgpu::RenderState>,
+    native_composite_texture: Option<egui::TextureId>,
+    native_composite_key: Option<(u64, bool)>,
     /// FPS tracking: recent frame times for averaging
     frame_times: VecDeque<f64>,
     /// Cached FPS value (updated periodically)

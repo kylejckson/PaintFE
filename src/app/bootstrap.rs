@@ -169,16 +169,16 @@ impl PaintFEApp {
             settings.birefnet_model_path.clone(),
         );
 
-        #[cfg(target_arch = "wasm32")]
         let canvas = match cc.wgpu_render_state.as_ref() {
-            Some(rs) => Canvas::new_for_web(rs),
+            Some(rs) => Canvas::new_for_render_state(rs),
+            #[cfg(target_arch = "wasm32")]
             None => panic!(
                 "PaintFE web requires the eframe wgpu renderer (WebGPU/WebGL); \
                  no wgpu_render_state was available from eframe"
             ),
+            #[cfg(not(target_arch = "wasm32"))]
+            None => Canvas::new(&settings.preferred_gpu),
         };
-        #[cfg(not(target_arch = "wasm32"))]
-        let canvas = Canvas::new(&settings.preferred_gpu);
         let create_canvas_on_startup = settings.create_canvas_on_startup;
 
         let mut app = Self {
