@@ -18,7 +18,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88

@@ -47,7 +47,7 @@ jobs:
 
     steps:
       - name: Checkout at release commit
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/v{0}', inputs.version) || github.event.workflow_run.head_sha }}
 
