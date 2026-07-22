@@ -49,6 +49,16 @@ struct PendingPasteRequest {
     overwrite_mask: Option<image::GrayImage>,
 }
 
+/// Non-destructive session state for interactive whole-canvas straightening.
+struct StraightenSession {
+    project_id: uuid::Uuid,
+    preview: RgbaImage,
+    angle_degrees: f32,
+    interpolation: crate::ops::transform::Interpolation,
+    drag_start: Option<(egui::Pos2, f32)>,
+    generation: u64,
+}
+
 /// Result delivered from a background IO thread.
 pub enum IoResult {
     /// An image file was decoded and tiled, ready to become a new project.
@@ -147,6 +157,8 @@ pub struct PaintFEApp {
 
     // Paste overlay (floating pasted image being manipulated)
     paste_overlay: Option<PasteOverlay>,
+    straighten_session: Option<StraightenSession>,
+    next_straighten_generation: u64,
     pending_paste_request: Option<PendingPasteRequest>,
     clipboard_paste_receiver:
         Option<mpsc::Receiver<Option<crate::ops::clipboard::ClipboardImageForPaste>>>,

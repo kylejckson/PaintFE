@@ -201,6 +201,7 @@ pub enum Icon {
 
     // === UI: Context bar ===
     UiBrushDynamics,
+    UiStraighten,
 }
 
 impl Icon {
@@ -394,6 +395,7 @@ impl Icon {
             Icon::MenuViewThemeDark => "\u{1F319}",
             // UI: Context bar
             Icon::UiBrushDynamics => "\u{1F3B5}",
+            Icon::UiStraighten => "[R]",
         }
     }
 
@@ -502,6 +504,7 @@ impl Icon {
             Icon::ShapeBoth => "Shape: Both",
             // UI: Context bar
             Icon::UiBrushDynamics => "Brush Dynamics (Flow, Scatter, Color Jitter)",
+            Icon::UiStraighten => "Straighten Canvas",
             // All menu items — tooltip matches the label
             _ => "",
         }

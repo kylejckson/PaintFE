@@ -100,6 +100,7 @@ impl Canvas {
             pan_offset: Vec2::ZERO,
             last_filter_was_linear: None,
             last_canvas_rect: None,
+            last_image_rect: None,
             selection_stroke: Color32::from_rgb(66, 133, 244),
             selection_fill: Color32::from_rgba_unmultiplied(66, 133, 244, 50),
             selection_contrast: Color32::WHITE,
@@ -109,6 +110,8 @@ impl Canvas {
             egui_render_state,
             native_composite_texture: None,
             native_composite_key: None,
+            straighten_preview_texture: None,
+            straighten_preview_generation: u64::MAX,
             frame_times: VecDeque::with_capacity(60),
             fps: 0.0,
             fill_recalc_active: false,
@@ -180,6 +183,18 @@ impl Canvas {
 
     /// Clear all GPU layer textures (e.g., project switch).
     pub fn gpu_clear_layers(&mut self) {
+        // Layer textures and the native composite belong to the currently
+        // displayed project. Keeping the latter across a tab/document change
+        // can paint the previous document while the next project has no dirty
+        // region yet.
+        if let (Some(rs), Some(id)) = (
+            self.egui_render_state.as_ref(),
+            self.native_composite_texture.take(),
+        ) {
+            rs.renderer.write().free_texture(&id);
+        }
+        self.native_composite_key = None;
+        self.last_filter_was_linear = None;
         self.gpu_renderer.clear_layers();
     }
 
@@ -197,6 +212,7 @@ impl Canvas {
             default_primary,
             default_secondary,
             default_bg,
+            None,
             None,
             false,
             &default_settings,
@@ -221,6 +237,7 @@ impl Canvas {
         secondary_color_f32: [f32; 4],
         bg_color: Color32,
         mut paste_overlay: Option<&mut crate::ops::clipboard::PasteOverlay>,
+        straighten_preview: Option<(u64, &image::RgbaImage, f32)>,
         modal_open: bool,
         debug_settings: &crate::assets::AppSettings,
         pending_filter_jobs: usize,
@@ -825,6 +842,7 @@ impl Canvas {
             Pos2::new(temp_rect.min.x.round(), temp_rect.min.y.round()),
             Pos2::new(temp_rect.max.x.round(), temp_rect.max.y.round()),
         );
+        self.last_image_rect = Some(image_rect);
 
         // Fill background with theme color
         painter.rect_filled(canvas_rect, 0.0, bg_color);
@@ -921,8 +939,11 @@ impl Canvas {
         let is_overwrite_paste = paste_overlay
             .as_ref()
             .is_some_and(|o| o.overwrite_transparent_pixels);
-        if !is_overwrite_paste {
+        if !is_overwrite_paste && straighten_preview.is_none() {
             self.paint_composite_texture(&painter, image_rect, canvas_rect, state, Color32::WHITE);
+        }
+        if let Some((generation, preview, angle_degrees)) = straighten_preview {
+            self.paint_straighten_preview(ui, &painter, image_rect, generation, preview, angle_degrees);
         }
 
         // ====================================================================

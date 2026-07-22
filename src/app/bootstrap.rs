@@ -203,6 +203,8 @@ impl PaintFEApp {
             window_visibility: WindowVisibility::new(),
             active_dialog: ActiveDialog::default(),
             paste_overlay: None,
+            straighten_session: None,
+            next_straighten_generation: 1,
             pending_paste_request: None,
             clipboard_paste_receiver: None,
             pending_clipboard_cursor: None,
@@ -400,6 +402,7 @@ impl PaintFEApp {
         let project = Project::new_untitled(self.untitled_counter, width, height);
         self.projects.push(project);
         self.active_project_index = self.projects.len() - 1;
+        self.canvas.gpu_clear_layers();
         self.restore_active_project_view();
     }
 
@@ -414,6 +417,47 @@ impl PaintFEApp {
         } else {
             false
         }
+    }
+
+    fn start_straighten(&mut self) {
+        if self.straighten_session.is_some() || self.paste_overlay.is_some() {
+            return;
+        }
+        let generation = self.next_straighten_generation;
+        self.next_straighten_generation = self.next_straighten_generation.wrapping_add(1);
+        let Some(project) = self.active_project() else { return; };
+        self.straighten_session = Some(StraightenSession {
+            project_id: project.id,
+            preview: project.canvas_state.composite(),
+            angle_degrees: 0.0,
+            interpolation: crate::ops::transform::Interpolation::Bilinear,
+            drag_start: None,
+            generation,
+        });
+    }
+
+    fn cancel_straighten(&mut self) {
+        self.straighten_session = None;
+    }
+
+    fn commit_straighten(&mut self) {
+        let Some(session) = self.straighten_session.take() else { return; };
+        let Some(project) = self.active_project_mut() else { return; };
+        if project.id != session.project_id || session.angle_degrees.abs() < 0.001 {
+            return;
+        }
+        let before = CanvasSnapshot::capture(&project.canvas_state);
+        crate::ops::transform::rotate_canvas_arbitrary(
+            &mut project.canvas_state,
+            session.angle_degrees,
+            session.interpolation,
+        );
+        let after = CanvasSnapshot::capture(&project.canvas_state);
+        project.history.push(Box::new(SnapshotCommand::from_snapshots(
+            format!("Straighten {:.1}°", session.angle_degrees), before, after,
+        )));
+        project.mark_dirty();
+        self.canvas.gpu_clear_layers();
     }
 
     /// If the initial blank project should be auto-closed (because we opened a
@@ -646,17 +690,31 @@ impl PaintFEApp {
             // downscaling during interaction).
             let needs_overwrite = request.overwrite_transparent_pixels
                 && (request.overwrite_mask.is_some() || request.image.pixels().any(|p| p[3] < 255));
-            let mut overlay = if request.use_source_center {
-                let center = request
-                    .source_center
-                    .unwrap_or(egui::Pos2::new(cw as f32 / 2.0, ch as f32 / 2.0));
+            let image_w = request.image.width() as f32;
+            let image_h = request.image.height() as f32;
+            let canvas_center = egui::Pos2::new(cw as f32 / 2.0, ch as f32 / 2.0);
+            let same_size = request.image.width() == cw && request.image.height() == ch;
+            let cursor_center = request.cursor_canvas.and_then(|(x, y)| {
+                (x >= 0.0 && x <= cw as f32 && y >= 0.0 && y <= ch as f32)
+                    .then_some(egui::Pos2::new(x, y))
+            });
+            let source_center = request.source_center.filter(|center| {
+                center.x - image_w * 0.5 >= 0.0
+                    && center.y - image_h * 0.5 >= 0.0
+                    && center.x + image_w * 0.5 <= cw as f32
+                    && center.y + image_h * 0.5 <= ch as f32
+            });
+            // A full-canvas clipboard image belongs at (0, 0). Otherwise put a
+            // paste under the cursor when possible, falling back to the former
+            // source location only when it is fully visible in this document.
+            let placement = if same_size {
+                canvas_center
+            } else {
+                cursor_center.or(source_center).unwrap_or(canvas_center)
+            };
+            let mut overlay = if request.use_source_center || cursor_center.is_some() {
+                let center = placement;
                 let mut o = PasteOverlay::from_image_at(request.image, cw, ch, center);
-                o.overwrite_transparent_pixels = needs_overwrite;
-                o.overwrite_mask = request.overwrite_mask;
-                o
-            } else if let Some((cx, cy)) = request.cursor_canvas {
-                let mut o =
-                    PasteOverlay::from_image_at(request.image, cw, ch, egui::Pos2::new(cx, cy));
                 o.overwrite_transparent_pixels = needs_overwrite;
                 o.overwrite_mask = request.overwrite_mask;
                 o

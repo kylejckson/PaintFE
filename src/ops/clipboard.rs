@@ -992,6 +992,38 @@ impl PasteOverlay {
         self.cached_preview = None;
     }
 
+    /// Snap a move-drag to document edges and centre guides. Shift enables
+    /// this so ordinary drags remain unconstrained.
+    fn snap_center_to_canvas_guides(&mut self, canvas_w: f32, canvas_h: f32) {
+        const SNAP_DISTANCE: f32 = 8.0;
+        let half_w = self.source.width() as f32 * self.scale_x.abs() * 0.5;
+        let half_h = self.source.height() as f32 * self.scale_y.abs() * 0.5;
+
+        let snap_axis = |value: f32, candidates: &[f32]| {
+            candidates
+                .iter()
+                .copied()
+                .filter(|candidate| (value - candidate).abs() <= SNAP_DISTANCE)
+                .min_by(|a, b| {
+                    (value - a)
+                        .abs()
+                        .partial_cmp(&(value - b).abs())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .unwrap_or(value)
+        };
+
+        // Edge alignment is exact for an unrotated paste. A rotated paste
+        // still benefits from centre-guide snapping without surprising jumps.
+        if self.rotation.abs() < 0.001 {
+            self.center.x = snap_axis(self.center.x, &[half_w, canvas_w * 0.5, canvas_w - half_w]);
+            self.center.y = snap_axis(self.center.y, &[half_h, canvas_h * 0.5, canvas_h - half_h]);
+        } else {
+            self.center.x = snap_axis(self.center.x, &[canvas_w * 0.5]);
+            self.center.y = snap_axis(self.center.y, &[canvas_h * 0.5]);
+        }
+    }
+
     /// Start a paste from the app clipboard. Returns None if clipboard is empty.
     pub fn from_clipboard(canvas_w: u32, canvas_h: u32) -> Option<Self> {
         let payload = get_clipboard_image_for_paste()?;
@@ -1768,6 +1800,12 @@ impl PasteOverlay {
                         self.drag_start_center.x + delta_canvas.x,
                         self.drag_start_center.y + delta_canvas.y,
                     );
+                    if self.shift_held {
+                        self.snap_center_to_canvas_guides(
+                            image_rect.width() / zoom,
+                            image_rect.height() / zoom,
+                        );
+                    }
                     self.snap_center_to_pixel();
                 }
                 HandleKind::Anchor => {
@@ -1946,6 +1984,8 @@ impl PasteOverlay {
     pub fn context_menu(&mut self, ui: &mut egui::Ui) -> Option<bool> {
         let mut result = None;
         ui.menu_button("Paste Options", |ui| {
+            ui.label("Hold Shift while moving to snap to edges and centre.");
+            ui.separator();
             // Interpolation selector
             ui.label("Filter:");
             for interp in Interpolation::all() {

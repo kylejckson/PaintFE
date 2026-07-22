@@ -165,6 +165,74 @@ impl Canvas {
         }
     }
 
+    fn paint_straighten_preview(
+        &mut self,
+        ui: &egui::Ui,
+        painter: &egui::Painter,
+        image_rect: Rect,
+        generation: u64,
+        preview: &image::RgbaImage,
+        angle_degrees: f32,
+    ) {
+        if self.straighten_preview_generation != generation {
+            let image = egui::ColorImage::from_rgba_unmultiplied(
+                [preview.width() as usize, preview.height() as usize],
+                preview.as_raw(),
+            );
+            self.straighten_preview_texture = Some(ui.ctx().load_texture(
+                "straighten_preview",
+                image,
+                egui::TextureOptions::LINEAR,
+            ));
+            self.straighten_preview_generation = generation;
+        }
+        let Some(texture) = self.straighten_preview_texture.as_ref() else { return; };
+
+        let clipped = painter.with_clip_rect(image_rect);
+        let cell = 12.0;
+        let light = Color32::from_gray(205);
+        let dark = Color32::from_gray(165);
+        let mut y = image_rect.min.y;
+        let mut row = 0;
+        while y < image_rect.max.y {
+            let mut x = image_rect.min.x;
+            let mut col = row;
+            while x < image_rect.max.x {
+                clipped.rect_filled(
+                    Rect::from_min_max(
+                        Pos2::new(x, y),
+                        Pos2::new((x + cell).min(image_rect.max.x), (y + cell).min(image_rect.max.y)),
+                    ),
+                    0.0,
+                    if col % 2 == 0 { light } else { dark },
+                );
+                x += cell;
+                col += 1;
+            }
+            y += cell;
+            row += 1;
+        }
+
+        let center = image_rect.center();
+        let radians = angle_degrees.to_radians();
+        let (sin, cos) = radians.sin_cos();
+        let rotate = |p: Pos2| {
+            let d = p - center;
+            Pos2::new(center.x + d.x * cos - d.y * sin, center.y + d.x * sin + d.y * cos)
+        };
+        let mut mesh = egui::Mesh::with_texture(texture.id());
+        for (pos, uv) in [
+            (image_rect.left_top(), Pos2::new(0.0, 0.0)),
+            (image_rect.right_top(), Pos2::new(1.0, 0.0)),
+            (image_rect.left_bottom(), Pos2::new(0.0, 1.0)),
+            (image_rect.right_bottom(), Pos2::new(1.0, 1.0)),
+        ] {
+            mesh.vertices.push(egui::epaint::Vertex { pos: rotate(pos), uv, color: Color32::WHITE });
+        }
+        mesh.indices.extend_from_slice(&[0, 1, 2, 1, 3, 2]);
+        clipped.add(egui::Shape::mesh(mesh));
+    }
+
     fn paint_preview_texture(
         &self,
         painter: &egui::Painter,

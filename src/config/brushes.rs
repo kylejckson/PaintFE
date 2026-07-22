@@ -198,6 +198,11 @@ impl Assets {
         );
         self.load_icon(
             ctx,
+            Icon::UiStraighten,
+            include_bytes!("../../assets/icons/ui/straighten.png"),
+        );
+        self.load_icon(
+            ctx,
             Icon::Redo,
             include_bytes!("../../assets/icons/ui/redo.png"),
         );

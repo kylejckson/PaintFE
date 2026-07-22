@@ -2,7 +2,7 @@
 // TRANSFORM OPERATIONS — flip, rotate, affine for images and layers
 // ============================================================================
 
-use crate::canvas::{CanvasState, Layer, TiledImage};
+use crate::canvas::{CanvasState, Layer, LayerContent, TiledImage};
 use crate::par_compat::*;
 use image::{GrayImage, Luma, Rgba, RgbaImage, imageops};
 
@@ -126,6 +126,62 @@ pub fn rotate_canvas_180(state: &mut CanvasState) {
     state.layers.par_iter_mut().for_each(|layer| {
         layer.pixels.rotate_180_chunked();
     });
+    state.mark_dirty(None);
+}
+
+/// Rotate every canvas layer in place without changing canvas dimensions.
+/// Samples outside the original bounds as transparent.
+pub fn rotate_canvas_arbitrary(
+    state: &mut CanvasState,
+    degrees: f32,
+    interpolation: Interpolation,
+) {
+    if degrees.abs() < 0.001 {
+        return;
+    }
+    let width = state.width;
+    let height = state.height;
+    let rotated: Vec<_> = state
+        .layers
+        .par_iter()
+        .map(|layer| {
+            let flat = layer.pixels.to_rgba_image();
+            TiledImage::from_rgba_image(&apply_affine(
+                &flat,
+                width,
+                height,
+                degrees,
+                0.0,
+                0.0,
+                1.0,
+                (0.0, 0.0),
+                interpolation,
+            ))
+        })
+        .collect();
+    for (layer, pixels) in state.layers.iter_mut().zip(rotated) {
+        layer.pixels = pixels;
+        // Text geometry is not affine-transformable yet; preserve the exact
+        // rotated appearance by converting its current raster cache to pixels.
+        if matches!(layer.content, LayerContent::Text(_)) {
+            layer.content = LayerContent::Raster;
+        }
+        if let Some(mask) = layer.mask.as_ref() {
+            let flat = mask.to_rgba_image();
+            layer.mask = Some(TiledImage::from_rgba_image(&apply_affine(
+                &flat,
+                width,
+                height,
+                degrees,
+                0.0,
+                0.0,
+                1.0,
+                (0.0, 0.0),
+                interpolation,
+            )));
+        }
+    }
+    state.clear_preview_state();
     state.mark_dirty(None);
 }
 
@@ -709,7 +765,15 @@ pub fn affine_transform_layer(
 
     let flat = layer.pixels.to_rgba_image();
     let result = apply_affine(
-        &flat, w, h, rotation_z, rotation_x, rotation_y, scale, offset,
+        &flat,
+        w,
+        h,
+        rotation_z,
+        rotation_x,
+        rotation_y,
+        scale,
+        offset,
+        Interpolation::Bilinear,
     );
     layer.pixels = TiledImage::from_rgba_image(&result);
     state.mark_dirty(None);
@@ -741,6 +805,7 @@ pub fn affine_transform_layer_from_flat(
         rotation_y,
         scale,
         offset,
+        Interpolation::Bilinear,
     );
     let layer = &mut state.layers[layer_idx];
     layer.pixels = TiledImage::from_rgba_image(&result);
@@ -767,6 +832,7 @@ fn apply_affine(
     rotation_y: f32,
     scale: f32,
     offset: (f32, f32),
+    interpolation: Interpolation,
 ) -> RgbaImage {
     let mut dst = RgbaImage::new(canvas_w, canvas_h);
     let cx = canvas_w as f32 * 0.5;
@@ -827,6 +893,17 @@ fn apply_affine(
                 let inv_w = 1.0 / w;
                 let src_x = (h00 * u + base_sx) * inv_w + cx;
                 let src_y = (h10 * u + base_sy) * inv_w + cy;
+
+                if interpolation == Interpolation::Nearest {
+                    let nx = src_x.round() as i32;
+                    let ny = src_y.round() as i32;
+                    if nx >= 0 && ny >= 0 && nx < src_w && ny < src_h {
+                        let src_idx = ny as usize * src_stride + nx as usize * 4;
+                        let px = dx * 4;
+                        row[px..px + 4].copy_from_slice(&src_raw[src_idx..src_idx + 4]);
+                    }
+                    continue;
+                }
 
                 let x0 = src_x.floor() as i32;
                 let y0 = src_y.floor() as i32;

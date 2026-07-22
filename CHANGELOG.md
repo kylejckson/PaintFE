@@ -6,6 +6,28 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.3.9] - 2026-07-22
+
+- Added an interactive Straighten mode for quickly correcting photo rotation.
+- Fixed stale canvas ghosts when creating or switching documents after copying pixels.
+- Made pasted images easier to find and align precisely.
+
+### Added
+- Added Straighten to the floating tool shelf.
+- Drag directly on the image to set a rotation angle, or enter an exact angle manually.
+- Added nearest-neighbour and bilinear interpolation options for Straighten.
+- Added transparent corner previewing, Shift whole-degree snapping, Enter to apply, and Escape to cancel.
+- Added Shift-drag snapping for pasted images to canvas edges and centre guides.
+
+### Changed
+- Same-size clipboard images now paste at the document origin.
+- Other pasted images prefer the current cursor position and otherwise remain within the target canvas.
+
+### Fixed
+- Fixed stale GPU composite textures showing a scaled ghost of another document after creating or switching projects. Closes #114.
+- Fixed copied regions pasting at an unusable source-image position in newly created documents. Closes #114.
+- Added arbitrary whole-canvas rotation that preserves canvas dimensions and fills revealed pixels with transparency. Closes #108.
+
 ## [1.3.8] - 2026-07-17
 
 - Made canvas rendering significantly faster and lighter on large 4K and 8K projects.

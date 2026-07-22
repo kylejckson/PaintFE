@@ -11,6 +11,7 @@ pub struct Canvas {
     pan_offset: Vec2,
     last_filter_was_linear: Option<bool>, // Track last filter state to detect changes
     pub last_canvas_rect: Option<Rect>,
+    pub last_image_rect: Option<Rect>,
     /// Accent color for selection outlines (set from theme).
     pub selection_stroke: Color32,
     /// Faint accent for selection fill overlay (set from theme).
@@ -27,6 +28,8 @@ pub struct Canvas {
     egui_render_state: Option<eframe::egui_wgpu::RenderState>,
     native_composite_texture: Option<egui::TextureId>,
     native_composite_key: Option<(u64, bool)>,
+    straighten_preview_texture: Option<egui::TextureHandle>,
+    straighten_preview_generation: u64,
     /// FPS tracking: recent frame times for averaging
     frame_times: VecDeque<f64>,
     /// Cached FPS value (updated periodically)

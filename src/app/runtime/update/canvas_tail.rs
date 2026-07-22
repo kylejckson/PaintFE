@@ -30,6 +30,9 @@ impl PaintFEApp {
         // Keep the strip itself transparent so the canvas/app backdrop remains
         // visible behind the floating shelf container.
         let shelf_margin = 6.0;
+        let mut start_straighten = false;
+        let mut commit_straighten = false;
+        let mut cancel_straighten = false;
         #[allow(deprecated)]
         let shelf_resp = egui::Panel::top("tool_shelf_strip")
             .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(shelf_margin as i8)))
@@ -46,7 +49,31 @@ impl PaintFEApp {
                         if !has_project {
                             ui.disable();
                         }
-                        if let Some(ref mut overlay) = self.paste_overlay {
+                        if let Some(session) = self.straighten_session.as_mut() {
+                            crate::signal_widgets::tool_shelf_tag(ui, "STRAIGHTEN", self.theme.accent, &self.theme);
+                            ui.label("Angle:");
+                            ui.add(
+                                egui::DragValue::new(&mut session.angle_degrees)
+                                    .speed(0.1)
+                                    .range(-180.0..=180.0)
+                                    .suffix("°"),
+                            );
+                            ui.label("Interpolation:");
+                            egui::ComboBox::from_id_salt("straighten_interpolation")
+                                .selected_text(session.interpolation.label())
+                                .width(100.0)
+                                .show_ui(ui, |ui| {
+                                    for interpolation in [
+                                        crate::ops::transform::Interpolation::Nearest,
+                                        crate::ops::transform::Interpolation::Bilinear,
+                                    ] {
+                                        ui.selectable_value(&mut session.interpolation, interpolation, interpolation.label());
+                                    }
+                                });
+                            if ui.button("Reset").clicked() { session.angle_degrees = 0.0; }
+                            if ui.button("Apply").clicked() { commit_straighten = true; }
+                            if ui.button("Cancel").clicked() { cancel_straighten = true; }
+                        } else if let Some(ref mut overlay) = self.paste_overlay {
                             // --- Paste overlay context bar ---
                             crate::signal_widgets::tool_shelf_tag(ui, "PASTE", self.theme.accent, &self.theme);
                             ui.add_space(6.0);
@@ -119,11 +146,20 @@ impl PaintFEApp {
                                 ctx_secondary,
                                 &self.theme,
                             );
+                            if self.assets.icon_button(ui, crate::assets::Icon::UiStraighten, egui::Vec2::splat(20.0))
+                                .on_hover_text("Straighten canvas")
+                                .clicked()
+                            {
+                                start_straighten = true;
+                            }
                         }
                     });
                 });
             });
         self.remember_ui_cursor_rect(shelf_resp.response.rect);
+        if start_straighten { self.start_straighten(); }
+        if commit_straighten { self.commit_straighten(); }
+        if cancel_straighten { self.cancel_straighten(); }
 
         // Process pending brush tip actions from context bar
         if self.tools_panel.pending_open_add_brush_tip {
@@ -198,6 +234,8 @@ impl PaintFEApp {
         // --- Full-Screen Canvas (CentralPanel fills remaining space) ---
         let canvas_bg_top = self.theme.canvas_bg_top;
         let canvas_bg_bottom = self.theme.canvas_bg_bottom;
+        let mut straighten_enter = false;
+        let mut straighten_escape = false;
 
         #[allow(deprecated)]
         egui::CentralPanel::default()
@@ -269,9 +307,12 @@ impl PaintFEApp {
                         Some(&mut self.tools_panel),
                         primary_color_f32,
                         secondary_color_f32,
-                        canvas_bg_bottom,
-                        self.paste_overlay.as_mut(),
-                        modal_open,
+                          canvas_bg_bottom,
+                          self.paste_overlay.as_mut(),
+                          self.straighten_session.as_ref().map(|session| {
+                              (session.generation, &session.preview, session.angle_degrees)
+                          }),
+                          modal_open || self.straighten_session.is_some(),
                         &self.settings,
                         self.pending_filter_jobs,
                         self.pending_io_ops,
@@ -283,6 +324,37 @@ impl PaintFEApp {
                         ui_blocks_canvas_input,
                         live_window_resize,
                     );
+                    if let (Some(session), Some(rect)) =
+                        (self.straighten_session.as_mut(), self.canvas.last_image_rect)
+                    {
+                        let pointer = ctx.input(|i| i.pointer.interact_pos());
+                        let pressed = ctx.input(|i| i.pointer.primary_pressed());
+                        let down = ctx.input(|i| i.pointer.primary_down());
+                        let released = ctx.input(|i| i.pointer.primary_released());
+                        if pressed && pointer.is_some_and(|p| rect.contains(p)) {
+                            let p = pointer.unwrap();
+                            let c = rect.center();
+                            session.drag_start = Some((p, session.angle_degrees));
+                            let _ = c;
+                        }
+                        if down
+                            && let (Some((start, start_angle)), Some(current)) =
+                                (session.drag_start, pointer)
+                        {
+                            let center = rect.center();
+                            let a0 = (start.y - center.y).atan2(start.x - center.x);
+                            let a1 = (current.y - center.y).atan2(current.x - center.x);
+                            let mut degrees = start_angle + (a1 - a0).to_degrees();
+                            if ctx.input(|i| i.modifiers.shift) {
+                                degrees = degrees.round();
+                            }
+                            session.angle_degrees = degrees.clamp(-180.0, 180.0);
+                            ctx.request_repaint();
+                        }
+                        if released { session.drag_start = None; }
+                        straighten_enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
+                        straighten_escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+                    }
                     if let Some(overlay) = self.paste_overlay.as_mut()
                         && let Some((before, _after)) = overlay.pending_transform_checkpoint.take()
                     {
@@ -386,6 +458,8 @@ impl PaintFEApp {
                     }
                 }
             });
+        if straighten_enter { self.commit_straighten(); }
+        if straighten_escape { self.cancel_straighten(); }
 
         // --- Floating Panels ---
         // Detect screen size changes ONCE before any panel renders,
