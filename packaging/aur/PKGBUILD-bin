@@ -11,6 +11,9 @@ pkgdesc="Fast, GPU-accelerated raster image editor (prebuilt binary)"
 arch=('x86_64')
 url="https://github.com/kylejckson/PaintFE"
 license=('MIT')
+# Preserve the published compatibility-host binary: its adjacent .sha256 file
+# verifies the exact release artifact before PaintFE loads legacy plugins.
+options=('!strip')
 provides=('paintfe')
 conflicts=('paintfe')
 depends=(

@@ -9,6 +9,10 @@ pkgdesc="Fast, GPU-accelerated raster image editor"
 arch=('x86_64' 'aarch64')
 url="https://github.com/kylejckson/PaintFE"
 license=('MIT')
+# The Paint.NET compatibility host is hashed after `dotnet publish`.  makepkg's
+# default stripping would change that executable afterwards and invalidate its
+# adjacent .sha256 file at runtime.
+options=('!strip')
 depends=(
     'gcc-libs'
     'glibc'
