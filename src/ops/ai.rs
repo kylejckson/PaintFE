@@ -195,9 +195,18 @@ type CreateEnvFn = unsafe extern "C" fn(
 type CreateSessionOptionsFn =
     unsafe extern "C" fn(out: *mut *mut OrtSessionOptions) -> *mut OrtStatus;
 
+#[cfg(target_os = "windows")]
 type CreateSessionFn = unsafe extern "C" fn(
     env: *const OrtEnv,
-    model_path: *const u16, // Wide string on Windows
+    model_path: *const u16,
+    options: *const OrtSessionOptions,
+    out: *mut *mut OrtSession,
+) -> *mut OrtStatus;
+
+#[cfg(not(target_os = "windows"))]
+type CreateSessionFn = unsafe extern "C" fn(
+    env: *const OrtEnv,
+    model_path: *const std::ffi::c_char,
     options: *const OrtSessionOptions,
     out: *mut *mut OrtSession,
 ) -> *mut OrtStatus;
@@ -512,28 +521,45 @@ pub fn validate_onnx_path(path: &str, for_dll: bool) -> Result<(), OnnxError> {
         }
     }
 
-    // Check extension matches expected type
-    let ext = p
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
     if for_dll {
-        let valid_dll_exts = ["dll", "so", "dylib"];
-        if !valid_dll_exts.contains(&ext.as_str()) {
+        if !is_dynamic_library_path(p) {
             return Err(OnnxError::DllLoadFailed(format!(
-                "Expected a .dll/.so/.dylib file, got '.{}'",
-                ext
+                "Expected a .dll, .dylib, .so, or versioned .so.<version> file, got '{}'",
+                p.file_name().and_then(|name| name.to_str()).unwrap_or(path)
             )));
         }
-    } else if ext != "onnx" {
+    } else if p
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_none_or(|ext| !ext.eq_ignore_ascii_case("onnx"))
+    {
         return Err(OnnxError::ModelLoadFailed(format!(
-            "Expected a .onnx model file, got '.{}'",
-            ext
+            "Expected a .onnx model file, got '{}'",
+            p.file_name().and_then(|name| name.to_str()).unwrap_or(path)
         )));
     }
 
     Ok(())
+}
+
+/// Return whether `path` names a conventional dynamic library. Linux package
+/// managers commonly install shared objects as `libname.so.<ABI version>`.
+fn is_dynamic_library_path(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let name = name.to_ascii_lowercase();
+    if name.ends_with(".dll") || name.ends_with(".dylib") || name.ends_with(".so") {
+        return true;
+    }
+
+    let Some((_, version)) = name.rsplit_once(".so.") else {
+        return false;
+    };
+    !version.is_empty()
+        && version
+            .split('.')
+            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 /// Parse a version string like "1.18.0" into (major, minor) tuple.
@@ -1000,6 +1026,13 @@ pub fn remove_background(
         return Err(OnnxError::ModelNotFound(model_path.to_string()));
     }
 
+    // OrtCreateSession takes UTF-16 on Windows and a UTF-8 C string on Unix.
+    // Passing UTF-16 on Unix truncates `/path/to/model.onnx` to `/`.
+    #[cfg(not(target_os = "windows"))]
+    let model_path_c = std::ffi::CString::new(model_path).map_err(|_| {
+        OnnxError::ModelLoadFailed("Model path contains an embedded NUL byte".to_string())
+    })?;
+
     unsafe {
         // -- Load library --
         eprintln!("[AI] Loading ONNX Runtime DLL...");
@@ -1059,15 +1092,19 @@ pub fn remove_background(
         eprintln!("[AI] Session options configured");
 
         // -- Create session (load model) --
-        // On Windows, CreateSession expects a UTF-16 path
         eprintln!("[AI] Loading model (this may take a moment)...");
+        #[cfg(target_os = "windows")]
         let model_wide: Vec<u16> = model_path
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect();
         let mut session: *mut OrtSession = std::ptr::null_mut();
+        #[cfg(target_os = "windows")]
         let create_status =
             (api.create_session())(env, model_wide.as_ptr(), session_options, &mut session);
+        #[cfg(not(target_os = "windows"))]
+        let create_status =
+            (api.create_session())(env, model_path_c.as_ptr(), session_options, &mut session);
         if let Err(e) = status_to_result(&api, create_status) {
             (api.release_session_options())(session_options);
             (api.release_env())(env);
@@ -1534,4 +1571,30 @@ fn num_cpus() -> usize {
     std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_dynamic_library_path;
+    #[cfg(not(target_os = "windows"))]
+    use super::validate_onnx_path;
+    use std::path::Path;
+
+    #[test]
+    fn accepts_versioned_linux_shared_objects() {
+        // The test suite also runs on Windows, where `/usr/...` is not an
+        // absolute Windows path. Test the platform-neutral filename rule here.
+        assert!(is_dynamic_library_path(Path::new(
+            "libonnxruntime.so.1.23.2"
+        )));
+        #[cfg(not(target_os = "windows"))]
+        assert!(validate_onnx_path("/usr/lib/libonnxruntime.so.1.23.2", true).is_ok());
+    }
+
+    #[test]
+    fn rejects_non_numeric_shared_object_versions() {
+        assert!(!is_dynamic_library_path(Path::new(
+            "libonnxruntime.so.debug"
+        )));
+    }
 }

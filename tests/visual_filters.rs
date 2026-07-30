@@ -234,6 +234,35 @@ fn canvas_border_core_applies_edges_only() {
     assert_eq!(result.get_pixel(3, 3).0, [10, 20, 30, 255]);
 }
 
+#[test]
+fn seamless_texture_matches_opposing_edges() {
+    let img = test_image();
+    let result = seamless_texture_core(
+        &img,
+        12,
+        0.75,
+        true,
+        true,
+        SeamlessBlendProfile::Smooth,
+        0.6,
+        10.0,
+        42,
+    );
+
+    for y in 0..result.height() {
+        assert_eq!(
+            result.get_pixel(0, y),
+            result.get_pixel(result.width() - 1, y)
+        );
+    }
+    for x in 0..result.width() {
+        assert_eq!(
+            result.get_pixel(x, 0),
+            result.get_pixel(x, result.height() - 1)
+        );
+    }
+}
+
 // =============================================================================
 // Glitch effects
 // =============================================================================

@@ -1999,6 +1999,8 @@ impl SettingsWindow {
             if ui.button("\u{1F4C2}").clicked()
                 && let Some(path) = rfd::FileDialog::new()
                     .add_filter("Dynamic Library", &["dll", "so", "dylib"])
+                    // Package-managed Linux libraries may end in `.so.1.23.2`.
+                    .add_filter("All Files", &["*"])
                     .pick_file()
             {
                 self.staged_onnx_path = path.display().to_string();

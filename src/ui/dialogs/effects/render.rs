@@ -369,6 +369,96 @@ effect_dialog_base!(CanvasBorderDialog {
     first_open: bool = true
 });
 
+effect_dialog_base!(SeamlessTextureDialog {
+    blend_px: f32 = 8.0,
+    strength: f32 = 1.0,
+    horizontal: bool = true,
+    vertical: bool = true,
+    profile_idx: usize = 1,
+    organicity: f32 = 0.25,
+    dent_size: f32 = 24.0,
+    seed: u32 = 42,
+    first_open: bool = true,
+    previous_wrap_preview: bool = false,
+    wrap_preview_enabled: bool = false
+});
+
+impl SeamlessTextureDialog {
+    pub fn profile(&self) -> crate::ops::effects::SeamlessBlendProfile {
+        match self.profile_idx {
+            0 => crate::ops::effects::SeamlessBlendProfile::Linear,
+            _ => crate::ops::effects::SeamlessBlendProfile::Smooth,
+        }
+    }
+
+    pub fn show(&mut self, ctx: &egui::Context) -> DialogResult<()> {
+        let mut result = DialogResult::Open;
+        let colors = DialogColors::from_ctx(ctx);
+        egui::Window::new("dialog_seamless_texture")
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(false)
+            .default_pos(egui::pos2(ctx.content_rect().center().x - 195.0, 60.0))
+            .show(ctx, |ui| {
+                ui.set_min_width(390.0);
+                if paint_dialog_header(ui, &colors, "\u{1F9F6}", &t!("dialog.seamless")) { result = DialogResult::Cancel; }
+                ui.small("Tiled preview is enabled while this dialog is open.");
+                ui.add_space(4.0);
+                section_label(ui, &colors, "SEAM REPAIR");
+                let mut changed = false;
+                egui::Grid::new("seamless_texture_params").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                    ui.label("Blend width");
+                    changed |= numeric_field_with_buttons(ui, &mut self.blend_px, 1.0, 1.0..=512.0, " px", 8.0);
+                    ui.end_row();
+                    ui.label("Strength");
+                    changed |= dialog_slider(ui, &mut self.strength, 0.0..=1.0, 0.01, "", 2);
+                    ui.end_row();
+                    ui.label("Directions");
+                    ui.horizontal(|ui| {
+                        changed |= ui.checkbox(&mut self.horizontal, "Horizontal").changed();
+                        changed |= ui.checkbox(&mut self.vertical, "Vertical").changed();
+                    });
+                    ui.end_row();
+                    ui.label("Fade");
+                    egui::ComboBox::from_id_salt("seamless_profile").selected_text(["Linear", "Smooth"][self.profile_idx]).show_ui(ui, |ui| {
+                        for (idx, label) in ["Linear", "Smooth"].iter().enumerate() {
+                            changed |= ui.selectable_value(&mut self.profile_idx, idx, *label).changed();
+                        }
+                    });
+                    ui.end_row();
+                });
+                section_label(ui, &colors, "ORGANIC VARIATION");
+                egui::Grid::new("seamless_organic_params").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                    ui.label("Organic amount");
+                    changed |= dialog_slider(ui, &mut self.organicity, 0.0..=1.0, 0.01, "", 2);
+                    ui.end_row();
+                    ui.label("Dent size");
+                    changed |= numeric_field_with_buttons(ui, &mut self.dent_size, 1.0, 2.0..=512.0, " px", 24.0);
+                    ui.end_row();
+                    ui.label("Seed");
+                    let mut seed = self.seed as f32;
+                    if numeric_field_with_buttons(ui, &mut seed, 1.0, 0.0..=999_999.0, "", 42.0) {
+                        self.seed = seed as u32;
+                        changed = true;
+                    }
+                    ui.end_row();
+                });
+                accent_separator(ui, &colors);
+                let manual = preview_controls(ui, &colors, &mut self.live_preview);
+                if (changed && self.live_preview) || manual { result = DialogResult::Changed; }
+                let (ok, cancel, reset) = dialog_footer_with_reset(ui, &colors);
+                if ok { result = DialogResult::Ok(()); }
+                if cancel { result = DialogResult::Cancel; }
+                if reset {
+                    self.blend_px = 8.0; self.strength = 1.0; self.horizontal = true; self.vertical = true;
+                    self.profile_idx = 1; self.organicity = 0.25; self.dent_size = 24.0; self.seed = 42;
+                    if self.live_preview { result = DialogResult::Changed; }
+                }
+            });
+        result
+    }
+}
+
 impl CanvasBorderDialog {
     pub fn show(&mut self, ctx: &egui::Context) -> DialogResult<u32> {
         let mut result = DialogResult::Open;

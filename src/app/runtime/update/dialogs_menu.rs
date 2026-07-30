@@ -1379,6 +1379,25 @@ impl PaintFEApp {
                                 }
                                 ui.close();
                             }
+                            if self
+                                .assets
+                                .menu_item_enabled(
+                                    ui,
+                                    Icon::MenuFilterSeamless,
+                                    &t!("menu.filter.stylize.seamless"),
+                                    no_dialog,
+                                )
+                                .clicked()
+                            {
+                                if let Some(project) = self.active_project() {
+                                    self.active_dialog = ActiveDialog::SeamlessTexture(
+                                        crate::ops::effect_dialogs::SeamlessTextureDialog::new(
+                                            &project.canvas_state,
+                                        ),
+                                    );
+                                }
+                                ui.close();
+                            }
                             #[cfg(not(target_arch = "wasm32"))]
                             if self.settings.paintdotnet_plugins_enabled {
                                 let plugins: Vec<_> = crate::paintdotnet_plugins::PluginManager::load()

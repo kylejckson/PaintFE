@@ -164,6 +164,102 @@ pub fn canvas_border_core(
     RgbaImage::from_raw(w, h, dst_raw).unwrap()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SeamlessBlendProfile {
+    Linear,
+    Smooth,
+}
+
+/// Blend matching opposite-edge bands while keeping every boundary pair equal.
+/// Organic variation changes the band depth along a seam, rather than adding
+/// per-pixel noise, so the result remains suitable for a repeating tile.
+pub fn seamless_texture_core(
+    flat: &RgbaImage,
+    blend_px: u32,
+    strength: f32,
+    horizontal: bool,
+    vertical: bool,
+    profile: SeamlessBlendProfile,
+    organicity: f32,
+    dent_size: f32,
+    seed: u32,
+) -> RgbaImage {
+    let w = flat.width() as usize;
+    let h = flat.height() as usize;
+    if w < 2 || h < 2 || blend_px == 0 || (!horizontal && !vertical) {
+        return flat.clone();
+    }
+
+    let mut dst = flat.as_raw().clone();
+    let stride = w * 4;
+    let strength = strength.clamp(0.0, 1.0);
+    let organicity = organicity.clamp(0.0, 1.0);
+    let blend_for = |distance: usize, along: usize, max_band: usize, axis_seed: u32| {
+        let period = dent_size.max(2.0);
+        let noise = seamless_value_noise(along as f32 / period, seed.wrapping_add(axis_seed));
+        let base_band = (max_band as f32 * strength).round().max(1.0) as usize;
+        let varied_band =
+            (base_band as f32 * (1.0 + (noise - 0.5) * organicity)).round() as usize;
+        let band = varied_band.clamp(1, max_band.max(1));
+        if distance >= band { return 0.0; }
+        let u = 1.0 - distance as f32 / band as f32;
+        let curve = match profile {
+            SeamlessBlendProfile::Linear => u,
+            SeamlessBlendProfile::Smooth => u * u * (3.0 - 2.0 * u),
+        };
+        // The edge pair always meets at its midpoint, preserving exact tiling;
+        // strength controls how far that repair extends into the image.
+        0.5 * curve
+    };
+
+    if horizontal {
+        let max_band = blend_px.min((w / 2) as u32) as usize;
+        for y in 0..h {
+            for d in 0..max_band {
+                let t = blend_for(d, y, max_band, 0xA511_E9B3);
+                let li = y * stride + d * 4;
+                let ri = y * stride + (w - 1 - d) * 4;
+                for channel in 0..4 {
+                    let l = dst[li + channel] as f32;
+                    let r = dst[ri + channel] as f32;
+                    dst[li + channel] = (l * (1.0 - t) + r * t).round() as u8;
+                    dst[ri + channel] = (r * (1.0 - t) + l * t).round() as u8;
+                }
+            }
+        }
+    }
+
+    if vertical {
+        let max_band = blend_px.min((h / 2) as u32) as usize;
+        for x in 0..w {
+            // Mirroring the modulation preserves the left/right equality made above.
+            let symmetric_x = x.min(w - 1 - x);
+            for d in 0..max_band {
+                let t = blend_for(d, symmetric_x, max_band, 0x63D8_35A1);
+                let ti = d * stride + x * 4;
+                let bi = (h - 1 - d) * stride + x * 4;
+                for channel in 0..4 {
+                    let top = dst[ti + channel] as f32;
+                    let bottom = dst[bi + channel] as f32;
+                    dst[ti + channel] = (top * (1.0 - t) + bottom * t).round() as u8;
+                    dst[bi + channel] = (bottom * (1.0 - t) + top * t).round() as u8;
+                }
+            }
+        }
+    }
+
+    RgbaImage::from_raw(w as u32, h as u32, dst).unwrap()
+}
+
+fn seamless_value_noise(x: f32, seed: u32) -> f32 {
+    let cell = x.floor() as i32;
+    let t = x - cell as f32;
+    let smooth = t * t * (3.0 - 2.0 * t);
+    let a = hash_f32(cell as u32, 0, seed);
+    let b = hash_f32(cell.wrapping_add(1) as u32, 0, seed);
+    a * (1.0 - smooth) + b * smooth
+}
+
 // --- Drop Shadow ---
 
 pub fn drop_shadow(

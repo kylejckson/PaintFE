@@ -75,6 +75,7 @@ pub enum ActiveDialog {
     ColorFilter(ColorFilterDialog),
     ColorToAlpha(ColorToAlphaDialog),
     CanvasBorder(CanvasBorderDialog),
+    SeamlessTexture(SeamlessTextureDialog),
     // Render effects (additional)
     Contours(ContoursDialog),
     // AI
@@ -142,6 +143,7 @@ impl ActiveDialog {
             ActiveDialog::ColorFilter(_) => "ColorFilter",
             ActiveDialog::ColorToAlpha(_) => "ColorToAlpha",
             ActiveDialog::CanvasBorder(_) => "CanvasBorder",
+            ActiveDialog::SeamlessTexture(_) => "SeamlessTexture",
             ActiveDialog::Contours(_) => "Contours",
             ActiveDialog::RemoveBackground(_) => "RemoveBackground",
             ActiveDialog::Threshold(_) => "Threshold",

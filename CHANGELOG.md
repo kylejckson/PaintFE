@@ -6,6 +6,28 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.3.10] - 2026-07-30
+
+- Turn images into seamless game-ready textures with live tiled previewing and organic edge repair.
+- Made AI background removal work reliably on Linux, including systems using versioned ONNX Runtime libraries.
+- Made AppImage startup quieter on both Wayland and X11.
+
+### Added
+
+- Added Filter > Stylize > Make Seamless Texture for active-layer tile repair.
+- Added horizontal and vertical controls, blend width, repair strength, linear or smooth fading, plus seeded organic dents.
+- Added a regression test that verifies opposing texture edges match after two-axis organic repair.
+
+### Changed
+
+- The ONNX Runtime picker can now select package-managed versioned shared libraries such as `libonnxruntime.so.1.23.2`.
+
+### Fixed
+
+- Fixed Linux ONNX model loading by passing UTF-8 C paths on Linux and macOS while retaining UTF-16 paths on Windows. Closes #119.
+- Fixed validation for versioned Linux ONNX Runtime shared libraries. Closes #119.
+- Suppressed the harmless `dead_hamza` xkbcommon Compose warning during AppImage startup on both Wayland and X11, while preserving user-set diagnostic log levels. Closes #118.
+
 ## [1.3.9] - 2026-07-22
 
 - Added an interactive Straighten mode for quickly correcting photo rotation.

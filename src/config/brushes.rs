@@ -905,6 +905,11 @@ impl Assets {
         );
         self.load_icon(
             ctx,
+            Icon::MenuFilterSeamless,
+            include_bytes!("../../assets/icons/menu/seamless.png"),
+        );
+        self.load_icon(
+            ctx,
             Icon::MenuFilterGlitch,
             include_bytes!("../../assets/icons/menu/filter_glitch.png"),
         );

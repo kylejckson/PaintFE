@@ -1,8 +1,19 @@
 impl PaintFEApp {
     fn process_render_dialog(&mut self, ctx: &egui::Context, dialog: &mut ActiveDialog) -> bool {
-        let matched = matches!(dialog, ActiveDialog::Grid(_) | ActiveDialog::DropShadow(_) | ActiveDialog::Outline(_) | ActiveDialog::CanvasBorder(_));
+        let matched = matches!(dialog, ActiveDialog::Grid(_) | ActiveDialog::DropShadow(_) | ActiveDialog::Outline(_) | ActiveDialog::CanvasBorder(_) | ActiveDialog::SeamlessTexture(_));
         if !matched {
             return false;
+        }
+
+        if let ActiveDialog::SeamlessTexture(dlg) = dialog {
+            if !dlg.wrap_preview_enabled {
+                dlg.previous_wrap_preview = self.active_project()
+                    .is_some_and(|project| project.canvas_state.show_wrap_preview);
+                dlg.wrap_preview_enabled = true;
+            }
+            if let Some(project) = self.active_project_mut() {
+                project.canvas_state.show_wrap_preview = true;
+            }
         }
 
         match dialog {
@@ -461,6 +472,94 @@ impl PaintFEApp {
                                     )
                                 },
                             );
+                        }
+                    }
+                }
+            },
+
+            ActiveDialog::SeamlessTexture(dlg) => match dlg.show(ctx) {
+                DialogResult::Changed => {
+                    dlg.first_open = false;
+                    let idx = dlg.layer_idx;
+                    if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat) {
+                        let blend_px = dlg.blend_px as u32;
+                        let strength = dlg.strength;
+                        let horizontal = dlg.horizontal;
+                        let vertical = dlg.vertical;
+                        let profile = dlg.profile();
+                        let organicity = dlg.organicity;
+                        let dent_size = dlg.dent_size;
+                        let seed = dlg.seed;
+                        self.spawn_preview_job(ctx.input(|i| i.time), "Make Seamless Texture".to_string(), idx, original.clone(), flat.clone(), move |img| {
+                            crate::ops::effects::seamless_texture_core(img, blend_px, strength, horizontal, vertical, profile, organicity, dent_size, seed)
+                        });
+                    }
+                }
+                DialogResult::Ok(_) => {
+                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                    let idx = dlg.layer_idx;
+                    if let Some(flat) = &dlg.original_flat {
+                        let blend_px = dlg.blend_px as u32;
+                        let strength = dlg.strength;
+                        let horizontal = dlg.horizontal;
+                        let vertical = dlg.vertical;
+                        let profile = dlg.profile();
+                        let organicity = dlg.organicity;
+                        let dent_size = dlg.dent_size;
+                        let seed = dlg.seed;
+                        if let Some(project) = self.active_project_mut() {
+                            Self::apply_fullres_effect(&mut project.canvas_state, idx, flat, |img| {
+                                crate::ops::effects::seamless_texture_core(img, blend_px, strength, horizontal, vertical, profile, organicity, dent_size, seed)
+                            });
+                            project.canvas_state.show_wrap_preview = dlg.previous_wrap_preview;
+                        }
+                    }
+                    self.active_dialog = ActiveDialog::None;
+                    if let Some(project) = self.active_project_mut() {
+                        if let Some(original) = &dlg.original_pixels && idx < project.canvas_state.layers.len() {
+                            let adjusted = project.canvas_state.layers[idx].pixels.clone();
+                            project.canvas_state.layers[idx].pixels = original.clone();
+                            let mut cmd = SingleLayerSnapshotCommand::new_for_layer("Make Seamless Texture".to_string(), &project.canvas_state, idx);
+                            project.canvas_state.layers[idx].pixels = adjusted;
+                            cmd.set_after(&project.canvas_state);
+                            project.history.push(Box::new(cmd));
+                        }
+                        project.mark_dirty();
+                    }
+                    return true;
+                }
+                DialogResult::Cancel => {
+                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                    self.filter_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+                    let idx = dlg.layer_idx;
+                    if let Some(project) = self.active_project_mut() {
+                        if let Some(original) = &dlg.original_pixels
+                            && let Some(layer) = project.canvas_state.layers.get_mut(idx) {
+                            layer.pixels = original.clone();
+                        }
+                        project.canvas_state.show_wrap_preview = dlg.previous_wrap_preview;
+                        project.canvas_state.mark_dirty(None);
+                    }
+                    self.active_dialog = ActiveDialog::None;
+                    return true;
+                }
+                _ => {
+                    dlg.poll_flat();
+                    if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
+                        dlg.first_open = false;
+                        let idx = dlg.layer_idx;
+                        if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat) {
+                            let blend_px = dlg.blend_px as u32;
+                            let strength = dlg.strength;
+                            let horizontal = dlg.horizontal;
+                            let vertical = dlg.vertical;
+                            let profile = dlg.profile();
+                            let organicity = dlg.organicity;
+                            let dent_size = dlg.dent_size;
+                            let seed = dlg.seed;
+                            self.spawn_preview_job(ctx.input(|i| i.time), "Make Seamless Texture".to_string(), idx, original.clone(), flat.clone(), move |img| {
+                                crate::ops::effects::seamless_texture_core(img, blend_px, strength, horizontal, vertical, profile, organicity, dent_size, seed)
+                            });
                         }
                     }
                 }
