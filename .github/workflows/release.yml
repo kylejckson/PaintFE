@@ -41,7 +41,7 @@ jobs:
         # (satisfies Microsoft Store policy 10.2.4.1).
         run: cargo build --release
 
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
           global-json-file: global.json
 
@@ -100,7 +100,7 @@ jobs:
       - name: Build release
         run: cargo build --release
 
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
           global-json-file: global.json
 
@@ -157,7 +157,7 @@ jobs:
       - name: Build release binary
         run: cargo build --release
 
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
           global-json-file: global.json
 
@@ -199,7 +199,7 @@ jobs:
       - name: Build release
         run: cargo build --release
 
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
           global-json-file: global.json
 
@@ -251,7 +251,7 @@ jobs:
       - name: Build release (cross-compile for Intel)
         run: cargo build --release --target x86_64-apple-darwin
 
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
           global-json-file: global.json
 
@@ -305,7 +305,7 @@ jobs:
       - name: Build release binary
         run: cargo build --release
 
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
           global-json-file: global.json
 
