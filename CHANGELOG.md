@@ -6,26 +6,30 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
-## [Unreleased]
+## [1.3.11] - 2026-08-10
 
-- Recover transparency and clean edge colours from artwork flattened over solid or slightly noisy backgrounds.
-- Made the Color Picker respond to a single click and kept Save As letterboxing free of stretched border pixels.
-- Improved Linux packaging reliability for keyboard Compose data, Paint.NET compatibility checksums, and build tooling.
+- Recover transparency from artwork flattened over solid or lightly noisy backgrounds, including enclosed background islands.
+- Resize pixel art with palette-aware, structure-preserving, or topology-preserving retargeting.
+- Made Select All look like a normal selection again, without whitening the canvas.
 
 ### Added
 
-- Added Recover Transparency with automatic edge sampling, configurable connectivity and recovery depth, selection-mask support, and alpha/reconstruction diagnostic previews.
+- Added Recover Transparency with automatic edge sampling, configurable connectivity and edge recovery, interior-island detection, manual remove/protect points, selection support, and alpha/reconstruction diagnostic previews.
+- Added Pixel Art Retarget to Resize Image with palette-aware, structure-preserving, and topology-preserving modes.
+- Added controls for palette preservation, silhouette and thin-feature protection, connectivity, detail and topology priority, phase optimization, selection protection, and comparison previews.
 
 ### Changed
 
 - Updated the pinned GitHub Actions .NET setup and Rust toolchain actions.
 - Preserved Paint.NET compatibility-host binaries during AUR packaging so their published SHA-256 sidecars remain valid.
+- Bundled matching Compose data with the AppImage and selected it through `XLOCALEDIR` for reliable keyboard input across host systems.
 
 ### Fixed
 
 - Fixed Color Picker clicks being ignored unless the pointer moved while held.
+- Fixed Ctrl+A rendering the canvas white instead of showing the normal selection treatment.
 - Fixed Save As previews stretching the outermost image pixels across letterboxed areas. Closes #120.
-- Bundled matching X11 Compose data with the AppImage and selected it through `XLOCALEDIR`, preventing host/AppImage xkbcommon parser mismatches. Closes #118.
+- Fixed AppImage keyboard Compose data mismatches that could trigger `dead_hamza` and host-parser errors. Closes #118.
 
 ## [1.3.10] - 2026-07-30
 

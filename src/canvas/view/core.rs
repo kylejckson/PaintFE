@@ -1346,7 +1346,9 @@ impl Canvas {
         let has_selection_mask = state.has_selection();
         let has_selection_drag = tools.as_ref().is_some_and(|t| t.selection_state.dragging);
         let selection_needs_animation = has_selection_mask
-            && (state.selection_overlay_built_generation != state.selection_overlay_generation
+            && (state.selection_all
+                || state.selection_transform_preview_bounds.is_some()
+                || state.selection_overlay_built_generation != state.selection_overlay_generation
                 || selection_overlay_should_animate(state.selection_overlay_bounds));
         if selection_needs_animation || has_selection_drag {
             ui.ctx().request_repaint();
@@ -1356,9 +1358,9 @@ impl Canvas {
         //    Temporarily take the mask to avoid borrow conflict with `&mut state`
         //    (needed for the overlay texture cache).  Put it back afterwards.
         if let Some(bounds) = state.selection_transform_preview_bounds {
-            self.draw_selection_transform_preview(&painter, image_rect, bounds);
+            self.draw_selection_transform_preview(&painter, image_rect, bounds, anim_time);
         } else if state.selection_all {
-            self.draw_full_selection_overlay(&painter, image_rect, state);
+            self.draw_full_selection_overlay(&painter, image_rect, state, anim_time);
         } else if let Some(mask) = state.selection_mask.take() {
             // Switch to "tool-active" visual mode when a drawing tool is
             // selected (not a selection tool).  This hides the hatch fill so

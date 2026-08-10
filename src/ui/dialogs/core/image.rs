@@ -7,11 +7,15 @@ pub struct ResizeImageDialog {
     pub lock_aspect: bool,
     aspect_ratio: f32,
     pub interpolation: Interpolation,
+    pub resize_method: ResizeMethod,
+    pub retarget: PixelRetargetSettings,
     pub preset: ResizePreset,
     original_w: u32,
     original_h: u32,
     focus_width_on_open: bool,
     replace_width_on_first_edit: bool,
+    preview_source: Option<TiledImage>,
+    comparison_previews: Vec<(String, egui::TextureHandle)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -65,11 +69,15 @@ impl ResizeImageDialog {
             lock_aspect: true,
             aspect_ratio: state.width as f32 / state.height.max(1) as f32,
             interpolation: Interpolation::default(),
+            resize_method: ResizeMethod::Standard,
+            retarget: PixelRetargetSettings::default(),
             preset: ResizePreset::default(),
             original_w: state.width,
             original_h: state.height,
             focus_width_on_open: true,
             replace_width_on_first_edit: true,
+            preview_source: state.layers.get(state.active_layer_index).map(|l| l.pixels.clone()),
+            comparison_previews: Vec::new(),
         }
     }
 
@@ -121,7 +129,67 @@ impl ResizeImageDialog {
         self.commit_height_input();
     }
 
-    pub fn show(&mut self, ctx: &egui::Context) -> DialogResult<(u32, u32, Interpolation)> {
+    fn generate_comparison_previews(&mut self, ctx: &egui::Context) {
+        let Some(source) = &self.preview_source else {
+            return;
+        };
+        let mut flat = source.to_rgba_image();
+        let max_dim = flat.width().max(flat.height());
+        if max_dim > 192 {
+            let scale = 192.0 / max_dim as f32;
+            let w = (flat.width() as f32 * scale).round().max(1.0) as u32;
+            let h = (flat.height() as f32 * scale).round().max(1.0) as u32;
+            flat = image::imageops::resize(&flat, w, h, image::imageops::FilterType::Nearest);
+        }
+        let ratio_x = self.width / self.original_w.max(1) as f32;
+        let ratio_y = self.height / self.original_h.max(1) as f32;
+        let target_w = (flat.width() as f32 * ratio_x).round().max(1.0) as u32;
+        let target_h = (flat.height() as f32 * ratio_y).round().max(1.0) as u32;
+        let nearest = image::imageops::resize(
+            &flat,
+            target_w,
+            target_h,
+            image::imageops::FilterType::Nearest,
+        );
+        let mut candidates = vec![("Nearest".to_string(), nearest)];
+        for (label, mode) in [
+            ("Palette", PixelRetargetMode::PaletteAware),
+            ("Structure", PixelRetargetMode::StructurePreserving),
+            ("Topology", PixelRetargetMode::TopologyPreserving),
+        ] {
+            let mut settings = self.retarget;
+            settings.mode = mode;
+            settings.optimize_phase = false;
+            candidates.push((
+                label.to_string(),
+                crate::ops::transform::pixel_art_retarget(
+                    &flat,
+                    target_w,
+                    target_h,
+                    &settings,
+                    None,
+                ),
+            ));
+        }
+        self.comparison_previews = candidates
+            .into_iter()
+            .enumerate()
+            .map(|(index, (label, image))| {
+                let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                    [image.width() as usize, image.height() as usize],
+                    image.as_raw(),
+                );
+                let texture = ctx.load_texture(
+                    format!("retarget_preview_{index}"),
+                    color_image,
+                    egui::TextureOptions::NEAREST,
+                );
+                (label, texture)
+            })
+            .collect();
+    }
+
+    pub fn show(&mut self, ctx: &egui::Context) -> DialogResult<(u32, u32, ResizeImageOptions)> {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
         let mut ok_pressed = false;
@@ -279,17 +347,143 @@ impl ResizeImageDialog {
                     .num_columns(2)
                     .spacing([8.0, 4.0])
                     .show(ui, |ui| {
-                        ui.label(t!("dialog.resize_image.interpolation"));
-                        egui::ComboBox::from_id_salt("resize_interp")
-                            .width(160.0)
-                            .selected_text(self.interpolation.label())
+                        ui.label("Resize Method");
+                        egui::ComboBox::from_id_salt("resize_method")
+                            .width(220.0)
+                            .selected_text(self.resize_method.label())
                             .show_ui(ui, |ui| {
-                                for i in Interpolation::all() {
-                                    ui.selectable_value(&mut self.interpolation, *i, i.label());
-                                }
+                                ui.selectable_value(
+                                    &mut self.resize_method,
+                                    ResizeMethod::Standard,
+                                    ResizeMethod::Standard.label(),
+                                );
+                                ui.selectable_value(
+                                    &mut self.resize_method,
+                                    ResizeMethod::PixelArtRetarget,
+                                    ResizeMethod::PixelArtRetarget.label(),
+                                );
                             });
                         ui.end_row();
+
+                        if self.resize_method == ResizeMethod::Standard {
+                            ui.label(t!("dialog.resize_image.interpolation"));
+                            egui::ComboBox::from_id_salt("resize_interp")
+                                .width(220.0)
+                                .selected_text(self.interpolation.label())
+                                .show_ui(ui, |ui| {
+                                    for i in Interpolation::all() {
+                                        ui.selectable_value(&mut self.interpolation, *i, i.label());
+                                    }
+                                });
+                            ui.end_row();
+                        } else {
+                            ui.label("Retarget Mode");
+                            egui::ComboBox::from_id_salt("pixel_retarget_mode")
+                                .width(220.0)
+                                .selected_text(self.retarget.mode.label())
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut self.retarget.mode,
+                                        PixelRetargetMode::PaletteAware,
+                                        PixelRetargetMode::PaletteAware.label(),
+                                    );
+                                    ui.selectable_value(
+                                        &mut self.retarget.mode,
+                                        PixelRetargetMode::StructurePreserving,
+                                        PixelRetargetMode::StructurePreserving.label(),
+                                    );
+                                    ui.selectable_value(
+                                        &mut self.retarget.mode,
+                                        PixelRetargetMode::TopologyPreserving,
+                                        PixelRetargetMode::TopologyPreserving.label(),
+                                    );
+                                });
+                            ui.end_row();
+                        }
                     });
+
+                if self.resize_method == ResizeMethod::PixelArtRetarget {
+                    ui.add_space(4.0);
+                    egui::Grid::new("pixel_retarget_options")
+                        .num_columns(2)
+                        .spacing([8.0, 4.0])
+                        .show(ui, |ui| {
+                            ui.label("Palette");
+                            ui.checkbox(&mut self.retarget.preserve_palette, "Preserve source colors");
+                            ui.end_row();
+
+                            ui.label("Silhouette");
+                            ui.checkbox(&mut self.retarget.preserve_silhouette, "Protect alpha edges");
+                            ui.end_row();
+
+                            ui.label("Thin Features");
+                            ui.checkbox(&mut self.retarget.protect_thin_features, "Protect one-pixel details");
+                            ui.end_row();
+
+                            ui.label("Connectivity");
+                            egui::ComboBox::from_id_salt("retarget_connectivity")
+                                .selected_text(if self.retarget.eight_connected { "8-way" } else { "4-way" })
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(&mut self.retarget.eight_connected, false, "4-way");
+                                    ui.selectable_value(&mut self.retarget.eight_connected, true, "8-way");
+                                });
+                            ui.end_row();
+
+                            ui.label("Detail Priority");
+                            dialog_slider(ui, &mut self.retarget.detail_priority, 0.0..=1.0, 0.05, "", 2);
+                            ui.end_row();
+
+                            ui.label("Geometry / Topology");
+                            ui.horizontal(|ui| {
+                                ui.label("Geometry");
+                                ui.add(egui::Slider::new(&mut self.retarget.topology_priority, 0.0..=1.0).show_value(false));
+                                ui.label("Topology");
+                            });
+                            ui.end_row();
+
+                            ui.label("Sampling Phase");
+                            ui.checkbox(&mut self.retarget.optimize_phase, "Optimize automatically");
+                            ui.end_row();
+
+                            ui.label("Protection Mask");
+                            ui.checkbox(&mut self.retarget.use_selection_as_protection, "Use current selection");
+                            ui.end_row();
+                        });
+
+                    let target_ratio = (self.width / self.original_w.max(1) as f32)
+                        .min(self.height / self.original_h.max(1) as f32);
+                    if target_ratio < 0.5 {
+                        ui.colored_label(
+                            Color32::from_rgb(220, 145, 45),
+                            "Severe reduction: some detail must be simplified. Use a protection selection for critical pixels.",
+                        );
+                    } else if self.width > self.original_w as f32
+                        || self.height > self.original_h as f32
+                    {
+                        ui.colored_label(
+                            colors.text_muted,
+                            "Retarget is designed for reduction; enlargement uses nearest-neighbor pixels.",
+                        );
+                    }
+
+                    ui.add_space(4.0);
+                    if ui.button("Generate Comparison Preview").clicked() {
+                        self.generate_comparison_previews(ctx);
+                    }
+                    if !self.comparison_previews.is_empty() {
+                        ui.horizontal_wrapped(|ui| {
+                            for (label, texture) in &self.comparison_previews {
+                                ui.vertical(|ui| {
+                                    ui.label(egui::RichText::new(label).size(10.0));
+                                    ui.add(
+                                        egui::Image::new(texture)
+                                            .fit_to_exact_size(egui::vec2(80.0, 80.0)),
+                                    );
+                                });
+                            }
+                        });
+                    }
+                }
 
                 // -- Info bar --
                 ui.add_space(4.0);
@@ -331,7 +525,15 @@ impl ResizeImageDialog {
         if ok_pressed && matches!(result, DialogResult::Open) {
             let w = (self.width.round() as u32).max(1);
             let h = (self.height.round() as u32).max(1);
-            result = DialogResult::Ok((w, h, self.interpolation));
+            result = DialogResult::Ok((
+                w,
+                h,
+                ResizeImageOptions {
+                    method: self.resize_method,
+                    interpolation: self.interpolation,
+                    retarget: self.retarget,
+                },
+            ));
         }
 
         result

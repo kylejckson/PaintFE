@@ -10,7 +10,7 @@ impl PaintFEApp {
             ActiveDialog::None => {}
 
             ActiveDialog::ResizeImage(dlg) => match dlg.show(ctx) {
-                DialogResult::Ok((w, h, interp)) => {
+                DialogResult::Ok((w, h, options)) => {
                     self.settings.persist_resize_lock_aspect = dlg.lock_aspect;
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
@@ -28,6 +28,14 @@ impl PaintFEApp {
                             .iter()
                             .map(|l| l.pixels.to_rgba_image())
                             .collect();
+                        let protection_mask = if options.method
+                            == crate::ops::transform::ResizeMethod::PixelArtRetarget
+                            && options.retarget.use_selection_as_protection
+                        {
+                            project.canvas_state.selection_mask.clone()
+                        } else {
+                            None
+                        };
                         let sender = self.canvas_op_sender.clone();
                         let project_index = self.active_project_index;
                         let current_time = ctx.input(|i| i.time);
@@ -37,8 +45,13 @@ impl PaintFEApp {
                         self.filter_status_description = "Resize Image".to_string();
                         self.pending_filter_jobs += 1;
                         crate::par_compat::spawn(move || {
-                            let result_layers =
-                                crate::ops::transform::resize_layers(flat_layers, w, h, interp);
+                            let result_layers = crate::ops::transform::resize_layers_with_options(
+                                flat_layers,
+                                w,
+                                h,
+                                options,
+                                protection_mask,
+                            );
                             let _ = sender.send(CanvasOpResult {
                                 project_index,
                                 before,

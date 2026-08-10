@@ -29,7 +29,15 @@ impl Default for ColorToAlphaSettings {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InteriorRecoveryMode {
+    Off,
+    SmallIslands,
+    NearExterior,
+    AllMatching,
+}
+
+#[derive(Clone, Debug)]
 pub struct RecoverTransparencySettings {
     pub background: [u8; 3],
     pub auto_sample_edges: bool,
@@ -41,6 +49,13 @@ pub struct RecoverTransparencySettings {
     pub transparent_snap: f32,
     pub opaque_snap: f32,
     pub foreground_influence: f32,
+    pub interior_mode: InteriorRecoveryMode,
+    pub island_max_size: u32,
+    pub island_tolerance: f32,
+    pub island_max_depth: u32,
+    pub bridge_gaps: u32,
+    pub remove_seeds: Vec<(u32, u32)>,
+    pub protect_seeds: Vec<(u32, u32)>,
 }
 
 impl Default for RecoverTransparencySettings {
@@ -56,6 +71,13 @@ impl Default for RecoverTransparencySettings {
             transparent_snap: 0.025,
             opaque_snap: 0.97,
             foreground_influence: 0.8,
+            interior_mode: InteriorRecoveryMode::Off,
+            island_max_size: 24,
+            island_tolerance: 0.65,
+            island_max_depth: 12,
+            bridge_gaps: 0,
+            remove_seeds: Vec::new(),
+            protect_seeds: Vec::new(),
         }
     }
 }
@@ -166,6 +188,8 @@ fn recover_transparency_impl(
         }
     }
 
+    recover_interior_background(img, settings, &model, &mut background);
+
     let mut distance = vec![u32::MAX; count];
     let mut frontier = VecDeque::new();
     for y in 0..h {
@@ -246,6 +270,147 @@ fn recover_transparency_impl(
     }
 
     (out, model.color)
+}
+
+fn recover_interior_background(
+    img: &RgbaImage,
+    settings: &RecoverTransparencySettings,
+    model: &BackgroundModel,
+    background: &mut [bool],
+) {
+    let w = img.width();
+    let h = img.height();
+    let count = (w * h) as usize;
+    let island_model = BackgroundModel {
+        color: model.color,
+        tolerance: model
+            .tolerance
+            .map(|v| (v * settings.island_tolerance.clamp(0.1, 2.0)).max(0.5)),
+    };
+    let candidate: Vec<bool> = img
+        .pixels()
+        .map(|p| matches_background(p, &island_model))
+        .collect();
+    let mut protected = vec![false; count];
+    for &(x, y) in &settings.protect_seeds {
+        for idx in component_from_seed(x, y, w, h, &candidate, settings.eight_connected) {
+            protected[idx] = true;
+        }
+    }
+
+    for &(x, y) in &settings.remove_seeds {
+        for idx in component_from_seed(x, y, w, h, &candidate, settings.eight_connected) {
+            if !protected[idx] {
+                background[idx] = true;
+            }
+        }
+    }
+    if settings.interior_mode == InteriorRecoveryMode::Off {
+        return;
+    }
+
+    let exterior_distance = distance_from_mask(w, h, background, settings.eight_connected);
+    let mut visited = background.to_vec();
+    for start in 0..count {
+        if visited[start] || protected[start] || !candidate[start] {
+            continue;
+        }
+        let sx = start as u32 % w;
+        let sy = start as u32 / w;
+        let mut queue = VecDeque::from([(sx, sy)]);
+        let mut component = Vec::new();
+        visited[start] = true;
+        while let Some((x, y)) = queue.pop_front() {
+            let idx = (y * w + x) as usize;
+            component.push(idx);
+            for (nx, ny) in neighbors(x, y, w, h, settings.eight_connected) {
+                let nidx = (ny * w + nx) as usize;
+                if candidate[nidx] && !visited[nidx] {
+                    visited[nidx] = true;
+                    queue.push_back((nx, ny));
+                }
+            }
+        }
+        if component.iter().any(|&idx| protected[idx]) {
+            continue;
+        }
+        let min_depth = component
+            .iter()
+            .map(|&idx| exterior_distance[idx])
+            .min()
+            .unwrap_or(u32::MAX);
+        let size_ok = component.len() as u32 <= settings.island_max_size.max(1);
+        let bridged =
+            settings.bridge_gaps > 0 && min_depth <= settings.bridge_gaps.saturating_add(1);
+        let remove = match settings.interior_mode {
+            InteriorRecoveryMode::Off => false,
+            InteriorRecoveryMode::SmallIslands => size_ok || bridged,
+            InteriorRecoveryMode::NearExterior => {
+                size_ok && min_depth <= settings.island_max_depth.max(1)
+            }
+            InteriorRecoveryMode::AllMatching => true,
+        };
+        if remove {
+            for idx in component {
+                background[idx] = true;
+            }
+        }
+    }
+}
+
+fn component_from_seed(
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    candidate: &[bool],
+    eight_connected: bool,
+) -> Vec<usize> {
+    if x >= w || y >= h {
+        return Vec::new();
+    }
+    let start = (y * w + x) as usize;
+    if !candidate[start] {
+        return Vec::new();
+    }
+    let mut visited = vec![false; candidate.len()];
+    let mut queue = VecDeque::from([(x, y)]);
+    let mut component = Vec::new();
+    visited[start] = true;
+    while let Some((cx, cy)) = queue.pop_front() {
+        let idx = (cy * w + cx) as usize;
+        component.push(idx);
+        for (nx, ny) in neighbors(cx, cy, w, h, eight_connected) {
+            let nidx = (ny * w + nx) as usize;
+            if candidate[nidx] && !visited[nidx] {
+                visited[nidx] = true;
+                queue.push_back((nx, ny));
+            }
+        }
+    }
+    component
+}
+
+fn distance_from_mask(w: u32, h: u32, source: &[bool], eight_connected: bool) -> Vec<u32> {
+    let mut distance = vec![u32::MAX; source.len()];
+    let mut queue = VecDeque::new();
+    for (idx, &set) in source.iter().enumerate() {
+        if set {
+            distance[idx] = 0;
+            queue.push_back((idx as u32 % w, idx as u32 / w));
+        }
+    }
+    while let Some((x, y)) = queue.pop_front() {
+        let next = distance[(y * w + x) as usize].saturating_add(1);
+        for (nx, ny) in neighbors(x, y, w, h, eight_connected) {
+            let idx = (ny * w + nx) as usize;
+            if distance[idx] == u32::MAX {
+                distance[idx] = next;
+                queue.push_back((nx, ny));
+            }
+        }
+    }
+    distance
 }
 
 fn background_model(img: &RgbaImage, settings: &RecoverTransparencySettings) -> BackgroundModel {
@@ -883,6 +1048,41 @@ mod tests {
         }
         img.put_pixel(3, 3, Rgba([255, 0, 255, 255]));
         let out = recover_transparency_core(&img, &RecoverTransparencySettings::default(), None);
+        assert_eq!(out.get_pixel(3, 3).0, [255, 0, 255, 255]);
+    }
+
+    #[test]
+    fn recover_transparency_can_remove_small_enclosed_island() {
+        let mut img = RgbaImage::from_pixel(7, 7, Rgba([255, 0, 255, 255]));
+        for y in 1..=5 {
+            for x in 1..=5 {
+                img.put_pixel(x, y, Rgba([20, 150, 40, 255]));
+            }
+        }
+        img.put_pixel(3, 3, Rgba([254, 1, 255, 255]));
+        let settings = RecoverTransparencySettings {
+            interior_mode: InteriorRecoveryMode::SmallIslands,
+            ..RecoverTransparencySettings::default()
+        };
+        let out = recover_transparency_core(&img, &settings, None);
+        assert_eq!(out.get_pixel(3, 3)[3], 0);
+    }
+
+    #[test]
+    fn recover_transparency_protect_seed_wins_over_island_recovery() {
+        let mut img = RgbaImage::from_pixel(7, 7, Rgba([255, 0, 255, 255]));
+        for y in 1..=5 {
+            for x in 1..=5 {
+                img.put_pixel(x, y, Rgba([20, 150, 40, 255]));
+            }
+        }
+        img.put_pixel(3, 3, Rgba([255, 0, 255, 255]));
+        let settings = RecoverTransparencySettings {
+            interior_mode: InteriorRecoveryMode::AllMatching,
+            protect_seeds: vec![(3, 3)],
+            ..RecoverTransparencySettings::default()
+        };
+        let out = recover_transparency_core(&img, &settings, None);
         assert_eq!(out.get_pixel(3, 3).0, [255, 0, 255, 255]);
     }
 

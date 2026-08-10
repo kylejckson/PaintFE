@@ -492,6 +492,15 @@ effect_dialog_base!(RecoverTransparencyDialog {
     transparent_snap: f32 = 0.025,
     opaque_snap: f32 = 0.97,
     foreground_influence: f32 = 0.8,
+    interior_mode: crate::ops::color_removal::InteriorRecoveryMode = crate::ops::color_removal::InteriorRecoveryMode::Off,
+    island_max_size: f32 = 24.0,
+    island_tolerance: f32 = 0.65,
+    island_max_depth: f32 = 12.0,
+    bridge_gaps: f32 = 0.0,
+    island_x: u32 = 0,
+    island_y: u32 = 0,
+    remove_seeds: Vec<(u32, u32)> = Vec::new(),
+    protect_seeds: Vec<(u32, u32)> = Vec::new(),
     sample_x: u32 = 0,
     sample_y: u32 = 0,
     preview_mode: i32 = 0,
@@ -525,6 +534,13 @@ impl RecoverTransparencyDialog {
             transparent_snap: self.transparent_snap,
             opaque_snap: self.opaque_snap,
             foreground_influence: self.foreground_influence,
+            interior_mode: self.interior_mode,
+            island_max_size: self.island_max_size.round().clamp(1.0, 4096.0) as u32,
+            island_tolerance: self.island_tolerance,
+            island_max_depth: self.island_max_depth.round().clamp(1.0, 256.0) as u32,
+            bridge_gaps: self.bridge_gaps.round().clamp(0.0, 4.0) as u32,
+            remove_seeds: self.remove_seeds.clone(),
+            protect_seeds: self.protect_seeds.clone(),
         }
     }
 
@@ -686,6 +702,95 @@ impl RecoverTransparencyDialog {
                         }
                         ui.end_row();
                     });
+
+                ui.add_space(4.0);
+                section_label(ui, &colors, "INTERIOR BACKGROUND RECOVERY");
+                egui::Grid::new("recover_transparency_islands")
+                    .num_columns(2)
+                    .spacing([8.0, 6.0])
+                    .show(ui, |ui| {
+                        use crate::ops::color_removal::InteriorRecoveryMode;
+                        ui.label("Enclosed Regions");
+                        egui::ComboBox::from_id_salt("recover_island_mode")
+                            .selected_text(match self.interior_mode {
+                                InteriorRecoveryMode::Off => "Off (safest)",
+                                InteriorRecoveryMode::SmallIslands => "Small Islands",
+                                InteriorRecoveryMode::NearExterior => "Near Exterior",
+                                InteriorRecoveryMode::AllMatching => "All Matching",
+                            })
+                            .show_ui(ui, |ui| {
+                                changed |= ui.selectable_value(&mut self.interior_mode, InteriorRecoveryMode::Off, "Off (safest)").changed();
+                                changed |= ui.selectable_value(&mut self.interior_mode, InteriorRecoveryMode::SmallIslands, "Small Islands").changed();
+                                changed |= ui.selectable_value(&mut self.interior_mode, InteriorRecoveryMode::NearExterior, "Near Exterior").changed();
+                                changed |= ui.selectable_value(&mut self.interior_mode, InteriorRecoveryMode::AllMatching, "All Matching").changed();
+                            });
+                        ui.end_row();
+
+                        ui.label("Maximum Island Size");
+                        if dialog_slider(ui, &mut self.island_max_size, 1.0..=256.0, 1.0, " px", 0) {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Island Strictness");
+                        if dialog_slider(ui, &mut self.island_tolerance, 0.1..=1.25, 0.05, "", 2) {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Maximum Depth");
+                        if dialog_slider(ui, &mut self.island_max_depth, 1.0..=64.0, 1.0, " px", 0) {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Bridge Tiny Gaps");
+                        if dialog_slider(ui, &mut self.bridge_gaps, 0.0..=4.0, 1.0, " px", 0) {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Manual Component Seed");
+                        ui.horizontal(|ui| {
+                            let max_x = self.original_flat.as_ref().map_or(0, |img| img.width().saturating_sub(1));
+                            let max_y = self.original_flat.as_ref().map_or(0, |img| img.height().saturating_sub(1));
+                            ui.add(egui::DragValue::new(&mut self.island_x).range(0..=max_x));
+                            ui.label("x");
+                            ui.add(egui::DragValue::new(&mut self.island_y).range(0..=max_y));
+                        });
+                        ui.end_row();
+
+                        ui.label("Component Override");
+                        ui.horizontal(|ui| {
+                            if ui.small_button("Remove").clicked() {
+                                let seed = (self.island_x, self.island_y);
+                                self.protect_seeds.retain(|&p| p != seed);
+                                if !self.remove_seeds.contains(&seed) {
+                                    self.remove_seeds.push(seed);
+                                }
+                                changed = true;
+                            }
+                            if ui.small_button("Protect").clicked() {
+                                let seed = (self.island_x, self.island_y);
+                                self.remove_seeds.retain(|&p| p != seed);
+                                if !self.protect_seeds.contains(&seed) {
+                                    self.protect_seeds.push(seed);
+                                }
+                                changed = true;
+                            }
+                            if ui.small_button("Clear").clicked() {
+                                self.remove_seeds.clear();
+                                self.protect_seeds.clear();
+                                changed = true;
+                            }
+                        });
+                        ui.end_row();
+                    });
+                ui.small(format!(
+                    "Manual overrides: {} remove, {} protect. Interior strictness is relative to the measured background noise.",
+                    self.remove_seeds.len(),
+                    self.protect_seeds.len()
+                ));
 
                 ui.add_space(4.0);
                 section_label(ui, &colors, "DIAGNOSTIC PREVIEW");

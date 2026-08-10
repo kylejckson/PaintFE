@@ -480,6 +480,7 @@ impl Canvas {
         painter: &egui::Painter,
         image_rect: Rect,
         bounds: (u32, u32, u32, u32),
+        time: f64,
     ) {
         let (x0, y0, x1, y1) = bounds;
         let rect = Rect::from_min_max(
@@ -492,23 +493,8 @@ impl Canvas {
                 image_rect.min.y + (y1 + 1) as f32 * self.zoom,
             ),
         );
-        painter.rect_filled(
-            rect,
-            0.0,
-            Color32::from_rgba_premultiplied(255, 255, 255, 12),
-        );
-        painter.rect_stroke(
-            rect,
-            0.0,
-            egui::Stroke::new(3.5, Color32::from_rgba_premultiplied(0, 0, 0, 210)),
-            egui::StrokeKind::Middle,
-        );
-        painter.rect_stroke(
-            rect,
-            0.0,
-            egui::Stroke::new(1.5, Color32::WHITE),
-            egui::StrokeKind::Middle,
-        );
+        painter.rect_filled(rect, 0.0, self.selection_fill);
+        self.draw_marching_rect(painter, rect, time);
     }
 
     fn draw_full_selection_overlay(
@@ -516,28 +502,14 @@ impl Canvas {
         painter: &egui::Painter,
         image_rect: Rect,
         state: &mut CanvasState,
+        time: f64,
     ) {
         let rect = image_rect.intersect(painter.clip_rect());
         if rect.is_negative() {
             return;
         }
-        painter.rect_filled(
-            rect,
-            0.0,
-            Color32::from_rgba_premultiplied(255, 255, 255, 12),
-        );
-        painter.rect_stroke(
-            image_rect,
-            0.0,
-            egui::Stroke::new(3.5, Color32::from_rgba_premultiplied(0, 0, 0, 210)),
-            egui::StrokeKind::Inside,
-        );
-        painter.rect_stroke(
-            image_rect,
-            0.0,
-            egui::Stroke::new(1.5, Color32::WHITE),
-            egui::StrokeKind::Inside,
-        );
+        painter.rect_filled(rect, 0.0, self.selection_fill);
+        self.draw_marching_rect(painter, image_rect, time);
         state.selection_overlay_bounds = (state.width > 0 && state.height > 0).then_some((
             0,
             0,

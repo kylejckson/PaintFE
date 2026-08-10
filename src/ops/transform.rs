@@ -5,6 +5,7 @@
 use crate::canvas::{CanvasState, Layer, LayerContent, TiledImage};
 use crate::par_compat::*;
 use image::{GrayImage, Luma, Rgba, RgbaImage, imageops};
+use std::collections::HashMap;
 
 #[derive(Clone, Copy)]
 enum SelectionCanvasTransform {
@@ -50,6 +51,86 @@ impl Interpolation {
             Interpolation::Bilinear => imageops::FilterType::Triangle,
             Interpolation::Bicubic => imageops::FilterType::CatmullRom,
             Interpolation::Lanczos3 => imageops::FilterType::Lanczos3,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ResizeMethod {
+    #[default]
+    Standard,
+    PixelArtRetarget,
+}
+
+impl ResizeMethod {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Standard => "Standard Resampling",
+            Self::PixelArtRetarget => "Pixel Art Retarget",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum PixelRetargetMode {
+    #[default]
+    PaletteAware,
+    StructurePreserving,
+    TopologyPreserving,
+}
+
+impl PixelRetargetMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::PaletteAware => "Palette-Aware",
+            Self::StructurePreserving => "Structure-Preserving",
+            Self::TopologyPreserving => "Topology-Preserving (Experimental)",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PixelRetargetSettings {
+    pub mode: PixelRetargetMode,
+    pub preserve_palette: bool,
+    pub preserve_silhouette: bool,
+    pub protect_thin_features: bool,
+    pub eight_connected: bool,
+    pub detail_priority: f32,
+    pub topology_priority: f32,
+    pub optimize_phase: bool,
+    pub use_selection_as_protection: bool,
+}
+
+impl Default for PixelRetargetSettings {
+    fn default() -> Self {
+        Self {
+            mode: PixelRetargetMode::PaletteAware,
+            preserve_palette: true,
+            preserve_silhouette: true,
+            protect_thin_features: true,
+            eight_connected: false,
+            detail_priority: 0.7,
+            topology_priority: 0.65,
+            optimize_phase: true,
+            use_selection_as_protection: false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ResizeImageOptions {
+    pub method: ResizeMethod,
+    pub interpolation: Interpolation,
+    pub retarget: PixelRetargetSettings,
+}
+
+impl Default for ResizeImageOptions {
+    fn default() -> Self {
+        Self {
+            method: ResizeMethod::Standard,
+            interpolation: Interpolation::default(),
+            retarget: PixelRetargetSettings::default(),
         }
     }
 }
@@ -374,6 +455,391 @@ pub fn resize_layers(
             TiledImage::from_rgba_image(&resized)
         })
         .collect()
+}
+
+pub fn resize_layers_with_options(
+    flat_layers: Vec<RgbaImage>,
+    new_w: u32,
+    new_h: u32,
+    options: ResizeImageOptions,
+    protection_mask: Option<GrayImage>,
+) -> Vec<TiledImage> {
+    flat_layers
+        .into_par_iter()
+        .map(|flat| {
+            let resized = match options.method {
+                ResizeMethod::Standard => {
+                    imageops::resize(&flat, new_w, new_h, options.interpolation.to_filter())
+                }
+                ResizeMethod::PixelArtRetarget => pixel_art_retarget(
+                    &flat,
+                    new_w,
+                    new_h,
+                    &options.retarget,
+                    protection_mask.as_ref(),
+                ),
+            };
+            TiledImage::from_rgba_image(&resized)
+        })
+        .collect()
+}
+
+pub fn pixel_art_retarget(
+    src: &RgbaImage,
+    new_w: u32,
+    new_h: u32,
+    settings: &PixelRetargetSettings,
+    protection_mask: Option<&GrayImage>,
+) -> RgbaImage {
+    if new_w == 0 || new_h == 0 || src.width() == 0 || src.height() == 0 {
+        return RgbaImage::new(new_w, new_h);
+    }
+    if new_w >= src.width() && new_h >= src.height() {
+        return imageops::resize(src, new_w, new_h, imageops::FilterType::Nearest);
+    }
+
+    let adaptive = settings.mode != PixelRetargetMode::PaletteAware;
+    let phase = if settings.optimize_phase {
+        choose_retarget_phase(src, new_w, new_h, settings, protection_mask, adaptive)
+    } else {
+        (0.0, 0.0)
+    };
+    let mut out = retarget_resample(
+        src,
+        new_w,
+        new_h,
+        settings,
+        protection_mask,
+        phase,
+        adaptive,
+    );
+    if settings.mode == PixelRetargetMode::TopologyPreserving {
+        restore_small_features(src, &mut out, settings, protection_mask, phase);
+        repair_output_connectivity(&mut out, settings);
+    }
+    out
+}
+
+fn choose_retarget_phase(
+    src: &RgbaImage,
+    new_w: u32,
+    new_h: u32,
+    settings: &PixelRetargetSettings,
+    protection_mask: Option<&GrayImage>,
+    adaptive: bool,
+) -> (f32, f32) {
+    let sx = src.width() as f32 / new_w as f32;
+    let sy = src.height() as f32 / new_h as f32;
+    let offsets: &[f32] = if new_w as u64 * new_h as u64 > 1_000_000 {
+        &[0.0]
+    } else {
+        &[-0.25, 0.0, 0.25]
+    };
+    let mut best = (0.0, 0.0);
+    let mut best_score = f64::INFINITY;
+    for &oy in offsets {
+        for &ox in offsets {
+            let phase = (ox * sx, oy * sy);
+            let candidate = retarget_resample(
+                src,
+                new_w,
+                new_h,
+                settings,
+                protection_mask,
+                phase,
+                adaptive,
+            );
+            let score =
+                retarget_reconstruction_score(src, &candidate, protection_mask, phase, settings);
+            if score < best_score {
+                best_score = score;
+                best = phase;
+            }
+        }
+    }
+    best
+}
+
+fn retarget_resample(
+    src: &RgbaImage,
+    new_w: u32,
+    new_h: u32,
+    settings: &PixelRetargetSettings,
+    protection_mask: Option<&GrayImage>,
+    phase: (f32, f32),
+    adaptive: bool,
+) -> RgbaImage {
+    let sw = src.width();
+    let sh = src.height();
+    let scale_x = sw as f32 / new_w as f32;
+    let scale_y = sh as f32 / new_h as f32;
+    let mut out = RgbaImage::new(new_w, new_h);
+
+    for oy in 0..new_h {
+        for ox in 0..new_w {
+            let x0 = (ox as f32 * scale_x + phase.0).clamp(0.0, sw as f32);
+            let x1 = ((ox + 1) as f32 * scale_x + phase.0).clamp(0.0, sw as f32);
+            let y0 = (oy as f32 * scale_y + phase.1).clamp(0.0, sh as f32);
+            let y1 = ((oy + 1) as f32 * scale_y + phase.1).clamp(0.0, sh as f32);
+            let (x0, x1) = if x1 > x0 {
+                (x0, x1)
+            } else {
+                (x0, (x0 + 0.01).min(sw as f32))
+            };
+            let (y0, y1) = if y1 > y0 {
+                (y0, y1)
+            } else {
+                (y0, (y0 + 0.01).min(sh as f32))
+            };
+
+            let mut weights: HashMap<u32, f32> = HashMap::new();
+            for iy in y0.floor() as u32..y1.ceil().min(sh as f32) as u32 {
+                for ix in x0.floor() as u32..x1.ceil().min(sw as f32) as u32 {
+                    let overlap_x = (x1.min(ix as f32 + 1.0) - x0.max(ix as f32)).max(0.0);
+                    let overlap_y = (y1.min(iy as f32 + 1.0) - y0.max(iy as f32)).max(0.0);
+                    let area = overlap_x * overlap_y;
+                    if area <= 0.0 {
+                        continue;
+                    }
+                    let p = src.get_pixel(ix, iy);
+                    let edge = source_edge_strength(src, ix, iy);
+                    let protected = mask_value(protection_mask, ix, iy);
+                    let silhouette = if settings.preserve_silhouette && p[3] > 0 {
+                        source_alpha_edge(src, ix, iy)
+                    } else {
+                        0.0
+                    };
+                    let importance = 1.0
+                        + settings.detail_priority.clamp(0.0, 1.0) * edge * 3.0
+                        + silhouette * 2.0
+                        + protected * 6.0;
+                    let weight = area * importance;
+                    *weights.entry(pack_rgba(*p)).or_default() += weight;
+                }
+            }
+
+            if adaptive && !weights.is_empty() {
+                let dominant = unpack_rgba(
+                    weights
+                        .iter()
+                        .max_by(|a, b| a.1.total_cmp(b.1))
+                        .map_or(0, |(&key, _)| key),
+                );
+                for (key, weight) in &mut weights {
+                    let p = unpack_rgba(*key);
+                    let distance = rgba_distance(p, dominant);
+                    let bilateral = (-distance * 5.0).exp().max(0.05);
+                    *weight *= bilateral;
+                }
+            }
+
+            let result = if settings.preserve_palette {
+                weights
+                    .iter()
+                    .max_by(|a, b| a.1.total_cmp(b.1))
+                    .map_or(Rgba([0, 0, 0, 0]), |(&key, _)| Rgba(unpack_rgba(key)))
+            } else if !weights.is_empty() {
+                let mut total = [0.0_f32; 4];
+                let mut total_weight = 0.0_f32;
+                for (&key, &weight) in &weights {
+                    let p = unpack_rgba(key);
+                    let a = p[3] as f32 / 255.0;
+                    for c in 0..3 {
+                        total[c] += p[c] as f32 * a * weight;
+                    }
+                    total[3] += p[3] as f32 * weight;
+                    total_weight += weight;
+                }
+                let alpha = (total[3] / total_weight).clamp(0.0, 255.0);
+                let alpha_f = alpha / 255.0;
+                let mut rgba = [0_u8; 4];
+                if alpha_f > 0.0 {
+                    for c in 0..3 {
+                        rgba[c] = (total[c] / total_weight / alpha_f)
+                            .round()
+                            .clamp(0.0, 255.0) as u8;
+                    }
+                }
+                rgba[3] = alpha.round() as u8;
+                Rgba(rgba)
+            } else {
+                Rgba([0, 0, 0, 0])
+            };
+            out.put_pixel(ox, oy, result);
+        }
+    }
+    out
+}
+
+fn retarget_reconstruction_score(
+    src: &RgbaImage,
+    reduced: &RgbaImage,
+    protection_mask: Option<&GrayImage>,
+    phase: (f32, f32),
+    settings: &PixelRetargetSettings,
+) -> f64 {
+    let sx = src.width() as f32 / reduced.width() as f32;
+    let sy = src.height() as f32 / reduced.height() as f32;
+    let mut score = 0.0_f64;
+    for y in 0..src.height() {
+        for x in 0..src.width() {
+            let ox = (((x as f32 - phase.0) / sx).floor() as i32)
+                .clamp(0, reduced.width() as i32 - 1) as u32;
+            let oy = (((y as f32 - phase.1) / sy).floor() as i32)
+                .clamp(0, reduced.height() as i32 - 1) as u32;
+            let source = *src.get_pixel(x, y);
+            let sample = *reduced.get_pixel(ox, oy);
+            let edge = source_edge_strength(src, x, y);
+            let protected = mask_value(protection_mask, x, y);
+            let weight =
+                1.0 + edge * settings.detail_priority.clamp(0.0, 1.0) * 4.0 + protected * 8.0;
+            score += rgba_distance(source.0, sample.0) as f64 * weight as f64;
+        }
+    }
+    score
+}
+
+fn restore_small_features(
+    src: &RgbaImage,
+    out: &mut RgbaImage,
+    settings: &PixelRetargetSettings,
+    protection_mask: Option<&GrayImage>,
+    phase: (f32, f32),
+) {
+    if !settings.protect_thin_features {
+        return;
+    }
+    let sx = src.width() as f32 / out.width() as f32;
+    let sy = src.height() as f32 / out.height() as f32;
+    for y in 0..src.height() {
+        for x in 0..src.width() {
+            let p = *src.get_pixel(x, y);
+            if p[3] == 0 {
+                continue;
+            }
+            let edge = source_edge_strength(src, x, y);
+            let protected = mask_value(protection_mask, x, y);
+            let alpha_neighbors = alpha_neighbor_count(src, x, y, settings.eight_connected);
+            let thin = alpha_neighbors <= if settings.eight_connected { 3 } else { 2 };
+            if protected <= 0.0 && !(thin && edge > 0.35) {
+                continue;
+            }
+            let ox = (((x as f32 - phase.0) / sx).floor() as i32).clamp(0, out.width() as i32 - 1)
+                as u32;
+            let oy = (((y as f32 - phase.1) / sy).floor() as i32).clamp(0, out.height() as i32 - 1)
+                as u32;
+            let current = *out.get_pixel(ox, oy);
+            if current[3] == 0 || rgba_distance(current.0, p.0) > 0.35 {
+                out.put_pixel(ox, oy, p);
+            }
+        }
+    }
+}
+
+fn repair_output_connectivity(out: &mut RgbaImage, settings: &PixelRetargetSettings) {
+    if settings.topology_priority < 0.35 || out.width() < 3 || out.height() < 3 {
+        return;
+    }
+    let original = out.clone();
+    for y in 1..out.height() - 1 {
+        for x in 1..out.width() - 1 {
+            if original.get_pixel(x, y)[3] > 0 {
+                continue;
+            }
+            let left = *original.get_pixel(x - 1, y);
+            let right = *original.get_pixel(x + 1, y);
+            let up = *original.get_pixel(x, y - 1);
+            let down = *original.get_pixel(x, y + 1);
+            let horizontal = left[3] > 0 && right[3] > 0;
+            let vertical = up[3] > 0 && down[3] > 0;
+            let diagonal = settings.eight_connected
+                && ((original.get_pixel(x - 1, y - 1)[3] > 0
+                    && original.get_pixel(x + 1, y + 1)[3] > 0)
+                    || (original.get_pixel(x + 1, y - 1)[3] > 0
+                        && original.get_pixel(x - 1, y + 1)[3] > 0));
+            if horizontal || vertical || diagonal {
+                let fill = if horizontal {
+                    left
+                } else if vertical {
+                    up
+                } else {
+                    *original.get_pixel(x - 1, y - 1)
+                };
+                out.put_pixel(x, y, fill);
+            }
+        }
+    }
+}
+
+fn source_edge_strength(img: &RgbaImage, x: u32, y: u32) -> f32 {
+    let center = *img.get_pixel(x, y);
+    let mut edge = 0.0_f32;
+    for (nx, ny) in cardinal_neighbors(x, y, img.width(), img.height()) {
+        edge = edge.max(rgba_distance(center.0, img.get_pixel(nx, ny).0));
+    }
+    edge
+}
+
+fn source_alpha_edge(img: &RgbaImage, x: u32, y: u32) -> f32 {
+    let alpha = img.get_pixel(x, y)[3] as f32 / 255.0;
+    cardinal_neighbors(x, y, img.width(), img.height())
+        .into_iter()
+        .map(|(nx, ny)| (alpha - img.get_pixel(nx, ny)[3] as f32 / 255.0).abs())
+        .fold(0.0, f32::max)
+}
+
+fn alpha_neighbor_count(img: &RgbaImage, x: u32, y: u32, eight: bool) -> usize {
+    pixel_neighbors(x, y, img.width(), img.height(), eight)
+        .into_iter()
+        .filter(|&(nx, ny)| img.get_pixel(nx, ny)[3] > 0)
+        .count()
+}
+
+fn cardinal_neighbors(x: u32, y: u32, w: u32, h: u32) -> Vec<(u32, u32)> {
+    pixel_neighbors(x, y, w, h, false)
+}
+
+fn pixel_neighbors(x: u32, y: u32, w: u32, h: u32, eight: bool) -> Vec<(u32, u32)> {
+    let mut result = Vec::with_capacity(if eight { 8 } else { 4 });
+    for dy in -1_i32..=1 {
+        for dx in -1_i32..=1 {
+            if dx == 0 && dy == 0 || (!eight && dx != 0 && dy != 0) {
+                continue;
+            }
+            let nx = x as i32 + dx;
+            let ny = y as i32 + dy;
+            if nx >= 0 && ny >= 0 && nx < w as i32 && ny < h as i32 {
+                result.push((nx as u32, ny as u32));
+            }
+        }
+    }
+    result
+}
+
+fn mask_value(mask: Option<&GrayImage>, x: u32, y: u32) -> f32 {
+    mask.filter(|m| x < m.width() && y < m.height())
+        .map_or(0.0, |m| m.get_pixel(x, y)[0] as f32 / 255.0)
+}
+
+fn rgba_distance(a: [u8; 4], b: [u8; 4]) -> f32 {
+    let aa = a[3] as f32 / 255.0;
+    let ba = b[3] as f32 / 255.0;
+    let mut sum = (aa - ba).powi(2);
+    for c in 0..3 {
+        let d = a[c] as f32 / 255.0 * aa - b[c] as f32 / 255.0 * ba;
+        sum += d * d;
+    }
+    (sum / 4.0).sqrt()
+}
+
+#[inline]
+fn pack_rgba(p: Rgba<u8>) -> u32 {
+    u32::from_be_bytes(p.0)
+}
+
+#[inline]
+fn unpack_rgba(value: u32) -> [u8; 4] {
+    value.to_be_bytes()
 }
 
 /// Resize the canvas (change dimensions), placing the old content at an anchor position.
@@ -1777,6 +2243,47 @@ mod tests {
             ));
         }
         state
+    }
+
+    #[test]
+    fn palette_retarget_does_not_create_new_colors() {
+        let mut src = RgbaImage::from_pixel(6, 6, Rgba([220, 30, 20, 255]));
+        for y in 0..6 {
+            for x in 3..6 {
+                src.put_pixel(x, y, Rgba([20, 80, 220, 255]));
+            }
+        }
+        let settings = PixelRetargetSettings {
+            optimize_phase: false,
+            ..PixelRetargetSettings::default()
+        };
+        let out = pixel_art_retarget(&src, 4, 4, &settings, None);
+        assert_eq!(out.dimensions(), (4, 4));
+        assert!(
+            out.pixels()
+                .all(|p| { p.0 == [220, 30, 20, 255] || p.0 == [20, 80, 220, 255] })
+        );
+    }
+
+    #[test]
+    fn topology_retarget_keeps_thin_opaque_feature() {
+        let mut src = RgbaImage::from_pixel(8, 8, Rgba([0, 0, 0, 0]));
+        for i in 1..7 {
+            src.put_pixel(i, i, Rgba([250, 210, 30, 255]));
+        }
+        let settings = PixelRetargetSettings {
+            mode: PixelRetargetMode::TopologyPreserving,
+            optimize_phase: false,
+            eight_connected: true,
+            ..PixelRetargetSettings::default()
+        };
+        let out = pixel_art_retarget(&src, 4, 4, &settings, None);
+        assert!(out.pixels().filter(|p| p[3] > 0).count() >= 2);
+        assert!(
+            out.pixels()
+                .filter(|p| p[3] > 0)
+                .all(|p| p.0 == [250, 210, 30, 255])
+        );
     }
 
     #[test]

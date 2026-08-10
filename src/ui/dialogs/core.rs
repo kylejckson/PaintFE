@@ -16,7 +16,9 @@ use eframe::egui;
 use egui::{Color32, CornerRadius, Pos2, Rect, Sense, Stroke, Vec2};
 
 use crate::canvas::{CanvasState, TiledImage};
-use crate::ops::transform::Interpolation;
+use crate::ops::transform::{
+    Interpolation, PixelRetargetMode, PixelRetargetSettings, ResizeImageOptions, ResizeMethod,
+};
 
 use super::effects::*;
 
