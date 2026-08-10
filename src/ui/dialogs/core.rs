@@ -74,6 +74,7 @@ pub enum ActiveDialog {
     OilPainting(OilPaintingDialog),
     ColorFilter(ColorFilterDialog),
     ColorToAlpha(ColorToAlphaDialog),
+    RecoverTransparency(RecoverTransparencyDialog),
     CanvasBorder(CanvasBorderDialog),
     SeamlessTexture(SeamlessTextureDialog),
     // Render effects (additional)
@@ -142,6 +143,7 @@ impl ActiveDialog {
             ActiveDialog::OilPainting(_) => "OilPainting",
             ActiveDialog::ColorFilter(_) => "ColorFilter",
             ActiveDialog::ColorToAlpha(_) => "ColorToAlpha",
+            ActiveDialog::RecoverTransparency(_) => "RecoverTransparency",
             ActiveDialog::CanvasBorder(_) => "CanvasBorder",
             ActiveDialog::SeamlessTexture(_) => "SeamlessTexture",
             ActiveDialog::Contours(_) => "Contours",

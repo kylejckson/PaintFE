@@ -6,6 +6,27 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [Unreleased]
+
+- Recover transparency and clean edge colours from artwork flattened over solid or slightly noisy backgrounds.
+- Made the Color Picker respond to a single click and kept Save As letterboxing free of stretched border pixels.
+- Improved Linux packaging reliability for keyboard Compose data, Paint.NET compatibility checksums, and build tooling.
+
+### Added
+
+- Added Recover Transparency with automatic edge sampling, configurable connectivity and recovery depth, selection-mask support, and alpha/reconstruction diagnostic previews.
+
+### Changed
+
+- Updated the pinned GitHub Actions .NET setup and Rust toolchain actions.
+- Preserved Paint.NET compatibility-host binaries during AUR packaging so their published SHA-256 sidecars remain valid.
+
+### Fixed
+
+- Fixed Color Picker clicks being ignored unless the pointer moved while held.
+- Fixed Save As previews stretching the outermost image pixels across letterboxed areas. Closes #120.
+- Bundled matching X11 Compose data with the AppImage and selected it through `XLOCALEDIR`, preventing host/AppImage xkbcommon parser mismatches. Closes #118.
+
 ## [1.3.10] - 2026-07-30
 
 - Turn images into seamless game-ready textures with live tiled previewing and organic edge repair.
@@ -26,7 +47,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 - Fixed Linux ONNX model loading by passing UTF-8 C paths on Linux and macOS while retaining UTF-16 paths on Windows. Closes #119.
 - Fixed validation for versioned Linux ONNX Runtime shared libraries. Closes #119.
-- Suppressed the harmless `dead_hamza` xkbcommon Compose warning during AppImage startup on both Wayland and X11, while preserving user-set diagnostic log levels. Closes #118.
+- Suppressed the harmless `dead_hamza` xkbcommon Compose warning during AppImage startup on both Wayland and X11, while preserving user-set diagnostic log levels.
 
 ## [1.3.9] - 2026-07-22
 

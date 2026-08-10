@@ -481,6 +481,247 @@ impl ColorToAlphaDialog {
     }
 }
 
+effect_dialog_base!(RecoverTransparencyDialog {
+    background_color: [f32; 3] = [1.0, 0.0, 1.0],
+    auto_sample_edges: bool = true,
+    sample_depth: f32 = 2.0,
+    noise_tolerance: f32 = 4.0,
+    edge_width: f32 = 2.0,
+    eight_connected: bool = false,
+    preserve_hard_pixels: bool = true,
+    transparent_snap: f32 = 0.025,
+    opaque_snap: f32 = 0.97,
+    foreground_influence: f32 = 0.8,
+    sample_x: u32 = 0,
+    sample_y: u32 = 0,
+    preview_mode: i32 = 0,
+    first_open: bool = true
+});
+
+impl RecoverTransparencyDialog {
+    pub fn new_with_target(state: &CanvasState, target: Color32) -> Self {
+        let mut dlg = Self::new(state);
+        dlg.background_color = [
+            target.r() as f32 / 255.0,
+            target.g() as f32 / 255.0,
+            target.b() as f32 / 255.0,
+        ];
+        dlg
+    }
+
+    pub fn settings(&self) -> crate::ops::color_removal::RecoverTransparencySettings {
+        crate::ops::color_removal::RecoverTransparencySettings {
+            background: [
+                (self.background_color[0] * 255.0).round().clamp(0.0, 255.0) as u8,
+                (self.background_color[1] * 255.0).round().clamp(0.0, 255.0) as u8,
+                (self.background_color[2] * 255.0).round().clamp(0.0, 255.0) as u8,
+            ],
+            auto_sample_edges: self.auto_sample_edges,
+            sample_depth: self.sample_depth.round().clamp(1.0, 8.0) as u32,
+            noise_tolerance: self.noise_tolerance,
+            edge_width: self.edge_width.round().clamp(0.0, 6.0) as u32,
+            eight_connected: self.eight_connected,
+            preserve_hard_pixels: self.preserve_hard_pixels,
+            transparent_snap: self.transparent_snap,
+            opaque_snap: self.opaque_snap,
+            foreground_influence: self.foreground_influence,
+        }
+    }
+
+    pub fn preview_kind(&self) -> crate::ops::color_removal::RecoverTransparencyPreview {
+        match self.preview_mode {
+            1 => crate::ops::color_removal::RecoverTransparencyPreview::Alpha,
+            2 => crate::ops::color_removal::RecoverTransparencyPreview::ReconstructionError,
+            _ => crate::ops::color_removal::RecoverTransparencyPreview::Result,
+        }
+    }
+
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        icon_texture: Option<&egui::TextureHandle>,
+    ) -> DialogResult<crate::ops::color_removal::RecoverTransparencySettings> {
+        let mut result = DialogResult::Open;
+        let colors = DialogColors::from_ctx(ctx);
+
+        egui::Window::new("dialog_recover_transparency")
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(false)
+            .default_pos(egui::pos2(ctx.content_rect().center().x - 220.0, 48.0))
+            .show(ctx, |ui| {
+                ui.set_min_width(440.0);
+                let close_clicked = if icon_texture.is_some() {
+                    paint_dialog_header_with_texture(
+                        ui,
+                        &colors,
+                        icon_texture,
+                        &t!("dialog.recover_transparency"),
+                    )
+                } else {
+                    paint_dialog_header(
+                        ui,
+                        &colors,
+                        crate::assets::Icon::ColorRemover.emoji(),
+                        &t!("dialog.recover_transparency"),
+                    )
+                };
+                if close_clicked {
+                    result = DialogResult::Cancel;
+                }
+
+                let mut changed = false;
+                ui.add_space(4.0);
+                ui.label("Recover alpha and edge colors from artwork flattened over a noisy solid background.");
+                ui.add_space(4.0);
+                section_label(ui, &colors, "BACKGROUND MODEL");
+                egui::Grid::new("recover_transparency_background")
+                    .num_columns(2)
+                    .spacing([8.0, 6.0])
+                    .show(ui, |ui| {
+                        ui.label("Automatic");
+                        if ui
+                            .checkbox(&mut self.auto_sample_edges, "Estimate from canvas edges")
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Fallback / Manual");
+                        if ui.color_edit_button_rgb(&mut self.background_color).changed() {
+                            self.auto_sample_edges = false;
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Sample Pixel");
+                        ui.horizontal(|ui| {
+                            let max_x = self
+                                .original_flat
+                                .as_ref()
+                                .map_or(0, |img| img.width().saturating_sub(1));
+                            let max_y = self
+                                .original_flat
+                                .as_ref()
+                                .map_or(0, |img| img.height().saturating_sub(1));
+                            ui.add(egui::DragValue::new(&mut self.sample_x).range(0..=max_x));
+                            ui.label("x");
+                            ui.add(egui::DragValue::new(&mut self.sample_y).range(0..=max_y));
+                            if ui.small_button("Pick").clicked()
+                                && let Some(flat) = &self.original_flat
+                            {
+                                let p = flat.get_pixel(
+                                    self.sample_x.min(flat.width().saturating_sub(1)),
+                                    self.sample_y.min(flat.height().saturating_sub(1)),
+                                );
+                                self.background_color = [
+                                    p[0] as f32 / 255.0,
+                                    p[1] as f32 / 255.0,
+                                    p[2] as f32 / 255.0,
+                                ];
+                                self.auto_sample_edges = false;
+                                changed = true;
+                            }
+                        });
+                        ui.end_row();
+
+                        ui.label("Edge Sample Depth");
+                        if dialog_slider(ui, &mut self.sample_depth, 1.0..=8.0, 1.0, " px", 0) {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Noise Tolerance");
+                        if dialog_slider(ui, &mut self.noise_tolerance, 0.5..=32.0, 0.5, "", 1) {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Connectivity");
+                        egui::ComboBox::from_id_salt("recover_connectivity")
+                            .selected_text(if self.eight_connected { "8-way" } else { "4-way (pixel art)" })
+                            .show_ui(ui, |ui| {
+                                changed |= ui.selectable_value(&mut self.eight_connected, false, "4-way (pixel art)").changed();
+                                changed |= ui.selectable_value(&mut self.eight_connected, true, "8-way").changed();
+                            });
+                        ui.end_row();
+                    });
+
+                ui.add_space(4.0);
+                section_label(ui, &colors, "EDGE RECOVERY");
+                egui::Grid::new("recover_transparency_edges")
+                    .num_columns(2)
+                    .spacing([8.0, 6.0])
+                    .show(ui, |ui| {
+                        ui.label("Recover Band");
+                        if dialog_slider(ui, &mut self.edge_width, 0.0..=6.0, 1.0, " px", 0) {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Preserve Hard Pixels");
+                        if ui.checkbox(&mut self.preserve_hard_pixels, "Snap near-opaque edges").changed() {
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Transparent Snap");
+                        if dialog_slider(ui, &mut self.transparent_snap, 0.0..=0.25, 0.005, "", 3) {
+                            self.opaque_snap = self.opaque_snap.max(self.transparent_snap);
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Opaque Snap");
+                        if dialog_slider(ui, &mut self.opaque_snap, 0.75..=1.0, 0.005, "", 3) {
+                            self.transparent_snap = self.transparent_snap.min(self.opaque_snap);
+                            changed = true;
+                        }
+                        ui.end_row();
+
+                        ui.label("Color Preservation");
+                        if dialog_slider(ui, &mut self.foreground_influence, 0.0..=1.0, 0.05, "", 2) {
+                            changed = true;
+                        }
+                        ui.end_row();
+                    });
+
+                ui.add_space(4.0);
+                section_label(ui, &colors, "DIAGNOSTIC PREVIEW");
+                ui.horizontal(|ui| {
+                    ui.label("View");
+                    egui::ComboBox::from_id_salt("recover_preview_mode")
+                        .selected_text(match self.preview_mode {
+                            1 => "Alpha Matte",
+                            2 => "Reconstruction Error",
+                            _ => "Recovered Result",
+                        })
+                        .show_ui(ui, |ui| {
+                            changed |= ui.selectable_value(&mut self.preview_mode, 0, "Recovered Result").changed();
+                            changed |= ui.selectable_value(&mut self.preview_mode, 1, "Alpha Matte").changed();
+                            changed |= ui.selectable_value(&mut self.preview_mode, 2, "Reconstruction Error").changed();
+                        });
+                });
+                ui.small("Reconstruction Error is amplified 8×; black means the recovered pixels reproduce the source backing.");
+
+                accent_separator(ui, &colors);
+                let manual = preview_controls(ui, &colors, &mut self.live_preview);
+                if (changed && self.live_preview) || manual {
+                    result = DialogResult::Changed;
+                }
+                let (ok, cancel) = dialog_footer(ui, &colors);
+                if ok {
+                    result = DialogResult::Ok(self.settings());
+                }
+                if cancel {
+                    result = DialogResult::Cancel;
+                }
+            });
+        result
+    }
+}
+
 // ============================================================================
 // RENDER — CONTOURS DIALOG
 // ============================================================================

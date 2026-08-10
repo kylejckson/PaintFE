@@ -1155,6 +1155,57 @@ const PREVIEW_MAX_SIZE: u32 = 512;
 /// Pixel size of the interactive preview panel (square).
 const PREVIEW_PANEL_SIZE: f32 = 320.0;
 
+/// Return destination and UV rectangles for the texture-backed portion of a
+/// preview viewport, leaving out-of-bounds areas for the checkerboard.
+fn clipped_preview_rects(
+    panel: egui::Rect,
+    texture_size: egui::Vec2,
+    source_min: egui::Pos2,
+    source_size: egui::Vec2,
+) -> Option<(egui::Rect, egui::Rect)> {
+    if texture_size.x <= 0.0
+        || texture_size.y <= 0.0
+        || source_size.x <= 0.0
+        || source_size.y <= 0.0
+    {
+        return None;
+    }
+
+    let source_max = source_min + source_size;
+    let clipped_min = egui::pos2(source_min.x.max(0.0), source_min.y.max(0.0));
+    let clipped_max = egui::pos2(
+        source_max.x.min(texture_size.x),
+        source_max.y.min(texture_size.y),
+    );
+    if clipped_min.x >= clipped_max.x || clipped_min.y >= clipped_max.y {
+        return None;
+    }
+
+    let destination = egui::Rect::from_min_max(
+        panel.min
+            + egui::vec2(
+                (clipped_min.x - source_min.x) / source_size.x * panel.width(),
+                (clipped_min.y - source_min.y) / source_size.y * panel.height(),
+            ),
+        panel.min
+            + egui::vec2(
+                (clipped_max.x - source_min.x) / source_size.x * panel.width(),
+                (clipped_max.y - source_min.y) / source_size.y * panel.height(),
+            ),
+    );
+    let uv = egui::Rect::from_min_max(
+        egui::pos2(
+            clipped_min.x / texture_size.x,
+            clipped_min.y / texture_size.y,
+        ),
+        egui::pos2(
+            clipped_max.x / texture_size.x,
+            clipped_max.y / texture_size.y,
+        ),
+    );
+    Some((destination, uv))
+}
+
 pub struct SaveFileDialog {
     pub open: bool,
     filename: String,
@@ -1555,19 +1606,27 @@ impl SaveFileDialog {
                                 }
                             }
 
-                            // Draw preview via UV rect for zoom/pan
+                            // Draw only the texture-backed portion of the viewport. At
+                            // auto-fit, one source axis extends beyond the image to
+                            // create letterboxing; drawing that full UV range would make
+                            // clamp-to-edge repeat the image's border pixels.
                             if let Some(texture) = display_texture {
                                 let ts = texture.size_vec2();
                                 let vis_w = PREVIEW_PANEL_SIZE / self.preview_zoom;
                                 let vis_h = PREVIEW_PANEL_SIZE / self.preview_zoom;
-                                let uv = egui::Rect::from_min_max(
-                                    egui::pos2(self.preview_pan.x / ts.x, self.preview_pan.y / ts.y),
-                                    egui::pos2(
-                                        (self.preview_pan.x + vis_w) / ts.x,
-                                        (self.preview_pan.y + vis_h) / ts.y,
-                                    ),
-                                );
-                                painter.image(texture.id(), rect, uv, Color32::WHITE);
+                                if let Some((destination, uv)) = clipped_preview_rects(
+                                    rect,
+                                    ts,
+                                    egui::pos2(self.preview_pan.x, self.preview_pan.y),
+                                    egui::vec2(vis_w, vis_h),
+                                ) {
+                                    painter.image(
+                                        texture.id(),
+                                        destination,
+                                        uv,
+                                        Color32::WHITE,
+                                    );
+                                }
 
                                 // Thin scrollbar indicators
                                 let bar_color = Color32::from_rgba_premultiplied(120, 120, 120, 160);
@@ -1862,5 +1921,70 @@ impl SaveFileDialog {
         }
 
         result
+    }
+}
+
+#[cfg(test)]
+mod preview_mapping_tests {
+    use super::clipped_preview_rects;
+
+    fn assert_close(actual: f32, expected: f32) {
+        assert!((actual - expected).abs() < 0.001, "{actual} != {expected}");
+    }
+
+    #[test]
+    fn wide_image_leaves_vertical_letterbox_unpainted() {
+        let panel = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(320.0, 320.0));
+        let (destination, uv) = clipped_preview_rects(
+            panel,
+            egui::vec2(320.0, 160.0),
+            egui::pos2(0.0, -80.0),
+            egui::vec2(320.0, 320.0),
+        )
+        .unwrap();
+
+        assert_close(destination.min.y, 80.0);
+        assert_close(destination.max.y, 240.0);
+        assert_eq!(
+            uv,
+            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0))
+        );
+    }
+
+    #[test]
+    fn tall_image_leaves_horizontal_letterbox_unpainted() {
+        let panel = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(320.0, 320.0));
+        let (destination, uv) = clipped_preview_rects(
+            panel,
+            egui::vec2(160.0, 320.0),
+            egui::pos2(-80.0, 0.0),
+            egui::vec2(320.0, 320.0),
+        )
+        .unwrap();
+
+        assert_close(destination.min.x, 80.0);
+        assert_close(destination.max.x, 240.0);
+        assert_eq!(
+            uv,
+            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0))
+        );
+    }
+
+    #[test]
+    fn zoomed_view_maps_to_bounded_uvs() {
+        let panel = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(320.0, 320.0));
+        let (destination, uv) = clipped_preview_rects(
+            panel,
+            egui::vec2(512.0, 256.0),
+            egui::pos2(64.0, 32.0),
+            egui::vec2(160.0, 160.0),
+        )
+        .unwrap();
+
+        assert_eq!(destination, panel);
+        assert_close(uv.min.x, 0.125);
+        assert_close(uv.min.y, 0.125);
+        assert_close(uv.max.x, 0.4375);
+        assert_close(uv.max.y, 0.75);
     }
 }

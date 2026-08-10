@@ -703,6 +703,27 @@ impl PaintFEApp {
                         }
                         if self
                             .assets
+                            .menu_item_enabled(
+                                ui,
+                                Icon::MenuColorRecoverTransparency,
+                                &t!("menu.color.recover_transparency"),
+                                no_dialog,
+                            )
+                            .clicked()
+                        {
+                            let target = self.colors_panel.get_primary_color();
+                            if let Some(project) = self.active_project() {
+                                self.active_dialog = ActiveDialog::RecoverTransparency(
+                                    crate::ops::effect_dialogs::RecoverTransparencyDialog::new_with_target(
+                                        &project.canvas_state,
+                                        target,
+                                    ),
+                                );
+                            }
+                            ui.close();
+                        }
+                        if self
+                            .assets
                             .menu_item(ui, Icon::MenuColorSepia, &t!("menu.color.sepia_tone"))
                             .clicked()
                         {

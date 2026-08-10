@@ -733,6 +733,11 @@ impl Assets {
         );
         self.load_icon(
             ctx,
+            Icon::MenuColorRecoverTransparency,
+            include_bytes!("../../assets/icons/menu/restore_transparency.png"),
+        );
+        self.load_icon(
+            ctx,
             Icon::MenuColorSepia,
             include_bytes!("../../assets/icons/menu/color_sepia.png"),
         );

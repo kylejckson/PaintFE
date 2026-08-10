@@ -7,9 +7,14 @@ export PATH="$HERE/usr/bin:$PATH"
 export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 export LD_LIBRARY_PATH="$HERE/usr/lib:${LD_LIBRARY_PATH}"
 
-# Suppress known non-fatal xkbcommon Compose parse noise (e.g. `dead_hamza`).
-# This occurs under both Wayland and X11 when an AppImage library encounters
-# newer host Compose data. Respect an explicit user diagnostic setting.
+# Match the bundled libxkbcommon with the Compose tables staged alongside it.
+# XLOCALEDIR is the documented override for system X locale/Compose data.
+if [ -d "$HERE/usr/share/X11/locale" ]; then
+    export XLOCALEDIR="$HERE/usr/share/X11/locale"
+fi
+
+# Retain a quiet fallback for custom user Compose files containing keysyms that
+# are newer than the bundled parser. Respect an explicit diagnostic setting.
 if [ -z "${XKB_LOG_LEVEL:-}" ]; then
     export XKB_LOG_LEVEL=critical
 fi

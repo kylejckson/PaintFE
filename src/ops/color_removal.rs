@@ -1,6 +1,6 @@
 use crate::par_compat::*;
 use image::{GrayImage, Rgba, RgbaImage};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 #[derive(Clone, Copy, Debug)]
 pub struct ColorToAlphaSettings {
@@ -27,6 +27,397 @@ impl Default for ColorToAlphaSettings {
             protect_luminance: 0.15,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct RecoverTransparencySettings {
+    pub background: [u8; 3],
+    pub auto_sample_edges: bool,
+    pub sample_depth: u32,
+    pub noise_tolerance: f32,
+    pub edge_width: u32,
+    pub eight_connected: bool,
+    pub preserve_hard_pixels: bool,
+    pub transparent_snap: f32,
+    pub opaque_snap: f32,
+    pub foreground_influence: f32,
+}
+
+impl Default for RecoverTransparencySettings {
+    fn default() -> Self {
+        Self {
+            background: [255, 0, 255],
+            auto_sample_edges: true,
+            sample_depth: 2,
+            noise_tolerance: 4.0,
+            edge_width: 2,
+            eight_connected: false,
+            preserve_hard_pixels: true,
+            transparent_snap: 0.025,
+            opaque_snap: 0.97,
+            foreground_influence: 0.8,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecoverTransparencyPreview {
+    Result,
+    Alpha,
+    ReconstructionError,
+}
+
+#[derive(Clone, Copy)]
+struct BackgroundModel {
+    color: [f32; 3],
+    tolerance: [f32; 3],
+}
+
+/// Recover a sprite that was flattened over a solid or slightly noisy backing.
+/// Only the backing-connected component and a narrow inward edge band are changed;
+/// opaque interior pixels are preserved exactly.
+pub fn recover_transparency_core(
+    img: &RgbaImage,
+    settings: &RecoverTransparencySettings,
+    mask: Option<&GrayImage>,
+) -> RgbaImage {
+    recover_transparency_impl(img, settings, mask).0
+}
+
+pub fn recover_transparency_preview_core(
+    img: &RgbaImage,
+    settings: &RecoverTransparencySettings,
+    mask: Option<&GrayImage>,
+    preview: RecoverTransparencyPreview,
+) -> RgbaImage {
+    let (result, background) = recover_transparency_impl(img, settings, mask);
+    match preview {
+        RecoverTransparencyPreview::Result => result,
+        RecoverTransparencyPreview::Alpha => {
+            let mut out = result.clone();
+            for p in out.pixels_mut() {
+                let a = p[3];
+                *p = Rgba([a, a, a, 255]);
+            }
+            out
+        }
+        RecoverTransparencyPreview::ReconstructionError => {
+            let mut out = RgbaImage::new(img.width(), img.height());
+            for (x, y, p) in out.enumerate_pixels_mut() {
+                let src = img.get_pixel(x, y);
+                let recovered = result.get_pixel(x, y);
+                let a = recovered[3] as f32 / 255.0;
+                let mut max_error = 0.0_f32;
+                for c in 0..3 {
+                    let recomposed = recovered[c] as f32 * a + background[c] * (1.0 - a);
+                    max_error = max_error.max((recomposed - src[c] as f32).abs());
+                }
+                let error = (max_error * 8.0).round().clamp(0.0, 255.0) as u8;
+                *p = Rgba([error, 0, 0, 255]);
+            }
+            out
+        }
+    }
+}
+
+fn recover_transparency_impl(
+    img: &RgbaImage,
+    settings: &RecoverTransparencySettings,
+    mask: Option<&GrayImage>,
+) -> (RgbaImage, [f32; 3]) {
+    let w = img.width();
+    let h = img.height();
+    if w == 0 || h == 0 {
+        return (img.clone(), settings.background.map(|v| v as f32));
+    }
+
+    let model = background_model(img, settings);
+    let count = (w * h) as usize;
+    let mut background = vec![false; count];
+    let mut queue = VecDeque::new();
+
+    let seed = |x: u32, y: u32, background: &mut [bool], queue: &mut VecDeque<(u32, u32)>| {
+        let idx = (y * w + x) as usize;
+        if !background[idx] && matches_background(img.get_pixel(x, y), &model) {
+            background[idx] = true;
+            queue.push_back((x, y));
+        }
+    };
+    for x in 0..w {
+        seed(x, 0, &mut background, &mut queue);
+        if h > 1 {
+            seed(x, h - 1, &mut background, &mut queue);
+        }
+    }
+    for y in 1..h.saturating_sub(1) {
+        seed(0, y, &mut background, &mut queue);
+        if w > 1 {
+            seed(w - 1, y, &mut background, &mut queue);
+        }
+    }
+
+    while let Some((x, y)) = queue.pop_front() {
+        for (nx, ny) in neighbors(x, y, w, h, settings.eight_connected) {
+            let idx = (ny * w + nx) as usize;
+            if !background[idx] && matches_background(img.get_pixel(nx, ny), &model) {
+                background[idx] = true;
+                queue.push_back((nx, ny));
+            }
+        }
+    }
+
+    let mut distance = vec![u32::MAX; count];
+    let mut frontier = VecDeque::new();
+    for y in 0..h {
+        for x in 0..w {
+            let idx = (y * w + x) as usize;
+            if background[idx] {
+                distance[idx] = 0;
+                frontier.push_back((x, y));
+            }
+        }
+    }
+    while let Some((x, y)) = frontier.pop_front() {
+        let d = distance[(y * w + x) as usize];
+        if d >= settings.edge_width {
+            continue;
+        }
+        for (nx, ny) in neighbors(x, y, w, h, settings.eight_connected) {
+            let idx = (ny * w + nx) as usize;
+            if distance[idx] == u32::MAX {
+                distance[idx] = d + 1;
+                frontier.push_back((nx, ny));
+            }
+        }
+    }
+
+    let mut out = img.clone();
+    for y in 0..h {
+        for x in 0..w {
+            if !mask_allows(mask, x, y) {
+                continue;
+            }
+            let idx = (y * w + x) as usize;
+            if background[idx] {
+                *out.get_pixel_mut(x, y) = Rgba([0, 0, 0, 0]);
+                continue;
+            }
+            let d = distance[idx];
+            if d == u32::MAX || d == 0 || d > settings.edge_width {
+                continue;
+            }
+
+            let src = img.get_pixel(x, y);
+            let mut alpha = minimum_feasible_alpha(src, model.color);
+            if let Some(local_foreground) = estimate_local_foreground(
+                img,
+                &background,
+                &distance,
+                x,
+                y,
+                settings.edge_width.max(2) + 1,
+                model.color,
+                alpha,
+            ) {
+                let projected = projected_alpha(src, model.color, local_foreground);
+                let refined = projected.max(alpha);
+                alpha += (refined - alpha) * settings.foreground_influence.clamp(0.0, 1.0);
+            }
+
+            if alpha <= settings.transparent_snap.clamp(0.0, 1.0) {
+                *out.get_pixel_mut(x, y) = Rgba([0, 0, 0, 0]);
+                continue;
+            }
+            if settings.preserve_hard_pixels && alpha >= settings.opaque_snap.clamp(0.0, 1.0) {
+                continue;
+            }
+
+            let alpha = alpha.clamp(1.0 / 255.0, 1.0);
+            let mut rgba = [0_u8; 4];
+            for c in 0..3 {
+                let foreground = (src[c] as f32 - model.color[c] * (1.0 - alpha)) / alpha;
+                rgba[c] = foreground.round().clamp(0.0, 255.0) as u8;
+            }
+            rgba[3] = ((src[3] as f32 / 255.0) * alpha * 255.0)
+                .round()
+                .clamp(0.0, 255.0) as u8;
+            *out.get_pixel_mut(x, y) = Rgba(rgba);
+        }
+    }
+
+    (out, model.color)
+}
+
+fn background_model(img: &RgbaImage, settings: &RecoverTransparencySettings) -> BackgroundModel {
+    let fallback = settings.background.map(|v| v as f32);
+    if !settings.auto_sample_edges {
+        return BackgroundModel {
+            color: fallback,
+            tolerance: [settings.noise_tolerance.max(0.5); 3],
+        };
+    }
+
+    let w = img.width();
+    let h = img.height();
+    let depth = settings.sample_depth.max(1).min(w.min(h).div_ceil(2));
+    let mut bins: HashMap<[u8; 3], usize> = HashMap::new();
+    let mut samples = Vec::new();
+    for y in 0..h {
+        for x in 0..w {
+            if x >= depth && y >= depth && x < w - depth && y < h - depth {
+                continue;
+            }
+            let p = img.get_pixel(x, y);
+            if p[3] == 0 {
+                continue;
+            }
+            let key = [p[0] / 16, p[1] / 16, p[2] / 16];
+            *bins.entry(key).or_default() += 1;
+            samples.push([p[0], p[1], p[2]]);
+        }
+    }
+    let Some((&dominant, _)) = bins.iter().max_by_key(|(_, count)| *count) else {
+        return BackgroundModel {
+            color: fallback,
+            tolerance: [settings.noise_tolerance.max(0.5); 3],
+        };
+    };
+    let mut cluster: Vec<[u8; 3]> = samples
+        .into_iter()
+        .filter(|p| {
+            (0..3).all(|c| {
+                let bin = p[c] / 16;
+                bin.abs_diff(dominant[c]) <= 1
+            })
+        })
+        .collect();
+    if cluster.is_empty() {
+        return BackgroundModel {
+            color: fallback,
+            tolerance: [settings.noise_tolerance.max(0.5); 3],
+        };
+    }
+
+    let mut color = [0.0; 3];
+    for c in 0..3 {
+        cluster.sort_unstable_by_key(|p| p[c]);
+        color[c] = cluster[cluster.len() / 2][c] as f32;
+    }
+    let mut tolerance = [0.0; 3];
+    for c in 0..3 {
+        let mut deviations: Vec<f32> = cluster
+            .iter()
+            .map(|p| (p[c] as f32 - color[c]).abs())
+            .collect();
+        deviations.sort_by(|a, b| a.total_cmp(b));
+        let mad = deviations[deviations.len() / 2];
+        tolerance[c] = (settings.noise_tolerance + mad * 3.0).clamp(0.5, 64.0);
+    }
+    BackgroundModel { color, tolerance }
+}
+
+#[inline]
+fn matches_background(pixel: &Rgba<u8>, model: &BackgroundModel) -> bool {
+    pixel[3] > 0 && (0..3).all(|c| (pixel[c] as f32 - model.color[c]).abs() <= model.tolerance[c])
+}
+
+fn neighbors(x: u32, y: u32, w: u32, h: u32, eight_connected: bool) -> Vec<(u32, u32)> {
+    let mut result = Vec::with_capacity(if eight_connected { 8 } else { 4 });
+    for dy in -1_i32..=1 {
+        for dx in -1_i32..=1 {
+            if dx == 0 && dy == 0 || (!eight_connected && dx != 0 && dy != 0) {
+                continue;
+            }
+            let nx = x as i32 + dx;
+            let ny = y as i32 + dy;
+            if nx >= 0 && ny >= 0 && nx < w as i32 && ny < h as i32 {
+                result.push((nx as u32, ny as u32));
+            }
+        }
+    }
+    result
+}
+
+#[inline]
+fn mask_allows(mask: Option<&GrayImage>, x: u32, y: u32) -> bool {
+    mask.is_none_or(|m| x < m.width() && y < m.height() && m.get_pixel(x, y)[0] > 0)
+}
+
+fn minimum_feasible_alpha(pixel: &Rgba<u8>, background: [f32; 3]) -> f32 {
+    let mut alpha = 0.0_f32;
+    for c in 0..3 {
+        let value = pixel[c] as f32;
+        let backing = background[c];
+        let required = if value > backing && backing < 255.0 {
+            (value - backing) / (255.0 - backing)
+        } else if value < backing && backing > 0.0 {
+            (backing - value) / backing
+        } else {
+            0.0
+        };
+        alpha = alpha.max(required);
+    }
+    alpha.clamp(0.0, 1.0)
+}
+
+fn projected_alpha(pixel: &Rgba<u8>, background: [f32; 3], foreground: [f32; 3]) -> f32 {
+    let mut numerator = 0.0;
+    let mut denominator = 0.0;
+    for c in 0..3 {
+        let direction = foreground[c] - background[c];
+        numerator += (pixel[c] as f32 - background[c]) * direction;
+        denominator += direction * direction;
+    }
+    if denominator < 1.0 {
+        0.0
+    } else {
+        (numerator / denominator).clamp(0.0, 1.0)
+    }
+}
+
+fn estimate_local_foreground(
+    img: &RgbaImage,
+    background: &[bool],
+    distance: &[u32],
+    x: u32,
+    y: u32,
+    radius: u32,
+    backing: [f32; 3],
+    current_alpha: f32,
+) -> Option<[f32; 3]> {
+    let w = img.width();
+    let h = img.height();
+    let x0 = x.saturating_sub(radius);
+    let y0 = y.saturating_sub(radius);
+    let x1 = (x + radius).min(w - 1);
+    let y1 = (y + radius).min(h - 1);
+    let mut sum = [0.0; 3];
+    let mut weight_sum = 0.0;
+    for ny in y0..=y1 {
+        for nx in x0..=x1 {
+            let idx = (ny * w + nx) as usize;
+            if background[idx] || (nx == x && ny == y) {
+                continue;
+            }
+            let p = img.get_pixel(nx, ny);
+            let candidate_alpha = minimum_feasible_alpha(p, backing);
+            let current_distance = distance[(y * w + x) as usize];
+            let deeper = distance[idx] == u32::MAX || distance[idx] > current_distance;
+            if !deeper && candidate_alpha < 0.85 && candidate_alpha < current_alpha + 0.05 {
+                continue;
+            }
+            let dx = nx.abs_diff(x) as f32;
+            let dy = ny.abs_diff(y) as f32;
+            let confidence = candidate_alpha.max(0.05).powi(4);
+            let depth_weight = if deeper { 2.0 } else { 1.0 };
+            let weight = confidence * depth_weight / (1.0 + dx + dy);
+            for c in 0..3 {
+                sum[c] += p[c] as f32 * weight;
+            }
+            weight_sum += weight;
+        }
+    }
+    (weight_sum > 0.0).then(|| sum.map(|v| v / weight_sum))
 }
 
 pub fn color_to_alpha_core(
@@ -437,6 +828,63 @@ fn color_dist_sq(pixel: &Rgba<u8>, seed_rgb: &[f32; 3]) -> f32 {
 mod tests {
     use super::*;
     use image::{GrayImage, Luma};
+
+    #[test]
+    fn recover_transparency_removes_noisy_connected_backing() {
+        let mut img = RgbaImage::from_pixel(7, 7, Rgba([250, 3, 251, 255]));
+        img.put_pixel(0, 2, Rgba([249, 4, 250, 255]));
+        img.put_pixel(6, 4, Rgba([252, 2, 249, 255]));
+        for y in 2..=4 {
+            for x in 2..=4 {
+                img.put_pixel(x, y, Rgba([30, 150, 45, 255]));
+            }
+        }
+        let out = recover_transparency_core(&img, &RecoverTransparencySettings::default(), None);
+        assert_eq!(out.get_pixel(0, 2)[3], 0);
+        assert_eq!(out.get_pixel(6, 4)[3], 0);
+        assert_eq!(out.get_pixel(3, 3).0, [30, 150, 45, 255]);
+    }
+
+    #[test]
+    fn recover_transparency_recovers_antialiased_orange_edge() {
+        let backing = [255_u8, 0, 255];
+        let foreground = [235_u8, 105, 18];
+        let mut img = RgbaImage::from_pixel(7, 7, Rgba([255, 0, 255, 255]));
+        for y in 2..=4 {
+            for x in 2..=4 {
+                img.put_pixel(
+                    x,
+                    y,
+                    Rgba([foreground[0], foreground[1], foreground[2], 255]),
+                );
+            }
+        }
+        let alpha = 0.5_f32;
+        let mixed: [u8; 3] = std::array::from_fn(|c| {
+            (foreground[c] as f32 * alpha + backing[c] as f32 * (1.0 - alpha)).round() as u8
+        });
+        img.put_pixel(1, 3, Rgba([mixed[0], mixed[1], mixed[2], 255]));
+
+        let out = recover_transparency_core(&img, &RecoverTransparencySettings::default(), None);
+        let edge = out.get_pixel(1, 3);
+        assert!((edge[3] as i16 - 128).abs() <= 3);
+        for c in 0..3 {
+            assert!((edge[c] as i16 - foreground[c] as i16).abs() <= 4);
+        }
+    }
+
+    #[test]
+    fn recover_transparency_keeps_enclosed_backing_color() {
+        let mut img = RgbaImage::from_pixel(7, 7, Rgba([255, 0, 255, 255]));
+        for y in 1..=5 {
+            for x in 1..=5 {
+                img.put_pixel(x, y, Rgba([20, 150, 40, 255]));
+            }
+        }
+        img.put_pixel(3, 3, Rgba([255, 0, 255, 255]));
+        let out = recover_transparency_core(&img, &RecoverTransparencySettings::default(), None);
+        assert_eq!(out.get_pixel(3, 3).0, [255, 0, 255, 255]);
+    }
 
     #[test]
     fn color_to_alpha_makes_exact_target_transparent() {
