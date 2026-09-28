@@ -102,6 +102,7 @@ impl Canvas {
             last_canvas_rect: None,
             last_image_rect: None,
             selection_stroke: Color32::from_rgb(66, 133, 244),
+            selection_outline_opacity: 1.0,
             selection_fill: Color32::from_rgba_unmultiplied(66, 133, 244, 50),
             selection_contrast: Color32::WHITE,
             paste_context_action: None,
@@ -237,9 +238,6 @@ impl Canvas {
     fn update_preview_overlay(
         &self,
         ui: &egui::Ui,
-        painter: &egui::Painter,
-        image_rect: Rect,
-        canvas_rect: Rect,
         state: &mut CanvasState,
         debug_settings: &crate::assets::AppSettings,
         prev_filter_was_linear: Option<bool>,
@@ -603,15 +601,6 @@ impl Canvas {
 
                 state.preview_dirty_rect = None;
             }
-
-            self.paint_preview_texture(
-                &painter,
-                image_rect,
-                canvas_rect,
-                state,
-                Color32::WHITE,
-                true,
-            );
         } else {
             // No preview layer ÔÇö drop cached texture and buffer.
             state.preview_texture_cache = None;
@@ -1340,7 +1329,8 @@ impl Canvas {
 
         // ====================================================================
         // CPU PREVIEW OVERLAY  (brush / line / eraser strokes in progress)
-        self.update_preview_overlay(ui, &painter, image_rect, canvas_rect, state, debug_settings, prev_filter_was_linear);
+        self.update_preview_overlay(ui, state, debug_settings, prev_filter_was_linear);
+        self.paint_preview_texture(&painter, image_rect, canvas_rect, state, Color32::WHITE, true);
 
         if state.show_wrap_preview {
             self.draw_wrap_preview(&painter, image_rect, canvas_rect, state);
@@ -1708,18 +1698,32 @@ impl Canvas {
                         image_rect.min.y + y1 as f32 * self.zoom,
                     ),
                 );
-                let grid_color = debug_settings.pixel_grid_outline_color;
+                let grid_color = scale_color(
+                    debug_settings.pixel_grid_outline_color,
+                    debug_settings.pixel_grid_opacity,
+                );
                 let stroke = egui::Stroke::new(1.0, grid_color);
+                let dashed = debug_settings.pixel_grid_dashed;
                 let mut x = rect.min.x;
                 while x <= rect.max.x {
-                    painter
-                        .line_segment([Pos2::new(x, rect.min.y), Pos2::new(x, rect.max.y)], stroke);
+                    let a = Pos2::new(x, rect.min.y);
+                    let b = Pos2::new(x, rect.max.y);
+                    if dashed {
+                        painter.add(egui::Shape::dashed_line(&[a, b], stroke, 2.5, 2.5));
+                    } else {
+                        painter.line_segment([a, b], stroke);
+                    }
                     x += self.zoom;
                 }
                 let mut y = rect.min.y;
                 while y <= rect.max.y {
-                    painter
-                        .line_segment([Pos2::new(rect.min.x, y), Pos2::new(rect.max.x, y)], stroke);
+                    let a = Pos2::new(rect.min.x, y);
+                    let b = Pos2::new(rect.max.x, y);
+                    if dashed {
+                        painter.add(egui::Shape::dashed_line(&[a, b], stroke, 2.5, 2.5));
+                    } else {
+                        painter.line_segment([a, b], stroke);
+                    }
                     y += self.zoom;
                 }
             }
@@ -2748,12 +2752,31 @@ impl Canvas {
                 let screen_cy = image_rect.min.y + canvas_y * self.zoom;
                 let screen_radius = (brush_size / 2.0) * self.zoom;
 
-                // Draw brush outline ÔÇö circle for circle tip, texture overlay for image tips
+                // Draw brush outline — circle for circle tip, texture overlay for image tips
                 if screen_radius > 1.5 {
                     if is_circle_tip {
-                        // Draw two circles (black + white) for visibility on any background
-                        let stroke_outer = egui::Stroke::new(1.5, Color32::from_black_alpha(160));
-                        let stroke_inner = egui::Stroke::new(0.75, Color32::from_white_alpha(200));
+                        // Smart contrast: sample the composite under the cursor
+                        // and draw the ring in the opposite tone (light ring over
+                        // dark content, dark ring over light content) with the
+                        // other tone as a thin outline — so the cursor stays
+                        // visible over any background, including pure black.
+                        let dark_bg = Self::canvas_is_dark_under(
+                            state,
+                            canvas_x,
+                            canvas_y,
+                            brush_size * 0.5,
+                        );
+                        let (stroke_outer, stroke_inner) = if dark_bg {
+                            (
+                                egui::Stroke::new(1.5, Color32::from_white_alpha(235)),
+                                egui::Stroke::new(0.75, Color32::from_black_alpha(170)),
+                            )
+                        } else {
+                            (
+                                egui::Stroke::new(1.5, Color32::from_black_alpha(170)),
+                                egui::Stroke::new(0.75, Color32::from_white_alpha(225)),
+                            )
+                        };
                         painter.circle_stroke(
                             Pos2::new(screen_cx, screen_cy),
                             screen_radius,
@@ -3226,15 +3249,10 @@ impl Canvas {
             || state.commit_composite_flush_rect.is_some()
         {
             Self::flush_committed_preview_region(ui, state, texture_options);
-            self.update_preview_overlay(
-                ui,
-                &painter,
-                image_rect,
-                canvas_rect,
-                state,
-                debug_settings,
-                prev_filter_was_linear,
-            );
+            // Rebuild only — do NOT repaint here: the paint call recorded in
+            // draw order picks up the fresh texture content at end of frame,
+            // and repainting would cover tool overlays drawn in between.
+            self.update_preview_overlay(ui, state, debug_settings, prev_filter_was_linear);
         }
     }
 
@@ -3295,6 +3313,39 @@ impl Canvas {
         self.pan_offset = Vec2::ZERO;
     }
 
+    /// Average luminance of the composite under a disc, used for cursor
+    /// contrast. Returns true when the content under the cursor is dark.
+    fn canvas_is_dark_under(state: &CanvasState, cx: f32, cy: f32, radius: f32) -> bool {
+        let (w, h) = (state.width as usize, state.height as usize);
+        let buf = &state.composite_cpu_buffer;
+        if w == 0 || h == 0 || buf.len() < w * h {
+            return false; // no CPU composite available — keep the light look
+        }
+        let r = radius.max(1.0);
+        let mut total = 0.0f32;
+        let mut count = 0.0f32;
+        for gy in -2i32..=2 {
+            for gx in -2i32..=2 {
+                let sx = cx + gx as f32 * r * 0.4;
+                let sy = cy + gy as f32 * r * 0.4;
+                let (px, py) = (sx.floor() as i32, sy.floor() as i32);
+                if px < 0 || py < 0 || px >= w as i32 || py >= h as i32 {
+                    continue;
+                }
+                let off = py as usize * w + px as usize;
+                // Premultiplied RGBA: luminance of the covered part + the
+                // remaining alpha shows through as mid-gray canvas backdrop.
+                let p = buf[off];
+                let lum = (p.r() as f32 * 0.299 + p.g() as f32 * 0.587 + p.b() as f32 * 0.114)
+                    / 255.0;
+                let a = p.a() as f32 / 255.0;
+                total += lum + 0.5 * (1.0 - a);
+                count += 1.0;
+            }
+        }
+        count > 0.0 && total / count < 0.5
+    }
+
     pub fn view_state(&self) -> (f32, Vec2) {
         (self.zoom, self.pan_offset)
     }
@@ -3333,6 +3384,18 @@ impl Canvas {
     pub fn pan_by(&mut self, delta: Vec2) {
         self.pan_offset += delta;
     }
+}
+
+/// Scale a premultiplied `Color32`'s intensity by `f` (keeps the tint
+/// proportional while changing the effective opacity).
+fn scale_color(c: Color32, f: f32) -> Color32 {
+    let f = f.clamp(0.0, 1.0);
+    Color32::from_rgba_premultiplied(
+        (c.r() as f32 * f) as u8,
+        (c.g() as f32 * f) as u8,
+        (c.b() as f32 * f) as u8,
+        (c.a() as f32 * f) as u8,
+    )
 }
 
 fn selection_mask_bounds(mask: &image::GrayImage) -> Option<(u32, u32, u32, u32)> {

@@ -273,6 +273,8 @@ impl PaintFEApp {
                     let secondary_color_f32 = self.colors_panel.get_secondary_color_f32();
                     // Push theme accent colours into canvas for selection rendering.
                     self.canvas.selection_stroke = self.theme.accent;
+                    self.canvas.selection_outline_opacity =
+                        self.settings.selection_outline_opacity;
                     self.canvas.selection_fill = {
                         let [r, g, b, _] = self.theme.accent.to_array();
                         egui::Color32::from_rgba_unmultiplied(r, g, b, 25)

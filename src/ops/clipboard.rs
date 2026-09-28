@@ -1993,7 +1993,10 @@ impl PasteOverlay {
                             image_rect.height() / zoom,
                         );
                     }
-                    self.snap_center_to_pixel();
+                    // No per-frame pixel snapping here: quantizing the center on
+                    // every frame makes fast drags jump whole canvas pixels (very
+                    // visible at high zoom). The snap happens once on release so
+                    // the committed result is still pixel-aligned.
                 }
                 HandleKind::Anchor => {
                     self.anchor_offset = Vec2::new(
@@ -2037,6 +2040,11 @@ impl PasteOverlay {
 
         // End drag.
         if primary_released && self.active_handle.is_some() {
+            if self.active_handle == Some(HandleKind::Move) {
+                // Settle the drag on whole canvas pixels so the committed result
+                // is pixel-aligned (the drag itself stays sub-pixel smooth).
+                self.snap_center_to_pixel();
+            }
             let before = PasteOverlayTransform {
                 center: self.drag_start_center,
                 rotation: self.drag_start_rotation,

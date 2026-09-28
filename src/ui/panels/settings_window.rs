@@ -1077,6 +1077,33 @@ impl SettingsWindow {
 
         // -- Canvas Rendering -----------------------------------------
         Self::section_header(ui, &t!("settings.interface.canvas_rendering"));
+
+        // Quick-setup button (kept at the top of the section for visibility).
+        if ui
+            .add(
+                egui::Button::new(
+                    egui::RichText::new(format!("⚡ {}", t!("settings.interface.pixel_art_preset_apply")))
+                        .strong(),
+                )
+                .min_size(egui::vec2(ui.available_width(), 28.0)),
+            )
+            .on_hover_text(t!("settings.interface.pixel_art_preset_hint"))
+            .clicked()
+        {
+            settings.zoom_filter_mode = ZoomFilterMode::Nearest;
+            settings.pixel_grid_mode = PixelGridMode::AlwaysOn;
+            settings.pixel_grid_opacity = 0.45;
+            settings.pixel_grid_dashed = true;
+            settings.selection_outline_opacity = 0.6;
+            settings.persisted_brush_hardness = 1.0;
+            settings.persisted_stroke_stabilization = 0.0;
+            settings.animated_selection_ants = false;
+            settings.low_latency_present = true;
+            settings.save();
+            self.pending_pixel_art_preset = true;
+        }
+        ui.add_space(4.0);
+
         egui::Grid::new("interface_canvas_grid")
             .num_columns(2)
             .spacing([16.0, 6.0])
@@ -1142,23 +1169,6 @@ impl SettingsWindow {
                 }
                 ui.end_row();
 
-                ui.label(t!("settings.interface.pixel_art_preset"));
-                if ui
-                    .button(t!("settings.interface.pixel_art_preset_apply"))
-                    .on_hover_text(t!("settings.interface.pixel_art_preset_hint"))
-                    .clicked()
-                {
-                    settings.zoom_filter_mode = ZoomFilterMode::Nearest;
-                    settings.pixel_grid_mode = PixelGridMode::AlwaysOn;
-                    settings.persisted_brush_hardness = 1.0;
-                    settings.persisted_stroke_stabilization = 0.0;
-                    settings.animated_selection_ants = false;
-                    settings.low_latency_present = true;
-                    settings.save();
-                    self.pending_pixel_art_preset = true;
-                }
-                ui.end_row();
-
                 // Pixel grid outline color
                 ui.label("Pixel Grid Outline");
                 ui.horizontal(|ui| {
@@ -1170,6 +1180,40 @@ impl SettingsWindow {
                         settings.save();
                     }
                 });
+                ui.end_row();
+
+                ui.label(t!("settings.interface.pixel_grid_opacity"));
+                if Self::settings_slider(
+                    ui,
+                    &mut settings.pixel_grid_opacity,
+                    0.0..=1.0,
+                    0.05,
+                    0.5,
+                ) {
+                    settings.save();
+                }
+                ui.end_row();
+
+                ui.label(t!("settings.interface.pixel_grid_dashed"));
+                if ui
+                    .checkbox(&mut settings.pixel_grid_dashed, "")
+                    .on_hover_text(t!("settings.interface.pixel_grid_dashed_hint"))
+                    .changed()
+                {
+                    settings.save();
+                }
+                ui.end_row();
+
+                ui.label(t!("settings.interface.selection_outline_opacity"));
+                if Self::settings_slider(
+                    ui,
+                    &mut settings.selection_outline_opacity,
+                    0.1..=1.0,
+                    0.05,
+                    0.7,
+                ) {
+                    settings.save();
+                }
                 ui.end_row();
 
                 ui.label("Selection Stripes");

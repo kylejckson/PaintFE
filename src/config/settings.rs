@@ -42,6 +42,12 @@ pub struct AppSettings {
     pub pixel_grid_outline_color: Color32,
     /// Pixel grid center color (dual-stroke white center)
     pub pixel_grid_center_color: Color32,
+    /// Pixel grid opacity multiplier (1.0 = configured colors at full strength).
+    pub pixel_grid_opacity: f32,
+    /// Draw the pixel grid as dashed lines instead of solid dual strokes.
+    pub pixel_grid_dashed: bool,
+    /// Selection outline (marching ants / border) opacity multiplier.
+    pub selection_outline_opacity: f32,
     pub selection_stripe_color: Color32,
     pub selection_stripe_alpha: u8,
     /// Preset colors shown for layer folders.
@@ -259,6 +265,9 @@ impl Default for AppSettings {
             pixel_grid_mode: PixelGridMode::Auto,
             pixel_grid_outline_color: Color32::from_black_alpha(90),
             pixel_grid_center_color: Color32::from_white_alpha(100),
+            pixel_grid_opacity: 0.5,
+            pixel_grid_dashed: true,
+            selection_outline_opacity: 0.7,
             selection_stripe_color: Color32::from_rgba_premultiplied(255, 255, 255, 255),
             selection_stripe_alpha: 22,
             folder_color_palette: AppSettings::default_folder_color_palette(),
@@ -871,6 +880,9 @@ impl AppSettings {
              pixel_grid_mode={grid_str}\n\
              pixel_grid_outline_color={}\n\
              pixel_grid_center_color={}\n\
+              pixel_grid_opacity={}\n\
+              pixel_grid_dashed={}\n\
+              selection_outline_opacity={}\n\
              selection_stripe_color={}\n\
              selection_stripe_alpha={}\n\
              max_undo_steps={}\n\
@@ -897,6 +909,9 @@ impl AppSettings {
             self.preferred_gpu,
             Self::color_to_str(self.pixel_grid_outline_color),
             Self::color_to_str(self.pixel_grid_center_color),
+            self.pixel_grid_opacity,
+            self.pixel_grid_dashed,
+            self.selection_outline_opacity,
             Self::color_to_str(self.selection_stripe_color),
             self.selection_stripe_alpha,
             self.max_undo_steps,
@@ -1320,6 +1335,15 @@ impl AppSettings {
                         "off" => PixelGridMode::AlwaysOff,
                         _ => PixelGridMode::Auto,
                     };
+                }
+                "pixel_grid_opacity" => {
+                    s.pixel_grid_opacity = val.parse().unwrap_or(0.5);
+                }
+                "pixel_grid_dashed" => {
+                    s.pixel_grid_dashed = val == "true";
+                }
+                "selection_outline_opacity" => {
+                    s.selection_outline_opacity = val.parse().unwrap_or(0.7);
                 }
                 "pixel_grid_outline_color" => {
                     s.pixel_grid_outline_color =

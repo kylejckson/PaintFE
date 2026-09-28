@@ -16,6 +16,8 @@ pub struct Canvas {
     pub last_image_rect: Option<Rect>,
     /// Accent color for selection outlines (set from theme).
     pub selection_stroke: Color32,
+    /// Opacity multiplier for selection outlines (marching ants / borders).
+    pub selection_outline_opacity: f32,
     /// Faint accent for selection fill overlay (set from theme).
     pub selection_fill: Color32,
     /// Contrasting color for selection dashes (white in dark mode, black in light).
