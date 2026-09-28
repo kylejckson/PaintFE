@@ -1673,6 +1673,58 @@ pub fn hue_saturation_per_band_from_flat(
     });
 }
 // ============================================================================
+// LAYER CONTENT SELECTION — select the tight bounds of the layer content
+// ============================================================================
+
+/// Select the tight bounding box of the active layer's non-transparent pixels.
+/// Typical use after a paste: Edit → Select Layer Content Bounds, then
+/// Canvas → Crop to Selection crops the canvas down to the image content.
+/// Returns true when a selection was created.
+pub fn select_layer_content_bounds(state: &mut CanvasState) -> bool {
+    use image::{GrayImage, Luma};
+
+    let idx = state.active_layer_index;
+    let Some(layer) = state.layers.get(idx) else {
+        return false;
+    };
+
+    let flat = layer.pixels.to_rgba_image();
+    let (w, h) = (flat.width(), flat.height());
+    let raw = flat.as_raw();
+    let mut min_x = w;
+    let mut min_y = h;
+    let mut max_x = 0u32;
+    let mut max_y = 0u32;
+    for y in 0..h {
+        let row = y as usize * w as usize * 4;
+        for x in 0..w {
+            if raw[row + x as usize * 4 + 3] > 0 {
+                min_x = min_x.min(x);
+                min_y = min_y.min(y);
+                max_x = max_x.max(x);
+                max_y = max_y.max(y);
+            }
+        }
+    }
+    if min_x > max_x || min_y > max_y {
+        return false; // fully transparent layer
+    }
+
+    let (cw, ch) = (state.width, state.height);
+    let mut mask = GrayImage::from_pixel(cw, ch, Luma([0u8]));
+    for y in min_y..=max_y.min(ch.saturating_sub(1)) {
+        for x in min_x..=max_x.min(cw.saturating_sub(1)) {
+            mask.put_pixel(x, y, Luma([255u8]));
+        }
+    }
+    state.selection_all = false;
+    state.selection_mask = Some(mask);
+    state.invalidate_selection_overlay();
+    state.mark_dirty(None);
+    true
+}
+
+// ============================================================================
 // COLOR RANGE SELECTION — select pixels by HSL hue/saturation proximity
 // ============================================================================
 

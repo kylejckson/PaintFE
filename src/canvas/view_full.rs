@@ -3,6 +3,8 @@
 pub enum PasteAction {
     Commit,
     CommitAndSelect,
+    /// Commit and crop the canvas to the pasted content bounds.
+    CommitAndCrop,
     Cancel,
 }
 

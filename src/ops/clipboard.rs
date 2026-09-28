@@ -787,6 +787,8 @@ pub fn extract_to_overlay(state: &mut CanvasState) -> Option<PasteOverlay> {
         overlay.center = Pos2::new(center_x, center_y);
         overlay.overwrite_transparent_pixels = false;
         overlay.overwrite_mask = Some(overwrite_mask);
+        // Move Pixels: the extracted selection is moved as-is — no cropping.
+        overlay.allow_crop = false;
         Some(overlay)
     } else {
         // -- No selection: extract entire active layer --
@@ -805,6 +807,8 @@ pub fn extract_to_overlay(state: &mut CanvasState) -> Option<PasteOverlay> {
 
         let mut overlay = PasteOverlay::new(img, cw, ch);
         overlay.center = Pos2::new(cw as f32 / 2.0, ch as f32 / 2.0);
+        // Move Pixels: the extracted layer is moved as-is — no cropping.
+        overlay.allow_crop = false;
         Some(overlay)
     }
 }
@@ -836,6 +840,15 @@ pub struct PasteOverlay {
     /// Optional mask limiting transparent overwrite to the copied selection shape.
     pub overwrite_mask: Option<GrayImage>,
 
+    // --- Content crop (non-destructive trim of the source) ---
+    /// Source-space crop rectangle `(x0, y0, x1, y1)` selecting the part of
+    /// `source` that is used. Whole source pixels, always inside `source`.
+    /// Dragging the flat edge handles (see `HandleKind::Crop*`) trims this;
+    /// everything else (geometry, preview, commit) derives from it.
+    pub crop_rect: (u32, u32, u32, u32),
+    /// Crop handles are only offered for paste overlays, not Move Pixels.
+    pub allow_crop: bool,
+
     // --- Interaction state ---
     /// Which handle is being dragged, if any.
     pub active_handle: Option<HandleKind>,
@@ -847,6 +860,8 @@ pub struct PasteOverlay {
     pub drag_start_scale_y: f32,
     pub drag_start_rotation: f32,
     pub drag_start_anchor: Vec2,
+    /// Crop rectangle at drag start (crop drags are absolute from this).
+    pub drag_start_crop: (u32, u32, u32, u32),
     /// Whether shift is held (lock aspect ratio).
     pub shift_held: bool,
     pub pending_transform_checkpoint: Option<(PasteOverlayTransform, PasteOverlayTransform)>,
@@ -877,6 +892,37 @@ pub enum HandleKind {
     Right,
     Rotate,
     Anchor,
+    /// Flat crop handles sit just outside the edge midpoints and trim the
+    /// pasted content on that side (the transform handles follow the trim).
+    CropTop,
+    CropBottom,
+    CropLeft,
+    CropRight,
+}
+
+/// Screen-space offset of the flat crop handles outside the edge midpoints.
+/// Keeps them clear of the on-edge scale handles (grab radius 10) and of the
+/// rotation handle, which sits at +30px along the same axis.
+const CROP_HANDLE_OFFSET: f32 = 16.0;
+/// Half-extents of a crop handle bar (screen px) — visual and grab area.
+const CROP_HANDLE_HALF_LEN: f32 = 13.0;
+const CROP_HANDLE_HALF_THICK: f32 = 4.0;
+const CROP_HANDLE_GRAB_LEN: f32 = 15.0;
+const CROP_HANDLE_GRAB_THICK: f32 = 7.0;
+
+/// Unit direction from the overlay centre toward an edge midpoint (the
+/// outward normal of that edge) in screen space.
+fn outward_dir(mid_screen: Pos2, center_screen: Pos2) -> Vec2 {
+    let d = Pos2::new(
+        mid_screen.x - center_screen.x,
+        mid_screen.y - center_screen.y,
+    );
+    let len = (d.x * d.x + d.y * d.y).sqrt();
+    if len > 0.1 {
+        Vec2::new(d.x / len, d.y / len)
+    } else {
+        Vec2::new(0.0, -1.0)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -886,11 +932,14 @@ pub struct PasteOverlayTransform {
     pub scale_x: f32,
     pub scale_y: f32,
     pub anchor_offset: Vec2,
+    /// Source-space crop rectangle (undo/reset covers cropping too).
+    pub crop: (u32, u32, u32, u32),
 }
 
 impl PasteOverlay {
     /// Create a new overlay from a clipboard image, centered on the canvas.
     pub fn new(source: RgbaImage, canvas_w: u32, canvas_h: u32) -> Self {
+        let crop_rect = (0, 0, source.width(), source.height());
         Self {
             center: Pos2::new(canvas_w as f32 / 2.0, canvas_h as f32 / 2.0),
             scale_x: 1.0,
@@ -901,6 +950,8 @@ impl PasteOverlay {
             anti_aliasing: true,
             overwrite_transparent_pixels: false,
             overwrite_mask: None,
+            crop_rect,
+            allow_crop: true,
             active_handle: None,
             drag_start_mouse: None,
             drag_start_center: Pos2::ZERO,
@@ -908,6 +959,7 @@ impl PasteOverlay {
             drag_start_scale_y: 1.0,
             drag_start_rotation: 0.0,
             drag_start_anchor: Vec2::ZERO,
+            drag_start_crop: crop_rect,
             shift_held: false,
             pending_transform_checkpoint: None,
             cached_scaled: None,
@@ -924,6 +976,7 @@ impl PasteOverlay {
             scale_x: self.scale_x,
             scale_y: self.scale_y,
             anchor_offset: self.anchor_offset,
+            crop: self.crop_rect,
         }
     }
 
@@ -933,7 +986,75 @@ impl PasteOverlay {
         self.scale_x = t.scale_x;
         self.scale_y = t.scale_y;
         self.anchor_offset = t.anchor_offset;
+        self.crop_rect = self.clamped_crop(t.crop);
         self.invalidate_cache();
+    }
+
+    // -----------------------------------------------------------------------
+    //  Content crop helpers
+    // -----------------------------------------------------------------------
+
+    /// Clamp a crop rectangle to the source bounds, keeping at least one pixel.
+    fn clamped_crop(&self, (x0, y0, x1, y1): (u32, u32, u32, u32)) -> (u32, u32, u32, u32) {
+        let w = self.source.width().max(1);
+        let h = self.source.height().max(1);
+        let x0 = x0.min(w - 1);
+        let y0 = y0.min(h - 1);
+        let x1 = (x1.max(x0 + 1)).min(w);
+        let y1 = (y1.max(y0 + 1)).min(h);
+        (x0, y0, x1, y1)
+    }
+
+    /// Size of the cropped content in source pixels.
+    pub fn content_size(&self) -> (u32, u32) {
+        let (x0, y0, x1, y1) = self.crop_rect;
+        ((x1 - x0).max(1), (y1 - y0).max(1))
+    }
+
+    /// Cropped content image. Cheap when the crop covers the whole source.
+    fn content_image(&self) -> std::borrow::Cow<'_, RgbaImage> {
+        let (x0, y0, x1, y1) = self.crop_rect;
+        if (x0, y0, x1, y1) == (0, 0, self.source.width(), self.source.height()) {
+            std::borrow::Cow::Borrowed(&self.source)
+        } else {
+            std::borrow::Cow::Owned(
+                image::imageops::crop_imm(&self.source, x0, y0, x1 - x0, y1 - y0).to_image(),
+            )
+        }
+    }
+
+    /// `overwrite_mask` cropped exactly like `content_image`.
+    fn content_mask(&self) -> Option<std::borrow::Cow<'_, GrayImage>> {
+        let mask = self.overwrite_mask.as_ref()?;
+        let (x0, y0, x1, y1) = self.crop_rect;
+        if (x0, y0, x1, y1) == (0, 0, mask.width(), mask.height()) {
+            Some(std::borrow::Cow::Borrowed(mask))
+        } else {
+            Some(std::borrow::Cow::Owned(
+                image::imageops::crop_imm(mask, x0, y0, x1 - x0, y1 - y0).to_image(),
+            ))
+        }
+    }
+
+    /// Normalized UV rectangle of the cropped content inside the uploaded
+    /// source texture — lets the GPU path crop without a texture re-upload.
+    fn content_uv(&self) -> (f32, f32, f32, f32) {
+        let w = self.source.width().max(1) as f32;
+        let h = self.source.height().max(1) as f32;
+        let (x0, y0, x1, y1) = self.crop_rect;
+        (x0 as f32 / w, y0 as f32 / h, x1 as f32 / w, y1 as f32 / h)
+    }
+
+    /// Set the source-space crop rectangle (clamped) and invalidate caches.
+    pub fn set_crop_rect(&mut self, rect: (u32, u32, u32, u32)) {
+        self.crop_rect = self.clamped_crop(rect);
+        self.invalidate_cache();
+    }
+
+    /// Reset the content crop back to the full source image.
+    pub fn reset_crop(&mut self) {
+        let (w, h) = (self.source.width(), self.source.height());
+        self.set_crop_rect((0, 0, w, h));
     }
 
     pub fn transformed_bounds(&self, cw: u32, ch: u32) -> Option<(u32, u32, u32, u32)> {
@@ -996,8 +1117,9 @@ impl PasteOverlay {
     /// this so ordinary drags remain unconstrained.
     fn snap_center_to_canvas_guides(&mut self, canvas_w: f32, canvas_h: f32) {
         const SNAP_DISTANCE: f32 = 8.0;
-        let half_w = self.source.width() as f32 * self.scale_x.abs() * 0.5;
-        let half_h = self.source.height() as f32 * self.scale_y.abs() * 0.5;
+        let (cw, ch) = self.content_size();
+        let half_w = cw as f32 * self.scale_x.abs() * 0.5;
+        let half_h = ch as f32 * self.scale_y.abs() * 0.5;
 
         let snap_axis = |value: f32, candidates: &[f32]| {
             candidates
@@ -1046,12 +1168,13 @@ impl PasteOverlay {
     }
 
     pub fn rasterize_for_clipboard(&self) -> Option<(RgbaImage, Pos2)> {
-        let src_w = self.source.width() as f32;
-        let src_h = self.source.height() as f32;
+        let content = self.content_image();
+        let src_w = content.width() as f32;
+        let src_h = content.height() as f32;
         let scaled_w = (src_w * self.scale_x).round().max(1.0) as u32;
         let scaled_h = (src_h * self.scale_y).round().max(1.0) as u32;
         let scaled = imageops::resize(
-            &self.source,
+            &*content,
             scaled_w,
             scaled_h,
             self.interpolation.to_filter(),
@@ -1165,20 +1288,20 @@ impl PasteOverlay {
     }
 
     fn apply_transformed_pixels_to_image(&self, out: &mut RgbaImage, overwrite_transparent: bool) {
-        let src_w = self.source.width() as f32;
-        let src_h = self.source.height() as f32;
+        let content = self.content_image();
+        let src_w = content.width() as f32;
+        let src_h = content.height() as f32;
         let scaled_w = (src_w * self.scale_x).round().max(1.0) as u32;
         let scaled_h = (src_h * self.scale_y).round().max(1.0) as u32;
         let scaled = imageops::resize(
-            &self.source,
+            &*content,
             scaled_w,
             scaled_h,
             self.interpolation.to_filter(),
         );
         let scaled_mask = self
-            .overwrite_mask
-            .as_ref()
-            .map(|mask| imageops::resize(mask, scaled_w, scaled_h, imageops::FilterType::Nearest));
+            .content_mask()
+            .map(|mask| imageops::resize(&*mask, scaled_w, scaled_h, imageops::FilterType::Nearest));
 
         let cw = out.width();
         let ch = out.height();
@@ -1265,12 +1388,10 @@ impl PasteOverlay {
         )
     }
 
-    /// The scaled half-size.
+    /// The scaled half-size (cropped content).
     fn scaled_half(&self) -> Vec2 {
-        Vec2::new(
-            self.source.width() as f32 * self.scale_x / 2.0,
-            self.source.height() as f32 * self.scale_y / 2.0,
-        )
+        let (cw, ch) = self.content_size();
+        Vec2::new(cw as f32 * self.scale_x / 2.0, ch as f32 * self.scale_y / 2.0)
     }
 
     /// Snap `center` so the image's top-left corner lands on a whole canvas pixel.
@@ -1424,25 +1545,30 @@ impl PasteOverlay {
         let white = Color32::WHITE;
         let mut mesh = egui::Mesh::with_texture(tex.id());
 
+        // UVs map the uploaded source texture to the cropped content rect, so
+        // cropping never needs a texture re-upload. Vertex order keeps flipped
+        // (negative scale) pastes correct: TL always samples (u0, v0).
+        let (u0, v0, u1, v1) = self.content_uv();
+
         // Vertices: TL, TR, BL, BR  with UV corners
         mesh.vertices.push(egui::epaint::Vertex {
             pos: s_tl,
-            uv: Pos2::new(0.0, 0.0),
+            uv: Pos2::new(u0, v0),
             color: white,
         });
         mesh.vertices.push(egui::epaint::Vertex {
             pos: s_tr,
-            uv: Pos2::new(1.0, 0.0),
+            uv: Pos2::new(u1, v0),
             color: white,
         });
         mesh.vertices.push(egui::epaint::Vertex {
             pos: s_bl,
-            uv: Pos2::new(0.0, 1.0),
+            uv: Pos2::new(u0, v1),
             color: white,
         });
         mesh.vertices.push(egui::epaint::Vertex {
             pos: s_br,
-            uv: Pos2::new(1.0, 1.0),
+            uv: Pos2::new(u1, v1),
             color: white,
         });
 
@@ -1539,6 +1665,44 @@ impl PasteOverlay {
             );
         }
 
+        // --- Crop handles: flat bars just outside the edge midpoints ---
+        if self.allow_crop {
+            let center_screen = self.canvas_to_screen(self.center, image_rect, zoom);
+            for &sm in &screen_mids {
+                let dir = outward_dir(sm, center_screen);
+                let edge_dir = Vec2::new(-dir.y, dir.x);
+                let c = Pos2::new(
+                    sm.x + dir.x * CROP_HANDLE_OFFSET,
+                    sm.y + dir.y * CROP_HANDLE_OFFSET,
+                );
+                let hl = CROP_HANDLE_HALF_LEN;
+                let ht = CROP_HANDLE_HALF_THICK;
+                let pts = [
+                    Pos2::new(
+                        c.x + edge_dir.x * hl + dir.x * ht,
+                        c.y + edge_dir.y * hl + dir.y * ht,
+                    ),
+                    Pos2::new(
+                        c.x + edge_dir.x * hl - dir.x * ht,
+                        c.y + edge_dir.y * hl - dir.y * ht,
+                    ),
+                    Pos2::new(
+                        c.x - edge_dir.x * hl - dir.x * ht,
+                        c.y - edge_dir.y * hl - dir.y * ht,
+                    ),
+                    Pos2::new(
+                        c.x - edge_dir.x * hl + dir.x * ht,
+                        c.y - edge_dir.y * hl + dir.y * ht,
+                    ),
+                ];
+                painter.add(egui::Shape::convex_polygon(
+                    pts.to_vec(),
+                    accent_fill,
+                    Stroke::new(1.0, handle_border),
+                ));
+            }
+        }
+
         // --- Rotation handle: accent stem + glowing circle ---
         let top_mid_screen = screen_mids[0];
         let rotate_distance = 30.0;
@@ -1620,6 +1784,33 @@ impl PasteOverlay {
     /// Determine which handle (if any) is under the given screen position.
     pub fn hit_test(&self, screen_pos: Pos2, image_rect: Rect, zoom: f32) -> Option<HandleKind> {
         let grab_radius = 10.0;
+
+        // Crop handles (flat bars just outside the edge midpoints). Tested
+        // first: their bars sit between the on-edge scale handles and the
+        // rotation handle, so nearest-shape wins inside the shared axis zone.
+        if self.allow_crop {
+            let midpoints = self.edge_midpoints_canvas();
+            let center_screen = self.canvas_to_screen(self.center, image_rect, zoom);
+            for (idx, kind) in [
+                (0, HandleKind::CropTop),
+                (1, HandleKind::CropBottom),
+                (2, HandleKind::CropLeft),
+                (3, HandleKind::CropRight),
+            ] {
+                let mid_screen = self.canvas_to_screen(midpoints[idx], image_rect, zoom);
+                let dir = outward_dir(mid_screen, center_screen);
+                let bar = Pos2::new(
+                    mid_screen.x + dir.x * CROP_HANDLE_OFFSET,
+                    mid_screen.y + dir.y * CROP_HANDLE_OFFSET,
+                );
+                let rel = Vec2::new(screen_pos.x - bar.x, screen_pos.y - bar.y);
+                let along = rel.x * -dir.y + rel.y * dir.x;
+                let across = rel.x * dir.x + rel.y * dir.y;
+                if along.abs() <= CROP_HANDLE_GRAB_LEN && across.abs() <= CROP_HANDLE_GRAB_THICK {
+                    return Some(kind);
+                }
+            }
+        }
 
         // Rotation handle.
         let midpoints = self.edge_midpoints_canvas();
@@ -1713,6 +1904,8 @@ impl PasteOverlay {
             HandleKind::TopLeft | HandleKind::BottomRight => CursorIcon::ResizeNwSe,
             HandleKind::TopRight | HandleKind::BottomLeft => CursorIcon::ResizeNeSw,
             HandleKind::Rotate => CursorIcon::Alias,
+            HandleKind::CropTop | HandleKind::CropBottom => CursorIcon::ResizeVertical,
+            HandleKind::CropLeft | HandleKind::CropRight => CursorIcon::ResizeHorizontal,
         })
     }
 
@@ -1784,6 +1977,7 @@ impl PasteOverlay {
             self.drag_start_scale_y = self.scale_y;
             self.drag_start_rotation = self.rotation;
             self.drag_start_anchor = self.anchor_offset;
+            self.drag_start_crop = self.crop_rect;
             return true;
         }
 
@@ -1834,6 +2028,12 @@ impl PasteOverlay {
                     }
                     self.rotation = new_rot;
                 }
+                HandleKind::CropTop
+                | HandleKind::CropBottom
+                | HandleKind::CropLeft
+                | HandleKind::CropRight => {
+                    self.handle_crop(handle, delta_canvas);
+                }
                 _ => {
                     // Resize handles.
                     self.handle_resize(handle, delta_canvas);
@@ -1850,6 +2050,7 @@ impl PasteOverlay {
                 scale_x: self.drag_start_scale_x,
                 scale_y: self.drag_start_scale_y,
                 anchor_offset: self.drag_start_anchor,
+                crop: self.drag_start_crop,
             };
             let after = self.transform();
             if before != after {
@@ -1865,8 +2066,9 @@ impl PasteOverlay {
 
     /// Handle resize from edge/corner dragging.
     fn handle_resize(&mut self, handle: HandleKind, delta_canvas: Vec2) {
-        let src_w = self.source.width() as f32;
-        let src_h = self.source.height() as f32;
+        let (content_w, content_h) = self.content_size();
+        let src_w = content_w as f32;
+        let src_h = content_h as f32;
         if src_w < 1.0 || src_h < 1.0 {
             return;
         }
@@ -1975,6 +2177,83 @@ impl PasteOverlay {
         );
     }
 
+    /// Crop from an edge handle: trims the pasted content on that side. The
+    /// opposite edge stays anchored and scale/rotation are untouched, so the
+    /// transform handles track the trimmed content automatically. Drags are
+    /// absolute from `drag_start_crop`, clamped to the source and rounded to
+    /// whole source pixels.
+    fn handle_crop(&mut self, handle: HandleKind, delta_canvas: Vec2) {
+        let src_w = self.source.width().max(1) as f32;
+        let src_h = self.source.height().max(1) as f32;
+        if self.scale_x.abs() < 1e-6 || self.scale_y.abs() < 1e-6 {
+            return;
+        }
+
+        // Un-rotate delta to local axes (same convention as handle_resize).
+        let cos = (-self.rotation).cos();
+        let sin = (-self.rotation).sin();
+        let local_dx = delta_canvas.x * cos - delta_canvas.y * sin;
+        let local_dy = delta_canvas.x * sin + delta_canvas.y * cos;
+
+        let (sx0, sy0, sx1, sy1) = (
+            self.drag_start_crop.0 as f32,
+            self.drag_start_crop.1 as f32,
+            self.drag_start_crop.2 as f32,
+            self.drag_start_crop.3 as f32,
+        );
+        let mut x0 = sx0;
+        let mut y0 = sy0;
+        let mut x1 = sx1;
+        let mut y1 = sy1;
+
+        // Only the dragged edge moves; signed division keeps flipped pastes
+        // (negative scale) consistent with the geometry.
+        match handle {
+            HandleKind::CropLeft => x0 = sx0 + local_dx / self.scale_x,
+            HandleKind::CropRight => x1 = sx1 + local_dx / self.scale_x,
+            HandleKind::CropTop => y0 = sy0 + local_dy / self.scale_y,
+            HandleKind::CropBottom => y1 = sy1 + local_dy / self.scale_y,
+            _ => return,
+        }
+
+        // Whole source pixels, clamped to the source, min 1px content.
+        let x0 = (x0.round() as i32).clamp(0, src_w as i32 - 1);
+        let y0 = (y0.round() as i32).clamp(0, src_h as i32 - 1);
+        let x1 = (x1.round() as i32).clamp(x0 + 1, src_w as i32);
+        let y1 = (y1.round() as i32).clamp(y0 + 1, src_h as i32);
+
+        // Keep the opposite edge anchored (mirrors handle_resize): shift the
+        // centre so only the dragged edge appears to move.
+        let start_w = (sx1 - sx0) * self.scale_x;
+        let start_h = (sy1 - sy0) * self.scale_y;
+        let new_w = (x1 - x0) as f32 * self.scale_x;
+        let new_h = (y1 - y0) as f32 * self.scale_y;
+        let cos_r = self.rotation.cos();
+        let sin_r = self.rotation.sin();
+        let anchor_local = match handle {
+            HandleKind::CropRight => Vec2::new(-start_w * 0.5, 0.0),
+            HandleKind::CropLeft => Vec2::new(start_w * 0.5, 0.0),
+            HandleKind::CropBottom => Vec2::new(0.0, -start_h * 0.5),
+            _ => Vec2::new(0.0, start_h * 0.5),
+        };
+        let fixed_anchor = Pos2::new(
+            self.drag_start_center.x + anchor_local.x * cos_r - anchor_local.y * sin_r,
+            self.drag_start_center.y + anchor_local.x * sin_r + anchor_local.y * cos_r,
+        );
+        let new_anchor_local = match handle {
+            HandleKind::CropRight => Vec2::new(-new_w * 0.5, 0.0),
+            HandleKind::CropLeft => Vec2::new(new_w * 0.5, 0.0),
+            HandleKind::CropBottom => Vec2::new(0.0, -new_h * 0.5),
+            _ => Vec2::new(0.0, new_h * 0.5),
+        };
+        self.center = Pos2::new(
+            fixed_anchor.x - (new_anchor_local.x * cos_r - new_anchor_local.y * sin_r),
+            fixed_anchor.y - (new_anchor_local.x * sin_r + new_anchor_local.y * cos_r),
+        );
+        self.crop_rect = (x0 as u32, y0 as u32, x1 as u32, y1 as u32);
+        self.invalidate_cache();
+    }
+
     // -----------------------------------------------------------------------
     //  Context Menu
     // -----------------------------------------------------------------------
@@ -2037,19 +2316,19 @@ impl PasteOverlay {
 
         let cw = state.width;
         let ch = state.height;
-        let src_w = self.source.width() as f32;
-        let src_h = self.source.height() as f32;
+        let content = self.content_image();
+        let src_w = content.width() as f32;
+        let src_h = content.height() as f32;
 
         let filter = self.interpolation.to_filter();
 
         // Scale the source image and mask first.
         let scaled_w = (src_w * self.scale_x).round().max(1.0) as u32;
         let scaled_h = (src_h * self.scale_y).round().max(1.0) as u32;
-        let scaled = imageops::resize(&self.source, scaled_w, scaled_h, filter);
+        let scaled = imageops::resize(&*content, scaled_w, scaled_h, filter);
         let scaled_mask = self
-            .overwrite_mask
-            .as_ref()
-            .map(|mask| imageops::resize(mask, scaled_w, scaled_h, imageops::FilterType::Nearest));
+            .content_mask()
+            .map(|mask| imageops::resize(&*mask, scaled_w, scaled_h, imageops::FilterType::Nearest));
 
         // Compute tight bounding box of the rotated paste to limit iteration.
         let corners = self.corners_canvas();
@@ -2170,8 +2449,9 @@ impl PasteOverlay {
             return &self.cached_preview.as_ref().unwrap().0;
         }
 
-        let src_w = self.source.width() as f32;
-        let src_h = self.source.height() as f32;
+        let (src_w, src_h) = self.content_size();
+        let src_w = src_w as f32;
+        let src_h = src_h as f32;
         let scaled_w = (src_w * self.scale_x).round().max(1.0) as u32;
         let scaled_h = (src_h * self.scale_y).round().max(1.0) as u32;
 
@@ -2181,8 +2461,9 @@ impl PasteOverlay {
             None => true,
         };
         if need_rescale {
+            let content = self.content_image();
             let scaled = imageops::resize(
-                &self.source,
+                &*content,
                 scaled_w,
                 scaled_h,
                 imageops::FilterType::Nearest,

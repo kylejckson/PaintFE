@@ -260,6 +260,13 @@ pub struct PaintFEApp {
     /// True only on the very first update() call — used to send a reliable Maximized command.
     first_frame: bool,
 
+    /// Last window title sent to the viewport. Viewport commands request a
+    /// repaint in egui 0.35, so they must only be sent when the value changes —
+    /// otherwise every frame schedules the next one and the app never idles.
+    last_viewport_title: Option<String>,
+    /// Last OS theme sent to the viewport (see `last_viewport_title`).
+    last_viewport_theme: Option<egui::SystemTheme>,
+
     // Single-instance IPC: file paths sent from other PaintFE invocations
     ipc_receiver: mpsc::Receiver<PathBuf>,
     /// File paths to open on the first update() frame (from positional CLI args).

@@ -112,14 +112,13 @@ impl PaintFEApp {
                             ui.add_space(4.0);
 
                             // Position info
+                            let (content_w, content_h) = overlay.content_size();
                             ui.label(format!(
                                 "X: {:.0}  Y: {:.0}  W: {:.0}  H: {:.0}  Rot: {:.1}°",
-                                overlay.center.x
-                                    - overlay.source.width() as f32 * overlay.scale_x / 2.0,
-                                overlay.center.y
-                                    - overlay.source.height() as f32 * overlay.scale_y / 2.0,
-                                overlay.source.width() as f32 * overlay.scale_x,
-                                overlay.source.height() as f32 * overlay.scale_y,
+                                overlay.center.x - content_w as f32 * overlay.scale_x / 2.0,
+                                overlay.center.y - content_h as f32 * overlay.scale_y / 2.0,
+                                content_w as f32 * overlay.scale_x,
+                                content_h as f32 * overlay.scale_y,
                                 overlay.rotation.to_degrees(),
                             ));
 
@@ -128,13 +127,14 @@ impl PaintFEApp {
                             // Quick actions
                             if ui
                                 .button("Reset")
-                                .on_hover_text("Reset all transforms")
+                                .on_hover_text("Reset all transforms and crop")
                                 .clicked()
                             {
                                 overlay.rotation = 0.0;
                                 overlay.scale_x = 1.0;
                                 overlay.scale_y = 1.0;
                                 overlay.anchor_offset = egui::Vec2::ZERO;
+                                overlay.reset_crop();
                             }
                         } else {
                             let ctx_primary = self.colors_panel.get_primary_color();
@@ -369,7 +369,8 @@ impl PaintFEApp {
                     if let Some(action) = self.canvas.paste_context_action.take() {
                         match action {
                             crate::canvas::PasteAction::Commit
-                            | crate::canvas::PasteAction::CommitAndSelect => {
+                            | crate::canvas::PasteAction::CommitAndSelect
+                            | crate::canvas::PasteAction::CommitAndCrop => {
                                 // Commit the overlay as one undoable operation.
                                 let select_mask = self.paste_overlay.as_ref().map(|overlay| {
                                     overlay.solid_bounds_selection_mask(
@@ -421,23 +422,44 @@ impl PaintFEApp {
                                 }
                                 self.is_move_pixels_active = false;
 
-                                if action == crate::canvas::PasteAction::CommitAndSelect {
-                                    project.canvas_state.selection_mask = select_mask;
-                                    if let Some(mask) = project.canvas_state.selection_mask.as_mut()
-                                        && let Some((x0, y0, x1, y1)) = select_bounds
-                                    {
-                                        for y in y0..y1 {
-                                            for x in x0..x1 {
-                                                mask.put_pixel(x, y, image::Luma([255u8]));
-                                            }
+                                // Explicit commits leave the pasted region selected so
+                                // it can be cropped/refined immediately afterwards.
+                                project.canvas_state.selection_mask = select_mask;
+                                if let Some(mask) = project.canvas_state.selection_mask.as_mut()
+                                    && let Some((x0, y0, x1, y1)) = select_bounds
+                                {
+                                    for y in y0..y1 {
+                                        for x in x0..x1 {
+                                            mask.put_pixel(x, y, image::Luma([255u8]));
                                         }
                                     }
-                                    project.canvas_state.invalidate_selection_overlay();
-                                    project.canvas_state.mark_dirty(None);
+                                }
+                                project.canvas_state.invalidate_selection_overlay();
+                                project.canvas_state.mark_dirty(None);
+                                self.tools_panel.selection_state.mode =
+                                    crate::canvas::SelectionMode::Replace;
+                                if action == crate::canvas::PasteAction::CommitAndCrop {
+                                    // Second undo step: crop the canvas to the (possibly
+                                    // trimmed) pasted bounds. Mirrors do_snapshot_op.
+                                    project.canvas_state.ensure_all_text_layers_rasterized();
+                                    for layer in &mut project.canvas_state.layers {
+                                        if layer.is_text_layer() {
+                                            layer.content = crate::canvas::LayerContent::Raster;
+                                        }
+                                    }
+                                    let mut cmd = SnapshotCommand::new(
+                                        "Crop to Selection".to_string(),
+                                        &project.canvas_state,
+                                    );
+                                    crate::ops::adjustments::crop_to_selection(
+                                        &mut project.canvas_state,
+                                    );
+                                    cmd.set_after(&project.canvas_state);
+                                    project.history.push(Box::new(cmd));
+                                    project.mark_dirty();
+                                } else {
                                     self.pending_selection_reassert =
                                         project.canvas_state.selection_mask.clone();
-                                    self.tools_panel.selection_state.mode =
-                                        crate::canvas::SelectionMode::Replace;
                                 }
                             }
                             crate::canvas::PasteAction::Cancel => {

@@ -198,7 +198,10 @@ impl PaintFEApp {
     }
 
     /// Commit the active paste overlay.
-    fn commit_paste_overlay(&mut self) {
+    /// `leave_selected` keeps the pasted region selected afterwards so it can
+    /// be cropped/refined immediately (explicit commits like Enter). Auto
+    /// commits (tab switch/close) and Move Pixels never leave a selection.
+    fn commit_paste_overlay(&mut self, leave_selected: bool) {
         if let Some(overlay) = self.paste_overlay.take() {
             self.paste_transform_undo.clear();
             self.paste_transform_redo.clear();
@@ -207,12 +210,22 @@ impl PaintFEApp {
             } else {
                 "Paste"
             };
+            let keep_selection = leave_selected && !self.is_move_pixels_active;
             let move_before = if self.is_move_pixels_active {
                 self.move_pixels_before.take()
             } else {
                 None
             };
+            let mut reassert: Option<image::GrayImage> = None;
             if let Some(project) = self.active_project_mut() {
+                let (cw, ch) = (project.canvas_state.width, project.canvas_state.height);
+                let select_mask = keep_selection
+                    .then(|| overlay.solid_bounds_selection_mask(cw, ch));
+                let select_bounds = if keep_selection {
+                    overlay.transformed_bounds(cw, ch)
+                } else {
+                    None
+                };
                 let before = move_before.unwrap_or_else(|| {
                     crate::components::history::CanvasSnapshot::capture(&project.canvas_state)
                 });
@@ -227,8 +240,21 @@ impl PaintFEApp {
                         after,
                     ),
                 ));
+                if let Some(mut mask) = select_mask {
+                    if let Some((x0, y0, x1, y1)) = select_bounds {
+                        for y in y0..y1 {
+                            for x in x0..x1 {
+                                mask.put_pixel(x, y, image::Luma([255u8]));
+                            }
+                        }
+                    }
+                    project.canvas_state.selection_mask = Some(mask);
+                    project.canvas_state.invalidate_selection_overlay();
+                    reassert = project.canvas_state.selection_mask.clone();
+                }
                 project.mark_dirty();
             }
+            self.pending_selection_reassert = reassert;
             self.is_move_pixels_active = false;
         }
     }
@@ -332,7 +358,7 @@ impl PaintFEApp {
         let project_idx = self.active_project_index;
 
         if self.paste_overlay.is_some() {
-            self.commit_paste_overlay();
+            self.commit_paste_overlay(false);
         }
 
         let tools_panel = &mut self.tools_panel;

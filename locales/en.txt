@@ -16,6 +16,7 @@ menu.edit.paste_as_layer=Paste as New Layer
 menu.edit.select_all=Select All
 menu.edit.deselect=Deselect
 menu.edit.invert_selection=Invert Selection
+menu.edit.select_content_bounds=Select Layer Content Bounds
 menu.edit.modify_selection=Modify Selection
 menu.edit.sel_feather=Feather (5px)
 menu.edit.sel_expand=Expand (5px)

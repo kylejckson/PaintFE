@@ -404,6 +404,23 @@ impl PaintFEApp {
                             }
                             ui.close();
                         }
+                        if self
+                            .assets
+                            .menu_item_enabled(
+                                ui,
+                                Icon::MenuEditSelectAll,
+                                &t!("menu.edit.select_content_bounds"),
+                                has_project,
+                            )
+                            .clicked()
+                        {
+                            if let Some(project) = self.active_project_mut() {
+                                crate::ops::adjustments::select_layer_content_bounds(
+                                    &mut project.canvas_state,
+                                );
+                            }
+                            ui.close();
+                        }
 
                         ui.separator();
 

@@ -811,21 +811,49 @@ pub(crate) fn dialog_footer_with_reset(
     (ok, cancel, reset)
 }
 
+/// egui-data key used by `preview_controls` to ask the dialog dispatcher
+/// (`PaintFEApp::process_active_dialog`) to restore the original layer pixels.
+/// The dialog UI has no access to the canvas state, so the request is stashed
+/// where the dispatcher can pick it up in the same frame.
+pub(crate) fn preview_restore_request_id() -> egui::Id {
+    egui::Id::new("paintfe_preview_restore_request")
+}
+
 /// Live preview toggle + manual preview button.
-/// Returns true if manual preview was clicked.
+/// Returns true when the preview should be (re-)applied: either the manual
+/// "Preview" button was clicked, or live preview was just switched on.
+/// Turning live preview *off* requests a restore of the original pixels
+/// instead (before/after comparison via the checkbox).
 pub(crate) fn preview_controls(
     ui: &mut egui::Ui,
     _colors: &DialogColors,
     live_preview: &mut bool,
 ) -> bool {
     let mut preview_clicked = false;
+    let mut restore_requested = false;
     ui.add_space(2.0);
     ui.horizontal(|ui| {
-        ui.checkbox(live_preview, t!("common.live_preview"));
+        let toggle = ui.checkbox(live_preview, t!("common.live_preview"));
+        if toggle.changed() {
+            if *live_preview {
+                // Re-checking re-applies the current parameters instantly so
+                // the checkbox works as a before/after comparison toggle.
+                preview_clicked = true;
+            } else {
+                // Unchecking shows the original image again.
+                restore_requested = true;
+            }
+        }
         if !*live_preview && ui.button(t!("common.preview")).clicked() {
             preview_clicked = true;
         }
     });
+    if restore_requested {
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(preview_restore_request_id(), true);
+        });
+        ui.ctx().request_repaint();
+    }
     preview_clicked
 }
 

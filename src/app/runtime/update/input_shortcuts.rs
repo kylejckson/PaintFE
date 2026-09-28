@@ -677,7 +677,7 @@ impl PaintFEApp {
             if (ctx.input(|i| i.key_pressed(egui::Key::Enter)) || enter_vk_edge)
                 && self.paste_overlay.is_some()
             {
-                self.commit_paste_overlay();
+                self.commit_paste_overlay(true);
             }
             // Escape — Cancel paste (not rebindable)
             if (ctx.input(|i| i.key_pressed(egui::Key::Escape)) || escape_vk_edge)
@@ -871,7 +871,7 @@ impl PaintFEApp {
             let deselect_pressed = kb.is_pressed(ctx, BindableAction::Deselect);
             if deselect_pressed {
                 if self.paste_overlay.is_some() {
-                    self.commit_paste_overlay();
+                    self.commit_paste_overlay(false);
                 }
                 self.tools_panel.injected_enter_pressed = true;
                 if self.tools_panel.active_tool == crate::components::tools::Tool::MeshWarp
@@ -916,8 +916,9 @@ impl PaintFEApp {
                         && let Some(ref mut overlay) = self.paste_overlay
                     {
                         let (step_x, step_y) = if shift {
-                            let sw = overlay.source.width() as f32 * overlay.scale_x;
-                            let sh = overlay.source.height() as f32 * overlay.scale_y;
+                            let (cw, ch) = overlay.content_size();
+                            let sw = cw as f32 * overlay.scale_x;
+                            let sh = ch as f32 * overlay.scale_y;
                             (sw * dx_dir.abs(), sh * dy_dir.abs())
                         } else if ctrl {
                             (100.0, 100.0)

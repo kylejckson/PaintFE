@@ -8,7 +8,13 @@ impl PaintFEApp {
             } else {
                 "PaintFE".to_string()
             };
-            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+            // Only send when it changed: every ViewportCommand requests a
+            // repaint in egui 0.35, so an unconditional send each frame keeps
+            // the app redrawing forever (100% CPU while idle).
+            if self.last_viewport_title.as_deref() != Some(title.as_str()) {
+                self.last_viewport_title = Some(title.clone());
+                ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+            }
         }
 
         // --- Intercept OS window-close button ---
@@ -37,7 +43,11 @@ impl PaintFEApp {
         } else {
             egui::SystemTheme::Light
         };
-        ctx.send_viewport_cmd(egui::ViewportCommand::SetTheme(system_theme));
+        // Gated on change like the title above — viewport commands repaint.
+        if self.last_viewport_theme != Some(system_theme) {
+            self.last_viewport_theme = Some(system_theme);
+            ctx.send_viewport_cmd(egui::ViewportCommand::SetTheme(system_theme));
+        }
 
         // --- First frame startup file processing ---
         if self.first_frame {

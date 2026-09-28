@@ -264,6 +264,8 @@ impl PaintFEApp {
             exit_save_active: false,
             last_autosave: crate::time_compat::Instant::now(),
             first_frame: true,
+            last_viewport_title: None,
+            last_viewport_theme: None,
             ipc_receiver,
             close_initial_blank: !startup_files.is_empty() && create_canvas_on_startup,
             pending_startup_files: startup_files,
@@ -395,7 +397,7 @@ impl PaintFEApp {
     /// Create a new untitled project and switch to it
     fn new_project(&mut self, width: u32, height: u32) {
         if self.paste_overlay.is_some() {
-            self.commit_paste_overlay();
+            self.commit_paste_overlay(false);
         }
         self.persist_active_project_view();
         self.untitled_counter += 1;
@@ -478,6 +480,8 @@ impl PaintFEApp {
                 self.projects.remove(0);
                 // The newly loaded project was pushed to the end; adjust index.
                 self.active_project_index = self.projects.len() - 1;
+                // Drop shared GPU caches from the removed blank project.
+                self.canvas.gpu_clear_layers();
                 self.restore_active_project_view();
             }
         }
@@ -491,7 +495,7 @@ impl PaintFEApp {
 
         // If closing the active project and there's a paste overlay, commit it first.
         if index == self.active_project_index && self.paste_overlay.is_some() {
-            self.commit_paste_overlay();
+            self.commit_paste_overlay(false);
         }
 
         let project = &self.projects[index];
@@ -513,6 +517,10 @@ impl PaintFEApp {
             self.active_project_index -= 1;
         }
 
+        // Drop shared GPU caches (layer textures / native composite) — they
+        // belong to the closed project and would otherwise be displayed for
+        // the newly active one (same as switch_to_project).
+        self.canvas.gpu_clear_layers();
         self.restore_active_project_view();
     }
 
@@ -523,7 +531,7 @@ impl PaintFEApp {
             return;
         }
         if index == self.active_project_index && self.paste_overlay.is_some() {
-            self.commit_paste_overlay();
+            self.commit_paste_overlay(false);
         }
         self.persist_active_project_view();
         self.projects.remove(index);
@@ -534,6 +542,8 @@ impl PaintFEApp {
         } else if index < self.active_project_index {
             self.active_project_index -= 1;
         }
+        // Drop shared GPU caches from the closed project (see switch_to_project).
+        self.canvas.gpu_clear_layers();
         self.restore_active_project_view();
     }
 
@@ -545,7 +555,7 @@ impl PaintFEApp {
             // The overlay belongs to the current project's canvas — switching
             // without committing would leave it orphaned.
             if self.paste_overlay.is_some() {
-                self.commit_paste_overlay();
+                self.commit_paste_overlay(false);
             }
             // Clear move-selection drag state
             self.move_sel_dragging = false;
@@ -574,7 +584,7 @@ impl PaintFEApp {
         overwrite_mask: Option<image::GrayImage>,
     ) {
         if self.paste_overlay.is_some() {
-            self.commit_paste_overlay();
+            self.commit_paste_overlay(false);
         }
 
         let Some(project) = self.active_project() else {

@@ -1725,6 +1725,7 @@ impl Canvas {
                     overlay.scale_x = 1.0;
                     overlay.scale_y = 1.0;
                     overlay.anchor_offset = Vec2::ZERO;
+                    overlay.reset_crop();
                     ui.close();
                 }
                 if ui.button("Center Anchor").clicked() {
@@ -1738,6 +1739,10 @@ impl Canvas {
                 }
                 if ui.button("Commit & Select").clicked() {
                     paste_context_result = Some(PasteAction::CommitAndSelect);
+                    ui.close();
+                }
+                if ui.button("Commit & Crop").clicked() {
+                    paste_context_result = Some(PasteAction::CommitAndCrop);
                     ui.close();
                 }
                 if ui.button("Cancel (Esc)").clicked() {
@@ -1798,8 +1803,9 @@ impl Canvas {
 
         // Paste overlay info (for debug display).
         let paste_info: Option<(f32, f32, f32, f32, f32, f32)> = paste_overlay.as_ref().map(|o| {
-            let sw = o.source.width() as f32 * o.scale_x;
-            let sh = o.source.height() as f32 * o.scale_y;
+            let (cw, ch) = o.content_size();
+            let sw = cw as f32 * o.scale_x;
+            let sh = ch as f32 * o.scale_y;
             (
                 o.center.x,
                 o.center.y,
