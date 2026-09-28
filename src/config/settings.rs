@@ -162,6 +162,8 @@ pub struct AppSettings {
     pub persisted_shapes_corner_radius: f32,
     pub persisted_move_interpolation: String,
     pub persisted_move_anti_aliasing: bool,
+    /// Stroke stabilization strength (0.0 = raw pointer path, 0.9 = heavy).
+    pub persisted_stroke_stabilization: f32,
 
     // --- Advanced Customization (Phase 10) ---
     // --- Text tool persistence ---
@@ -342,6 +344,7 @@ impl Default for AppSettings {
             persisted_shapes_corner_radius: 10.0,
             persisted_move_interpolation: "bilinear".to_string(),
             persisted_move_anti_aliasing: true,
+            persisted_stroke_stabilization: 0.0,
 
             // Advanced Customization defaults
             persisted_text_font_family: String::new(),
@@ -1132,6 +1135,10 @@ impl AppSettings {
             self.persisted_move_anti_aliasing
         ));
         content.push_str(&format!(
+            "persisted_stroke_stabilization={}\n",
+            self.persisted_stroke_stabilization
+        ));
+        content.push_str(&format!(
             "persisted_text_font_family={}\n",
             self.persisted_text_font_family
         ));
@@ -1473,6 +1480,9 @@ impl AppSettings {
                 }
                 "persisted_brush_hardness" => {
                     s.persisted_brush_hardness = val.parse().unwrap_or(0.75);
+                }
+                "persisted_stroke_stabilization" => {
+                    s.persisted_stroke_stabilization = val.parse().unwrap_or(0.0);
                 }
                 "persisted_brush_flow" => {
                     s.persisted_brush_flow = val.parse().unwrap_or(1.0);

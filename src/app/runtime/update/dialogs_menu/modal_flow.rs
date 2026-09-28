@@ -5,6 +5,9 @@ impl PaintFEApp {
 
         self.settings_window
             .show(ctx, &mut self.settings, &mut self.theme, &self.assets);
+        // Keep the runtime stroke stabilization in sync with the settings
+        // slider (the slider writes AppSettings only).
+        self.tools_panel.stroke_stabilization = self.settings.persisted_stroke_stabilization;
 
         let current_paths = (
             self.settings.onnx_runtime_path.clone(),

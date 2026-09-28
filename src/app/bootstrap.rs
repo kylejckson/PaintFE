@@ -883,6 +883,7 @@ impl PaintFEApp {
                 _ => crate::ops::transform::Interpolation::Bilinear,
             };
         self.tools_panel.move_anti_aliasing = self.settings.persisted_move_anti_aliasing;
+        self.tools_panel.stroke_stabilization = self.settings.persisted_stroke_stabilization;
         self.tools_panel.text_state.font_family = crate::ops::text::resolve_font_family_preference(
             &self.settings.persisted_text_font_family,
         );
@@ -1184,6 +1185,7 @@ impl PaintFEApp {
         }
         .to_string();
         self.settings.persisted_move_anti_aliasing = self.tools_panel.move_anti_aliasing;
+        self.settings.persisted_stroke_stabilization = self.tools_panel.stroke_stabilization;
         self.settings.persisted_text_font_family = self.tools_panel.text_state.font_family.clone();
 
         self.settings.save();

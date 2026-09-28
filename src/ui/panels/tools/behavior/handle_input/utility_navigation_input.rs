@@ -109,29 +109,8 @@ impl ToolsPanel {
                                 vec![cf]
                             };
 
-                            // EMA smoothing (same as brush)
-                            let smoothed_positions: Vec<(f32, f32)> = {
-                                let mut result = Vec::with_capacity(positions.len());
-                                for &pos in &positions {
-                                    let raw = Pos2::new(pos.0, pos.1);
-                                    let smoothed = if let Some(prev) = self.tool_state.smooth_pos {
-                                        let dx = raw.x - prev.x;
-                                        let dy = raw.y - prev.y;
-                                        let dist = (dx * dx + dy * dy).sqrt();
-                                        let alpha = if dist < 1.5 {
-                                            1.0
-                                        } else {
-                                            (0.55 + 1.8 / (dist + 1.8)).min(1.0)
-                                        };
-                                        Pos2::new(prev.x + alpha * dx, prev.y + alpha * dy)
-                                    } else {
-                                        raw
-                                    };
-                                    self.tool_state.smooth_pos = Some(smoothed);
-                                    result.push((smoothed.x, smoothed.y));
-                                }
-                                result
-                            };
+                            // Stroke stabilization (same as brush)
+                            let smoothed_positions = self.stabilize_positions(&positions);
 
                             let offset = self.clone_stamp_state.offset.unwrap();
                             let mut frame_dirty_rect = Rect::NOTHING;
@@ -249,29 +228,8 @@ impl ToolsPanel {
                             vec![cf]
                         };
 
-                        // EMA smoothing
-                        let smoothed_positions: Vec<(f32, f32)> = {
-                            let mut result = Vec::with_capacity(positions.len());
-                            for &pos in &positions {
-                                let raw = Pos2::new(pos.0, pos.1);
-                                let smoothed = if let Some(prev) = self.tool_state.smooth_pos {
-                                    let dx = raw.x - prev.x;
-                                    let dy = raw.y - prev.y;
-                                    let dist = (dx * dx + dy * dy).sqrt();
-                                    let alpha = if dist < 1.5 {
-                                        1.0
-                                    } else {
-                                        (0.55 + 1.8 / (dist + 1.8)).min(1.0)
-                                    };
-                                    Pos2::new(prev.x + alpha * dx, prev.y + alpha * dy)
-                                } else {
-                                    raw
-                                };
-                                self.tool_state.smooth_pos = Some(smoothed);
-                                result.push((smoothed.x, smoothed.y));
-                            }
-                            result
-                        };
+                        // Stroke stabilization (same as brush)
+                        let smoothed_positions = self.stabilize_positions(&positions);
 
                         let mut frame_dirty_rect = Rect::NOTHING;
 

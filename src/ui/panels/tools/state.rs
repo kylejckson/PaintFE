@@ -1854,6 +1854,10 @@ pub struct ToolsPanel {
     pub shapes_state: ShapesToolState,
     pub move_interpolation: crate::ops::transform::Interpolation,
     pub move_anti_aliasing: bool,
+    /// Stroke stabilization (0.0 = raw pointer path, 0.9 = heavy smoothing).
+    /// Applied as an EMA on brush/eraser pointer samples. The Pencil tool is
+    /// always raw regardless of this value (pixel-exact placement).
+    pub stroke_stabilization: f32,
     pub pending_open_add_shape: bool,
     pub pending_delete_shape: Option<String>,
     last_tracked_layer_index: usize,
@@ -1938,6 +1942,7 @@ impl Default for ToolsPanel {
             shapes_state: ShapesToolState::default(),
             move_interpolation: crate::ops::transform::Interpolation::Bilinear,
             move_anti_aliasing: true,
+            stroke_stabilization: 0.0,
             pending_open_add_shape: false,
             pending_delete_shape: None,
             last_tracked_layer_index: 0,

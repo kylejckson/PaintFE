@@ -263,48 +263,9 @@ impl ToolsPanel {
                             vec![cf]
                         };
 
-                        // ============================================================
-                        // SPEED-ADAPTIVE EMA SMOOTHING
-                        // Applies an exponential moving average to each raw
-                        // mouse position before painting.  This directly rounds
-                        // off angular corners caused by straight-line segments
-                        // between sparse/distant mouse samples.
-                        //
-                        // Speed-adaptive alpha:
-                        //   Close movement (< 1.5 px) -> alpha = 1.0  (raw, precise)
-                        //   Far movement   (> ~20 px) -> alpha ~ 0.55 (strong smoothing)
-                        //
-                        // At 1000 Hz sub-frame input the per-sample distance is
-                        // small, so the smoothing is gentle - but it accumulates
-                        // across several consecutive direction changes, naturally
-                        // rounding corners.  At frame-rate input (big jumps) the
-                        // smoothing is stronger, eliminating visible polygon edges.
-                        // ============================================================
-                        let smoothed_positions: Vec<(f32, f32)> = {
-                            let mut result = Vec::with_capacity(positions.len());
-                            for &pos in &positions {
-                                let raw = Pos2::new(pos.0, pos.1);
-                                let smoothed = if let Some(prev) = self.tool_state.smooth_pos {
-                                    let dx = raw.x - prev.x;
-                                    let dy = raw.y - prev.y;
-                                    let dist = (dx * dx + dy * dy).sqrt();
-                                    // Speed-adaptive alpha:
-                                    // dist < 1.5 -> 1.0  (no smoothing)
-                                    // dist -> infinity   -> 0.55 (max smoothing)
-                                    let alpha = if dist < 1.5 {
-                                        1.0
-                                    } else {
-                                        (0.55 + 1.8 / (dist + 1.8)).min(1.0)
-                                    };
-                                    Pos2::new(prev.x + alpha * dx, prev.y + alpha * dy)
-                                } else {
-                                    raw
-                                };
-                                self.tool_state.smooth_pos = Some(smoothed);
-                                result.push((smoothed.x, smoothed.y));
-                            }
-                            result
-                        };
+                        // Stroke stabilization (EMA smoothing of raw pointer
+                        // samples; 0 = raw, Pencil always raw).
+                        let smoothed_positions = self.stabilize_positions(&positions);
 
                         // Accumulate a single dirty rect for the entire frame
                         let mut frame_dirty_rect = Rect::NOTHING;

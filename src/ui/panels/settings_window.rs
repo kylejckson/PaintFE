@@ -1116,6 +1116,18 @@ impl SettingsWindow {
                 }
                 ui.end_row();
 
+                ui.label(t!("settings.interface.stroke_stabilization"));
+                if Self::settings_slider(
+                    ui,
+                    &mut settings.persisted_stroke_stabilization,
+                    0.0..=0.9,
+                    0.05,
+                    0.0,
+                ) {
+                    settings.save();
+                }
+                ui.end_row();
+
                 // Pixel grid outline color
                 ui.label("Pixel Grid Outline");
                 ui.horizontal(|ui| {
