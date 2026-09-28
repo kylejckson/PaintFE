@@ -1359,19 +1359,25 @@ impl Canvas {
         // ====================================================================
         // SELECTION OVERLAY  (above layers, below tool cursor)
         // ====================================================================
-        // Animated time value for marching ants.
-        let anim_time = ui.input(|i| i.time);
+        // Animated time value for marching ants (frozen when animation is off,
+        // so the app can go idle with a selection active).
+        let ants_animated = debug_settings.animated_selection_ants;
+        let anim_time = if ants_animated { ui.input(|i| i.time) } else { 0.0 };
 
         // Keep repainting so marching ants stay animated even when mouse is idle.
         let has_selection_mask = state.has_selection();
         let has_selection_drag = tools.as_ref().is_some_and(|t| t.selection_state.dragging);
         let selection_needs_animation = has_selection_mask
-            && (state.selection_all
-                || state.selection_transform_preview_bounds.is_some()
-                || state.selection_overlay_built_generation != state.selection_overlay_generation
-                || selection_overlay_should_animate(state.selection_overlay_bounds));
+            && (state.selection_overlay_built_generation != state.selection_overlay_generation
+                || (ants_animated
+                    && (state.selection_all
+                        || state.selection_transform_preview_bounds.is_some()
+                        || selection_overlay_should_animate(state.selection_overlay_bounds))));
         if selection_needs_animation || has_selection_drag {
-            ui.ctx().request_repaint();
+            // Cap the animation at ~60fps instead of an unconditional
+            // per-frame repaint request.
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(16));
         }
 
         // 1. Draw the committed selection mask (if any).

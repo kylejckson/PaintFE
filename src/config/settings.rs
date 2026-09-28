@@ -60,6 +60,10 @@ pub struct AppSettings {
     /// Mailbox) over vsync queueing and queue at most one frame. Trades possible
     /// screen tearing for visibly snappier input response. Applied at startup.
     pub low_latency_present: bool,
+    /// Animate selection marching ants (faster scroll). When off, selections
+    /// render a static pattern and the app can go fully idle with a selection
+    /// active.
+    pub animated_selection_ants: bool,
 
     // AI / ONNX Runtime settings
     /// Path to onnxruntime.dll / libonnxruntime.so
@@ -264,6 +268,7 @@ impl Default for AppSettings {
             zoom_filter_mode: ZoomFilterMode::Linear,
             checkerboard_brightness: 1.0,
             low_latency_present: true,
+            animated_selection_ants: true,
             onnx_runtime_path: String::new(),
             birefnet_model_path: String::new(),
             paintdotnet_plugins_enabled: false,
@@ -880,6 +885,7 @@ impl AppSettings {
              zoom_filter_mode={filter_str}\n\
              checkerboard_brightness={}\n\
               low_latency_present={}\n\
+              animated_selection_ants={}\n\
              onnx_runtime_path={}\n\
              birefnet_model_path={}\n\
              paintdotnet_plugins_enabled={}\n\
@@ -904,6 +910,7 @@ impl AppSettings {
             self.neon_mode,
             self.checkerboard_brightness,
             self.low_latency_present,
+            self.animated_selection_ants,
             self.onnx_runtime_path,
             self.birefnet_model_path,
             self.paintdotnet_plugins_enabled,
@@ -1387,6 +1394,9 @@ impl AppSettings {
                 }
                 "low_latency_present" => {
                     s.low_latency_present = val == "true";
+                }
+                "animated_selection_ants" => {
+                    s.animated_selection_ants = val == "true";
                 }
                 "onnx_runtime_path" => {
                     s.onnx_runtime_path = val.to_string();

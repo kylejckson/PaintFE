@@ -568,18 +568,19 @@ impl Canvas {
         // rebuilt only when the selection mask changes or the animation offset
         // ticks forward.  The GPU handles zoom/display for free.
         if !tool_active {
-            // Animation: smoothly scroll pattern at ~1.5 canvas-pixels per second.
-            // Using a float modulo (no integer cast) so the offset is continuous and
-            // the texture rebuilds in small sub-pixel increments instead of whole-pixel
+            // Animation: smoothly scroll the pattern at ~12 canvas-pixels per
+            // second (was a very slow ~1.5 px/s crawl). Using a float modulo
+            // (no integer cast) so the offset is continuous and the texture
+            // rebuilds in small sub-pixel increments instead of whole-pixel
             // jumps, eliminating the jitter visible at high zoom levels.
             let band_period = 8u32; // canvas-pixel diagonal period
             let period_f = (band_period * 2) as f32;
-            let anim_offset = ((time * 3.0) % (period_f as f64)) as f32;
+            let anim_offset = ((time * 12.0) % (period_f as f64)) as f32;
 
             let generation_changed =
                 state.selection_overlay_built_generation != state.selection_overlay_generation;
             // Rebuild when the fractional offset shifts by ≥0.15 canvas pixels
-            // (~10 rebuilds/sec at 1.5 px/s) — enough for smooth motion without
+            // (~25 rebuilds/sec at 12 px/s) — enough for smooth motion without
             // rebuilding a potentially large texture on every single frame.
             let anim_changed = should_animate_interior
                 && (anim_offset - state.selection_overlay_anim_offset).abs() > 0.15;
