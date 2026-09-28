@@ -9,6 +9,14 @@ impl PaintFEApp {
         // slider (the slider writes AppSettings only).
         self.tools_panel.stroke_stabilization = self.settings.persisted_stroke_stabilization;
 
+        // Pixel Art preset: also update the live tool state (the settings
+        // window only writes AppSettings).
+        if self.settings_window.pending_pixel_art_preset {
+            self.settings_window.pending_pixel_art_preset = false;
+            self.tools_panel.properties.hardness = 1.0;
+            self.tools_panel.stroke_stabilization = 0.0;
+        }
+
         let current_paths = (
             self.settings.onnx_runtime_path.clone(),
             self.settings.birefnet_model_path.clone(),

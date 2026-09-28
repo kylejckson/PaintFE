@@ -8,6 +8,9 @@ use egui::{Color32, Sense, Vec2};
 
 pub struct SettingsWindow {
     pub open: bool,
+    /// Set when the user applies the "Pixel Art" preset; consumed by the app
+    /// to also update the live tool state (hardness, stabilization).
+    pub pending_pixel_art_preset: bool,
     active_tab: SettingsTab,
     /// Staging copy of accent colors for the "Interface" tab (applied on "Apply")
     staged_accent: AccentColors,
@@ -60,6 +63,7 @@ impl Default for SettingsWindow {
         let preset = ThemePreset::Signal;
         Self {
             open: false,
+            pending_pixel_art_preset: false,
             active_tab: SettingsTab::General,
             staged_accent: preset.accent_colors(),
             staged_preset: preset,
@@ -1135,6 +1139,23 @@ impl SettingsWindow {
                     .changed()
                 {
                     settings.save();
+                }
+                ui.end_row();
+
+                ui.label(t!("settings.interface.pixel_art_preset"));
+                if ui
+                    .button(t!("settings.interface.pixel_art_preset_apply"))
+                    .on_hover_text(t!("settings.interface.pixel_art_preset_hint"))
+                    .clicked()
+                {
+                    settings.zoom_filter_mode = ZoomFilterMode::Nearest;
+                    settings.pixel_grid_mode = PixelGridMode::AlwaysOn;
+                    settings.persisted_brush_hardness = 1.0;
+                    settings.persisted_stroke_stabilization = 0.0;
+                    settings.animated_selection_ants = false;
+                    settings.low_latency_present = true;
+                    settings.save();
+                    self.pending_pixel_art_preset = true;
                 }
                 ui.end_row();
 

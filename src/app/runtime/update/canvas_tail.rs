@@ -34,13 +34,17 @@ impl PaintFEApp {
         let mut commit_straighten = false;
         let mut cancel_straighten = false;
         #[allow(deprecated)]
-        let shelf_resp = egui::Panel::top("tool_shelf_strip")
+        let mut shelf_ui_rect = egui::Rect::NOTHING;
+        egui::Panel::top("tool_shelf_strip")
             .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(shelf_margin as i8)))
             .min_size(30.0) // Allow growth so controls don't get vertically clipped on newer egui metrics
             .show(root_ui, |ui| {
                 let shelf_frame = self.theme.tool_shelf_frame();
-                shelf_frame.show(ui, |ui| {
-                    ui.set_width(ui.available_width());
+                // Wrap the shelf content instead of stretching across the full
+                // window width, so the input-blocking rect recorded below matches
+                // the visible shelf and clicks elsewhere in the top strip reach
+                // the canvas.
+                let shelf_inner = shelf_frame.show(ui, |ui| {
                     // Context bar label styling
                     ui.style_mut().override_font_id =
                         Some(egui::FontId::proportional(crate::theme::Theme::FONT_LABEL));
@@ -155,8 +159,9 @@ impl PaintFEApp {
                         }
                     });
                 });
+                shelf_ui_rect = shelf_inner.response.rect;
             });
-        self.remember_ui_cursor_rect(shelf_resp.response.rect);
+        self.remember_ui_cursor_rect(shelf_ui_rect);
         if start_straighten { self.start_straighten(); }
         if commit_straighten { self.commit_straighten(); }
         if cancel_straighten { self.cancel_straighten(); }

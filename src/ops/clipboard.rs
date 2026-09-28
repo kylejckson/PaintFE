@@ -1381,13 +1381,6 @@ impl PasteOverlay {
         }
     }
 
-    fn half_size(&self) -> Vec2 {
-        Vec2::new(
-            self.source.width() as f32 / 2.0,
-            self.source.height() as f32 / 2.0,
-        )
-    }
-
     /// The scaled half-size (cropped content).
     fn scaled_half(&self) -> Vec2 {
         let (cw, ch) = self.content_size();
