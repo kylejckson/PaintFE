@@ -2265,7 +2265,7 @@ impl Canvas {
                                 - (state.height as f32 * self.zoom / 2.0)
                                 + canvas_y * self.zoom;
                         let anchor = Pos2::new(screen_x, screen_y);
-                        self.zoom_around_screen_point(1.2, anchor, canvas_rect);
+                        self.zoom_step(1.0, Some(anchor), canvas_rect);
                     }
                     ZoomPanAction::ZoomOut { canvas_x, canvas_y } => {
                         let screen_x =
@@ -2277,7 +2277,7 @@ impl Canvas {
                                 - (state.height as f32 * self.zoom / 2.0)
                                 + canvas_y * self.zoom;
                         let anchor = Pos2::new(screen_x, screen_y);
-                        self.zoom_around_screen_point(1.0 / 1.2, anchor, canvas_rect);
+                        self.zoom_step(-1.0, Some(anchor), canvas_rect);
                     }
                     ZoomPanAction::Pan { dx, dy } => {
                         self.pan_by(Vec2::new(dx, dy));
@@ -3232,14 +3232,58 @@ impl Canvas {
         }
     }
 
+    /// Discrete zoom ladder. Wheel and keyboard zoom step through these so
+    /// pixel-art zoom levels stay crisp (whole-pixel 1x, 2x, 3x, ...).
+    pub const ZOOM_LADDER: [f32; 19] = [
+        0.1, 0.125, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0, 24.0, 32.0,
+        48.0, 64.0, 100.0,
+    ];
+
+    /// Step zoom to the next ladder level up (`direction > 0`) or down,
+    /// keeping `anchor` (screen coords) fixed on screen.
+    pub fn zoom_step(&mut self, direction: f32, anchor: Option<Pos2>, canvas_rect: Rect) {
+        let current = self.zoom;
+        let target = if direction > 0.0 {
+            Self::ZOOM_LADDER
+                .iter()
+                .copied()
+                .find(|&z| z > current * 1.001)
+                .unwrap_or(100.0)
+        } else {
+            Self::ZOOM_LADDER
+                .iter()
+                .copied()
+                .rev()
+                .find(|&z| z < current * 0.999)
+                .unwrap_or(0.1)
+        };
+        let anchor = anchor.unwrap_or_else(|| canvas_rect.center());
+        self.zoom_around_screen_point(target / current, anchor, canvas_rect);
+    }
+
     pub fn zoom_in(&mut self) {
-        self.zoom = (self.zoom * 1.2).min(100.0);
+        let rect = self.last_canvas_rect.unwrap_or(Rect::ZERO);
+        let anchor = rect.center();
+        self.zoom_step(1.0, Some(anchor), rect);
     }
 
     pub fn zoom_out(&mut self) {
-        self.zoom = (self.zoom / 1.2).max(0.1);
+        let rect = self.last_canvas_rect.unwrap_or(Rect::ZERO);
+        let anchor = rect.center();
+        self.zoom_step(-1.0, Some(anchor), rect);
     }
 
+    /// Fit the whole canvas into the viewport (zoom + centered).
+    pub fn fit_to_window(&mut self, canvas_size: (u32, u32)) {
+        let Some(rect) = self.last_canvas_rect else {
+            return;
+        };
+        let (w, h) = (canvas_size.0.max(1) as f32, canvas_size.1.max(1) as f32);
+        self.zoom = ((rect.width() / w).min(rect.height() / h)).clamp(0.1, 100.0);
+        self.pan_offset = Vec2::ZERO;
+    }
+
+    /// Reset to 100% zoom and centered.
     pub fn reset_zoom(&mut self) {
         self.zoom = 1.0;
         self.pan_offset = Vec2::ZERO;

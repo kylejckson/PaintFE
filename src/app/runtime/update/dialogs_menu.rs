@@ -1818,6 +1818,24 @@ impl PaintFEApp {
                             )
                             .clicked()
                         {
+                            if let Some(project) = self.active_project() {
+                                let size =
+                                    (project.canvas_state.width, project.canvas_state.height);
+                                self.canvas.fit_to_window(size);
+                            }
+                            ui.close();
+                        }
+                        if self
+                            .assets
+                            .menu_item_shortcut_below(
+                                ui,
+                                Icon::MenuViewZoomIn,
+                                &t!("menu.view.zoom_100"),
+                                &menu_kb,
+                                BindableAction::ViewZoom100,
+                            )
+                            .clicked()
+                        {
                             self.canvas.reset_zoom();
                             ui.close();
                         }
