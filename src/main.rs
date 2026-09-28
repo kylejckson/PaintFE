@@ -283,6 +283,19 @@ fn main_inner() -> Result<(), eframe::Error> {
             vp
         },
         event_loop_builder: Some(Box::new(configure_event_loop)),
+        wgpu_options: {
+            let mut wgpu_options = eframe::egui_wgpu::WgpuConfiguration::default();
+            if startup_settings.low_latency_present {
+                // AutoNoVsync picks the first supported mode out of Immediate →
+                // Mailbox → Fifo (graceful fallback; plain Mailbox would crash on
+                // unsupported systems). Combined with a single queued frame this
+                // removes 1-3 frames of input latency versus the AutoVsync (Fifo)
+                // + 2-frame-queue defaults.
+                wgpu_options.surface.present_mode = wgpu::PresentMode::AutoNoVsync;
+                wgpu_options.surface.desired_maximum_frame_latency = Some(1);
+            }
+            wgpu_options
+        },
         ..Default::default()
     };
 

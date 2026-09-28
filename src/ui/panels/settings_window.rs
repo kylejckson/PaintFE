@@ -1106,6 +1106,16 @@ impl SettingsWindow {
                 }
                 ui.end_row();
 
+                ui.label(t!("settings.interface.low_latency_present"));
+                if ui
+                    .checkbox(&mut settings.low_latency_present, "")
+                    .on_hover_text(t!("settings.interface.low_latency_present_hint"))
+                    .changed()
+                {
+                    settings.save();
+                }
+                ui.end_row();
+
                 // Pixel grid outline color
                 ui.label("Pixel Grid Outline");
                 ui.horizontal(|ui| {

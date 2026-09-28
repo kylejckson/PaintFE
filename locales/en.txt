@@ -431,6 +431,8 @@ settings.interface.accent_strong=Accent Strong
 settings.interface.canvas_rendering=Canvas Rendering
 settings.interface.zoom_filter=Zoom Filter:
 settings.interface.zoom_filter_hint=Linear = smooth when zoomed out, Nearest = sharp/pixel-perfect
+settings.interface.low_latency_present=Low-latency presentation:
+settings.interface.low_latency_present_hint=Reduces input-to-screen lag by 1-3 frames using low-latency present modes. May cause screen tearing on some systems. Takes effect after restarting PaintFE.
 settings.interface.transparency_bg=Transparency Background:
 settings.interface.brightness=Brightness:
 settings.interface.brightness_hint=Adjust the brightness of the checkerboard pattern behind transparent areas

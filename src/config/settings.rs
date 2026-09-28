@@ -56,6 +56,10 @@ pub struct AppSettings {
     pub zoom_filter_mode: ZoomFilterMode,
     /// Checkerboard brightness multiplier (1.0 = default, 0.5 = darker, 1.5 = lighter)
     pub checkerboard_brightness: f32,
+    /// Low-latency presentation: prefer low-latency present modes (Immediate /
+    /// Mailbox) over vsync queueing and queue at most one frame. Trades possible
+    /// screen tearing for visibly snappier input response. Applied at startup.
+    pub low_latency_present: bool,
 
     // AI / ONNX Runtime settings
     /// Path to onnxruntime.dll / libonnxruntime.so
@@ -257,6 +261,7 @@ impl Default for AppSettings {
             neon_mode: false,
             zoom_filter_mode: ZoomFilterMode::Linear,
             checkerboard_brightness: 1.0,
+            low_latency_present: true,
             onnx_runtime_path: String::new(),
             birefnet_model_path: String::new(),
             paintdotnet_plugins_enabled: false,
@@ -871,6 +876,7 @@ impl AppSettings {
              neon_mode={}\n\
              zoom_filter_mode={filter_str}\n\
              checkerboard_brightness={}\n\
+              low_latency_present={}\n\
              onnx_runtime_path={}\n\
              birefnet_model_path={}\n\
              paintdotnet_plugins_enabled={}\n\
@@ -894,6 +900,7 @@ impl AppSettings {
             Self::color_to_str(effective_accent.dark_strong),
             self.neon_mode,
             self.checkerboard_brightness,
+            self.low_latency_present,
             self.onnx_runtime_path,
             self.birefnet_model_path,
             self.paintdotnet_plugins_enabled,
@@ -1370,6 +1377,9 @@ impl AppSettings {
                 }
                 "checkerboard_brightness" => {
                     s.checkerboard_brightness = val.parse().unwrap_or(1.0);
+                }
+                "low_latency_present" => {
+                    s.low_latency_present = val == "true";
                 }
                 "onnx_runtime_path" => {
                     s.onnx_runtime_path = val.to_string();
