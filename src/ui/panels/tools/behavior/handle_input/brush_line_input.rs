@@ -388,7 +388,7 @@ impl ToolsPanel {
                         if editing_mask {
                             // Commit mask once at stroke end for smooth interactive dragging.
                             self.commit_preview_to_layer_mask(canvas_state, is_eraser);
-                            canvas_state.clear_preview_state();
+                            canvas_state.defer_preview_clear();
                         } else if is_eraser {
                             // Commit the eraser mask to the active layer
                             self.commit_eraser_to_layer(canvas_state);
@@ -397,7 +397,7 @@ impl ToolsPanel {
                             self.commit_bezier_to_layer(canvas_state, primary_color_f32);
                         }
                         // Clear preview layer
-                        canvas_state.clear_preview_state();
+                        canvas_state.defer_preview_clear();
                         // Mark only stroke bounds dirty (not full canvas)
                         if let Some(ev) = stroke_event.as_ref() {
                             let dirty = ev.bounds.expand(12.0);
@@ -683,7 +683,7 @@ impl ToolsPanel {
                                 self.mark_full_dirty(canvas_state);
                             }
 
-                            canvas_state.clear_preview_state();
+                            canvas_state.defer_preview_clear();
                             self.line_state.line_tool.stage = LineStage::Idle;
                             self.line_state.line_tool.last_bounds = None; // Reset bounds
                             self.line_state.line_tool.require_mouse_release = false; // Allow new line after Enter
@@ -772,7 +772,7 @@ impl ToolsPanel {
                                             self.mark_full_dirty(canvas_state);
                                         }
 
-                                        canvas_state.clear_preview_state();
+                                        canvas_state.defer_preview_clear();
                                         self.line_state.line_tool.stage = LineStage::Idle;
                                         self.line_state.line_tool.last_bounds = None;
                                         self.line_state.line_tool.require_mouse_release = true;

@@ -2375,6 +2375,13 @@ impl Canvas {
             // later content-only rebuild would put new-bounds content inside
             // the old quad (visible as the preview jumping/resizing at zoom).
             Self::flush_committed_preview_region(ui, state, texture_options);
+            // Deferred stroke-preview clear: a committed stroke's preview stays
+            // visible until the composite has caught up (`dirty_rect` consumed
+            // by the composite pass above), so releasing a stroke hands over to
+            // the committed pixels seamlessly instead of flashing blank first.
+            if state.preview_clear_pending && state.dirty_rect.is_none() {
+                state.clear_preview_state();
+            }
             self.update_preview_overlay(ui, state, debug_settings, prev_filter_was_linear);
             self.paint_preview_texture(&painter, image_rect, canvas_rect, state, Color32::WHITE, true);
 
@@ -2425,7 +2432,15 @@ impl Canvas {
                 && !egui::Popup::is_any_open(ui.ctx())
                 && !pointer_over_egui_with_touch
                 && !pointer_over_blocking_ui
-                && !ui_blocks_canvas_input;
+                && !ui_blocks_canvas_input
+                // Floating windows (Settings, plugin dialogs, ...) paint above
+                // the canvas and are not in the blocking-rect list. Never
+                // replace the OS cursor while one is under the pointer —
+                // egui's own per-widget cursors must win there (otherwise the
+                // cursor disappears over e.g. the Preferences window).
+                && !mouse_pos
+                    .and_then(|pos| ui.ctx().layer_id_at(pos))
+                    .is_some_and(|id| id.order == egui::Order::Foreground);
             {
                 // Only override cursor when mouse is truly over just the canvas ÔÇö
                 // not when a dialog, menu, popup, or floating panel is on top.
@@ -3327,13 +3342,16 @@ impl Canvas {
         self.pan_offset = Vec2::ZERO;
     }
 
-    /// Average luminance of the composite under a disc, used for cursor
+    /// Approximate the displayed luminance under a disc, used for cursor
     /// contrast. Returns true when the content under the cursor is dark.
+    ///
+    /// Samples the visible layer stack (alpha-blended over the mid-gray canvas
+    /// backdrop) plus any stroke preview. `composite_cpu_buffer` cannot be used
+    /// here: it is not maintained on the native GPU present path.
     fn canvas_is_dark_under(state: &CanvasState, cx: f32, cy: f32, radius: f32) -> bool {
-        let (w, h) = (state.width as usize, state.height as usize);
-        let buf = &state.composite_cpu_buffer;
-        if w == 0 || h == 0 || buf.len() < w * h {
-            return false; // no CPU composite available — keep the light look
+        let (w, h) = (state.width as i32, state.height as i32);
+        if w <= 0 || h <= 0 {
+            return false;
         }
         let r = radius.max(1.0);
         let mut total = 0.0f32;
@@ -3343,17 +3361,31 @@ impl Canvas {
                 let sx = cx + gx as f32 * r * 0.4;
                 let sy = cy + gy as f32 * r * 0.4;
                 let (px, py) = (sx.floor() as i32, sy.floor() as i32);
-                if px < 0 || py < 0 || px >= w as i32 || py >= h as i32 {
+                if px < 0 || py < 0 || px >= w || py >= h {
                     continue;
                 }
-                let off = py as usize * w + px as usize;
-                // Premultiplied RGBA: luminance of the covered part + the
-                // remaining alpha shows through as mid-gray canvas backdrop.
-                let p = buf[off];
-                let lum = (p.r() as f32 * 0.299 + p.g() as f32 * 0.587 + p.b() as f32 * 0.114)
-                    / 255.0;
-                let a = p.a() as f32 / 255.0;
-                total += lum + 0.5 * (1.0 - a);
+                // Alpha-blend visible layers bottom-to-top over a mid-gray
+                // backdrop (blend modes ignored — this is only cursor contrast).
+                let (mut rr, mut gg, mut bb) = (0.5f32, 0.5f32, 0.5f32);
+                for layer in state.layers.iter().filter(|l| l.visible) {
+                    let p = *layer.pixels.get_pixel(px as u32, py as u32);
+                    let a = (p[3] as f32 / 255.0) * layer.opacity.clamp(0.0, 1.0);
+                    rr = rr * (1.0 - a) + (p[0] as f32 / 255.0) * a;
+                    gg = gg * (1.0 - a) + (p[1] as f32 / 255.0) * a;
+                    bb = bb * (1.0 - a) + (p[2] as f32 / 255.0) * a;
+                }
+                // The in-progress stroke preview sits on top of the layers.
+                if let Some(preview) = state.preview_layer.as_ref()
+                    && px < preview.width() as i32
+                    && py < preview.height() as i32
+                {
+                    let p = *preview.get_pixel(px as u32, py as u32);
+                    let a = p[3] as f32 / 255.0;
+                    rr = rr * (1.0 - a) + (p[0] as f32 / 255.0) * a;
+                    gg = gg * (1.0 - a) + (p[1] as f32 / 255.0) * a;
+                    bb = bb * (1.0 - a) + (p[2] as f32 / 255.0) * a;
+                }
+                total += rr * 0.299 + gg * 0.587 + bb * 0.114;
                 count += 1.0;
             }
         }
