@@ -27,18 +27,33 @@ impl PaintFEApp {
         }
 
         // --- Floating Tool Shelf (replaces docked context bar) ---
-        // Keep the strip itself transparent so the canvas/app backdrop remains
-        // visible behind the floating shelf container.
-        let shelf_margin = 6.0;
+        // Drawn as an egui::Area so the canvas renders behind it; the shelf
+        // itself is a translucent rounded pill (website `.card` pattern).
         let mut start_straighten = false;
         let mut commit_straighten = false;
         let mut cancel_straighten = false;
-        #[allow(deprecated)]
         let mut shelf_ui_rect = egui::Rect::NOTHING;
-        egui::Panel::top("tool_shelf_strip")
-            .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(shelf_margin as i8)))
-            .min_size(30.0) // Allow growth so controls don't get vertically clipped on newer egui metrics
-            .show(root_ui, |ui| {
+        // Floating overlay: the shelf is an egui::Area over the canvas instead
+        // of a Panel, so the canvas fills the full viewport behind it and the
+        // shelf genuinely floats above it (see Theme::tool_shelf_frame).
+        let shelf_anchor = self
+            .canvas
+            .last_canvas_rect
+            .map(|r| r.min + egui::vec2(12.0, 8.0))
+            .unwrap_or_else(|| root_ui.min_rect().min + egui::vec2(12.0, 8.0));
+        egui::Area::new(egui::Id::new("tool_shelf_strip"))
+            .order(egui::Order::Middle)
+            .fixed_pos(shelf_anchor)
+            .show(root_ui.ctx(), |ui| {
+                // Keep the shelf inside the viewport when the window is narrow.
+                let max_w = (self
+                    .canvas
+                    .last_canvas_rect
+                    .map(|r| r.width())
+                    .unwrap_or(600.0)
+                    - 24.0)
+                    .max(160.0);
+                ui.set_max_width(max_w);
                 let shelf_frame = self.theme.tool_shelf_frame();
                 // Wrap the shelf content instead of stretching across the full
                 // window width, so the input-blocking rect recorded below matches
