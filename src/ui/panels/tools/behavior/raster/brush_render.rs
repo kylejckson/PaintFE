@@ -132,6 +132,242 @@ impl ToolsPanel {
         x * x * (3.0 - 2.0 * x)
     }
 
+    /// Write one brush pixel with the current BrushMode semantics.
+    /// Shared by the capsule segment sweep and the discrete stamp path.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    fn write_brush_pixel(
+        &self,
+        chunk_raw: &mut [u8],
+        px_off: usize,
+        geom_alpha: f32,
+        src_a: f32,
+        src_r8: u8,
+        src_g8: u8,
+        src_b8: u8,
+        is_eraser: bool,
+    ) {
+        if is_eraser {
+            let erase_strength = geom_alpha * src_a * self.pressure_flow();
+            if erase_strength < 0.01 {
+                return;
+            }
+            let old_mask = chunk_raw[px_off + 3] as f32 / 255.0;
+            if erase_strength > old_mask {
+                chunk_raw[px_off] = 0;
+                chunk_raw[px_off + 1] = 0;
+                chunk_raw[px_off + 2] = 0;
+                chunk_raw[px_off + 3] = (erase_strength * 255.0) as u8;
+            }
+            return;
+        }
+        let brush_alpha = geom_alpha * src_a * self.pressure_flow();
+        if brush_alpha < 0.01 {
+            return;
+        }
+        match self.properties.brush_mode {
+            BrushMode::Normal => {
+                let brush_alpha_u8 = (brush_alpha * 255.0) as u8;
+                let old_alpha = chunk_raw[px_off + 3];
+                // Max-alpha stamping: only update if increasing opacity
+                if brush_alpha_u8 >= old_alpha {
+                    chunk_raw[px_off] = src_r8;
+                    chunk_raw[px_off + 1] = src_g8;
+                    chunk_raw[px_off + 2] = src_b8;
+                    chunk_raw[px_off + 3] = brush_alpha_u8;
+                }
+            }
+            BrushMode::BuildUp => {
+                // Paint-like accumulation: each pass adds coverage over what is
+                // already there (`1 - (1-a)(1-b)`), so painting over an area
+                // reliably builds toward full opacity.
+                let old_a = chunk_raw[px_off + 3] as f32 / 255.0;
+                let add = (1.0 - old_a) * brush_alpha;
+                let new_a = old_a + add;
+                if new_a <= 0.0 {
+                    return;
+                }
+                let w_old = old_a / new_a;
+                let w_new = add / new_a;
+                chunk_raw[px_off] =
+                    (chunk_raw[px_off] as f32 * w_old + src_r8 as f32 * w_new).round() as u8;
+                chunk_raw[px_off + 1] =
+                    (chunk_raw[px_off + 1] as f32 * w_old + src_g8 as f32 * w_new).round() as u8;
+                chunk_raw[px_off + 2] =
+                    (chunk_raw[px_off + 2] as f32 * w_old + src_b8 as f32 * w_new).round() as u8;
+                chunk_raw[px_off + 3] = (new_a * 255.0).round().min(255.0) as u8;
+            }
+            BrushMode::Dodge | BrushMode::Burn | BrushMode::Sponge => {
+                // Read existing pixel, modify in HSL space, write back
+                let old_r = chunk_raw[px_off] as f32 / 255.0;
+                let old_g = chunk_raw[px_off + 1] as f32 / 255.0;
+                let old_b = chunk_raw[px_off + 2] as f32 / 255.0;
+                let (h, mut s, mut l) = crate::ops::adjustments::rgb_to_hsl(old_r, old_g, old_b);
+                let strength = brush_alpha * 0.5;
+                match self.properties.brush_mode {
+                    BrushMode::Dodge => l = (l + strength).clamp(0.0, 1.0),
+                    BrushMode::Burn => l = (l - strength).clamp(0.0, 1.0),
+                    BrushMode::Sponge => s = (s - strength).clamp(0.0, 1.0),
+                    _ => {}
+                }
+                let (nr, ng, nb) = crate::ops::adjustments::hsl_to_rgb(h, s, l);
+                chunk_raw[px_off] = (nr * 255.0) as u8;
+                chunk_raw[px_off + 1] = (ng * 255.0) as u8;
+                chunk_raw[px_off + 2] = (nb * 255.0) as u8;
+                // alpha unchanged
+            }
+        }
+    }
+
+    /// Draw one drag segment as a swept capsule: every pixel within the brush
+    /// radius of the segment `[start, end]` receives its falloff alpha exactly
+    /// once. This is the true swept-disc coverage — unlike interpolated stamps
+    /// it leaves no notches at direction changes and re-tracing behaves
+    /// consistently. One pixel pass per segment (cheaper than N stamps).
+    #[allow(clippy::too_many_arguments)]
+    fn draw_capsule_no_dirty(
+        &self,
+        target_image: &mut TiledImage,
+        width: u32,
+        height: u32,
+        start: (f32, f32),
+        end: (f32, f32),
+        is_eraser: bool,
+        use_secondary: bool,
+        primary_color_f32: [f32; 4],
+        secondary_color_f32: [f32; 4],
+        selection_mask: Option<&GrayImage>,
+    ) {
+        let radius = self.pressure_size() / 2.0;
+        let radius_sq = radius * radius;
+        if radius_sq < 0.001 {
+            return;
+        }
+        let draw_radius = if self.properties.anti_aliased {
+            radius + 0.5
+        } else {
+            radius
+        };
+        let draw_radius_sq = draw_radius * draw_radius;
+        let use_direct_alpha = draw_radius > radius;
+        let inv_radius_sq = 1.0 / radius_sq;
+
+        // Segment geometry for point-to-segment distance.
+        let (dx, dy) = (end.0 - start.0, end.1 - start.1);
+        let len_sq = dx * dx + dy * dy;
+        let inv_len_sq = if len_sq > 1e-6 { 1.0 / len_sq } else { 0.0 };
+
+        // Bounding box of the swept capsule.
+        let min_x = ((start.0.min(end.0) - draw_radius).floor().max(0.0)) as u32;
+        let max_x = ((start.0.max(end.0) + draw_radius).ceil().max(0.0)) as u32;
+        let min_y = ((start.1.min(end.1) - draw_radius).floor().max(0.0)) as u32;
+        let max_y = ((start.1.max(end.1) + draw_radius).ceil().max(0.0)) as u32;
+        let max_x = max_x.min(width.saturating_sub(1));
+        let max_y = max_y.min(height.saturating_sub(1));
+        if min_x > max_x || min_y > max_y {
+            return;
+        }
+
+        let brush_color_f32 = if use_secondary {
+            secondary_color_f32
+        } else {
+            primary_color_f32
+        };
+        let [src_r, src_g, src_b, src_a] = brush_color_f32;
+        let src_r8 = (src_r * 255.0) as u8;
+        let src_g8 = (src_g * 255.0) as u8;
+        let src_b8 = (src_b * 255.0) as u8;
+
+        let lut = &self.brush_alpha_lut;
+        let cs = crate::canvas::CHUNK_SIZE;
+
+        let chunk_x0 = min_x / cs;
+        let chunk_y0 = min_y / cs;
+        let chunk_x1 = max_x / cs;
+        let chunk_y1 = max_y / cs;
+
+        for chunk_cy in chunk_y0..=chunk_y1 {
+            for chunk_cx in chunk_x0..=chunk_x1 {
+                let chunk_base_x = chunk_cx * cs;
+                let chunk_base_y = chunk_cy * cs;
+
+                let lx0 = min_x.saturating_sub(chunk_base_x);
+                let ly0 = min_y.saturating_sub(chunk_base_y);
+                let lx1 = (max_x + 1 - chunk_base_x).min(cs).min(width - chunk_base_x);
+                let ly1 = (max_y + 1 - chunk_base_y)
+                    .min(cs)
+                    .min(height - chunk_base_y);
+                if lx0 >= lx1 || ly0 >= ly1 {
+                    continue;
+                }
+
+                let chunk = target_image.ensure_chunk_mut(chunk_cx, chunk_cy);
+                let chunk_raw = chunk.as_mut();
+                let chunk_stride = cs as usize * 4;
+
+                for ly in ly0..ly1 {
+                    let global_y = chunk_base_y + ly;
+                    let row_off = ly as usize * chunk_stride;
+
+                    for lx in lx0..lx1 {
+                        let global_x = chunk_base_x + lx;
+
+                        if let Some(mask) = selection_mask {
+                            if global_x < mask.width() && global_y < mask.height() {
+                                if mask.get_pixel(global_x, global_y).0[0] == 0 {
+                                    continue;
+                                }
+                            } else {
+                                continue;
+                            }
+                        }
+
+                        // Distance from the pixel to the segment.
+                        let px = global_x as f32;
+                        let py = global_y as f32;
+                        let t = if inv_len_sq > 0.0 {
+                            (((px - start.0) * dx + (py - start.1) * dy) * inv_len_sq).clamp(0.0, 1.0)
+                        } else {
+                            0.0
+                        };
+                        let proj_x = start.0 + dx * t;
+                        let proj_y = start.1 + dy * t;
+                        let ddx = px - proj_x;
+                        let ddy = py - proj_y;
+                        let dist_sq = ddx * ddx + ddy * ddy;
+                        if dist_sq > draw_radius_sq {
+                            continue;
+                        }
+
+                        let geom_alpha_u8 = if use_direct_alpha {
+                            (self.compute_brush_alpha(dist_sq.sqrt(), radius) * 255.0)
+                                .round()
+                                .min(255.0) as u8
+                        } else {
+                            let lut_idx = (dist_sq * inv_radius_sq * 255.0).min(255.0) as usize;
+                            lut[lut_idx]
+                        };
+                        if geom_alpha_u8 == 0 {
+                            continue;
+                        }
+
+                        let px_off = row_off + lx as usize * 4;
+                        self.write_brush_pixel(
+                            chunk_raw,
+                            px_off,
+                            geom_alpha_u8 as f32 / 255.0,
+                            src_a,
+                            src_r8,
+                            src_g8,
+                            src_b8,
+                            is_eraser,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     pub fn draw_circle_no_dirty(
         &self,
         target_image: &mut TiledImage,
@@ -342,57 +578,16 @@ impl ToolsPanel {
 
                         let px_off = row_off + lx as usize * 4;
 
-                        if is_eraser {
-                            let erase_strength = geom_alpha * src_a * self.pressure_flow();
-                            if erase_strength < 0.01 {
-                                continue;
-                            }
-                            let old_mask = chunk_raw[px_off + 3] as f32 / 255.0;
-                            if erase_strength > old_mask {
-                                chunk_raw[px_off] = 0;
-                                chunk_raw[px_off + 1] = 0;
-                                chunk_raw[px_off + 2] = 0;
-                                chunk_raw[px_off + 3] = (erase_strength * 255.0) as u8;
-                            }
-                        } else {
-                            let brush_alpha = geom_alpha * src_a * self.pressure_flow();
-                            if brush_alpha < 0.01 {
-                                continue;
-                            }
-                            match self.properties.brush_mode {
-                                BrushMode::Normal => {
-                                    let brush_alpha_u8 = (brush_alpha * 255.0) as u8;
-                                    let old_alpha = chunk_raw[px_off + 3];
-                                    // Max-alpha stamping: only update if increasing opacity
-                                    if brush_alpha_u8 >= old_alpha {
-                                        chunk_raw[px_off] = src_r8;
-                                        chunk_raw[px_off + 1] = src_g8;
-                                        chunk_raw[px_off + 2] = src_b8;
-                                        chunk_raw[px_off + 3] = brush_alpha_u8;
-                                    }
-                                }
-                                BrushMode::Dodge | BrushMode::Burn | BrushMode::Sponge => {
-                                    // Read existing pixel, modify in HSL space, write back
-                                    let old_r = chunk_raw[px_off] as f32 / 255.0;
-                                    let old_g = chunk_raw[px_off + 1] as f32 / 255.0;
-                                    let old_b = chunk_raw[px_off + 2] as f32 / 255.0;
-                                    let (h, mut s, mut l) =
-                                        crate::ops::adjustments::rgb_to_hsl(old_r, old_g, old_b);
-                                    let strength = brush_alpha * 0.5;
-                                    match self.properties.brush_mode {
-                                        BrushMode::Dodge => l = (l + strength).clamp(0.0, 1.0),
-                                        BrushMode::Burn => l = (l - strength).clamp(0.0, 1.0),
-                                        BrushMode::Sponge => s = (s - strength).clamp(0.0, 1.0),
-                                        _ => {}
-                                    }
-                                    let (nr, ng, nb) = crate::ops::adjustments::hsl_to_rgb(h, s, l);
-                                    chunk_raw[px_off] = (nr * 255.0) as u8;
-                                    chunk_raw[px_off + 1] = (ng * 255.0) as u8;
-                                    chunk_raw[px_off + 2] = (nb * 255.0) as u8;
-                                    // alpha unchanged
-                                }
-                            }
-                        }
+                        self.write_brush_pixel(
+                            chunk_raw,
+                            px_off,
+                            geom_alpha,
+                            src_a,
+                            src_r8,
+                            src_g8,
+                            src_b8,
+                            is_eraser,
+                        );
                     }
                 }
             }
@@ -801,6 +996,29 @@ impl ToolsPanel {
                     selection_mask,
                 );
             }
+            return;
+        }
+
+        // Clean circle tips: draw the segment as one swept capsule — the exact
+        // swept-disc coverage. Interpolated stamps leave notches of soft pixels
+        // at direction changes that later passes cannot fill (max-alpha); the
+        // capsule sweep has no such gaps and re-traces consistently. Scatter
+        // and colour jitter need discrete stamps, image tips are stamped by
+        // design.
+        let jitter = self.properties.hue_jitter > 0.01 || self.properties.brightness_jitter > 0.01;
+        if self.properties.brush_tip.is_circle() && self.properties.scatter <= 0.01 && !jitter {
+            self.draw_capsule_no_dirty(
+                target_image,
+                width,
+                height,
+                start,
+                end,
+                is_eraser,
+                use_secondary,
+                primary_color_f32,
+                secondary_color_f32,
+                selection_mask,
+            );
             return;
         }
 

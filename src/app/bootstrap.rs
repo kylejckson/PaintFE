@@ -828,6 +828,7 @@ impl PaintFEApp {
             self.settings.persisted_pressure_min_opacity.clamp(0.0, 1.0);
 
         self.tools_panel.properties.brush_mode = match self.settings.persisted_brush_mode.as_str() {
+            "buildup" => tools::BrushMode::BuildUp,
             "dodge" => tools::BrushMode::Dodge,
             "burn" => tools::BrushMode::Burn,
             "sponge" => tools::BrushMode::Sponge,
@@ -940,6 +941,7 @@ impl PaintFEApp {
             .hash(&mut hasher);
         match self.tools_panel.properties.brush_mode {
             tools::BrushMode::Normal => 0u8,
+            tools::BrushMode::BuildUp => 4u8,
             tools::BrushMode::Dodge => 1u8,
             tools::BrushMode::Burn => 2u8,
             tools::BrushMode::Sponge => 3u8,
@@ -1144,6 +1146,7 @@ impl PaintFEApp {
             self.tools_panel.properties.pressure_min_opacity;
         self.settings.persisted_brush_mode = match self.tools_panel.properties.brush_mode {
             tools::BrushMode::Normal => "normal",
+            tools::BrushMode::BuildUp => "buildup",
             tools::BrushMode::Dodge => "dodge",
             tools::BrushMode::Burn => "burn",
             tools::BrushMode::Sponge => "sponge",

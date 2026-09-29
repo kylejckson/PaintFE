@@ -63,13 +63,15 @@ impl BrushTip {
 }
 
 /// Painting mode for the Brush tool.
-/// Normal: standard alpha-blend paint
+/// Normal: standard max-alpha paint (one stroke never exceeds its flow)
+/// BuildUp: accumulating paint — repeated passes build toward full opacity
 /// Dodge: lightens (increases luminosity)
 /// Burn: darkens (decreases luminosity)
 /// Sponge: desaturates
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BrushMode {
     Normal,
+    BuildUp,
     Dodge,
     Burn,
     Sponge,
@@ -79,6 +81,7 @@ impl BrushMode {
     pub fn label(&self) -> &'static str {
         match self {
             BrushMode::Normal => "Normal",
+            BrushMode::BuildUp => "Build Up",
             BrushMode::Dodge => "Dodge",
             BrushMode::Burn => "Burn",
             BrushMode::Sponge => "Sponge",
@@ -87,6 +90,7 @@ impl BrushMode {
     pub fn all() -> &'static [BrushMode] {
         &[
             BrushMode::Normal,
+            BrushMode::BuildUp,
             BrushMode::Dodge,
             BrushMode::Burn,
             BrushMode::Sponge,
