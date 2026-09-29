@@ -70,6 +70,11 @@ pub struct AppSettings {
     /// render a static pattern and the app can go fully idle with a selection
     /// active.
     pub animated_selection_ants: bool,
+    /// Path to the active user icon pack folder (empty = built-in icons).
+    pub icon_pack_path: String,
+    /// Invert generic pack icons in dark mode when the pack has no dark
+    /// variant for an icon (theme-specific variants are never inverted).
+    pub icon_pack_invert_mismatch: bool,
 
     // AI / ONNX Runtime settings
     /// Path to onnxruntime.dll / libonnxruntime.so
@@ -278,6 +283,8 @@ impl Default for AppSettings {
             checkerboard_brightness: 1.0,
             low_latency_present: true,
             animated_selection_ants: true,
+            icon_pack_path: String::new(),
+            icon_pack_invert_mismatch: true,
             onnx_runtime_path: String::new(),
             birefnet_model_path: String::new(),
             paintdotnet_plugins_enabled: false,
@@ -898,6 +905,8 @@ impl AppSettings {
              checkerboard_brightness={}\n\
               low_latency_present={}\n\
               animated_selection_ants={}\n\
+              icon_pack_path={}\n\
+              icon_pack_invert_mismatch={}\n\
              onnx_runtime_path={}\n\
              birefnet_model_path={}\n\
              paintdotnet_plugins_enabled={}\n\
@@ -926,6 +935,8 @@ impl AppSettings {
             self.checkerboard_brightness,
             self.low_latency_present,
             self.animated_selection_ants,
+            self.icon_pack_path,
+            self.icon_pack_invert_mismatch,
             self.onnx_runtime_path,
             self.birefnet_model_path,
             self.paintdotnet_plugins_enabled,
@@ -1421,6 +1432,12 @@ impl AppSettings {
                 }
                 "animated_selection_ants" => {
                     s.animated_selection_ants = val == "true";
+                }
+                "icon_pack_path" => {
+                    s.icon_pack_path = val.to_string();
+                }
+                "icon_pack_invert_mismatch" => {
+                    s.icon_pack_invert_mismatch = val == "true";
                 }
                 "onnx_runtime_path" => {
                     s.onnx_runtime_path = val.to_string();

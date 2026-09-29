@@ -17,6 +17,37 @@ impl PaintFEApp {
             self.tools_panel.stroke_stabilization = 0.0;
         }
 
+        // Icon pack changes from the Settings window (needs &mut Assets).
+        let dark = matches!(self.theme.mode, crate::theme::ThemeMode::Dark);
+        if let Some(path) = self.settings_window.pending_icon_pack_load.take() {
+            self.assets
+                .set_icon_pack_invert_mismatch(self.settings.icon_pack_invert_mismatch);
+            match self.assets.load_icon_pack(&path) {
+                Ok(name) => {
+                    log_info!("Icon pack loaded: {name} ({})", path.display());
+                    self.settings.icon_pack_path = path.display().to_string();
+                }
+                Err(e) => {
+                    log_info!("Icon pack load failed: {e}");
+                }
+            }
+            self.assets.reload_icons(ctx, dark);
+            self.settings.save();
+        }
+        if self.settings_window.pending_icon_pack_clear {
+            self.settings_window.pending_icon_pack_clear = false;
+            self.assets.clear_icon_pack();
+            self.settings.icon_pack_path.clear();
+            self.assets.reload_icons(ctx, dark);
+            self.settings.save();
+        }
+        if self.settings_window.pending_icon_pack_reload {
+            self.settings_window.pending_icon_pack_reload = false;
+            self.assets
+                .set_icon_pack_invert_mismatch(self.settings.icon_pack_invert_mismatch);
+            self.assets.reload_icons(ctx, dark);
+        }
+
         let current_paths = (
             self.settings.onnx_runtime_path.clone(),
             self.settings.birefnet_model_path.clone(),

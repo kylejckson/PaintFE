@@ -150,6 +150,15 @@ impl PaintFEApp {
         // Initialize assets
         let mut assets = Assets::new();
         assets.init(&cc.egui_ctx);
+        // User icon pack (if configured): PNG overrides resolved before the
+        // built-in icons.
+        assets.set_icon_pack_invert_mismatch(settings.icon_pack_invert_mismatch);
+        if !settings.icon_pack_path.is_empty()
+            && let Err(e) =
+                assets.load_icon_pack(std::path::Path::new(&settings.icon_pack_path))
+        {
+            log_info!("Icon pack load failed: {e}");
+        }
 
         let (filter_sender, filter_receiver) = mpsc::channel();
         let (io_sender, io_receiver) = mpsc::channel();

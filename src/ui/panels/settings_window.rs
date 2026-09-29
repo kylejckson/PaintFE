@@ -11,6 +11,12 @@ pub struct SettingsWindow {
     /// Set when the user applies the "Pixel Art" preset; consumed by the app
     /// to also update the live tool state (hardness, stabilization).
     pub pending_pixel_art_preset: bool,
+    /// Icon pack folder chosen by the user; consumed by the app (needs &mut Assets).
+    pub pending_icon_pack_load: Option<std::path::PathBuf>,
+    /// Set when the user removes the active icon pack.
+    pub pending_icon_pack_clear: bool,
+    /// Set when icon display options changed and textures must be re-uploaded.
+    pub pending_icon_pack_reload: bool,
     active_tab: SettingsTab,
     /// Staging copy of accent colors for the "Interface" tab (applied on "Apply")
     staged_accent: AccentColors,
@@ -64,6 +70,9 @@ impl Default for SettingsWindow {
         Self {
             open: false,
             pending_pixel_art_preset: false,
+            pending_icon_pack_load: None,
+            pending_icon_pack_clear: false,
+            pending_icon_pack_reload: false,
             active_tab: SettingsTab::General,
             staged_accent: preset.accent_colors(),
             staged_preset: preset,
@@ -333,7 +342,7 @@ impl SettingsWindow {
                                         self.show_general_tab(ui, settings);
                                     }
                                     SettingsTab::Interface => {
-                                        self.show_interface_tab(ui, ctx, settings, theme);
+                                        self.show_interface_tab(ui, ctx, settings, theme, assets);
                                     }
                                     SettingsTab::Hardware => {
                                         self.show_hardware_tab(ui, settings);
@@ -934,6 +943,7 @@ impl SettingsWindow {
         ctx: &egui::Context,
         settings: &mut AppSettings,
         theme: &mut crate::theme::Theme,
+        assets: &crate::assets::Assets,
     ) {
         // Poll the browser file picker for an imported theme file.
         #[cfg(target_arch = "wasm32")]
@@ -1074,6 +1084,80 @@ impl SettingsWindow {
             self.staged_preset = ThemePreset::Custom;
             self.dirty = true;
         }
+
+        // -- Icon Pack -------------------------------------------------
+        Self::section_header(ui, &t!("settings.interface.icon_pack"));
+        ui.label(format!(
+            "{}: {}",
+            t!("settings.interface.icon_pack_current"),
+            assets
+                .icon_pack_name()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| t!("settings.interface.icon_pack_none"))
+        ));
+        ui.horizontal(|ui| {
+            #[cfg(not(target_arch = "wasm32"))]
+            if ui.button(t!("settings.interface.icon_pack_browse")).clicked() {
+                if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                    self.pending_icon_pack_load = Some(dir);
+                }
+            }
+            if ui
+                .add_enabled(
+                    assets.icon_pack_name().is_some(),
+                    egui::Button::new(t!("settings.interface.icon_pack_clear")),
+                )
+                .clicked()
+            {
+                self.pending_icon_pack_clear = true;
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            if ui
+                .button(t!("settings.interface.icon_pack_export"))
+                .on_hover_text(t!("settings.interface.icon_pack_export_hint"))
+                .clicked()
+            {
+                if let Some(dir) = rfd::FileDialog::new().pick_folder()
+                    && let Err(e) = assets.export_icon_template(&dir)
+                {
+                    crate::log_info!("Icon pack export failed: {e}");
+                }
+            }
+        });
+        if ui
+            .checkbox(
+                &mut settings.icon_pack_invert_mismatch,
+                t!("settings.interface.icon_pack_invert"),
+            )
+            .on_hover_text(t!("settings.interface.icon_pack_invert_hint"))
+            .changed()
+        {
+            settings.save();
+            self.pending_icon_pack_reload = true;
+        }
+
+        // Preview: each icon with the source it currently resolves to.
+        let preview_icons = assets.icon_list();
+        egui::Grid::new("icon_pack_preview")
+            .num_columns(8)
+            .spacing([10.0, 8.0])
+            .show(ui, |ui| {
+                for (i, icon) in preview_icons.iter().take(24).enumerate() {
+                    if let Some(tex) = assets.icon_texture(*icon) {
+                        ui.vertical(|ui| {
+                            ui.add(egui::Image::new((tex.id(), egui::vec2(22.0, 22.0))));
+                            ui.label(
+                                egui::RichText::new(assets.icon_source(*icon).label())
+                                    .small()
+                                    .weak(),
+                            );
+                        });
+                    }
+                    if i % 8 == 7 {
+                        ui.end_row();
+                    }
+                }
+            });
 
         // -- Canvas Rendering -----------------------------------------
         Self::section_header(ui, &t!("settings.interface.canvas_rendering"));

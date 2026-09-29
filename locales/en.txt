@@ -438,6 +438,15 @@ settings.interface.stroke_stabilization=Stroke Stabilization:
 settings.interface.stroke_stabilization_hint=Smooths brush strokes (0 = raw pointer path, like Paint.NET). The Pencil tool is never smoothed, so pixel placement stays exact.
 settings.interface.animated_ants=Animated selection outline:
 settings.interface.animated_ants_hint=Marching-ants animation on selections. Turn off for a static outline (Paint.NET style) and to let the app idle while a selection exists.
+settings.interface.icon_pack=Icon Pack:
+settings.interface.icon_pack_current=Icon pack
+settings.interface.icon_pack_none=None (built-in icons)
+settings.interface.icon_pack_browse=Load Pack…
+settings.interface.icon_pack_clear=Use Default
+settings.interface.icon_pack_export=Export Template…
+settings.interface.icon_pack_export_hint=Write pack.ini, the full icon id list, and the current icons as editable PNGs into a folder - then replace the PNGs you want.
+settings.interface.icon_pack_invert=Invert pack icons in dark mode (icons without a _dark/_light variant)
+settings.interface.icon_pack_invert_hint=Theme-specific variants (id_dark.png / id_light.png) are never inverted. Mixed packs resolve per icon: theme variant, then generic, then the built-in default.
 settings.interface.pixel_grid_opacity=Pixel Grid Opacity:
 settings.interface.pixel_grid_dashed=Pixel Grid Dashed:
 settings.interface.pixel_grid_dashed_hint=Dotted pixel grid instead of solid lines (subtler at high zoom).

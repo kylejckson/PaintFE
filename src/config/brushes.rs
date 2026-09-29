@@ -49,6 +49,10 @@ pub struct Assets {
     /// Whether icons are currently inverted (dark mode)
     icons_inverted: bool,
     icons_loaded: bool,
+    /// Optional user icon pack (PNG overrides) — resolved before built-ins.
+    icon_pack: Option<crate::config::icon_packs::IconPack>,
+    /// Invert generic pack icons in dark mode when no theme variant exists.
+    icon_pack_invert_mismatch: bool,
     /// Brush tip data indexed by name
     brush_tip_data: Vec<BrushTipData>,
     /// Brush tip categories (ordered)
@@ -1161,22 +1165,24 @@ impl Assets {
         }
         self.icons_inverted = dark;
 
-        // Re-upload all icon textures
-        for (icon, original_pixels) in &self.icon_pixels {
-            if let Some(size) = self.icon_sizes.get(icon) {
-                let display_pixels = if dark {
-                    Self::invert_rgb(original_pixels)
-                } else {
-                    original_pixels.clone()
-                };
-                let color_image = ColorImage::from_rgba_unmultiplied(*size, &display_pixels);
-                let texture = ctx.load_texture(
-                    format!("icon_{:?}", icon),
-                    color_image,
-                    TextureOptions::LINEAR,
-                );
-                self.textures.insert(*icon, texture);
-            }
+        // Re-upload all icon textures (pack overrides resolved per icon)
+        let resolved: Vec<(Icon, Vec<u8>, [usize; 2])> = self
+            .icon_pixels
+            .keys()
+            .copied()
+            .filter_map(|icon| {
+                self.display_icon_pixels(icon, dark)
+                    .map(|(px, sz, _)| (icon, px, sz))
+            })
+            .collect();
+        for (icon, display_pixels, size) in resolved {
+            let color_image = ColorImage::from_rgba_unmultiplied(size, &display_pixels);
+            let texture = ctx.load_texture(
+                format!("icon_{icon:?}"),
+                color_image,
+                TextureOptions::LINEAR,
+            );
+            self.textures.insert(icon, texture);
         }
 
         // Re-upload all shape textures
@@ -1226,6 +1232,97 @@ impl Assets {
             self.custom_shape_textures
                 .insert(shape.name.clone(), texture);
         }
+    }
+
+    // ========================================================================
+    // Icon packs — user PNG overrides (see config::icon_packs)
+    // ========================================================================
+
+    /// Resolve the RGBA pixels to display for an icon: pack override first
+    /// (theme-specific variant, then generic with optional inversion), then
+    /// the built-in icon (inverted in dark mode, as always).
+    fn display_icon_pixels(
+        &self,
+        icon: Icon,
+        dark: bool,
+    ) -> Option<(Vec<u8>, [usize; 2], crate::config::icon_packs::IconSource)> {
+        use crate::config::icon_packs::IconSource;
+        if let Some(pack) = &self.icon_pack
+            && let Some((img, src)) =
+                pack.resolve(icon, dark, self.icon_pack_invert_mismatch)
+        {
+            let size = [img.width() as usize, img.height() as usize];
+            return Some((img.into_raw(), size, src));
+        }
+        let original = self.icon_pixels.get(&icon)?;
+        let size = *self.icon_sizes.get(&icon)?;
+        let display = if dark {
+            Self::invert_rgb(original)
+        } else {
+            original.clone()
+        };
+        let src = if dark {
+            IconSource::BuiltinInverted
+        } else {
+            IconSource::Builtin
+        };
+        Some((display, size, src))
+    }
+
+    /// Display source for an icon in the current theme (Preferences preview).
+    pub fn icon_source(&self, icon: Icon) -> crate::config::icon_packs::IconSource {
+        self.display_icon_pixels(icon, self.icons_inverted)
+            .map(|(_, _, src)| src)
+            .unwrap_or(crate::config::icon_packs::IconSource::Builtin)
+    }
+
+    /// All known icons, sorted by id (for the Preferences pack preview).
+    pub fn icon_list(&self) -> Vec<Icon> {
+        let mut icons: Vec<Icon> = self.icon_pixels.keys().copied().collect();
+        icons.sort_by_key(|i| crate::config::icon_packs::icon_id_name(*i));
+        icons
+    }
+
+    /// Load a user icon pack from `dir` (PNG overrides). Returns the pack name.
+    pub fn load_icon_pack(&mut self, dir: &std::path::Path) -> Result<String, String> {
+        let pack = crate::config::icon_packs::IconPack::load(dir)?;
+        let name = pack.name.clone();
+        self.icon_pack = Some(pack);
+        Ok(name)
+    }
+
+    /// Remove the active icon pack (back to built-in icons only).
+    pub fn clear_icon_pack(&mut self) {
+        self.icon_pack = None;
+    }
+
+    pub fn icon_pack_name(&self) -> Option<&str> {
+        self.icon_pack.as_ref().map(|p| p.name.as_str())
+    }
+
+    pub fn set_icon_pack_invert_mismatch(&mut self, invert: bool) {
+        self.icon_pack_invert_mismatch = invert;
+    }
+
+    /// Force re-upload of all icon textures (e.g. after loading an icon pack).
+    pub fn reload_icons(&mut self, ctx: &egui::Context, dark: bool) {
+        self.icons_inverted = !dark;
+        self.update_theme(ctx, dark);
+    }
+
+    /// Write an icon-pack template into `dir`: `pack.ini`, the full icon id
+    /// list, and the currently displayed icons as editable PNGs.
+    pub fn export_icon_template(&self, dir: &std::path::Path) -> Result<(), String> {
+        let mut icons: Vec<(String, image::RgbaImage)> = Vec::new();
+        for &icon in self.icon_pixels.keys() {
+            if let Some((px, size, _)) = self.display_icon_pixels(icon, false)
+                && let Some(img) = image::RgbaImage::from_raw(size[0] as u32, size[1] as u32, px)
+            {
+                icons.push((crate::config::icon_packs::icon_id_name(icon), img));
+            }
+        }
+        icons.sort_by(|a, b| a.0.cmp(&b.0));
+        crate::config::icon_packs::export_template(dir, &icons)
     }
 
     pub fn get_shape_texture(&self, kind: ShapeKind) -> Option<&TextureHandle> {
