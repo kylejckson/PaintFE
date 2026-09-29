@@ -1329,8 +1329,20 @@ impl Canvas {
 
         // ====================================================================
         // CPU PREVIEW OVERLAY  (brush / line / eraser strokes in progress)
-        self.update_preview_overlay(ui, state, debug_settings, prev_filter_was_linear);
-        self.paint_preview_texture(&painter, image_rect, canvas_rect, state, Color32::WHITE, true);
+        // The CPU preview overlay is built+painted after tool input (same-frame
+        // stroke feedback) when tools are attached. Without tools there is no
+        // input pass, so build + paint here in draw order instead.
+        if tools.is_none() {
+            self.update_preview_overlay(ui, state, debug_settings, prev_filter_was_linear);
+            self.paint_preview_texture(
+                &painter,
+                image_rect,
+                canvas_rect,
+                state,
+                Color32::WHITE,
+                true,
+            );
+        }
 
         if state.show_wrap_preview {
             self.draw_wrap_preview(&painter, image_rect, canvas_rect, state);
@@ -2335,8 +2347,6 @@ impl Canvas {
             // Always check if text/shape properties changed (color picker, context bar)
             if tools.active_tool == crate::components::tools::Tool::Text {
                 tools.update_text_if_dirty(state, primary_color_f32);
-                // Draw overlay (border, handle, cursor) even when pointer is off-canvas
-                tools.draw_text_overlay(ui, state, &painter, image_rect, self.zoom);
             }
             if tools.active_tool == crate::components::tools::Tool::Shapes {
                 tools.update_shape_if_dirty(state, primary_color_f32, secondary_color_f32);
@@ -2354,6 +2364,25 @@ impl Canvas {
                 || tools.text_state.commit_pending
                 || tools.liquify_state.commit_pending
                 || tools.mesh_warp_state.commit_pending;
+
+            // ====================================================================
+            // CPU PREVIEW OVERLAY (strokes/gradient previews in progress)
+            // ====================================================================
+            // Built AND painted in one pass here — after tool input above
+            // mutated the preview, before the tool overlays are drawn below.
+            // The preview quad's rect is derived from `preview_stroke_bounds`,
+            // so building and painting must use the same frame's bounds: a
+            // later content-only rebuild would put new-bounds content inside
+            // the old quad (visible as the preview jumping/resizing at zoom).
+            Self::flush_committed_preview_region(ui, state, texture_options);
+            self.update_preview_overlay(ui, state, debug_settings, prev_filter_was_linear);
+            self.paint_preview_texture(&painter, image_rect, canvas_rect, state, Color32::WHITE, true);
+
+            if tools.active_tool == crate::components::tools::Tool::Text {
+                // Draw overlay (border, handle, cursor) above the preview,
+                // even when pointer is off-canvas.
+                tools.draw_text_overlay(ui, state, &painter, image_rect, self.zoom);
+            }
 
             // ====================================================================
             // TOOL-SPECIFIC CURSOR ICON
@@ -3238,21 +3267,6 @@ impl Canvas {
                 // Draw text
                 painter.galley(badge_pos, galley, egui::Color32::TRANSPARENT);
             }
-        }
-        // --- Same-frame input feedback ----------------------------------
-        // Canvas input is processed after the display textures above were
-        // built (egui paints in call order), so pixels changed by this
-        // frame's input would normally show up one frame late. Re-running
-        // the small preview/commit update here removes that frame: the
-        // texture draws recorded earlier pick up the fresh content.
-        if state.preview_dirty_rect.is_some()
-            || state.commit_composite_flush_rect.is_some()
-        {
-            Self::flush_committed_preview_region(ui, state, texture_options);
-            // Rebuild only — do NOT repaint here: the paint call recorded in
-            // draw order picks up the fresh texture content at end of frame,
-            // and repainting would cover tool overlays drawn in between.
-            self.update_preview_overlay(ui, state, debug_settings, prev_filter_was_linear);
         }
     }
 
