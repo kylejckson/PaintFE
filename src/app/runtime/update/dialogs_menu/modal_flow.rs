@@ -3,11 +3,19 @@ impl PaintFEApp {
         #[cfg(target_arch = "wasm32")]
         self.show_welcome_popup_window(ctx);
 
-        self.settings_window
+        let settings_window_rect = self
+            .settings_window
             .show(ctx, &mut self.settings, &mut self.theme, &self.assets);
         // Keep the runtime stroke stabilization in sync with the settings
         // slider (the slider writes AppSettings only).
         self.tools_panel.stroke_stabilization = self.settings.persisted_stroke_stabilization;
+
+        // Register the settings window as input-blocking: without this the
+        // canvas behind it keeps receiving wheel zoom / clicks / strokes while
+        // the pointer is over the window.
+        if let Some(rect) = settings_window_rect {
+            self.remember_ui_cursor_rect(rect);
+        }
 
         // Pixel Art preset: also update the live tool state (the settings
         // window only writes AppSettings).

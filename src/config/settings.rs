@@ -75,6 +75,8 @@ pub struct AppSettings {
     /// Invert generic pack icons in dark mode when the pack has no dark
     /// variant for an icon (theme-specific variants are never inverted).
     pub icon_pack_invert_mismatch: bool,
+    /// Leave the pasted region selected after committing a paste.
+    pub select_after_paste: bool,
 
     // AI / ONNX Runtime settings
     /// Path to onnxruntime.dll / libonnxruntime.so
@@ -285,6 +287,7 @@ impl Default for AppSettings {
             animated_selection_ants: true,
             icon_pack_path: String::new(),
             icon_pack_invert_mismatch: true,
+            select_after_paste: false,
             onnx_runtime_path: String::new(),
             birefnet_model_path: String::new(),
             paintdotnet_plugins_enabled: false,
@@ -907,6 +910,7 @@ impl AppSettings {
               animated_selection_ants={}\n\
               icon_pack_path={}\n\
               icon_pack_invert_mismatch={}\n\
+              select_after_paste={}\n\
              onnx_runtime_path={}\n\
              birefnet_model_path={}\n\
              paintdotnet_plugins_enabled={}\n\
@@ -937,6 +941,7 @@ impl AppSettings {
             self.animated_selection_ants,
             self.icon_pack_path,
             self.icon_pack_invert_mismatch,
+            self.select_after_paste,
             self.onnx_runtime_path,
             self.birefnet_model_path,
             self.paintdotnet_plugins_enabled,
@@ -1438,6 +1443,9 @@ impl AppSettings {
                 }
                 "icon_pack_invert_mismatch" => {
                     s.icon_pack_invert_mismatch = val == "true";
+                }
+                "select_after_paste" => {
+                    s.select_after_paste = val == "true";
                 }
                 "onnx_runtime_path" => {
                     s.onnx_runtime_path = val.to_string();

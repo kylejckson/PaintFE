@@ -210,7 +210,9 @@ impl PaintFEApp {
             } else {
                 "Paste"
             };
-            let keep_selection = leave_selected && !self.is_move_pixels_active;
+            let keep_selection = leave_selected
+                && !self.is_move_pixels_active
+                && self.settings.select_after_paste;
             let move_before = if self.is_move_pixels_active {
                 self.move_pixels_before.take()
             } else {

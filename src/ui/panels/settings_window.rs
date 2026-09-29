@@ -128,9 +128,9 @@ impl SettingsWindow {
         settings: &mut AppSettings,
         theme: &mut crate::theme::Theme,
         assets: &Assets,
-    ) {
+    ) -> Option<egui::Rect> {
         if !self.open {
-            return;
+            return None;
         }
 
         // Sync on first frame the window is shown
@@ -147,7 +147,7 @@ impl SettingsWindow {
         let show = self.open;
         let mut should_close = false;
 
-        egui::Window::new("settings_window_internal")
+        let window_response = egui::Window::new("settings_window_internal")
             .title_bar(false)
             .resizable(true)
             .collapsible(false)
@@ -368,7 +368,9 @@ impl SettingsWindow {
             });
 
         #[cfg(not(target_arch = "wasm32"))]
-        self.show_plugin_trust_modal(ctx);
+        let trust_rect = self.show_plugin_trust_modal(ctx);
+        #[cfg(target_arch = "wasm32")]
+        let trust_rect: Option<egui::Rect> = None;
 
         self.open = show && !should_close;
         if !self.open {
@@ -378,6 +380,15 @@ impl SettingsWindow {
             }
             // Clear the sync flag when window closes
             ctx.data_mut(|d| d.insert_temp(id, false));
+        }
+
+        // The visible window rect(s) — the caller registers them as
+        // input-blocking so canvas input (wheel zoom, clicks, strokes) does
+        // not leak through the window to the canvas behind it.
+        let window_rect = window_response.map(|r| r.response.rect);
+        match (window_rect, trust_rect) {
+            (Some(a), Some(b)) => Some(a.union(b)),
+            (a, b) => a.or(b),
         }
     }
 
@@ -496,9 +507,9 @@ impl SettingsWindow {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn show_plugin_trust_modal(&mut self, ctx: &egui::Context) {
+    fn show_plugin_trust_modal(&mut self, ctx: &egui::Context) -> Option<egui::Rect> {
         let Some(hash) = self.pending_trust_plugin.clone() else {
-            return;
+            return None;
         };
         let Some(plugin) = self
             .plugin_manager
@@ -508,10 +519,10 @@ impl SettingsWindow {
             .cloned()
         else {
             self.pending_trust_plugin = None;
-            return;
+            return None;
         };
 
-        egui::Window::new("paintdotnet_plugin_trust_confirm")
+        let window_response = egui::Window::new("paintdotnet_plugin_trust_confirm")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
@@ -541,6 +552,8 @@ impl SettingsWindow {
                     }
                 });
             });
+
+        window_response.map(|r| r.response.rect)
     }
 
     // -- General Tab -------------------------------------------
@@ -739,6 +752,19 @@ impl SettingsWindow {
         ui.label(
             egui::RichText::new(
                 "When enabled, pasted selections keep their original silhouette instead of filling their bounding box.",
+            )
+            .small()
+            .weak(),
+        );
+
+        ui.add_space(6.0);
+        ui.checkbox(
+            &mut settings.select_after_paste,
+            "Select the pasted image after pasting",
+        );
+        ui.label(
+            egui::RichText::new(
+                "When enabled, committing a paste leaves the pasted region selected (ready for Crop to Selection). Off by default.",
             )
             .small()
             .weak(),

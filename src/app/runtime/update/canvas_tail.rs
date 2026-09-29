@@ -444,9 +444,24 @@ impl PaintFEApp {
                                 }
                                 self.is_move_pixels_active = false;
 
-                                // Explicit commits leave the pasted region selected so
-                                // it can be cropped/refined immediately afterwards.
-                                project.canvas_state.selection_mask = select_mask;
+                                // Selection after commit: "Commit & Select" always
+                                // leaves the pasted region selected; plain Commit
+                                // honours the "Select the pasted image after pasting"
+                                // preference (off by default). "Commit & Crop" needs
+                                // the mask only to define the crop bounds.
+                                let needs_mask =
+                                    action == crate::canvas::PasteAction::CommitAndCrop;
+                                let keep_selection = action
+                                    == crate::canvas::PasteAction::CommitAndSelect
+                                    || (action == crate::canvas::PasteAction::Commit
+                                        && self.settings.select_after_paste);
+                                project.canvas_state.selection_mask = if needs_mask
+                                    || keep_selection
+                                {
+                                    select_mask
+                                } else {
+                                    None
+                                };
                                 if let Some(mask) = project.canvas_state.selection_mask.as_mut()
                                     && let Some((x0, y0, x1, y1)) = select_bounds
                                 {
@@ -458,9 +473,11 @@ impl PaintFEApp {
                                 }
                                 project.canvas_state.invalidate_selection_overlay();
                                 project.canvas_state.mark_dirty(None);
-                                self.tools_panel.selection_state.mode =
-                                    crate::canvas::SelectionMode::Replace;
-                                if action == crate::canvas::PasteAction::CommitAndCrop {
+                                if keep_selection {
+                                    self.tools_panel.selection_state.mode =
+                                        crate::canvas::SelectionMode::Replace;
+                                }
+                                if needs_mask {
                                     // Second undo step: crop the canvas to the (possibly
                                     // trimmed) pasted bounds. Mirrors do_snapshot_op.
                                     project.canvas_state.ensure_all_text_layers_rasterized();
@@ -479,7 +496,7 @@ impl PaintFEApp {
                                     cmd.set_after(&project.canvas_state);
                                     project.history.push(Box::new(cmd));
                                     project.mark_dirty();
-                                } else {
+                                } else if keep_selection {
                                     self.pending_selection_reassert =
                                         project.canvas_state.selection_mask.clone();
                                 }
