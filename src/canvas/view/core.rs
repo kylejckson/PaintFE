@@ -2433,14 +2433,13 @@ impl Canvas {
                 && !pointer_over_egui_with_touch
                 && !pointer_over_blocking_ui
                 && !ui_blocks_canvas_input
-                // Floating windows (Settings, plugin dialogs, ...) paint above
-                // the canvas and are not in the blocking-rect list. Never
-                // replace the OS cursor while one is under the pointer —
-                // egui's own per-widget cursors must win there (otherwise the
-                // cursor disappears over e.g. the Preferences window).
-                && !mouse_pos
+                // Only replace the OS cursor when the canvas layer is truly on
+                // top at the pointer. Floating windows (Settings, plugin
+                // dialogs, ...) live on their own layers - regardless of order -
+                // and egui's per-widget cursors must win over them.
+                && mouse_pos
                     .and_then(|pos| ui.ctx().layer_id_at(pos))
-                    .is_some_and(|id| id.order == egui::Order::Foreground);
+                    == Some(ui.layer_id());
             {
                 // Only override cursor when mouse is truly over just the canvas ÔÇö
                 // not when a dialog, menu, popup, or floating panel is on top.
