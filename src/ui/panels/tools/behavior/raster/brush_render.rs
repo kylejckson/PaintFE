@@ -50,7 +50,12 @@ impl ToolsPanel {
     }
 
     /// Compute brush alpha as material falloff multiplied by geometric coverage.
-    /// Hardness controls opacity at the edge; anti-aliasing only smooths geometry.
+    ///
+    /// Hardness is the fraction of the radius that stays fully opaque; the
+    /// remainder fades smoothly to **zero** at the rim (Photoshop-style). The
+    /// previous profile ended at `alpha == hardness` at the rim, so every pass
+    /// left a faint hard-edged ring — overlapping soft passes stacked rims
+    /// instead of blending into each other.
     fn compute_brush_alpha(&self, dist: f32, radius: f32) -> f32 {
         if radius <= 0.0 {
             return 0.0;
@@ -58,8 +63,17 @@ impl ToolsPanel {
 
         let safe_hardness = self.properties.hardness.clamp(0.0, 1.0);
         let t = (dist / radius).clamp(0.0, 1.0);
-        let falloff = t * t * (3.0 - 2.0 * t);
-        let material_alpha = 1.0 + (safe_hardness - 1.0) * falloff;
+        let material_alpha = if t <= safe_hardness {
+            1.0
+        } else {
+            let span = 1.0 - safe_hardness;
+            if span <= 1e-4 {
+                1.0
+            } else {
+                let u = ((t - safe_hardness) / span).clamp(0.0, 1.0);
+                1.0 - u * u * (3.0 - 2.0 * u) // smoothstep out to zero
+            }
+        };
 
         let coverage = if self.properties.anti_aliased {
             let edge0 = radius + 0.5;

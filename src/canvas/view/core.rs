@@ -393,12 +393,7 @@ impl Canvas {
                                 );
 
                                 // Premultiply the small dirty region in-place
-                                for px in state.preview_flat_buffer.chunks_exact_mut(4) {
-                                    let a = px[3] as u16;
-                                    px[0] = ((px[0] as u16 * a + 128) / 255) as u8;
-                                    px[1] = ((px[1] as u16 * a + 128) / 255) as u8;
-                                    px[2] = ((px[2] as u16 * a + 128) / 255) as u8;
-                                }
+                                premultiply_dithered(&mut state.preview_flat_buffer, dx, dy, dw);
 
                                 // Blit dirty pixels into persistent cache
                                 let dirty_pixels: &[Color32] =
@@ -491,12 +486,7 @@ impl Canvas {
                                         dh,
                                         &mut state.preview_flat_buffer,
                                     );
-                                    for px in state.preview_flat_buffer.chunks_exact_mut(4) {
-                                        let a = px[3] as u16;
-                                        px[0] = ((px[0] as u16 * a + 128) / 255) as u8;
-                                        px[1] = ((px[1] as u16 * a + 128) / 255) as u8;
-                                        px[2] = ((px[2] as u16 * a + 128) / 255) as u8;
-                                    }
+                                    premultiply_dithered(&mut state.preview_flat_buffer, dx, dy, dw);
                                     let dirty_pixels: &[Color32] =
                                         bytemuck::cast_slice(&state.preview_flat_buffer);
                                     let off_x = (dx - rx) as usize;
@@ -541,12 +531,7 @@ impl Canvas {
                                 &mut state.preview_flat_buffer,
                             );
 
-                            for px in state.preview_flat_buffer.chunks_exact_mut(4) {
-                                let a = px[3] as u16;
-                                px[0] = ((px[0] as u16 * a + 128) / 255) as u8;
-                                px[1] = ((px[1] as u16 * a + 128) / 255) as u8;
-                                px[2] = ((px[2] as u16 * a + 128) / 255) as u8;
-                            }
+                            premultiply_dithered(&mut state.preview_flat_buffer, rx, ry, rw);
 
                             let pixels: &[Color32] =
                                 bytemuck::cast_slice(&state.preview_flat_buffer);
@@ -3428,6 +3413,25 @@ impl Canvas {
     /// Pan the viewport by a screen-space delta (used by the Pan tool)
     pub fn pan_by(&mut self, delta: Vec2) {
         self.pan_offset += delta;
+    }
+}
+
+/// Premultiply RGBA bytes in place with a 4x4 ordered (Bayer) dither on the
+/// rounding step. The dither spans one quantization level, which dissolves
+/// the contour banding that very soft brush ramps show after 8-bit rounding.
+fn premultiply_dithered(buf: &mut [u8], origin_x: u32, origin_y: u32, width: u32) {
+    const BAYER: [u16; 16] = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+    if width == 0 {
+        return;
+    }
+    for (i, px) in buf.chunks_exact_mut(4).enumerate() {
+        let x = (origin_x + (i as u32 % width)) as usize & 3;
+        let y = (origin_y + (i as u32 / width)) as usize & 3;
+        let dither = BAYER[y * 4 + x] * 17; // 0..=255, mean 127.5
+        let a = px[3] as u16;
+        px[0] = ((px[0] as u16 * a + dither) / 255) as u8;
+        px[1] = ((px[1] as u16 * a + dither) / 255) as u8;
+        px[2] = ((px[2] as u16 * a + dither) / 255) as u8;
     }
 }
 
