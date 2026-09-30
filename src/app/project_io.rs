@@ -230,6 +230,96 @@ impl PaintFEApp {
     }
 
     /// Open a file by path — creates a new project tab.
+    /// True for raster image formats that go through the per-file import dialog
+    /// when dropped on the window (projects and RAW files open directly).
+    fn is_raster_image_path(path: &std::path::Path) -> bool {
+        matches!(
+            path.extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_ascii_lowercase())
+                .as_deref(),
+            Some(
+                "png" | "jpg" | "jpeg" | "webp" | "bmp" | "tga" | "tif" | "tiff" | "gif" | "ico"
+            )
+        )
+    }
+
+    /// Route a dropped file: raster images queue the import dialog, everything
+    /// else opens directly.
+    fn queue_import_or_open(&mut self, path: std::path::PathBuf, current_time: f64) {
+        if Self::is_raster_image_path(&path)
+            && let Ok(bytes) = std::fs::read(&path)
+        {
+            let name = path
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            self.pending_import_queue.push(PendingImport {
+                bytes: std::sync::Arc::new(bytes),
+                name,
+                width: 0,
+                height: 0,
+            });
+            return;
+        }
+        self.open_file_by_path(path, current_time);
+    }
+
+    /// Apply one import-dialog choice to a dropped image.
+    /// 0 = Open in a new document, 1 = Add as Layer, anything else = Cancel.
+    fn apply_import_choice(&mut self, item: &PendingImport, choice: usize) {
+        match choice {
+            0 => self.open_image_from_bytes(&item.bytes, Some(item.name.clone())),
+            1 => {
+                let Ok(img) = image::load_from_memory(&item.bytes) else {
+                    return; // undecodable — nothing to import
+                };
+                let img = img.to_rgba8();
+                let oversized =
+                    self.projects.get(self.active_project_index).is_some_and(|p| {
+                        img.width() > p.canvas_state.width || img.height() > p.canvas_state.height
+                    });
+                if oversized {
+                    // Ask expand/keep/cancel before adding it as a layer.
+                    self.pending_oversized_import = Some(PendingImport {
+                        width: img.width(),
+                        height: img.height(),
+                        ..item.clone()
+                    });
+                    return;
+                }
+                self.import_image_as_layer(&img, &item.name, false);
+            }
+            _ => {}
+        }
+    }
+
+    /// Add an image to the current canvas as a new layer (snapshot undo).
+    /// With `expand_canvas`, the canvas is grown to fit the image first (same
+    /// single undo step).
+    fn import_image_as_layer(&mut self, img: &image::RgbaImage, name: &str, expand_canvas: bool) {
+        let layer_name = std::path::Path::new(name)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "Imported Layer".to_string());
+        let src = img.clone();
+        self.do_snapshot_op("Import as New Layer", move |s| {
+            if expand_canvas {
+                let new_w = s.width.max(src.width());
+                let new_h = s.height.max(src.height());
+                crate::ops::transform::resize_canvas(
+                    s,
+                    new_w,
+                    new_h,
+                    (1, 1),
+                    image::Rgba([0, 0, 0, 0]),
+                );
+            }
+            crate::ops::adjustments::import_layer_from_image(s, &src, &layer_name);
+        });
+    }
+
     /// Used by both "Open…" menu and drag-and-drop.
     fn open_file_by_path(&mut self, path: std::path::PathBuf, current_time: f64) {
         let normalized_path = Self::normalize_open_path(&path);

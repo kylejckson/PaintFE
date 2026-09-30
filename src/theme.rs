@@ -111,6 +111,8 @@ pub struct ThemeOverrides {
     pub tool_button_rounding: Option<f32>,
     pub badge_rounding: Option<f32>,
     pub tab_rounding: Option<f32>,
+    /// Corner radius for the new dialog cards (import / unsaved / oversized).
+    pub dialog_rounding: Option<f32>,
 
     // Atmosphere
     pub glow_intensity: Option<f32>,
@@ -161,6 +163,7 @@ impl ThemeOverrides {
             && self.tool_button_rounding.is_none()
             && self.badge_rounding.is_none()
             && self.tab_rounding.is_none()
+            && self.dialog_rounding.is_none()
             && self.glow_intensity.is_none()
             && self.shadow_strength.is_none()
     }
@@ -459,6 +462,8 @@ pub struct Theme {
     pub tool_button_rounding: f32,
     pub badge_rounding: f32,
     pub tab_rounding: f32,
+    /// Corner radius for the new dialog cards (import / unsaved / oversized).
+    pub dialog_rounding: f32,
     pub glow_intensity: f32,
     pub shadow_strength: f32,
 }
@@ -544,6 +549,7 @@ impl Theme {
             tool_button_rounding: 4.0,
             badge_rounding: 4.0,
             tab_rounding: 7.0,
+            dialog_rounding: 12.0,
             glow_intensity: 1.0,
             shadow_strength: 1.0,
         }
@@ -623,6 +629,7 @@ impl Theme {
             tool_button_rounding: 4.0,
             badge_rounding: 4.0,
             tab_rounding: 7.0,
+            dialog_rounding: 12.0,
             glow_intensity: 1.0,
             shadow_strength: 1.0,
         }
@@ -769,6 +776,9 @@ impl Theme {
         }
         if let Some(v) = ov.tab_rounding {
             self.tab_rounding = v;
+        }
+        if let Some(v) = ov.dialog_rounding {
+            self.dialog_rounding = v;
         }
 
         self.glow_accent = Self::scale_color_alpha(self.glow_accent, self.glow_intensity);
@@ -1125,8 +1135,7 @@ impl Theme {
     /// Floating tool shelf frame — sits below the toolbar, overlaying the canvas.
     /// Rounded, slightly translucent container with subtle shadow, matching the
     /// website `.card` pattern — it should read as floating over the canvas.
-    pub fn tool_shelf_frame(&self) -> egui::Frame {
-        let r = CornerRadius::same(self.tool_shelf_rounding as u8);
+    pub fn tool_shelf_frame(&self) -> egui::Frame {        let r = CornerRadius::same(self.tool_shelf_rounding as u8);
         egui::Frame::NONE
             .fill(self.tool_shelf_bg.gamma_multiply(0.9))
             .corner_radius(r)
@@ -1138,6 +1147,24 @@ impl Theme {
                 color: Color32::from_black_alpha(self.scaled_shadow_alpha(40)),
             })
             .inner_margin(egui::Margin::symmetric(10, 5))
+    }
+
+    /// Card frame for the action dialogs (import / oversized paste / unsaved).
+    /// Soft-shadowed floating card like the panels; the corner radius is user
+    /// configurable via `dialog_rounding` (Settings > Advanced Customization).
+    pub fn dialog_frame(&self) -> egui::Frame {
+        let r = CornerRadius::same(self.dialog_rounding.max(0.0) as u8);
+        egui::Frame::NONE
+            .fill(self.tool_shelf_bg)
+            .corner_radius(r)
+            .stroke(Stroke::new(1.0, self.tool_shelf_border))
+            .shadow(Shadow {
+                offset: [0, 6],
+                blur: self.scaled_shadow_blur(18),
+                spread: 0,
+                color: Color32::from_black_alpha(self.scaled_shadow_alpha(70)),
+            })
+            .inner_margin(egui::Margin::symmetric(18, 14))
     }
 
     pub fn icon_button_bg_for(ui: &egui::Ui) -> Color32 {

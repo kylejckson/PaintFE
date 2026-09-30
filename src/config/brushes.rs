@@ -992,6 +992,42 @@ impl Assets {
             Icon::UiBrushDynamics,
             include_bytes!("../../assets/icons/ui/dynamics.png"),
         );
+        // === Dialog action icons (import / oversized paste / unsaved) ===
+        self.load_icon(
+            ctx,
+            Icon::DialogOpenImage,
+            include_bytes!("../../assets/icons/dialog/open_image.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::DialogAddLayer,
+            include_bytes!("../../assets/icons/dialog/add_new_layer.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::DialogExpandCanvas,
+            include_bytes!("../../assets/icons/dialog/expand_canvas.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::DialogKeepCanvas,
+            include_bytes!("../../assets/icons/dialog/keep_canvas.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::DialogCancel,
+            include_bytes!("../../assets/icons/dialog/cancel.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::DialogUnsavedWarning,
+            include_bytes!("../../assets/icons/dialog/unsaved_warning.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::DialogSave,
+            include_bytes!("../../assets/icons/dialog/save_button.png"),
+        );
 
         self.icons_loaded = true;
 
@@ -1258,12 +1294,15 @@ impl Assets {
         }
         let original = self.icon_pixels.get(&icon)?;
         let size = *self.icon_sizes.get(&icon)?;
-        let display = if dark {
+        // Some icons are designed for fixed-contrast use (e.g. the save icon
+        // inside a filled accent button) and must never be inverted.
+        let keep = crate::config::icon_packs::is_never_invert(icon);
+        let display = if dark && !keep {
             Self::invert_rgb(original)
         } else {
             original.clone()
         };
-        let src = if dark {
+        let src = if dark && !keep {
             IconSource::BuiltinInverted
         } else {
             IconSource::Builtin

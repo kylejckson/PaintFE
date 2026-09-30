@@ -867,6 +867,12 @@ mod image_dialogs {
 }
 pub use image_dialogs::*;
 
+mod action_list {
+    use super::*;
+    include!("core/action_list.rs");
+}
+pub use action_list::*;
+
 mod transform {
     use super::*;
     include!("core/transform.rs");

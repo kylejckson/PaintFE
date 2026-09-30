@@ -201,8 +201,9 @@ impl IconPack {
     }
 
     /// Resolve display pixels for an icon. Returns `None` when the pack has no
-    /// override for it (caller falls back to the built-in icon). Both the
-    /// canonical id and the legacy id are accepted.
+    /// override for it (caller falls back to the built-in icon). The canonical
+    /// id, the legacy id and courtesy aliases are all accepted; icons with
+    /// fixed contrast (the save button) are never inverted.
     pub fn resolve(
         &self,
         icon: Icon,
@@ -212,8 +213,10 @@ impl IconPack {
         let variants = self
             .icons
             .get(&icon.pack_id())
-            .or_else(|| self.icons.get(&legacy_id_name(icon)))?;
-        resolve_variants(variants, dark, invert_mismatch)
+            .or_else(|| self.icons.get(&legacy_id_name(icon)))
+            .or_else(|| courtesy_alias(icon).and_then(|a| self.icons.get(a)))?;
+        let invert = invert_mismatch && !is_never_invert(icon);
+        resolve_variants(variants, dark, invert)
     }
 
     /// Resolve display pixels for a shape-kind icon (see `resolve`).
@@ -232,7 +235,9 @@ impl IconPack {
 
     /// True when the pack provides anything for this icon id.
     pub fn has_icon(&self, icon: Icon) -> bool {
-        self.icons.contains_key(&icon.pack_id()) || self.icons.contains_key(&legacy_id_name(icon))
+        self.icons.contains_key(&icon.pack_id())
+            || self.icons.contains_key(&legacy_id_name(icon))
+            || courtesy_alias(icon).is_some_and(|a| self.icons.contains_key(a))
     }
 
     pub fn icon_count(&self) -> usize {
@@ -258,6 +263,35 @@ fn resolve_variants(
     } else {
         Some((img.clone(), IconSource::PackGeneric))
     }
+}
+
+/// Icons with fixed contrast: never inverted for the theme (the save icon is
+/// drawn white inside filled accent buttons in both themes).
+const NEVER_INVERT: &[Icon] = &[Icon::DialogSave];
+
+/// True when an icon must keep its colors in both themes (see `NEVER_INVERT`).
+pub fn is_never_invert(icon: Icon) -> bool {
+    NEVER_INVERT.contains(&icon)
+}
+
+/// Filenames accepted as aliases for packs made against the original icon
+/// artwork names (before the canonical `dialog_*` ids).
+const COURTESY_ALIASES: &[(Icon, &str)] = &[
+    (Icon::DialogOpenImage, "open_image"),
+    (Icon::DialogAddLayer, "add_new_layer"),
+    (Icon::DialogExpandCanvas, "expand_canvas"),
+    (Icon::DialogKeepCanvas, "keep_canvas"),
+    (Icon::DialogCancel, "cancel"),
+    (Icon::DialogUnsavedWarning, "unsaved_warning"),
+    (Icon::DialogSave, "save_button"),
+];
+
+/// Legacy artwork filename for an icon, when one is accepted on import.
+pub fn courtesy_alias(icon: Icon) -> Option<&'static str> {
+    COURTESY_ALIASES
+        .iter()
+        .find(|(i, _)| *i == icon)
+        .map(|(_, name)| *name)
 }
 
 /// Parse `name.png` / `name_dark.png` / `name_light.png` into the pack map.
@@ -541,5 +575,48 @@ mod tests {
     fn legacy_id_matches_original_naming() {
         assert_eq!(legacy_id_name(Icon::Brush), "brush");
         assert_eq!(legacy_id_name(Icon::MenuFileOpen), "menu_file_open");
+    }
+
+    #[test]
+    fn dialog_icons_use_dialog_group_and_fixed_save_contrast() {
+        assert_eq!(Icon::DialogOpenImage.pack_id(), "dialog_open_image");
+        assert_eq!(Icon::DialogAddLayer.pack_id(), "dialog_add_layer");
+        assert_eq!(Icon::DialogExpandCanvas.pack_id(), "dialog_expand_canvas");
+        assert_eq!(Icon::DialogKeepCanvas.pack_id(), "dialog_keep_canvas");
+        assert_eq!(Icon::DialogCancel.pack_id(), "dialog_cancel");
+        assert_eq!(Icon::DialogUnsavedWarning.pack_id(), "dialog_unsaved_warning");
+        assert_eq!(Icon::DialogSave.pack_id(), "dialog_save");
+
+        // The save icon lives on filled accent buttons: never inverted.
+        assert!(is_never_invert(Icon::DialogSave));
+        assert!(!is_never_invert(Icon::DialogOpenImage));
+
+        // Courtesy aliases from the original artwork names still resolve.
+        assert_eq!(courtesy_alias(Icon::DialogOpenImage), Some("open_image"));
+        assert_eq!(courtesy_alias(Icon::DialogSave), Some("save_button"));
+    }
+
+    #[test]
+    fn never_invert_icons_resolve_unmodified_in_dark() {
+        let dir = tmp_dir("never_invert");
+        // Green generic icon for a fixed-contrast icon must stay green in dark.
+        write_png(&dir.join("dialog_save.png"), [0, 255, 0]);
+        // ...while a normal icon inverts.
+        write_png(&dir.join("dialog_open_image.png"), [0, 255, 0]);
+
+        let pack = IconPack::load(&dir).unwrap();
+        let (img, src) = pack.resolve(Icon::DialogSave, true, true).unwrap();
+        assert_eq!(src, IconSource::PackGeneric);
+        assert_eq!(img.get_pixel(0, 0).0, [0, 255, 0, 255], "save icon never inverts");
+        let (_, src) = pack.resolve(Icon::DialogOpenImage, true, true).unwrap();
+        assert_eq!(src, IconSource::PackGenericInverted);
+
+        // Courtesy filename resolves too.
+        let dir2 = tmp_dir("courtesy");
+        write_png(&dir2.join("open_image.png"), [5, 5, 5]);
+        let pack2 = IconPack::load(&dir2).unwrap();
+        assert!(pack2.resolve(Icon::DialogOpenImage, false, true).is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir2);
     }
 }

@@ -606,7 +606,7 @@ impl PaintFEApp {
                 for file in dropped {
                     if let Some(path) = file.path.clone() {
                         if path.is_file() {
-                            self.open_file_by_path(path, ctx.input(|i| i.time));
+                            self.queue_import_or_open(path, ctx.input(|i| i.time));
                             continue;
                         }
 
@@ -615,7 +615,7 @@ impl PaintFEApp {
                         let parsed = Self::parse_file_uri_list(&path.to_string_lossy());
                         if !parsed.is_empty() {
                             for path in parsed {
-                                self.open_file_by_path(path, ctx.input(|i| i.time));
+                                self.queue_import_or_open(path, ctx.input(|i| i.time));
                             }
                             continue;
                         }
@@ -625,25 +625,32 @@ impl PaintFEApp {
                         let parsed = Self::parse_file_uri_list(&file.name);
                         if !parsed.is_empty() {
                             for path in parsed {
-                                self.open_file_by_path(path, ctx.input(|i| i.time));
+                                self.queue_import_or_open(path, ctx.input(|i| i.time));
                             }
                             continue;
                         }
 
                         let named_path = PathBuf::from(file.name.clone());
                         if named_path.is_file() {
-                            self.open_file_by_path(named_path, ctx.input(|i| i.time));
+                            self.queue_import_or_open(named_path, ctx.input(|i| i.time));
                             continue;
                         }
                     }
 
                     if let Some(bytes) = file.bytes.as_ref() {
                         let name_hint = if file.name.is_empty() {
-                            None
+                            "Dropped Image.png".to_string()
                         } else {
-                            Some(file.name.clone())
+                            file.name.clone()
                         };
-                        self.open_image_from_bytes(bytes.as_ref(), name_hint);
+                        // Byte payloads (web / URI drops) are images: queue the
+                        // same per-file import dialog.
+                        self.pending_import_queue.push(PendingImport {
+                            bytes: std::sync::Arc::new(bytes.to_vec()),
+                            name: name_hint,
+                            width: 0,
+                            height: 0,
+                        });
                     }
                 }
             }

@@ -204,6 +204,16 @@ pub enum Icon {
     // === UI: Context bar ===
     UiBrushDynamics,
     UiStraighten,
+
+    // === Dialog action icons (import image / oversized paste / unsaved) ===
+    DialogOpenImage,
+    DialogAddLayer,
+    DialogExpandCanvas,
+    DialogKeepCanvas,
+    DialogCancel,
+    DialogUnsavedWarning,
+    /// Save icon used inside filled accent buttons — never inverted for theme.
+    DialogSave,
 }
 
 impl Icon {
@@ -315,6 +325,14 @@ impl Icon {
             | Self::CurrentMarker
             | Self::Delete
             | Self::Duplicate => "ui",
+            // Dialog action icons.
+            Self::DialogOpenImage
+            | Self::DialogAddLayer
+            | Self::DialogExpandCanvas
+            | Self::DialogKeepCanvas
+            | Self::DialogCancel
+            | Self::DialogUnsavedWarning
+            | Self::DialogSave => "dialog",
             // Everything else is a menu bar entry (all Menu* variants).
             _ => "menu",
         }
@@ -555,6 +573,13 @@ impl Icon {
             Icon::MenuViewThemeDark => "\u{1F319}",
             // UI: Context bar
             Icon::UiBrushDynamics => "\u{1F3B5}",
+            Icon::DialogOpenImage => "\u{1F5BC}",
+            Icon::DialogAddLayer => "\u{1F5C2}",
+            Icon::DialogExpandCanvas => "\u{26F6}",
+            Icon::DialogKeepCanvas => "\u{2702}",
+            Icon::DialogCancel => "\u{21A9}",
+            Icon::DialogUnsavedWarning => "\u{26A0}",
+            Icon::DialogSave => "\u{1F4BE}",
             Icon::UiStraighten => "[R]",
         }
     }
@@ -664,6 +689,13 @@ impl Icon {
             Icon::ShapeBoth => "Shape: Both",
             // UI: Context bar
             Icon::UiBrushDynamics => "Brush Dynamics (Flow, Scatter, Color Jitter)",
+            Icon::DialogOpenImage => "Open Image",
+            Icon::DialogAddLayer => "Add as Layer",
+            Icon::DialogExpandCanvas => "Expand Canvas",
+            Icon::DialogKeepCanvas => "Keep Canvas",
+            Icon::DialogCancel => "Cancel",
+            Icon::DialogUnsavedWarning => "Unsaved Changes",
+            Icon::DialogSave => "Save",
             Icon::UiStraighten => "Straighten Canvas",
             // All menu items — tooltip matches the label
             _ => "",

@@ -49,6 +49,16 @@ struct PendingPasteRequest {
     overwrite_mask: Option<image::GrayImage>,
 }
 
+/// A dropped image awaiting the user's choice in the per-file import dialog.
+#[derive(Clone)]
+struct PendingImport {
+    bytes: std::sync::Arc<Vec<u8>>,
+    name: String,
+    /// Image dimensions when known (0 × 0 = not decoded yet).
+    width: u32,
+    height: u32,
+}
+
 /// Non-destructive session state for interactive whole-canvas straightening.
 struct StraightenSession {
     project_id: uuid::Uuid,
@@ -160,6 +170,12 @@ pub struct PaintFEApp {
     straighten_session: Option<StraightenSession>,
     next_straighten_generation: u64,
     pending_paste_request: Option<PendingPasteRequest>,
+    /// Per-file queue of dropped images awaiting the import dialog.
+    pending_import_queue: Vec<PendingImport>,
+    /// When checked in the import dialog, the choice applies to the whole queue.
+    import_apply_to_all: bool,
+    /// Oversized "add as layer" import awaiting the expand/keep/cancel choice.
+    pending_oversized_import: Option<PendingImport>,
     clipboard_paste_receiver:
         Option<mpsc::Receiver<Option<crate::ops::clipboard::ClipboardImageForPaste>>>,
     pending_clipboard_cursor: Option<(f32, f32)>,

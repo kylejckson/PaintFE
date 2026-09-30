@@ -1743,6 +1743,14 @@ impl SettingsWindow {
                         24.0,
                         &mut self.dirty,
                     );
+                    Self::opt_f32_row(
+                        ui,
+                        "Dialog CornerRadius",
+                        &mut settings.dialog_rounding,
+                        0.0,
+                        24.0,
+                        &mut self.dirty,
+                    );
                 });
 
             // --- Additional Accents ---
@@ -1803,6 +1811,7 @@ impl SettingsWindow {
                 settings.menu_rounding = None;
                 settings.tool_shelf_rounding = None;
                 settings.tool_button_rounding = None;
+                settings.dialog_rounding = None;
                 settings.glow_intensity = 1.0;
                 settings.shadow_strength = 1.0;
                 settings.canvas_grid_visible = true;
