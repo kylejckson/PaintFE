@@ -45,15 +45,17 @@ impl PaintFEApp {
             .order(egui::Order::Middle)
             .fixed_pos(shelf_anchor)
             .show(root_ui.ctx(), |ui| {
-                // Keep the shelf inside the viewport when the window is narrow.
-                let max_w = (self
+                // Static full-width bar: the pill spans the viewport minus the
+                // 12px padding on both sides, so its width never jumps when the
+                // active tool's options change.
+                let bar_w = (self
                     .canvas
                     .last_canvas_rect
                     .map(|r| r.width())
                     .unwrap_or(600.0)
                     - 24.0)
-                    .max(160.0);
-                ui.set_max_width(max_w);
+                    .max(240.0);
+                ui.set_width(bar_w);
                 let shelf_frame = self.theme.tool_shelf_frame();
                 // Wrap the shelf content instead of stretching across the full
                 // window width, so the input-blocking rect recorded below matches
@@ -89,9 +91,21 @@ impl PaintFEApp {
                                         ui.selectable_value(&mut session.interpolation, interpolation, interpolation.label());
                                     }
                                 });
-                            if ui.button("Reset").clicked() { session.angle_degrees = 0.0; }
-                            if ui.button("Apply").clicked() { commit_straighten = true; }
-                            if ui.button("Cancel").clicked() { cancel_straighten = true; }
+                            // Trailing quick-actions — flush right on the bar.
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui.button("Cancel").clicked() {
+                                        cancel_straighten = true;
+                                    }
+                                    if ui.button("Apply").clicked() {
+                                        commit_straighten = true;
+                                    }
+                                    if ui.button("Reset").clicked() {
+                                        session.angle_degrees = 0.0;
+                                    }
+                                },
+                            );
                         } else if let Some(ref mut overlay) = self.paste_overlay {
                             // --- Paste overlay context bar ---
                             crate::signal_widgets::tool_shelf_tag(ui, "PASTE", self.theme.accent, &self.theme);
@@ -143,18 +157,23 @@ impl PaintFEApp {
 
                             ui.add_space(4.0);
 
-                            // Quick actions
-                            if ui
-                                .button("Reset")
-                                .on_hover_text("Reset all transforms and crop")
-                                .clicked()
-                            {
-                                overlay.rotation = 0.0;
-                                overlay.scale_x = 1.0;
-                                overlay.scale_y = 1.0;
-                                overlay.anchor_offset = egui::Vec2::ZERO;
-                                overlay.reset_crop();
-                            }
+                            // Quick actions — flush right on the bar.
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui
+                                        .button("Reset")
+                                        .on_hover_text("Reset all transforms and crop")
+                                        .clicked()
+                                    {
+                                        overlay.rotation = 0.0;
+                                        overlay.scale_x = 1.0;
+                                        overlay.scale_y = 1.0;
+                                        overlay.anchor_offset = egui::Vec2::ZERO;
+                                        overlay.reset_crop();
+                                    }
+                                },
+                            );
                         } else {
                             let ctx_primary = self.colors_panel.get_primary_color();
                             let ctx_secondary = self.colors_panel.get_secondary_color();
@@ -165,12 +184,24 @@ impl PaintFEApp {
                                 ctx_secondary,
                                 &self.theme,
                             );
-                            if self.assets.icon_button(ui, crate::assets::Icon::UiStraighten, egui::Vec2::splat(20.0))
-                                .on_hover_text("Straighten canvas")
-                                .clicked()
-                            {
-                                start_straighten = true;
-                            }
+                            // Trailing quick-action — flush right on the bar.
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if self
+                                        .assets
+                                        .icon_button(
+                                            ui,
+                                            crate::assets::Icon::UiStraighten,
+                                            egui::Vec2::splat(20.0),
+                                        )
+                                        .on_hover_text("Straighten canvas")
+                                        .clicked()
+                                    {
+                                        start_straighten = true;
+                                    }
+                                },
+                            );
                         }
                     });
                 });
