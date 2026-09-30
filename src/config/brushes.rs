@@ -1185,22 +1185,24 @@ impl Assets {
             self.textures.insert(icon, texture);
         }
 
-        // Re-upload all shape textures
-        for (kind, original_pixels) in &self.shape_pixels {
-            if let Some(size) = self.shape_sizes.get(kind) {
-                let display_pixels = if dark {
-                    Self::invert_rgb(original_pixels)
-                } else {
-                    original_pixels.clone()
-                };
-                let color_image = ColorImage::from_rgba_unmultiplied(*size, &display_pixels);
-                let texture = ctx.load_texture(
-                    format!("shape_{:?}", kind),
-                    color_image,
-                    TextureOptions::LINEAR,
-                );
-                self.shape_textures.insert(*kind, texture);
-            }
+        // Re-upload all shape textures (pack overrides resolved per shape)
+        let resolved_shapes: Vec<(ShapeKind, Vec<u8>, [usize; 2])> = self
+            .shape_pixels
+            .keys()
+            .copied()
+            .filter_map(|kind| {
+                self.display_shape_pixels(kind, dark)
+                    .map(|(px, sz, _)| (kind, px, sz))
+            })
+            .collect();
+        for (kind, display_pixels, size) in resolved_shapes {
+            let color_image = ColorImage::from_rgba_unmultiplied(size, &display_pixels);
+            let texture = ctx.load_texture(
+                format!("shape_{kind:?}"),
+                color_image,
+                TextureOptions::LINEAR,
+            );
+            self.shape_textures.insert(kind, texture);
         }
 
         // Re-upload all brush tip icon textures
@@ -1276,6 +1278,54 @@ impl Assets {
             .unwrap_or(crate::config::icon_packs::IconSource::Builtin)
     }
 
+    /// Resolve the RGBA pixels to display for a shape-kind icon (see
+    /// `display_icon_pixels`).
+    fn display_shape_pixels(
+        &self,
+        kind: crate::ops::shapes::ShapeKind,
+        dark: bool,
+    ) -> Option<(Vec<u8>, [usize; 2], crate::config::icon_packs::IconSource)> {
+        use crate::config::icon_packs::IconSource;
+        if let Some(pack) = &self.icon_pack
+            && let Some((img, src)) =
+                pack.resolve_shape(kind, dark, self.icon_pack_invert_mismatch)
+        {
+            let size = [img.width() as usize, img.height() as usize];
+            return Some((img.into_raw(), size, src));
+        }
+        let original = self.shape_pixels.get(&kind)?;
+        let size = *self.shape_sizes.get(&kind)?;
+        let display = if dark {
+            Self::invert_rgb(original)
+        } else {
+            original.clone()
+        };
+        let src = if dark {
+            IconSource::BuiltinInverted
+        } else {
+            IconSource::Builtin
+        };
+        Some((display, size, src))
+    }
+
+    /// Shape-kind icon texture (for the Preferences preview).
+    pub fn shape_texture(
+        &self,
+        kind: crate::ops::shapes::ShapeKind,
+    ) -> Option<&TextureHandle> {
+        self.shape_textures.get(&kind)
+    }
+
+    /// Display source for a shape icon in the current theme (Preferences preview).
+    pub fn shape_source(
+        &self,
+        kind: crate::ops::shapes::ShapeKind,
+    ) -> crate::config::icon_packs::IconSource {
+        self.display_shape_pixels(kind, self.icons_inverted)
+            .map(|(_, _, src)| src)
+            .unwrap_or(crate::config::icon_packs::IconSource::Builtin)
+    }
+
     /// All known icons, sorted by id (for the Preferences pack preview).
     /// Dead placeholder icons are hidden.
     pub fn icon_list(&self) -> Vec<Icon> {
@@ -1285,8 +1335,16 @@ impl Assets {
             .copied()
             .filter(|i| !crate::config::icon_packs::is_excluded_icon(*i))
             .collect();
-        icons.sort_by_key(|i| crate::config::icon_packs::icon_id_name(*i));
+        icons.sort_by_key(|i| i.pack_id());
         icons
+    }
+
+    /// All known shape-kind icons, sorted by id (for the pack preview).
+    pub fn shape_list(&self) -> Vec<crate::ops::shapes::ShapeKind> {
+        let mut kinds: Vec<crate::ops::shapes::ShapeKind> =
+            self.shape_pixels.keys().copied().collect();
+        kinds.sort_by_key(|k| crate::config::icon_packs::shape_pack_id(*k));
+        kinds
     }
 
     /// Load a user icon pack from `dir` (PNG overrides). Returns the pack name.
@@ -1317,10 +1375,12 @@ impl Assets {
     }
 
     /// Write an icon-pack template into `dir`: `pack.ini`, the full icon id
-    /// list, and the currently displayed icons as editable PNGs. Dead
-    /// placeholder icons are excluded.
+    /// list (with a legacy-name migration list) and the currently displayed
+    /// icons (including shape kinds) as editable PNGs. Dead placeholder icons
+    /// are excluded.
     pub fn export_icon_template(&self, dir: &std::path::Path) -> Result<(), String> {
         let mut icons: Vec<(String, image::RgbaImage)> = Vec::new();
+        let mut legacy: Vec<(String, String)> = Vec::new();
         for &icon in self.icon_pixels.keys() {
             if crate::config::icon_packs::is_excluded_icon(icon) {
                 continue;
@@ -1328,11 +1388,29 @@ impl Assets {
             if let Some((px, size, _)) = self.display_icon_pixels(icon, false)
                 && let Some(img) = image::RgbaImage::from_raw(size[0] as u32, size[1] as u32, px)
             {
-                icons.push((crate::config::icon_packs::icon_id_name(icon), img));
+                let id = icon.pack_id();
+                let old = crate::config::icon_packs::legacy_id_name(icon);
+                if old != id {
+                    legacy.push((old, id.clone()));
+                }
+                icons.push((id, img));
+            }
+        }
+        for kind in self.shape_list() {
+            if let Some((px, size, _)) = self.display_shape_pixels(kind, false)
+                && let Some(img) = image::RgbaImage::from_raw(size[0] as u32, size[1] as u32, px)
+            {
+                let id = crate::config::icon_packs::shape_pack_id(kind);
+                let old = kind.icon_name().to_string();
+                if old != id {
+                    legacy.push((old, id.clone()));
+                }
+                icons.push((id, img));
             }
         }
         icons.sort_by(|a, b| a.0.cmp(&b.0));
-        crate::config::icon_packs::export_template(dir, &icons)
+        legacy.sort_by(|a, b| a.0.cmp(&b.0));
+        crate::config::icon_packs::export_template(dir, &icons, &legacy)
     }
 
     pub fn get_shape_texture(&self, kind: ShapeKind) -> Option<&TextureHandle> {

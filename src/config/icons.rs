@@ -207,6 +207,162 @@ pub enum Icon {
 }
 
 impl Icon {
+    /// Pack/asset category for this icon: `tool`, `toolbar`, `menu`, `layer`,
+    /// `mask`, `settings`, `color`, `shape` or `ui`. Drives the canonical pack
+    /// filename id (`Icon::pack_id`).
+    pub fn pack_group(&self) -> &'static str {
+        match self {
+            // Tool widget icons (incl. the tool option bar).
+            Self::Brush
+            | Self::Eraser
+            | Self::Pencil
+            | Self::Line
+            | Self::Fill
+            | Self::RectSelect
+            | Self::EllipseSelect
+            | Self::Lasso
+            | Self::MagicWand
+            | Self::MovePixels
+            | Self::MoveSelection
+            | Self::PerspectiveCrop
+            | Self::ColorPicker
+            | Self::CloneStamp
+            | Self::Zoom
+            | Self::Pan
+            | Self::Gradient
+            | Self::Text
+            | Self::ContentAwareBrush
+            | Self::Liquify
+            | Self::MeshWarp
+            | Self::ColorRemover
+            | Self::Smudge
+            | Self::Shapes
+            | Self::UiBrushDynamics => "tool",
+            // Top toolbar quick actions (and their toggle states).
+            Self::New
+            | Self::Open
+            | Self::Save
+            | Self::Undo
+            | Self::Redo
+            | Self::ZoomIn
+            | Self::ZoomOut
+            | Self::ResetZoom
+            | Self::Grid
+            | Self::GridOn
+            | Self::GridOff
+            | Self::GuidesOn
+            | Self::GuidesOff
+            | Self::MirrorOff
+            | Self::MirrorH
+            | Self::MirrorV
+            | Self::MirrorQ
+            | Self::WrapPreviewOn
+            | Self::WrapPreviewOff
+            | Self::UiStraighten => "toolbar",
+            // Layers panel.
+            Self::NewLayer
+            | Self::LayerAdd
+            | Self::LayerDelete
+            | Self::LayerDuplicate
+            | Self::Flatten
+            | Self::MergeDown
+            | Self::MergeDownAsMask
+            | Self::MoveUp
+            | Self::MoveDown
+            | Self::MoveTop
+            | Self::MoveBottom
+            | Self::ImportLayer
+            | Self::Rename
+            | Self::Visible
+            | Self::Hidden
+            | Self::Peek
+            | Self::SoloLayer
+            | Self::ShowAll
+            | Self::HideAll
+            | Self::LayerFlipH
+            | Self::LayerFlipV
+            | Self::LayerRotate
+            | Self::LayerProperties => "layer",
+            // Layer masks.
+            Self::AddLayerMaskRevealAll
+            | Self::AddLayerMaskFromSelection
+            | Self::ToggleLayerMask
+            | Self::InvertLayerMask
+            | Self::ApplyLayerMask
+            | Self::DeleteLayerMask => "mask",
+            // Settings window.
+            Self::Settings
+            | Self::SettingsGeneral
+            | Self::SettingsInterface
+            | Self::SettingsHardware
+            | Self::SettingsKeybinds
+            | Self::SettingsAI
+            | Self::SettingsPlugins => "settings",
+            // Colour panel.
+            Self::SwapColors | Self::CopyHex | Self::ApplyPrimary => "color",
+            // Shape tool modes.
+            Self::ShapeOutline | Self::ShapeFilled | Self::ShapeBoth => "shape",
+            // Generic widgets.
+            Self::Close
+            | Self::DropDown
+            | Self::Expand
+            | Self::Collapse
+            | Self::Info
+            | Self::Search
+            | Self::ClearSearch
+            | Self::Commit
+            | Self::ResetCancel
+            | Self::CurrentMarker
+            | Self::Delete
+            | Self::Duplicate => "ui",
+            // Everything else is a menu bar entry (all Menu* variants).
+            _ => "menu",
+        }
+    }
+
+    /// Canonical icon-pack filename id, without extension
+    /// (`tool_pencil`, `toolbar_new`, `menu_file_new`, `layer_add`, ...).
+    ///
+    /// Rule: `<group>_<variant name in snake case>`, with any redundant group
+    /// prefix (and the legacy `Ui` helper prefix) stripped, plus a few explicit
+    /// renames in `PACK_ID_OVERRIDES`. Older packs may also use the legacy
+    /// name (`Icon::legacy_id_name`) — see `icon_packs::IconPack::resolve`.
+    pub fn pack_id(&self) -> String {
+        let mut base = crate::config::icon_packs::legacy_id_name(*self);
+        for prefix in ["ui_"] {
+            if let Some(rest) = base.strip_prefix(prefix) {
+                base = rest.to_string();
+            }
+        }
+        let group = self.pack_group();
+        if let Some(rest) = base.strip_prefix(&format!("{group}_")) {
+            base = rest.to_string();
+        }
+        for (icon, id) in PACK_ID_OVERRIDES {
+            if icon == self {
+                return (*id).to_string();
+            }
+        }
+        format!("{group}_{base}")
+    }
+}
+
+/// Explicit pack-id renames where the `<group>_<snake variant>` rule would
+/// produce an ugly or ambiguous name.
+const PACK_ID_OVERRIDES: &[(Icon, &str)] = &[
+    (Icon::Settings, "settings_main"),
+    (Icon::NewLayer, "layer_new"),
+    (Icon::ImportLayer, "layer_import"),
+    (Icon::SwapColors, "color_swap"),
+    (Icon::AddLayerMaskRevealAll, "mask_new_reveal_all"),
+    (Icon::AddLayerMaskFromSelection, "mask_new_from_selection"),
+    (Icon::ToggleLayerMask, "mask_toggle"),
+    (Icon::InvertLayerMask, "mask_invert"),
+    (Icon::ApplyLayerMask, "mask_apply"),
+    (Icon::DeleteLayerMask, "mask_delete"),
+];
+
+impl Icon {
     /// Get the emoji fallback for this icon (used when textures aren't available)
     pub fn emoji(&self) -> &'static str {
         match self {

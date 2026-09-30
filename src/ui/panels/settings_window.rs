@@ -1123,9 +1123,26 @@ impl SettingsWindow {
         ));
         ui.horizontal(|ui| {
             #[cfg(not(target_arch = "wasm32"))]
-            if ui.button(t!("settings.interface.icon_pack_browse")).clicked() {
+            if ui
+                .button(t!("settings.interface.icon_pack_browse"))
+                .on_hover_text(t!("settings.interface.icon_pack_browse_hint"))
+                .clicked()
+            {
                 if let Some(dir) = rfd::FileDialog::new().pick_folder() {
                     self.pending_icon_pack_load = Some(dir);
+                }
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            if ui
+                .button(t!("settings.interface.icon_pack_zip"))
+                .on_hover_text(t!("settings.interface.icon_pack_zip_hint"))
+                .clicked()
+            {
+                if let Some(file) = rfd::FileDialog::new()
+                    .add_filter("Icon pack", &["zip"])
+                    .pick_file()
+                {
+                    self.pending_icon_pack_load = Some(file);
                 }
             }
             if ui
@@ -1162,23 +1179,37 @@ impl SettingsWindow {
             self.pending_icon_pack_reload = true;
         }
 
-        // Preview: each icon with the source it currently resolves to.
-        let preview_icons = assets.icon_list();
+        // Preview: every icon and shape with its canonical id and the source
+        // it currently resolves to (helps pack authors name their files).
+        let mut tiles: Vec<(String, egui::TextureHandle, &'static str)> = Vec::new();
+        for icon in assets.icon_list() {
+            if let Some(tex) = assets.icon_texture(icon) {
+                tiles.push((
+                    icon.pack_id(),
+                    tex.clone(),
+                    assets.icon_source(icon).label(),
+                ));
+            }
+        }
+        for kind in assets.shape_list() {
+            if let Some(tex) = assets.shape_texture(kind) {
+                tiles.push((
+                    crate::config::icon_packs::shape_pack_id(kind),
+                    tex.clone(),
+                    assets.shape_source(kind).label(),
+                ));
+            }
+        }
         egui::Grid::new("icon_pack_preview")
             .num_columns(8)
             .spacing([10.0, 8.0])
             .show(ui, |ui| {
-                for (i, icon) in preview_icons.iter().take(24).enumerate() {
-                    if let Some(tex) = assets.icon_texture(*icon) {
-                        ui.vertical(|ui| {
-                            ui.add(egui::Image::new((tex.id(), egui::vec2(22.0, 22.0))));
-                            ui.label(
-                                egui::RichText::new(assets.icon_source(*icon).label())
-                                    .small()
-                                    .weak(),
-                            );
-                        });
-                    }
+                for (i, (id, tex, src)) in tiles.iter().take(48).enumerate() {
+                    ui.vertical(|ui| {
+                        ui.add(egui::Image::new((tex.id(), egui::vec2(22.0, 22.0))));
+                        ui.label(egui::RichText::new(id).small());
+                        ui.label(egui::RichText::new(*src).small().weak());
+                    });
                     if i % 8 == 7 {
                         ui.end_row();
                     }

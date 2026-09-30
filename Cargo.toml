@@ -34,6 +34,7 @@ ab_glyph = "0.2"                                 # Font loading + glyph rasteriz
 rhai = { version = "1.25.1", features = ["sync"] } # Embedded scripting engine (sandboxed)
 base64 = "0.22.1"
 kurbo = "0.13.1"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "windef", "shellapi", "dwmapi"] }
