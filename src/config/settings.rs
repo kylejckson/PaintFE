@@ -42,6 +42,12 @@ pub struct AppSettings {
     pub pixel_grid_outline_color: Color32,
     /// Pixel grid center color (dual-stroke white center)
     pub pixel_grid_center_color: Color32,
+    /// Pixel grid opacity multiplier (1.0 = configured colors at full strength).
+    pub pixel_grid_opacity: f32,
+    /// Draw the pixel grid as dashed lines instead of solid dual strokes.
+    pub pixel_grid_dashed: bool,
+    /// Selection outline (marching ants / border) opacity multiplier.
+    pub selection_outline_opacity: f32,
     pub selection_stripe_color: Color32,
     pub selection_stripe_alpha: u8,
     /// Preset colors shown for layer folders.
@@ -56,6 +62,21 @@ pub struct AppSettings {
     pub zoom_filter_mode: ZoomFilterMode,
     /// Checkerboard brightness multiplier (1.0 = default, 0.5 = darker, 1.5 = lighter)
     pub checkerboard_brightness: f32,
+    /// Low-latency presentation: prefer low-latency present modes (Immediate /
+    /// Mailbox) over vsync queueing and queue at most one frame. Trades possible
+    /// screen tearing for visibly snappier input response. Applied at startup.
+    pub low_latency_present: bool,
+    /// Animate selection marching ants (faster scroll). When off, selections
+    /// render a static pattern and the app can go fully idle with a selection
+    /// active.
+    pub animated_selection_ants: bool,
+    /// Path to the active user icon pack folder (empty = built-in icons).
+    pub icon_pack_path: String,
+    /// Invert generic pack icons in dark mode when the pack has no dark
+    /// variant for an icon (theme-specific variants are never inverted).
+    pub icon_pack_invert_mismatch: bool,
+    /// Leave the pasted region selected after committing a paste.
+    pub select_after_paste: bool,
 
     // AI / ONNX Runtime settings
     /// Path to onnxruntime.dll / libonnxruntime.so
@@ -158,6 +179,8 @@ pub struct AppSettings {
     pub persisted_shapes_corner_radius: f32,
     pub persisted_move_interpolation: String,
     pub persisted_move_anti_aliasing: bool,
+    /// Stroke stabilization strength (0.0 = raw pointer path, 0.9 = heavy).
+    pub persisted_stroke_stabilization: f32,
 
     // --- Advanced Customization (Phase 10) ---
     // --- Text tool persistence ---
@@ -249,6 +272,9 @@ impl Default for AppSettings {
             pixel_grid_mode: PixelGridMode::Auto,
             pixel_grid_outline_color: Color32::from_black_alpha(90),
             pixel_grid_center_color: Color32::from_white_alpha(100),
+            pixel_grid_opacity: 0.5,
+            pixel_grid_dashed: true,
+            selection_outline_opacity: 0.7,
             selection_stripe_color: Color32::from_rgba_premultiplied(255, 255, 255, 255),
             selection_stripe_alpha: 22,
             folder_color_palette: AppSettings::default_folder_color_palette(),
@@ -257,6 +283,11 @@ impl Default for AppSettings {
             neon_mode: false,
             zoom_filter_mode: ZoomFilterMode::Linear,
             checkerboard_brightness: 1.0,
+            low_latency_present: true,
+            animated_selection_ants: true,
+            icon_pack_path: String::new(),
+            icon_pack_invert_mismatch: true,
+            select_after_paste: false,
             onnx_runtime_path: String::new(),
             birefnet_model_path: String::new(),
             paintdotnet_plugins_enabled: false,
@@ -337,6 +368,7 @@ impl Default for AppSettings {
             persisted_shapes_corner_radius: 10.0,
             persisted_move_interpolation: "bilinear".to_string(),
             persisted_move_anti_aliasing: true,
+            persisted_stroke_stabilization: 0.0,
 
             // Advanced Customization defaults
             persisted_text_font_family: String::new(),
@@ -858,6 +890,9 @@ impl AppSettings {
              pixel_grid_mode={grid_str}\n\
              pixel_grid_outline_color={}\n\
              pixel_grid_center_color={}\n\
+              pixel_grid_opacity={}\n\
+              pixel_grid_dashed={}\n\
+              selection_outline_opacity={}\n\
              selection_stripe_color={}\n\
              selection_stripe_alpha={}\n\
              max_undo_steps={}\n\
@@ -871,6 +906,11 @@ impl AppSettings {
              neon_mode={}\n\
              zoom_filter_mode={filter_str}\n\
              checkerboard_brightness={}\n\
+              low_latency_present={}\n\
+              animated_selection_ants={}\n\
+              icon_pack_path={}\n\
+              icon_pack_invert_mismatch={}\n\
+              select_after_paste={}\n\
              onnx_runtime_path={}\n\
              birefnet_model_path={}\n\
              paintdotnet_plugins_enabled={}\n\
@@ -882,6 +922,9 @@ impl AppSettings {
             self.preferred_gpu,
             Self::color_to_str(self.pixel_grid_outline_color),
             Self::color_to_str(self.pixel_grid_center_color),
+            self.pixel_grid_opacity,
+            self.pixel_grid_dashed,
+            self.selection_outline_opacity,
             Self::color_to_str(self.selection_stripe_color),
             self.selection_stripe_alpha,
             self.max_undo_steps,
@@ -894,6 +937,11 @@ impl AppSettings {
             Self::color_to_str(effective_accent.dark_strong),
             self.neon_mode,
             self.checkerboard_brightness,
+            self.low_latency_present,
+            self.animated_selection_ants,
+            self.icon_pack_path,
+            self.icon_pack_invert_mismatch,
+            self.select_after_paste,
             self.onnx_runtime_path,
             self.birefnet_model_path,
             self.paintdotnet_plugins_enabled,
@@ -1125,6 +1173,10 @@ impl AppSettings {
             self.persisted_move_anti_aliasing
         ));
         content.push_str(&format!(
+            "persisted_stroke_stabilization={}\n",
+            self.persisted_stroke_stabilization
+        ));
+        content.push_str(&format!(
             "persisted_text_font_family={}\n",
             self.persisted_text_font_family
         ));
@@ -1300,6 +1352,15 @@ impl AppSettings {
                         _ => PixelGridMode::Auto,
                     };
                 }
+                "pixel_grid_opacity" => {
+                    s.pixel_grid_opacity = val.parse().unwrap_or(0.5);
+                }
+                "pixel_grid_dashed" => {
+                    s.pixel_grid_dashed = val == "true";
+                }
+                "selection_outline_opacity" => {
+                    s.selection_outline_opacity = val.parse().unwrap_or(0.7);
+                }
                 "pixel_grid_outline_color" => {
                     s.pixel_grid_outline_color =
                         Self::str_to_color(val).unwrap_or(Color32::from_black_alpha(90));
@@ -1370,6 +1431,21 @@ impl AppSettings {
                 }
                 "checkerboard_brightness" => {
                     s.checkerboard_brightness = val.parse().unwrap_or(1.0);
+                }
+                "low_latency_present" => {
+                    s.low_latency_present = val == "true";
+                }
+                "animated_selection_ants" => {
+                    s.animated_selection_ants = val == "true";
+                }
+                "icon_pack_path" => {
+                    s.icon_pack_path = val.to_string();
+                }
+                "icon_pack_invert_mismatch" => {
+                    s.icon_pack_invert_mismatch = val == "true";
+                }
+                "select_after_paste" => {
+                    s.select_after_paste = val == "true";
                 }
                 "onnx_runtime_path" => {
                     s.onnx_runtime_path = val.to_string();
@@ -1463,6 +1539,9 @@ impl AppSettings {
                 }
                 "persisted_brush_hardness" => {
                     s.persisted_brush_hardness = val.parse().unwrap_or(0.75);
+                }
+                "persisted_stroke_stabilization" => {
+                    s.persisted_stroke_stabilization = val.parse().unwrap_or(0.0);
                 }
                 "persisted_brush_flow" => {
                     s.persisted_brush_flow = val.parse().unwrap_or(1.0);

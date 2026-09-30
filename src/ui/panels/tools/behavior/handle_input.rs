@@ -88,6 +88,39 @@ impl ToolsPanel {
         false
     }
 
+    /// Stroke stabilization: EMA-smooth raw pointer samples by the user's
+    /// stabilization factor. `0.0` (default) returns the raw pointer path
+    /// unchanged — 1:1 tracking like Paint.NET. The Pencil tool is always raw
+    /// so pixel placement stays exact.
+    fn stabilize_positions(&mut self, positions: &[(f32, f32)]) -> Vec<(f32, f32)> {
+        let stab = if self.active_tool == Tool::Pencil {
+            0.0
+        } else {
+            self.stroke_stabilization.clamp(0.0, 0.9)
+        };
+        if stab <= 0.0 {
+            if let Some(&(x, y)) = positions.last() {
+                self.tool_state.smooth_pos = Some(Pos2::new(x, y));
+            }
+            return positions.to_vec();
+        }
+        let alpha = (1.0 - stab).max(0.1);
+        let mut result = Vec::with_capacity(positions.len());
+        for &pos in positions {
+            let raw = Pos2::new(pos.0, pos.1);
+            let smoothed = match self.tool_state.smooth_pos {
+                Some(prev) => Pos2::new(
+                    prev.x + alpha * (raw.x - prev.x),
+                    prev.y + alpha * (raw.y - prev.y),
+                ),
+                None => raw,
+            };
+            self.tool_state.smooth_pos = Some(smoothed);
+            result.push((smoothed.x, smoothed.y));
+        }
+        result
+    }
+
     pub fn handle_input(
         &mut self,
         ui: &egui::Ui,

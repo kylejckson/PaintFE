@@ -8,6 +8,15 @@ use egui::{Color32, Sense, Vec2};
 
 pub struct SettingsWindow {
     pub open: bool,
+    /// Set when the user applies the "Pixel Art" preset; consumed by the app
+    /// to also update the live tool state (hardness, stabilization).
+    pub pending_pixel_art_preset: bool,
+    /// Icon pack folder chosen by the user; consumed by the app (needs &mut Assets).
+    pub pending_icon_pack_load: Option<std::path::PathBuf>,
+    /// Set when the user removes the active icon pack.
+    pub pending_icon_pack_clear: bool,
+    /// Set when icon display options changed and textures must be re-uploaded.
+    pub pending_icon_pack_reload: bool,
     active_tab: SettingsTab,
     /// Staging copy of accent colors for the "Interface" tab (applied on "Apply")
     staged_accent: AccentColors,
@@ -60,6 +69,10 @@ impl Default for SettingsWindow {
         let preset = ThemePreset::Signal;
         Self {
             open: false,
+            pending_pixel_art_preset: false,
+            pending_icon_pack_load: None,
+            pending_icon_pack_clear: false,
+            pending_icon_pack_reload: false,
             active_tab: SettingsTab::General,
             staged_accent: preset.accent_colors(),
             staged_preset: preset,
@@ -115,9 +128,9 @@ impl SettingsWindow {
         settings: &mut AppSettings,
         theme: &mut crate::theme::Theme,
         assets: &Assets,
-    ) {
+    ) -> Option<egui::Rect> {
         if !self.open {
-            return;
+            return None;
         }
 
         // Sync on first frame the window is shown
@@ -134,7 +147,7 @@ impl SettingsWindow {
         let show = self.open;
         let mut should_close = false;
 
-        egui::Window::new("settings_window_internal")
+        let window_response = egui::Window::new("settings_window_internal")
             .title_bar(false)
             .resizable(true)
             .collapsible(false)
@@ -329,7 +342,7 @@ impl SettingsWindow {
                                         self.show_general_tab(ui, settings);
                                     }
                                     SettingsTab::Interface => {
-                                        self.show_interface_tab(ui, ctx, settings, theme);
+                                        self.show_interface_tab(ui, ctx, settings, theme, assets);
                                     }
                                     SettingsTab::Hardware => {
                                         self.show_hardware_tab(ui, settings);
@@ -355,7 +368,9 @@ impl SettingsWindow {
             });
 
         #[cfg(not(target_arch = "wasm32"))]
-        self.show_plugin_trust_modal(ctx);
+        let trust_rect = self.show_plugin_trust_modal(ctx);
+        #[cfg(target_arch = "wasm32")]
+        let trust_rect: Option<egui::Rect> = None;
 
         self.open = show && !should_close;
         if !self.open {
@@ -365,6 +380,15 @@ impl SettingsWindow {
             }
             // Clear the sync flag when window closes
             ctx.data_mut(|d| d.insert_temp(id, false));
+        }
+
+        // The visible window rect(s) — the caller registers them as
+        // input-blocking so canvas input (wheel zoom, clicks, strokes) does
+        // not leak through the window to the canvas behind it.
+        let window_rect = window_response.map(|r| r.response.rect);
+        match (window_rect, trust_rect) {
+            (Some(a), Some(b)) => Some(a.union(b)),
+            (a, b) => a.or(b),
         }
     }
 
@@ -483,9 +507,9 @@ impl SettingsWindow {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn show_plugin_trust_modal(&mut self, ctx: &egui::Context) {
+    fn show_plugin_trust_modal(&mut self, ctx: &egui::Context) -> Option<egui::Rect> {
         let Some(hash) = self.pending_trust_plugin.clone() else {
-            return;
+            return None;
         };
         let Some(plugin) = self
             .plugin_manager
@@ -495,10 +519,10 @@ impl SettingsWindow {
             .cloned()
         else {
             self.pending_trust_plugin = None;
-            return;
+            return None;
         };
 
-        egui::Window::new("paintdotnet_plugin_trust_confirm")
+        let window_response = egui::Window::new("paintdotnet_plugin_trust_confirm")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
@@ -528,6 +552,8 @@ impl SettingsWindow {
                     }
                 });
             });
+
+        window_response.map(|r| r.response.rect)
     }
 
     // -- General Tab -------------------------------------------
@@ -726,6 +752,19 @@ impl SettingsWindow {
         ui.label(
             egui::RichText::new(
                 "When enabled, pasted selections keep their original silhouette instead of filling their bounding box.",
+            )
+            .small()
+            .weak(),
+        );
+
+        ui.add_space(6.0);
+        ui.checkbox(
+            &mut settings.select_after_paste,
+            "Select the pasted image after pasting",
+        );
+        ui.label(
+            egui::RichText::new(
+                "When enabled, committing a paste leaves the pasted region selected (ready for Crop to Selection). Off by default.",
             )
             .small()
             .weak(),
@@ -930,6 +969,7 @@ impl SettingsWindow {
         ctx: &egui::Context,
         settings: &mut AppSettings,
         theme: &mut crate::theme::Theme,
+        assets: &crate::assets::Assets,
     ) {
         // Poll the browser file picker for an imported theme file.
         #[cfg(target_arch = "wasm32")]
@@ -1071,8 +1111,140 @@ impl SettingsWindow {
             self.dirty = true;
         }
 
+        // -- Icon Pack -------------------------------------------------
+        Self::section_header(ui, &t!("settings.interface.icon_pack"));
+        ui.label(format!(
+            "{}: {}",
+            t!("settings.interface.icon_pack_current"),
+            assets
+                .icon_pack_name()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| t!("settings.interface.icon_pack_none"))
+        ));
+        ui.horizontal(|ui| {
+            #[cfg(not(target_arch = "wasm32"))]
+            if ui
+                .button(t!("settings.interface.icon_pack_browse"))
+                .on_hover_text(t!("settings.interface.icon_pack_browse_hint"))
+                .clicked()
+            {
+                if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                    self.pending_icon_pack_load = Some(dir);
+                }
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            if ui
+                .button(t!("settings.interface.icon_pack_zip"))
+                .on_hover_text(t!("settings.interface.icon_pack_zip_hint"))
+                .clicked()
+            {
+                if let Some(file) = rfd::FileDialog::new()
+                    .add_filter("Icon pack", &["zip"])
+                    .pick_file()
+                {
+                    self.pending_icon_pack_load = Some(file);
+                }
+            }
+            if ui
+                .add_enabled(
+                    assets.icon_pack_name().is_some(),
+                    egui::Button::new(t!("settings.interface.icon_pack_clear")),
+                )
+                .clicked()
+            {
+                self.pending_icon_pack_clear = true;
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            if ui
+                .button(t!("settings.interface.icon_pack_export"))
+                .on_hover_text(t!("settings.interface.icon_pack_export_hint"))
+                .clicked()
+            {
+                if let Some(dir) = rfd::FileDialog::new().pick_folder()
+                    && let Err(e) = assets.export_icon_template(&dir)
+                {
+                    crate::log_info!("Icon pack export failed: {e}");
+                }
+            }
+        });
+        if ui
+            .checkbox(
+                &mut settings.icon_pack_invert_mismatch,
+                t!("settings.interface.icon_pack_invert"),
+            )
+            .on_hover_text(t!("settings.interface.icon_pack_invert_hint"))
+            .changed()
+        {
+            settings.save();
+            self.pending_icon_pack_reload = true;
+        }
+
+        // Preview: every icon and shape with its canonical id and the source
+        // it currently resolves to (helps pack authors name their files).
+        let mut tiles: Vec<(String, egui::TextureHandle, &'static str)> = Vec::new();
+        for icon in assets.icon_list() {
+            if let Some(tex) = assets.icon_texture(icon) {
+                tiles.push((
+                    icon.pack_id(),
+                    tex.clone(),
+                    assets.icon_source(icon).label(),
+                ));
+            }
+        }
+        for kind in assets.shape_list() {
+            if let Some(tex) = assets.shape_texture(kind) {
+                tiles.push((
+                    crate::config::icon_packs::shape_pack_id(kind),
+                    tex.clone(),
+                    assets.shape_source(kind).label(),
+                ));
+            }
+        }
+        egui::Grid::new("icon_pack_preview")
+            .num_columns(8)
+            .spacing([10.0, 8.0])
+            .show(ui, |ui| {
+                for (i, (id, tex, src)) in tiles.iter().take(48).enumerate() {
+                    ui.vertical(|ui| {
+                        ui.add(egui::Image::new((tex.id(), egui::vec2(22.0, 22.0))));
+                        ui.label(egui::RichText::new(id).small());
+                        ui.label(egui::RichText::new(*src).small().weak());
+                    });
+                    if i % 8 == 7 {
+                        ui.end_row();
+                    }
+                }
+            });
+
         // -- Canvas Rendering -----------------------------------------
         Self::section_header(ui, &t!("settings.interface.canvas_rendering"));
+
+        // Quick-setup button (kept at the top of the section for visibility).
+        if ui
+            .add(
+                egui::Button::new(
+                    egui::RichText::new(format!("⚡ {}", t!("settings.interface.pixel_art_preset_apply")))
+                        .strong(),
+                )
+                .min_size(egui::vec2(ui.available_width(), 28.0)),
+            )
+            .on_hover_text(t!("settings.interface.pixel_art_preset_hint"))
+            .clicked()
+        {
+            settings.zoom_filter_mode = ZoomFilterMode::Nearest;
+            settings.pixel_grid_mode = PixelGridMode::AlwaysOn;
+            settings.pixel_grid_opacity = 0.45;
+            settings.pixel_grid_dashed = true;
+            settings.selection_outline_opacity = 0.6;
+            settings.persisted_brush_hardness = 1.0;
+            settings.persisted_stroke_stabilization = 0.0;
+            settings.animated_selection_ants = false;
+            settings.low_latency_present = true;
+            settings.save();
+            self.pending_pixel_art_preset = true;
+        }
+        ui.add_space(4.0);
+
         egui::Grid::new("interface_canvas_grid")
             .num_columns(2)
             .spacing([16.0, 6.0])
@@ -1106,6 +1278,38 @@ impl SettingsWindow {
                 }
                 ui.end_row();
 
+                ui.label(t!("settings.interface.low_latency_present"));
+                if ui
+                    .checkbox(&mut settings.low_latency_present, "")
+                    .on_hover_text(t!("settings.interface.low_latency_present_hint"))
+                    .changed()
+                {
+                    settings.save();
+                }
+                ui.end_row();
+
+                ui.label(t!("settings.interface.stroke_stabilization"));
+                if Self::settings_slider(
+                    ui,
+                    &mut settings.persisted_stroke_stabilization,
+                    0.0..=0.9,
+                    0.05,
+                    0.0,
+                ) {
+                    settings.save();
+                }
+                ui.end_row();
+
+                ui.label(t!("settings.interface.animated_ants"));
+                if ui
+                    .checkbox(&mut settings.animated_selection_ants, "")
+                    .on_hover_text(t!("settings.interface.animated_ants_hint"))
+                    .changed()
+                {
+                    settings.save();
+                }
+                ui.end_row();
+
                 // Pixel grid outline color
                 ui.label("Pixel Grid Outline");
                 ui.horizontal(|ui| {
@@ -1117,6 +1321,40 @@ impl SettingsWindow {
                         settings.save();
                     }
                 });
+                ui.end_row();
+
+                ui.label(t!("settings.interface.pixel_grid_opacity"));
+                if Self::settings_slider(
+                    ui,
+                    &mut settings.pixel_grid_opacity,
+                    0.0..=1.0,
+                    0.05,
+                    0.5,
+                ) {
+                    settings.save();
+                }
+                ui.end_row();
+
+                ui.label(t!("settings.interface.pixel_grid_dashed"));
+                if ui
+                    .checkbox(&mut settings.pixel_grid_dashed, "")
+                    .on_hover_text(t!("settings.interface.pixel_grid_dashed_hint"))
+                    .changed()
+                {
+                    settings.save();
+                }
+                ui.end_row();
+
+                ui.label(t!("settings.interface.selection_outline_opacity"));
+                if Self::settings_slider(
+                    ui,
+                    &mut settings.selection_outline_opacity,
+                    0.1..=1.0,
+                    0.05,
+                    0.7,
+                ) {
+                    settings.save();
+                }
                 ui.end_row();
 
                 ui.label("Selection Stripes");

@@ -150,6 +150,15 @@ impl PaintFEApp {
         // Initialize assets
         let mut assets = Assets::new();
         assets.init(&cc.egui_ctx);
+        // User icon pack (if configured): PNG overrides resolved before the
+        // built-in icons.
+        assets.set_icon_pack_invert_mismatch(settings.icon_pack_invert_mismatch);
+        if !settings.icon_pack_path.is_empty()
+            && let Err(e) =
+                assets.load_icon_pack(std::path::Path::new(&settings.icon_pack_path))
+        {
+            log_info!("Icon pack load failed: {e}");
+        }
 
         let (filter_sender, filter_receiver) = mpsc::channel();
         let (io_sender, io_receiver) = mpsc::channel();
@@ -828,6 +837,7 @@ impl PaintFEApp {
             self.settings.persisted_pressure_min_opacity.clamp(0.0, 1.0);
 
         self.tools_panel.properties.brush_mode = match self.settings.persisted_brush_mode.as_str() {
+            "buildup" => tools::BrushMode::BuildUp,
             "dodge" => tools::BrushMode::Dodge,
             "burn" => tools::BrushMode::Burn,
             "sponge" => tools::BrushMode::Sponge,
@@ -883,6 +893,7 @@ impl PaintFEApp {
                 _ => crate::ops::transform::Interpolation::Bilinear,
             };
         self.tools_panel.move_anti_aliasing = self.settings.persisted_move_anti_aliasing;
+        self.tools_panel.stroke_stabilization = self.settings.persisted_stroke_stabilization;
         self.tools_panel.text_state.font_family = crate::ops::text::resolve_font_family_preference(
             &self.settings.persisted_text_font_family,
         );
@@ -939,6 +950,7 @@ impl PaintFEApp {
             .hash(&mut hasher);
         match self.tools_panel.properties.brush_mode {
             tools::BrushMode::Normal => 0u8,
+            tools::BrushMode::BuildUp => 4u8,
             tools::BrushMode::Dodge => 1u8,
             tools::BrushMode::Burn => 2u8,
             tools::BrushMode::Sponge => 3u8,
@@ -1143,6 +1155,7 @@ impl PaintFEApp {
             self.tools_panel.properties.pressure_min_opacity;
         self.settings.persisted_brush_mode = match self.tools_panel.properties.brush_mode {
             tools::BrushMode::Normal => "normal",
+            tools::BrushMode::BuildUp => "buildup",
             tools::BrushMode::Dodge => "dodge",
             tools::BrushMode::Burn => "burn",
             tools::BrushMode::Sponge => "sponge",
@@ -1184,6 +1197,7 @@ impl PaintFEApp {
         }
         .to_string();
         self.settings.persisted_move_anti_aliasing = self.tools_panel.move_anti_aliasing;
+        self.settings.persisted_stroke_stabilization = self.tools_panel.stroke_stabilization;
         self.settings.persisted_text_font_family = self.tools_panel.text_state.font_family.clone();
 
         self.settings.save();

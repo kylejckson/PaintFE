@@ -27,20 +27,41 @@ impl PaintFEApp {
         }
 
         // --- Floating Tool Shelf (replaces docked context bar) ---
-        // Keep the strip itself transparent so the canvas/app backdrop remains
-        // visible behind the floating shelf container.
-        let shelf_margin = 6.0;
+        // Drawn as an egui::Area so the canvas renders behind it; the shelf
+        // itself is a translucent rounded pill (website `.card` pattern).
         let mut start_straighten = false;
         let mut commit_straighten = false;
         let mut cancel_straighten = false;
-        #[allow(deprecated)]
-        let shelf_resp = egui::Panel::top("tool_shelf_strip")
-            .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(shelf_margin as i8)))
-            .min_size(30.0) // Allow growth so controls don't get vertically clipped on newer egui metrics
-            .show(root_ui, |ui| {
+        let mut shelf_ui_rect = egui::Rect::NOTHING;
+        // Floating overlay: the shelf is an egui::Area over the canvas instead
+        // of a Panel, so the canvas fills the full viewport behind it and the
+        // shelf genuinely floats above it (see Theme::tool_shelf_frame).
+        let shelf_anchor = self
+            .canvas
+            .last_canvas_rect
+            .map(|r| r.min + egui::vec2(12.0, 8.0))
+            .unwrap_or_else(|| root_ui.min_rect().min + egui::vec2(12.0, 8.0));
+        egui::Area::new(egui::Id::new("tool_shelf_strip"))
+            .order(egui::Order::Middle)
+            .fixed_pos(shelf_anchor)
+            .show(root_ui.ctx(), |ui| {
+                // Static full-width bar: the pill spans the viewport minus the
+                // 12px padding on both sides, so its width never jumps when the
+                // active tool's options change.
+                let bar_w = (self
+                    .canvas
+                    .last_canvas_rect
+                    .map(|r| r.width())
+                    .unwrap_or(600.0)
+                    - 24.0)
+                    .max(240.0);
+                ui.set_width(bar_w);
                 let shelf_frame = self.theme.tool_shelf_frame();
-                shelf_frame.show(ui, |ui| {
-                    ui.set_width(ui.available_width());
+                // Wrap the shelf content instead of stretching across the full
+                // window width, so the input-blocking rect recorded below matches
+                // the visible shelf and clicks elsewhere in the top strip reach
+                // the canvas.
+                let shelf_inner = shelf_frame.show(ui, |ui| {
                     // Context bar label styling
                     ui.style_mut().override_font_id =
                         Some(egui::FontId::proportional(crate::theme::Theme::FONT_LABEL));
@@ -70,9 +91,21 @@ impl PaintFEApp {
                                         ui.selectable_value(&mut session.interpolation, interpolation, interpolation.label());
                                     }
                                 });
-                            if ui.button("Reset").clicked() { session.angle_degrees = 0.0; }
-                            if ui.button("Apply").clicked() { commit_straighten = true; }
-                            if ui.button("Cancel").clicked() { cancel_straighten = true; }
+                            // Trailing quick-actions — flush right on the bar.
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui.button("Cancel").clicked() {
+                                        cancel_straighten = true;
+                                    }
+                                    if ui.button("Apply").clicked() {
+                                        commit_straighten = true;
+                                    }
+                                    if ui.button("Reset").clicked() {
+                                        session.angle_degrees = 0.0;
+                                    }
+                                },
+                            );
                         } else if let Some(ref mut overlay) = self.paste_overlay {
                             // --- Paste overlay context bar ---
                             crate::signal_widgets::tool_shelf_tag(ui, "PASTE", self.theme.accent, &self.theme);
@@ -124,18 +157,23 @@ impl PaintFEApp {
 
                             ui.add_space(4.0);
 
-                            // Quick actions
-                            if ui
-                                .button("Reset")
-                                .on_hover_text("Reset all transforms and crop")
-                                .clicked()
-                            {
-                                overlay.rotation = 0.0;
-                                overlay.scale_x = 1.0;
-                                overlay.scale_y = 1.0;
-                                overlay.anchor_offset = egui::Vec2::ZERO;
-                                overlay.reset_crop();
-                            }
+                            // Quick actions — flush right on the bar.
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui
+                                        .button("Reset")
+                                        .on_hover_text("Reset all transforms and crop")
+                                        .clicked()
+                                    {
+                                        overlay.rotation = 0.0;
+                                        overlay.scale_x = 1.0;
+                                        overlay.scale_y = 1.0;
+                                        overlay.anchor_offset = egui::Vec2::ZERO;
+                                        overlay.reset_crop();
+                                    }
+                                },
+                            );
                         } else {
                             let ctx_primary = self.colors_panel.get_primary_color();
                             let ctx_secondary = self.colors_panel.get_secondary_color();
@@ -146,17 +184,30 @@ impl PaintFEApp {
                                 ctx_secondary,
                                 &self.theme,
                             );
-                            if self.assets.icon_button(ui, crate::assets::Icon::UiStraighten, egui::Vec2::splat(20.0))
-                                .on_hover_text("Straighten canvas")
-                                .clicked()
-                            {
-                                start_straighten = true;
-                            }
+                            // Trailing quick-action — flush right on the bar.
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if self
+                                        .assets
+                                        .icon_button(
+                                            ui,
+                                            crate::assets::Icon::UiStraighten,
+                                            egui::Vec2::splat(20.0),
+                                        )
+                                        .on_hover_text("Straighten canvas")
+                                        .clicked()
+                                    {
+                                        start_straighten = true;
+                                    }
+                                },
+                            );
                         }
                     });
                 });
+                shelf_ui_rect = shelf_inner.response.rect;
             });
-        self.remember_ui_cursor_rect(shelf_resp.response.rect);
+        self.remember_ui_cursor_rect(shelf_ui_rect);
         if start_straighten { self.start_straighten(); }
         if commit_straighten { self.commit_straighten(); }
         if cancel_straighten { self.cancel_straighten(); }
@@ -268,6 +319,8 @@ impl PaintFEApp {
                     let secondary_color_f32 = self.colors_panel.get_secondary_color_f32();
                     // Push theme accent colours into canvas for selection rendering.
                     self.canvas.selection_stroke = self.theme.accent;
+                    self.canvas.selection_outline_opacity =
+                        self.settings.selection_outline_opacity;
                     self.canvas.selection_fill = {
                         let [r, g, b, _] = self.theme.accent.to_array();
                         egui::Color32::from_rgba_unmultiplied(r, g, b, 25)
@@ -422,9 +475,24 @@ impl PaintFEApp {
                                 }
                                 self.is_move_pixels_active = false;
 
-                                // Explicit commits leave the pasted region selected so
-                                // it can be cropped/refined immediately afterwards.
-                                project.canvas_state.selection_mask = select_mask;
+                                // Selection after commit: "Commit & Select" always
+                                // leaves the pasted region selected; plain Commit
+                                // honours the "Select the pasted image after pasting"
+                                // preference (off by default). "Commit & Crop" needs
+                                // the mask only to define the crop bounds.
+                                let needs_mask =
+                                    action == crate::canvas::PasteAction::CommitAndCrop;
+                                let keep_selection = action
+                                    == crate::canvas::PasteAction::CommitAndSelect
+                                    || (action == crate::canvas::PasteAction::Commit
+                                        && self.settings.select_after_paste);
+                                project.canvas_state.selection_mask = if needs_mask
+                                    || keep_selection
+                                {
+                                    select_mask
+                                } else {
+                                    None
+                                };
                                 if let Some(mask) = project.canvas_state.selection_mask.as_mut()
                                     && let Some((x0, y0, x1, y1)) = select_bounds
                                 {
@@ -436,9 +504,11 @@ impl PaintFEApp {
                                 }
                                 project.canvas_state.invalidate_selection_overlay();
                                 project.canvas_state.mark_dirty(None);
-                                self.tools_panel.selection_state.mode =
-                                    crate::canvas::SelectionMode::Replace;
-                                if action == crate::canvas::PasteAction::CommitAndCrop {
+                                if keep_selection {
+                                    self.tools_panel.selection_state.mode =
+                                        crate::canvas::SelectionMode::Replace;
+                                }
+                                if needs_mask {
                                     // Second undo step: crop the canvas to the (possibly
                                     // trimmed) pasted bounds. Mirrors do_snapshot_op.
                                     project.canvas_state.ensure_all_text_layers_rasterized();
@@ -457,7 +527,7 @@ impl PaintFEApp {
                                     cmd.set_after(&project.canvas_state);
                                     project.history.push(Box::new(cmd));
                                     project.mark_dirty();
-                                } else {
+                                } else if keep_selection {
                                     self.pending_selection_reassert =
                                         project.canvas_state.selection_mask.clone();
                                 }

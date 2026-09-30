@@ -3,8 +3,58 @@ impl PaintFEApp {
         #[cfg(target_arch = "wasm32")]
         self.show_welcome_popup_window(ctx);
 
-        self.settings_window
+        let settings_window_rect = self
+            .settings_window
             .show(ctx, &mut self.settings, &mut self.theme, &self.assets);
+        // Keep the runtime stroke stabilization in sync with the settings
+        // slider (the slider writes AppSettings only).
+        self.tools_panel.stroke_stabilization = self.settings.persisted_stroke_stabilization;
+
+        // Register the settings window as input-blocking: without this the
+        // canvas behind it keeps receiving wheel zoom / clicks / strokes while
+        // the pointer is over the window.
+        if let Some(rect) = settings_window_rect {
+            self.remember_ui_cursor_rect(rect);
+        }
+
+        // Pixel Art preset: also update the live tool state (the settings
+        // window only writes AppSettings).
+        if self.settings_window.pending_pixel_art_preset {
+            self.settings_window.pending_pixel_art_preset = false;
+            self.tools_panel.properties.hardness = 1.0;
+            self.tools_panel.stroke_stabilization = 0.0;
+        }
+
+        // Icon pack changes from the Settings window (needs &mut Assets).
+        let dark = matches!(self.theme.mode, crate::theme::ThemeMode::Dark);
+        if let Some(path) = self.settings_window.pending_icon_pack_load.take() {
+            self.assets
+                .set_icon_pack_invert_mismatch(self.settings.icon_pack_invert_mismatch);
+            match self.assets.load_icon_pack(&path) {
+                Ok(name) => {
+                    log_info!("Icon pack loaded: {name} ({})", path.display());
+                    self.settings.icon_pack_path = path.display().to_string();
+                }
+                Err(e) => {
+                    log_info!("Icon pack load failed: {e}");
+                }
+            }
+            self.assets.reload_icons(ctx, dark);
+            self.settings.save();
+        }
+        if self.settings_window.pending_icon_pack_clear {
+            self.settings_window.pending_icon_pack_clear = false;
+            self.assets.clear_icon_pack();
+            self.settings.icon_pack_path.clear();
+            self.assets.reload_icons(ctx, dark);
+            self.settings.save();
+        }
+        if self.settings_window.pending_icon_pack_reload {
+            self.settings_window.pending_icon_pack_reload = false;
+            self.assets
+                .set_icon_pack_invert_mismatch(self.settings.icon_pack_invert_mismatch);
+            self.assets.reload_icons(ctx, dark);
+        }
 
         let current_paths = (
             self.settings.onnx_runtime_path.clone(),

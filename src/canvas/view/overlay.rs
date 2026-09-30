@@ -31,9 +31,12 @@ impl Canvas {
             .ceil()
             .min(state.height as f32) as u32;
 
-        // Grid colors from user settings (dual-stroke: outline + center)
-        let grid_outline = settings.pixel_grid_outline_color;
-        let grid_center = settings.pixel_grid_center_color;
+        // Grid colors from user settings, softened by the configured opacity
+        // (premultiplied-safe scaling keeps the tint proportional).
+        let opacity = settings.pixel_grid_opacity.clamp(0.0, 1.0);
+        let grid_outline = scale_color(settings.pixel_grid_outline_color, opacity);
+        let grid_center = scale_color(settings.pixel_grid_center_color, opacity);
+        let dashed = settings.pixel_grid_dashed;
 
         // Adaptive stroke width: thinner lines as zoom increases for less visual clutter
         // At zoom 8 (minimum grid display): base thickness (1.2 and 0.6, which is 40% smaller than original 2.0 and 1.0)
@@ -48,29 +51,47 @@ impl Canvas {
             .max(0.3)
             .min(base_center);
 
-        // Draw vertical lines with dual-stroke (black outline + white center)
+        // Draw vertical lines (dashed single stroke, or solid dual-stroke)
         for x in start_x..=end_x {
             let screen_x = image_rect.min.x + x as f32 * pixel_size;
             if screen_x >= visible_rect.min.x && screen_x <= visible_rect.max.x {
                 let p0 = Pos2::new(screen_x, visible_rect.min.y.max(image_rect.min.y));
                 let p1 = Pos2::new(screen_x, visible_rect.max.y.min(image_rect.max.y));
-                // Draw black outline first
-                painter.line_segment([p0, p1], (outline_stroke, grid_outline));
-                // Draw white center line on top
-                painter.line_segment([p0, p1], (center_stroke, grid_center));
+                if dashed {
+                    painter.add(egui::Shape::dashed_line(
+                        &[p0, p1],
+                        (outline_stroke, grid_outline),
+                        2.5,
+                        2.5,
+                    ));
+                } else {
+                    // Draw black outline first
+                    painter.line_segment([p0, p1], (outline_stroke, grid_outline));
+                    // Draw white center line on top
+                    painter.line_segment([p0, p1], (center_stroke, grid_center));
+                }
             }
         }
 
-        // Draw horizontal lines with dual-stroke (black outline + white center)
+        // Draw horizontal lines (dashed single stroke, or solid dual-stroke)
         for y in start_y..=end_y {
             let screen_y = image_rect.min.y + y as f32 * pixel_size;
             if screen_y >= visible_rect.min.y && screen_y <= visible_rect.max.y {
                 let p0 = Pos2::new(visible_rect.min.x.max(image_rect.min.x), screen_y);
                 let p1 = Pos2::new(visible_rect.max.x.min(image_rect.max.x), screen_y);
-                // Draw black outline first
-                painter.line_segment([p0, p1], (outline_stroke, grid_outline));
-                // Draw white center line on top
-                painter.line_segment([p0, p1], (center_stroke, grid_center));
+                if dashed {
+                    painter.add(egui::Shape::dashed_line(
+                        &[p0, p1],
+                        (outline_stroke, grid_outline),
+                        2.5,
+                        2.5,
+                    ));
+                } else {
+                    // Draw black outline first
+                    painter.line_segment([p0, p1], (outline_stroke, grid_outline));
+                    // Draw white center line on top
+                    painter.line_segment([p0, p1], (center_stroke, grid_center));
+                }
             }
         }
     }
@@ -568,18 +589,19 @@ impl Canvas {
         // rebuilt only when the selection mask changes or the animation offset
         // ticks forward.  The GPU handles zoom/display for free.
         if !tool_active {
-            // Animation: smoothly scroll pattern at ~1.5 canvas-pixels per second.
-            // Using a float modulo (no integer cast) so the offset is continuous and
-            // the texture rebuilds in small sub-pixel increments instead of whole-pixel
+            // Animation: smoothly scroll the pattern at ~12 canvas-pixels per
+            // second (was a very slow ~1.5 px/s crawl). Using a float modulo
+            // (no integer cast) so the offset is continuous and the texture
+            // rebuilds in small sub-pixel increments instead of whole-pixel
             // jumps, eliminating the jitter visible at high zoom levels.
             let band_period = 8u32; // canvas-pixel diagonal period
             let period_f = (band_period * 2) as f32;
-            let anim_offset = ((time * 3.0) % (period_f as f64)) as f32;
+            let anim_offset = ((time * 12.0) % (period_f as f64)) as f32;
 
             let generation_changed =
                 state.selection_overlay_built_generation != state.selection_overlay_generation;
             // Rebuild when the fractional offset shifts by ≥0.15 canvas pixels
-            // (~10 rebuilds/sec at 1.5 px/s) — enough for smooth motion without
+            // (~25 rebuilds/sec at 12 px/s) — enough for smooth motion without
             // rebuilding a potentially large texture on every single frame.
             let anim_changed = should_animate_interior
                 && (anim_offset - state.selection_overlay_anim_offset).abs() > 0.15;
@@ -719,7 +741,7 @@ impl Canvas {
         }
 
         // --- 4. Draw selection border from cached segments. ------------------
-        let accent = self.selection_stroke;
+        let accent = scale_color(self.selection_stroke, self.selection_outline_opacity);
         let stroke_width = 1.5;
         let [sr, sg, sb, _] = accent.to_array();
         let glow_alpha = if tool_active {
@@ -807,7 +829,7 @@ impl Canvas {
 
     /// Draw an animated "marching ants" rectangle border using theme colours.
     fn draw_marching_rect(&self, painter: &egui::Painter, rect: Rect, time: f64) {
-        let accent = self.selection_stroke;
+        let accent = scale_color(self.selection_stroke, self.selection_outline_opacity);
         let contrast = self.selection_contrast;
 
         let dash = 6.0f32;
@@ -910,7 +932,7 @@ impl Canvas {
         }
 
         // Dashed border (walk the perimeter) using theme accent + contrast.
-        let accent = self.selection_stroke;
+        let accent = scale_color(self.selection_stroke, self.selection_outline_opacity);
         let contrast_col = self.selection_contrast;
         let stroke_width = 1.5;
         let dash = 6.0f32;

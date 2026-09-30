@@ -122,31 +122,54 @@ impl PaintFEApp {
         }
 
         // Handle scroll wheel zoom — only when mouse is over the canvas and NOT over a widget.
-        let mut should_zoom = false;
-        let mut zoom_amount = 0.0;
+        // Plain wheel steps through the discrete zoom ladder (one step per notch,
+        // crisp whole-pixel levels for pixel art); Alt + wheel zooms freely.
+        let mut zoom_steps = 0i32;
+        let mut free_amount = 0.0f32;
         let pointer_over_widget = egui::Popup::is_any_open(ctx)
             || self.pointer_over_cursor_blocking_ui(ctx)
             || ui_blocks_canvas_input;
 
         if !modal_open {
             ctx.input_mut(|i| {
-                if i.smooth_scroll_delta.y.abs() > 0.1 {
-                    let mouse_over_canvas = i.pointer.hover_pos().is_some_and(|pos| {
-                        self.canvas
-                            .last_canvas_rect
-                            .is_some_and(|rect| rect.contains(pos))
-                    });
-                    if mouse_over_canvas && !pointer_over_widget {
-                        should_zoom = true;
-                        zoom_amount = i.smooth_scroll_delta.y;
+                let mouse_over_canvas = i.pointer.hover_pos().is_some_and(|pos| {
+                    self.canvas
+                        .last_canvas_rect
+                        .is_some_and(|rect| rect.contains(pos))
+                });
+                if mouse_over_canvas && !pointer_over_widget {
+                    if i.modifiers.alt {
+                        free_amount = i.smooth_scroll_delta.y;
+                    } else {
+                        // One discrete step per wheel notch (MouseWheel events are
+                        // per notch for line wheels, accumulated for trackpads).
+                        for e in &i.events {
+                            if let egui::Event::MouseWheel { unit, delta, .. } = e {
+                                zoom_steps += if *unit == egui::MouseWheelUnit::Line {
+                                    delta.y.round() as i32
+                                } else {
+                                    (delta.y / 80.0).round() as i32
+                                };
+                            }
+                        }
+                    }
+                    if free_amount.abs() > 0.1 || zoom_steps != 0 {
                         i.smooth_scroll_delta.y = 0.0;
                     }
                 }
             });
         }
 
-        if should_zoom {
-            let zoom_factor = 1.0 + zoom_amount * 0.005;
+        if zoom_steps != 0 {
+            // Step through the zoom ladder, anchored at the cursor.
+            let mouse_pos = ctx.input(|i| i.pointer.hover_pos());
+            let rect = self.canvas.last_canvas_rect.unwrap_or(egui::Rect::ZERO);
+            let direction = if zoom_steps > 0 { 1.0 } else { -1.0 };
+            for _ in 0..zoom_steps.abs().min(4) {
+                self.canvas.zoom_step(direction, mouse_pos, rect);
+            }
+        } else if free_amount.abs() > 0.1 {
+            let zoom_factor = 1.0 + free_amount * 0.005;
             // Zoom around the mouse cursor so the point under the pointer stays fixed.
             let mouse_pos = ctx.input(|i| i.pointer.hover_pos());
             if let (Some(pos), Some(rect)) = (mouse_pos, self.canvas.last_canvas_rect) {
@@ -338,8 +361,16 @@ impl PaintFEApp {
                 self.canvas.zoom_out();
             }
 
-            // Ctrl+0 — Fit to Window
+            // Ctrl+0 — Fit to Window (fits the canvas into the viewport)
             if kb.is_pressed(ctx, BindableAction::ViewFitToWindow) {
+                if let Some(project) = self.active_project() {
+                    let size = (project.canvas_state.width, project.canvas_state.height);
+                    self.canvas.fit_to_window(size);
+                }
+            }
+
+            // Ctrl+1 — Zoom to 100%
+            if kb.is_pressed(ctx, BindableAction::ViewZoom100) {
                 self.canvas.reset_zoom();
             }
 

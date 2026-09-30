@@ -182,6 +182,7 @@ pub enum BindableAction {
     ViewZoomIn,
     ViewZoomOut,
     ViewFitToWindow,
+    ViewZoom100,
     // Tools
     ToolBrush,
     ToolEraser,
@@ -285,6 +286,7 @@ impl BindableAction {
             Self::ViewZoomIn => t!("keybind.view_zoom_in"),
             Self::ViewZoomOut => t!("keybind.view_zoom_out"),
             Self::ViewFitToWindow => t!("keybind.view_fit_to_window"),
+            Self::ViewZoom100 => t!("keybind.view_zoom_100"),
             Self::ToolBrush => t!("keybind.tool_brush"),
             Self::ToolEraser => t!("keybind.tool_eraser"),
             Self::ToolPencil => t!("keybind.tool_pencil"),
@@ -380,7 +382,7 @@ impl BindableAction {
             | Self::Deselect
             | Self::FlattenLayers => t!("keybind_category.edit"),
             Self::ResizeImage | Self::ResizeCanvas => t!("keybind_category.canvas"),
-            Self::ViewZoomIn | Self::ViewZoomOut | Self::ViewFitToWindow => {
+            Self::ViewZoomIn | Self::ViewZoomOut | Self::ViewFitToWindow | Self::ViewZoom100 => {
                 t!("keybind_category.view")
             }
             Self::ToolBrush
@@ -476,6 +478,7 @@ impl BindableAction {
             ViewZoomIn,
             ViewZoomOut,
             ViewFitToWindow,
+            ViewZoom100,
             ToolBrush,
             ToolEraser,
             ToolPencil,
@@ -594,6 +597,7 @@ impl Default for KeyBindings {
         map.insert(ViewZoomIn, KeyCombo::ctrl_key(Key::Equals));
         map.insert(ViewZoomOut, KeyCombo::ctrl_key(Key::Minus));
         map.insert(ViewFitToWindow, KeyCombo::ctrl_key(Key::Num0));
+        map.insert(ViewZoom100, KeyCombo::ctrl_key(Key::Num1));
         // Tools
         map.insert(ToolBrush, KeyCombo::key(Key::B));
         map.insert(ToolEraser, KeyCombo::key(Key::E));
@@ -690,6 +694,7 @@ impl KeyBindings {
             "ViewZoomIn" => Some(BindableAction::ViewZoomIn),
             "ViewZoomOut" => Some(BindableAction::ViewZoomOut),
             "ViewFitToWindow" => Some(BindableAction::ViewFitToWindow),
+            "ViewZoom100" => Some(BindableAction::ViewZoom100),
             "ToolBrush" => Some(BindableAction::ToolBrush),
             "ToolEraser" => Some(BindableAction::ToolEraser),
             "ToolPencil" => Some(BindableAction::ToolPencil),

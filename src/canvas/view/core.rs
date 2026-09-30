@@ -102,6 +102,7 @@ impl Canvas {
             last_canvas_rect: None,
             last_image_rect: None,
             selection_stroke: Color32::from_rgb(66, 133, 244),
+            selection_outline_opacity: 1.0,
             selection_fill: Color32::from_rgba_unmultiplied(66, 133, 244, 50),
             selection_contrast: Color32::WHITE,
             paste_context_action: None,
@@ -226,6 +227,371 @@ impl Canvas {
             false,
             false,
         );
+    }
+
+    /// Rebuild and paint the CPU preview overlay texture (strokes in progress).
+    ///
+    /// Called once in the draw order and once more after canvas input is
+    /// processed (see show_with_state): egui applies texture uploads at end
+    /// of frame, so re-running this after input shows the stroke in the very
+    /// same frame as the pointer event instead of one frame late.
+    fn update_preview_overlay(
+        &self,
+        ui: &egui::Ui,
+        state: &mut CanvasState,
+        debug_settings: &crate::assets::AppSettings,
+        prev_filter_was_linear: Option<bool>,
+    ) {
+        // CPU PREVIEW OVERLAY  (brush / line / eraser strokes in progress)
+        // ====================================================================
+        // The preview layer is composited with the full layer stack so that
+        // both the tool's blend mode (preview_blend_mode) and each layer's
+        // own blend mode + opacity are respected.  For
+        // Normal+Normal+opacity=1.0 we use the fast raw-extraction path
+        // (single-layer memcpy) since alpha-over on top of the GPU
+        // composite is already correct in that case.
+        if state.preview_layer.is_some() {
+            // Check if zoom crossed the filtering threshold - invalidate cache to force recreation
+            let current_filter_is_linear = matches!(
+                debug_settings.zoom_filter_mode,
+                crate::assets::ZoomFilterMode::Linear
+            ) && self.zoom < 2.0;
+            if prev_filter_was_linear != Some(current_filter_is_linear) {
+                state.preview_texture_cache = None;
+            }
+
+            let needs_upload =
+                state.preview_texture_cache.is_none() || state.preview_dirty_rect.is_some();
+
+            if needs_upload {
+                // Determine the stroke's accumulated bounding box.
+                let sb = state.preview_stroke_bounds.unwrap_or_else(|| {
+                    egui::Rect::from_min_max(
+                        egui::pos2(0.0, 0.0),
+                        egui::pos2(state.width as f32, state.height as f32),
+                    )
+                });
+
+                // Zoom-adaptive filtering based on user preference.
+                // Linear (smooth) or Nearest (sharp) for zoomed-out pixel art.
+                let preview_filter = match debug_settings.zoom_filter_mode {
+                    crate::assets::ZoomFilterMode::Linear if self.zoom < 2.0 => {
+                        TextureFilter::Linear
+                    }
+                    _ => TextureFilter::Nearest,
+                };
+                let tex_options = TextureOptions {
+                    magnification: preview_filter,
+                    minification: preview_filter,
+                    ..Default::default()
+                };
+
+                // Decide whether the fast raw-extraction path is valid.
+                // It is correct when both blend modes are Normal and
+                // the active layer is fully opaque, because plain
+                // alpha-over in the egui painter is equivalent.
+                // Force the blend-aware path when preview_force_composite is set
+                // (e.g. fill tool with semi-transparent colours needs proper
+                // layer-stack compositing to preview accurately).
+                // Also force blend-aware path when there are visible layers above
+                // the active layer, so they get composited correctly.
+                let active_layer_normal = state
+                    .layers
+                    .get(state.active_layer_index)
+                    .map(|l| l.blend_mode == BlendMode::Normal && l.opacity >= 1.0)
+                    .unwrap_or(false);
+                let active_layer_has_live_mask = state
+                    .layers
+                    .get(state.active_layer_index)
+                    .is_some_and(|l| l.mask_enabled && l.has_live_mask());
+                let has_layers_above = state
+                    .layers
+                    .iter()
+                    .skip(state.active_layer_index + 1)
+                    .any(|l| l.visible);
+                let use_fast_path = state.preview_blend_mode == BlendMode::Normal
+                    && active_layer_normal
+                    && !active_layer_has_live_mask
+                    && !state.preview_targets_mask
+                    && !state.preview_force_composite
+                    && !has_layers_above
+                    && !state.preview_is_eraser;
+
+                if use_fast_path {
+                    if state.preview_flat_ready {
+                        // -- Ultra-fast path: buffer already premultiplied --
+                        // Transmute &[u8] ÔåÆ &[Color32] (both are 4 bytes, same
+                        // layout) to avoid the copy that from_rgba_premultiplied
+                        // would do.  bytemuck guarantees safety.
+                        // When preview_downscale > 1 the buffer is at reduced
+                        // resolution ÔÇö use scaled dimensions so egui stretches.
+                        let pixels: &[Color32] = bytemuck::cast_slice(&state.preview_flat_buffer);
+                        let ds = state.preview_downscale;
+                        let pw = if ds > 1 {
+                            state.width.div_ceil(ds) as usize
+                        } else {
+                            state.width as usize
+                        };
+                        let ph = if ds > 1 {
+                            state.height.div_ceil(ds) as usize
+                        } else {
+                            state.height as usize
+                        };
+                        let color_image = ColorImage {
+                            size: [pw, ph],
+                            source_size: egui::Vec2::new(pw as f32, ph as f32),
+                            pixels: pixels.to_vec(),
+                        };
+                        let image_data = ImageData::Color(Arc::new(color_image));
+                        if let Some(ref mut tex) = state.preview_texture_cache {
+                            tex.set(image_data, tex_options);
+                        } else {
+                            state.preview_texture_cache = Some(ui.ctx().load_texture(
+                                "preview_overlay",
+                                image_data,
+                                tex_options,
+                            ));
+                        }
+                    } else {
+                        // -- Incremental fast path: only re-extract dirty rect --
+                        // The brush uses max-alpha stamping, so previously
+                        // written pixels never decrease ÔÇö their premultiplied
+                        // values in the cache stay valid.  Each frame we only
+                        // re-extract the small dirty region (brush-sized) and
+                        // blit it into the persistent cache, reducing per-frame
+                        // work from O(stroke_bounds) to O(brush_size).
+                        let preview = state.preview_layer.as_ref().unwrap();
+                        let rx = (sb.min.x.max(0.0) as u32).min(preview.width().saturating_sub(1));
+                        let ry = (sb.min.y.max(0.0) as u32).min(preview.height().saturating_sub(1));
+                        let rx2 = (sb.max.x.ceil() as u32).min(preview.width());
+                        let ry2 = (sb.max.y.ceil() as u32).min(preview.height());
+                        let rw = rx2.saturating_sub(rx).max(1);
+                        let rh = ry2.saturating_sub(ry).max(1);
+
+                        let old_cache = state.preview_cache_rect;
+                        let bounds_match = old_cache.is_some_and(|(ox, oy, ow, oh)| {
+                            ox == rx && oy == ry && ow == rw && oh == rh
+                        });
+
+                        if bounds_match && state.preview_dirty_rect.is_some() {
+                            // -- Incremental update: extract only the dirty rect --
+                            let dr = state.preview_dirty_rect.unwrap();
+                            let dx = (dr.min.x.max(0.0).floor() as u32).max(rx);
+                            let dy = (dr.min.y.max(0.0).floor() as u32).max(ry);
+                            let dx2 = (dr.max.x.ceil() as u32).min(rx + rw);
+                            let dy2 = (dr.max.y.ceil() as u32).min(ry + rh);
+                            let dw = dx2.saturating_sub(dx);
+                            let dh = dy2.saturating_sub(dy);
+
+                            if dw > 0 && dh > 0 {
+                                preview.extract_region_rgba_fast(
+                                    dx,
+                                    dy,
+                                    dw,
+                                    dh,
+                                    &mut state.preview_flat_buffer,
+                                );
+
+                                // Premultiply the small dirty region in-place
+                                premultiply_dithered(&mut state.preview_flat_buffer, dx, dy, dw);
+
+                                // Blit dirty pixels into persistent cache
+                                let dirty_pixels: &[Color32] =
+                                    bytemuck::cast_slice(&state.preview_flat_buffer);
+                                let cache_w = rw as usize;
+                                let off_x = (dx - rx) as usize;
+                                let off_y = (dy - ry) as usize;
+                                for row in 0..dh as usize {
+                                    let src_start = row * dw as usize;
+                                    let dst_start = (off_y + row) * cache_w + off_x;
+                                    state.preview_premul_cache[dst_start..dst_start + dw as usize]
+                                        .copy_from_slice(
+                                            &dirty_pixels[src_start..src_start + dw as usize],
+                                        );
+                                }
+
+                                // B2: Partial upload ÔÇö only send the dirty rect to egui.
+                                // During brush strokes this uploads ~brush_size┬▓ pixels
+                                // instead of cloning the full stroke_bounds cache.
+                                let region_pixels: Vec<Color32> = dirty_pixels.to_vec();
+                                let region_image = ColorImage {
+                                    size: [dw as usize, dh as usize],
+                                    source_size: egui::Vec2::new(dw as f32, dh as f32),
+                                    pixels: region_pixels,
+                                };
+                                let region_data = ImageData::Color(Arc::new(region_image));
+                                if let Some(ref mut tex) = state.preview_texture_cache {
+                                    tex.set_partial([off_x, off_y], region_data, tex_options);
+                                } else {
+                                    // No texture yet ÔÇö fall back to full upload
+                                    let color_image = ColorImage {
+                                        size: [rw as usize, rh as usize],
+                                        source_size: egui::Vec2::new(rw as f32, rh as f32),
+                                        pixels: state.preview_premul_cache.clone(),
+                                    };
+                                    let image_data = ImageData::Color(Arc::new(color_image));
+                                    state.preview_texture_cache = Some(ui.ctx().load_texture(
+                                        "preview_overlay",
+                                        image_data,
+                                        tex_options,
+                                    ));
+                                }
+                            }
+                        } else if old_cache.is_some() && !bounds_match {
+                            // -- Bounds changed: resize cache, preserve overlapping data --
+                            let (ox, oy, ow, oh) = old_cache.unwrap();
+                            let new_size = (rw as usize) * (rh as usize);
+                            let mut new_cache = vec![Color32::TRANSPARENT; new_size];
+
+                            // Compute the intersection of old and new bounds
+                            // to safely copy only the overlapping region.
+                            // Bounds can shrink or shift (e.g. text alignment
+                            // change), not just grow.
+                            let inter_x0 = ox.max(rx);
+                            let inter_y0 = oy.max(ry);
+                            let inter_x1 = (ox + ow).min(rx + rw);
+                            let inter_y1 = (oy + oh).min(ry + rh);
+                            let new_w = rw as usize;
+                            let old_w = ow as usize;
+                            if inter_x1 > inter_x0 && inter_y1 > inter_y0 {
+                                let copy_w = (inter_x1 - inter_x0) as usize;
+                                let copy_h = (inter_y1 - inter_y0) as usize;
+                                let src_off_x = (inter_x0 - ox) as usize;
+                                let src_off_y = (inter_y0 - oy) as usize;
+                                let dst_off_x = (inter_x0 - rx) as usize;
+                                let dst_off_y = (inter_y0 - ry) as usize;
+                                for row in 0..copy_h {
+                                    let src_start = (src_off_y + row) * old_w + src_off_x;
+                                    let dst_start = (dst_off_y + row) * new_w + dst_off_x;
+                                    new_cache[dst_start..dst_start + copy_w].copy_from_slice(
+                                        &state.preview_premul_cache[src_start..src_start + copy_w],
+                                    );
+                                }
+                            }
+
+                            // Extract and premultiply only the dirty rect
+                            if let Some(dr) = state.preview_dirty_rect {
+                                let dx = (dr.min.x.max(0.0).floor() as u32).max(rx);
+                                let dy = (dr.min.y.max(0.0).floor() as u32).max(ry);
+                                let dx2 = (dr.max.x.ceil() as u32).min(rx + rw);
+                                let dy2 = (dr.max.y.ceil() as u32).min(ry + rh);
+                                let dw = dx2.saturating_sub(dx);
+                                let dh = dy2.saturating_sub(dy);
+
+                                if dw > 0 && dh > 0 {
+                                    preview.extract_region_rgba_fast(
+                                        dx,
+                                        dy,
+                                        dw,
+                                        dh,
+                                        &mut state.preview_flat_buffer,
+                                    );
+                                    premultiply_dithered(&mut state.preview_flat_buffer, dx, dy, dw);
+                                    let dirty_pixels: &[Color32] =
+                                        bytemuck::cast_slice(&state.preview_flat_buffer);
+                                    let off_x = (dx - rx) as usize;
+                                    let off_y = (dy - ry) as usize;
+                                    for row in 0..dh as usize {
+                                        let src_start = row * dw as usize;
+                                        let dst_start = (off_y + row) * new_w + off_x;
+                                        new_cache[dst_start..dst_start + dw as usize]
+                                            .copy_from_slice(
+                                                &dirty_pixels[src_start..src_start + dw as usize],
+                                            );
+                                    }
+                                }
+                            }
+
+                            state.preview_premul_cache = new_cache;
+                            state.preview_cache_rect = Some((rx, ry, rw, rh));
+
+                            // Bounds changed ÔÇö must do full texture upload
+                            let color_image = ColorImage {
+                                size: [rw as usize, rh as usize],
+                                source_size: egui::Vec2::new(rw as f32, rh as f32),
+                                pixels: state.preview_premul_cache.clone(),
+                            };
+                            let image_data = ImageData::Color(Arc::new(color_image));
+                            if let Some(ref mut tex) = state.preview_texture_cache {
+                                tex.set(image_data, tex_options);
+                            } else {
+                                state.preview_texture_cache = Some(ui.ctx().load_texture(
+                                    "preview_overlay",
+                                    image_data,
+                                    tex_options,
+                                ));
+                            }
+                        } else {
+                            // -- First frame or full rebuild --
+                            preview.extract_region_rgba_fast(
+                                rx,
+                                ry,
+                                rw,
+                                rh,
+                                &mut state.preview_flat_buffer,
+                            );
+
+                            premultiply_dithered(&mut state.preview_flat_buffer, rx, ry, rw);
+
+                            let pixels: &[Color32] =
+                                bytemuck::cast_slice(&state.preview_flat_buffer);
+                            state.preview_premul_cache = pixels.to_vec();
+                            state.preview_cache_rect = Some((rx, ry, rw, rh));
+
+                            // First frame ÔÇö must do full texture upload
+                            let color_image = ColorImage {
+                                size: [rw as usize, rh as usize],
+                                source_size: egui::Vec2::new(rw as f32, rh as f32),
+                                pixels: state.preview_premul_cache.clone(),
+                            };
+                            let image_data = ImageData::Color(Arc::new(color_image));
+                            if let Some(ref mut tex) = state.preview_texture_cache {
+                                tex.set(image_data, tex_options);
+                            } else {
+                                state.preview_texture_cache = Some(ui.ctx().load_texture(
+                                    "preview_overlay",
+                                    image_data,
+                                    tex_options,
+                                ));
+                            }
+                        }
+                    }
+                } else {
+                    // -- Blend-aware path: full-stack composite --
+                    // composite_partial blends the preview into the
+                    // active layer (via preview_blend_mode) and then
+                    // composites every layer with its own blend mode
+                    // and opacity, giving a pixel-accurate preview.
+                    // When preview_downscale > 1, sample at reduced rate
+                    // for interactive responsiveness (egui stretches the
+                    // smaller texture to fill the canvas rect).
+                    let ds = state.preview_downscale;
+                    let (color_image, _offset) = if ds > 1 {
+                        state.composite_partial_downscaled(sb, ds)
+                    } else {
+                        state.composite_partial(sb)
+                    };
+
+                    let image_data = ImageData::Color(Arc::new(color_image));
+                    if let Some(ref mut tex) = state.preview_texture_cache {
+                        tex.set(image_data, tex_options);
+                    } else {
+                        state.preview_texture_cache = Some(ui.ctx().load_texture(
+                            "preview_overlay",
+                            image_data,
+                            tex_options,
+                        ));
+                    }
+                }
+
+                state.preview_dirty_rect = None;
+            }
+        } else {
+            // No preview layer ÔÇö drop cached texture and buffer.
+            state.preview_texture_cache = None;
+            // Don't clear preview_flat_buffer here to avoid dealloc; it will
+            // be reused on the next stroke.
+        }
     }
 
     pub fn show_with_state(
@@ -948,365 +1314,11 @@ impl Canvas {
 
         // ====================================================================
         // CPU PREVIEW OVERLAY  (brush / line / eraser strokes in progress)
-        // ====================================================================
-        // The preview layer is composited with the full layer stack so that
-        // both the tool's blend mode (preview_blend_mode) and each layer's
-        // own blend mode + opacity are respected.  For
-        // Normal+Normal+opacity=1.0 we use the fast raw-extraction path
-        // (single-layer memcpy) since alpha-over on top of the GPU
-        // composite is already correct in that case.
-        if state.preview_layer.is_some() {
-            // Check if zoom crossed the filtering threshold - invalidate cache to force recreation
-            let current_filter_is_linear = matches!(
-                debug_settings.zoom_filter_mode,
-                crate::assets::ZoomFilterMode::Linear
-            ) && self.zoom < 2.0;
-            if prev_filter_was_linear != Some(current_filter_is_linear) {
-                state.preview_texture_cache = None;
-            }
-
-            let needs_upload =
-                state.preview_texture_cache.is_none() || state.preview_dirty_rect.is_some();
-
-            if needs_upload {
-                // Determine the stroke's accumulated bounding box.
-                let sb = state.preview_stroke_bounds.unwrap_or_else(|| {
-                    egui::Rect::from_min_max(
-                        egui::pos2(0.0, 0.0),
-                        egui::pos2(state.width as f32, state.height as f32),
-                    )
-                });
-
-                // Zoom-adaptive filtering based on user preference.
-                // Linear (smooth) or Nearest (sharp) for zoomed-out pixel art.
-                let preview_filter = match debug_settings.zoom_filter_mode {
-                    crate::assets::ZoomFilterMode::Linear if self.zoom < 2.0 => {
-                        TextureFilter::Linear
-                    }
-                    _ => TextureFilter::Nearest,
-                };
-                let tex_options = TextureOptions {
-                    magnification: preview_filter,
-                    minification: preview_filter,
-                    ..Default::default()
-                };
-
-                // Decide whether the fast raw-extraction path is valid.
-                // It is correct when both blend modes are Normal and
-                // the active layer is fully opaque, because plain
-                // alpha-over in the egui painter is equivalent.
-                // Force the blend-aware path when preview_force_composite is set
-                // (e.g. fill tool with semi-transparent colours needs proper
-                // layer-stack compositing to preview accurately).
-                // Also force blend-aware path when there are visible layers above
-                // the active layer, so they get composited correctly.
-                let active_layer_normal = state
-                    .layers
-                    .get(state.active_layer_index)
-                    .map(|l| l.blend_mode == BlendMode::Normal && l.opacity >= 1.0)
-                    .unwrap_or(false);
-                let active_layer_has_live_mask = state
-                    .layers
-                    .get(state.active_layer_index)
-                    .is_some_and(|l| l.mask_enabled && l.has_live_mask());
-                let has_layers_above = state
-                    .layers
-                    .iter()
-                    .skip(state.active_layer_index + 1)
-                    .any(|l| l.visible);
-                let use_fast_path = state.preview_blend_mode == BlendMode::Normal
-                    && active_layer_normal
-                    && !active_layer_has_live_mask
-                    && !state.preview_targets_mask
-                    && !state.preview_force_composite
-                    && !has_layers_above
-                    && !state.preview_is_eraser;
-
-                if use_fast_path {
-                    if state.preview_flat_ready {
-                        // -- Ultra-fast path: buffer already premultiplied --
-                        // Transmute &[u8] ÔåÆ &[Color32] (both are 4 bytes, same
-                        // layout) to avoid the copy that from_rgba_premultiplied
-                        // would do.  bytemuck guarantees safety.
-                        // When preview_downscale > 1 the buffer is at reduced
-                        // resolution ÔÇö use scaled dimensions so egui stretches.
-                        let pixels: &[Color32] = bytemuck::cast_slice(&state.preview_flat_buffer);
-                        let ds = state.preview_downscale;
-                        let pw = if ds > 1 {
-                            state.width.div_ceil(ds) as usize
-                        } else {
-                            state.width as usize
-                        };
-                        let ph = if ds > 1 {
-                            state.height.div_ceil(ds) as usize
-                        } else {
-                            state.height as usize
-                        };
-                        let color_image = ColorImage {
-                            size: [pw, ph],
-                            source_size: egui::Vec2::new(pw as f32, ph as f32),
-                            pixels: pixels.to_vec(),
-                        };
-                        let image_data = ImageData::Color(Arc::new(color_image));
-                        if let Some(ref mut tex) = state.preview_texture_cache {
-                            tex.set(image_data, tex_options);
-                        } else {
-                            state.preview_texture_cache = Some(ui.ctx().load_texture(
-                                "preview_overlay",
-                                image_data,
-                                tex_options,
-                            ));
-                        }
-                    } else {
-                        // -- Incremental fast path: only re-extract dirty rect --
-                        // The brush uses max-alpha stamping, so previously
-                        // written pixels never decrease ÔÇö their premultiplied
-                        // values in the cache stay valid.  Each frame we only
-                        // re-extract the small dirty region (brush-sized) and
-                        // blit it into the persistent cache, reducing per-frame
-                        // work from O(stroke_bounds) to O(brush_size).
-                        let preview = state.preview_layer.as_ref().unwrap();
-                        let rx = (sb.min.x.max(0.0) as u32).min(preview.width().saturating_sub(1));
-                        let ry = (sb.min.y.max(0.0) as u32).min(preview.height().saturating_sub(1));
-                        let rx2 = (sb.max.x.ceil() as u32).min(preview.width());
-                        let ry2 = (sb.max.y.ceil() as u32).min(preview.height());
-                        let rw = rx2.saturating_sub(rx).max(1);
-                        let rh = ry2.saturating_sub(ry).max(1);
-
-                        let old_cache = state.preview_cache_rect;
-                        let bounds_match = old_cache.is_some_and(|(ox, oy, ow, oh)| {
-                            ox == rx && oy == ry && ow == rw && oh == rh
-                        });
-
-                        if bounds_match && state.preview_dirty_rect.is_some() {
-                            // -- Incremental update: extract only the dirty rect --
-                            let dr = state.preview_dirty_rect.unwrap();
-                            let dx = (dr.min.x.max(0.0).floor() as u32).max(rx);
-                            let dy = (dr.min.y.max(0.0).floor() as u32).max(ry);
-                            let dx2 = (dr.max.x.ceil() as u32).min(rx + rw);
-                            let dy2 = (dr.max.y.ceil() as u32).min(ry + rh);
-                            let dw = dx2.saturating_sub(dx);
-                            let dh = dy2.saturating_sub(dy);
-
-                            if dw > 0 && dh > 0 {
-                                preview.extract_region_rgba_fast(
-                                    dx,
-                                    dy,
-                                    dw,
-                                    dh,
-                                    &mut state.preview_flat_buffer,
-                                );
-
-                                // Premultiply the small dirty region in-place
-                                for px in state.preview_flat_buffer.chunks_exact_mut(4) {
-                                    let a = px[3] as u16;
-                                    px[0] = ((px[0] as u16 * a + 128) / 255) as u8;
-                                    px[1] = ((px[1] as u16 * a + 128) / 255) as u8;
-                                    px[2] = ((px[2] as u16 * a + 128) / 255) as u8;
-                                }
-
-                                // Blit dirty pixels into persistent cache
-                                let dirty_pixels: &[Color32] =
-                                    bytemuck::cast_slice(&state.preview_flat_buffer);
-                                let cache_w = rw as usize;
-                                let off_x = (dx - rx) as usize;
-                                let off_y = (dy - ry) as usize;
-                                for row in 0..dh as usize {
-                                    let src_start = row * dw as usize;
-                                    let dst_start = (off_y + row) * cache_w + off_x;
-                                    state.preview_premul_cache[dst_start..dst_start + dw as usize]
-                                        .copy_from_slice(
-                                            &dirty_pixels[src_start..src_start + dw as usize],
-                                        );
-                                }
-
-                                // B2: Partial upload ÔÇö only send the dirty rect to egui.
-                                // During brush strokes this uploads ~brush_size┬▓ pixels
-                                // instead of cloning the full stroke_bounds cache.
-                                let region_pixels: Vec<Color32> = dirty_pixels.to_vec();
-                                let region_image = ColorImage {
-                                    size: [dw as usize, dh as usize],
-                                    source_size: egui::Vec2::new(dw as f32, dh as f32),
-                                    pixels: region_pixels,
-                                };
-                                let region_data = ImageData::Color(Arc::new(region_image));
-                                if let Some(ref mut tex) = state.preview_texture_cache {
-                                    tex.set_partial([off_x, off_y], region_data, tex_options);
-                                } else {
-                                    // No texture yet ÔÇö fall back to full upload
-                                    let color_image = ColorImage {
-                                        size: [rw as usize, rh as usize],
-                                        source_size: egui::Vec2::new(rw as f32, rh as f32),
-                                        pixels: state.preview_premul_cache.clone(),
-                                    };
-                                    let image_data = ImageData::Color(Arc::new(color_image));
-                                    state.preview_texture_cache = Some(ui.ctx().load_texture(
-                                        "preview_overlay",
-                                        image_data,
-                                        tex_options,
-                                    ));
-                                }
-                            }
-                        } else if old_cache.is_some() && !bounds_match {
-                            // -- Bounds changed: resize cache, preserve overlapping data --
-                            let (ox, oy, ow, oh) = old_cache.unwrap();
-                            let new_size = (rw as usize) * (rh as usize);
-                            let mut new_cache = vec![Color32::TRANSPARENT; new_size];
-
-                            // Compute the intersection of old and new bounds
-                            // to safely copy only the overlapping region.
-                            // Bounds can shrink or shift (e.g. text alignment
-                            // change), not just grow.
-                            let inter_x0 = ox.max(rx);
-                            let inter_y0 = oy.max(ry);
-                            let inter_x1 = (ox + ow).min(rx + rw);
-                            let inter_y1 = (oy + oh).min(ry + rh);
-                            let new_w = rw as usize;
-                            let old_w = ow as usize;
-                            if inter_x1 > inter_x0 && inter_y1 > inter_y0 {
-                                let copy_w = (inter_x1 - inter_x0) as usize;
-                                let copy_h = (inter_y1 - inter_y0) as usize;
-                                let src_off_x = (inter_x0 - ox) as usize;
-                                let src_off_y = (inter_y0 - oy) as usize;
-                                let dst_off_x = (inter_x0 - rx) as usize;
-                                let dst_off_y = (inter_y0 - ry) as usize;
-                                for row in 0..copy_h {
-                                    let src_start = (src_off_y + row) * old_w + src_off_x;
-                                    let dst_start = (dst_off_y + row) * new_w + dst_off_x;
-                                    new_cache[dst_start..dst_start + copy_w].copy_from_slice(
-                                        &state.preview_premul_cache[src_start..src_start + copy_w],
-                                    );
-                                }
-                            }
-
-                            // Extract and premultiply only the dirty rect
-                            if let Some(dr) = state.preview_dirty_rect {
-                                let dx = (dr.min.x.max(0.0).floor() as u32).max(rx);
-                                let dy = (dr.min.y.max(0.0).floor() as u32).max(ry);
-                                let dx2 = (dr.max.x.ceil() as u32).min(rx + rw);
-                                let dy2 = (dr.max.y.ceil() as u32).min(ry + rh);
-                                let dw = dx2.saturating_sub(dx);
-                                let dh = dy2.saturating_sub(dy);
-
-                                if dw > 0 && dh > 0 {
-                                    preview.extract_region_rgba_fast(
-                                        dx,
-                                        dy,
-                                        dw,
-                                        dh,
-                                        &mut state.preview_flat_buffer,
-                                    );
-                                    for px in state.preview_flat_buffer.chunks_exact_mut(4) {
-                                        let a = px[3] as u16;
-                                        px[0] = ((px[0] as u16 * a + 128) / 255) as u8;
-                                        px[1] = ((px[1] as u16 * a + 128) / 255) as u8;
-                                        px[2] = ((px[2] as u16 * a + 128) / 255) as u8;
-                                    }
-                                    let dirty_pixels: &[Color32] =
-                                        bytemuck::cast_slice(&state.preview_flat_buffer);
-                                    let off_x = (dx - rx) as usize;
-                                    let off_y = (dy - ry) as usize;
-                                    for row in 0..dh as usize {
-                                        let src_start = row * dw as usize;
-                                        let dst_start = (off_y + row) * new_w + off_x;
-                                        new_cache[dst_start..dst_start + dw as usize]
-                                            .copy_from_slice(
-                                                &dirty_pixels[src_start..src_start + dw as usize],
-                                            );
-                                    }
-                                }
-                            }
-
-                            state.preview_premul_cache = new_cache;
-                            state.preview_cache_rect = Some((rx, ry, rw, rh));
-
-                            // Bounds changed ÔÇö must do full texture upload
-                            let color_image = ColorImage {
-                                size: [rw as usize, rh as usize],
-                                source_size: egui::Vec2::new(rw as f32, rh as f32),
-                                pixels: state.preview_premul_cache.clone(),
-                            };
-                            let image_data = ImageData::Color(Arc::new(color_image));
-                            if let Some(ref mut tex) = state.preview_texture_cache {
-                                tex.set(image_data, tex_options);
-                            } else {
-                                state.preview_texture_cache = Some(ui.ctx().load_texture(
-                                    "preview_overlay",
-                                    image_data,
-                                    tex_options,
-                                ));
-                            }
-                        } else {
-                            // -- First frame or full rebuild --
-                            preview.extract_region_rgba_fast(
-                                rx,
-                                ry,
-                                rw,
-                                rh,
-                                &mut state.preview_flat_buffer,
-                            );
-
-                            for px in state.preview_flat_buffer.chunks_exact_mut(4) {
-                                let a = px[3] as u16;
-                                px[0] = ((px[0] as u16 * a + 128) / 255) as u8;
-                                px[1] = ((px[1] as u16 * a + 128) / 255) as u8;
-                                px[2] = ((px[2] as u16 * a + 128) / 255) as u8;
-                            }
-
-                            let pixels: &[Color32] =
-                                bytemuck::cast_slice(&state.preview_flat_buffer);
-                            state.preview_premul_cache = pixels.to_vec();
-                            state.preview_cache_rect = Some((rx, ry, rw, rh));
-
-                            // First frame ÔÇö must do full texture upload
-                            let color_image = ColorImage {
-                                size: [rw as usize, rh as usize],
-                                source_size: egui::Vec2::new(rw as f32, rh as f32),
-                                pixels: state.preview_premul_cache.clone(),
-                            };
-                            let image_data = ImageData::Color(Arc::new(color_image));
-                            if let Some(ref mut tex) = state.preview_texture_cache {
-                                tex.set(image_data, tex_options);
-                            } else {
-                                state.preview_texture_cache = Some(ui.ctx().load_texture(
-                                    "preview_overlay",
-                                    image_data,
-                                    tex_options,
-                                ));
-                            }
-                        }
-                    }
-                } else {
-                    // -- Blend-aware path: full-stack composite --
-                    // composite_partial blends the preview into the
-                    // active layer (via preview_blend_mode) and then
-                    // composites every layer with its own blend mode
-                    // and opacity, giving a pixel-accurate preview.
-                    // When preview_downscale > 1, sample at reduced rate
-                    // for interactive responsiveness (egui stretches the
-                    // smaller texture to fill the canvas rect).
-                    let ds = state.preview_downscale;
-                    let (color_image, _offset) = if ds > 1 {
-                        state.composite_partial_downscaled(sb, ds)
-                    } else {
-                        state.composite_partial(sb)
-                    };
-
-                    let image_data = ImageData::Color(Arc::new(color_image));
-                    if let Some(ref mut tex) = state.preview_texture_cache {
-                        tex.set(image_data, tex_options);
-                    } else {
-                        state.preview_texture_cache = Some(ui.ctx().load_texture(
-                            "preview_overlay",
-                            image_data,
-                            tex_options,
-                        ));
-                    }
-                }
-
-                state.preview_dirty_rect = None;
-            }
-
+        // The CPU preview overlay is built+painted after tool input (same-frame
+        // stroke feedback) when tools are attached. Without tools there is no
+        // input pass, so build + paint here in draw order instead.
+        if tools.is_none() {
+            self.update_preview_overlay(ui, state, debug_settings, prev_filter_was_linear);
             self.paint_preview_texture(
                 &painter,
                 image_rect,
@@ -1315,11 +1327,6 @@ impl Canvas {
                 Color32::WHITE,
                 true,
             );
-        } else {
-            // No preview layer ÔÇö drop cached texture and buffer.
-            state.preview_texture_cache = None;
-            // Don't clear preview_flat_buffer here to avoid dealloc; it will
-            // be reused on the next stroke.
         }
 
         if state.show_wrap_preview {
@@ -1339,19 +1346,25 @@ impl Canvas {
         // ====================================================================
         // SELECTION OVERLAY  (above layers, below tool cursor)
         // ====================================================================
-        // Animated time value for marching ants.
-        let anim_time = ui.input(|i| i.time);
+        // Animated time value for marching ants (frozen when animation is off,
+        // so the app can go idle with a selection active).
+        let ants_animated = debug_settings.animated_selection_ants;
+        let anim_time = if ants_animated { ui.input(|i| i.time) } else { 0.0 };
 
         // Keep repainting so marching ants stay animated even when mouse is idle.
         let has_selection_mask = state.has_selection();
         let has_selection_drag = tools.as_ref().is_some_and(|t| t.selection_state.dragging);
         let selection_needs_animation = has_selection_mask
-            && (state.selection_all
-                || state.selection_transform_preview_bounds.is_some()
-                || state.selection_overlay_built_generation != state.selection_overlay_generation
-                || selection_overlay_should_animate(state.selection_overlay_bounds));
+            && (state.selection_overlay_built_generation != state.selection_overlay_generation
+                || (ants_animated
+                    && (state.selection_all
+                        || state.selection_transform_preview_bounds.is_some()
+                        || selection_overlay_should_animate(state.selection_overlay_bounds))));
         if selection_needs_animation || has_selection_drag {
-            ui.ctx().request_repaint();
+            // Cap the animation at ~60fps instead of an unconditional
+            // per-frame repaint request.
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(16));
         }
 
         // 1. Draw the committed selection mask (if any).
@@ -1503,6 +1516,20 @@ impl Canvas {
             let is_dark = ui.visuals().dark_mode;
             let accent = self.selection_stroke; // theme accent colour
             let clipped_painter = painter.with_clip_rect(image_rect);
+
+            // Handle interaction (move, resize, rotate) BEFORE drawing below, so
+            // drags update the overlay in the same frame as the pointer event.
+            let paste_input_blocked = modal_open
+                || egui::Popup::is_any_open(ui.ctx())
+                || pointer_over_blocking_ui
+                || ui_blocks_canvas_input;
+            paste_consumed_input =
+                overlay.handle_input(ui, image_rect, canvas_rect, self.zoom, paste_input_blocked);
+            if (!paste_input_blocked || overlay.active_handle.is_some())
+                && let Some(pos) = ui.input(|i| i.pointer.interact_pos())
+            {
+                paste_cursor = overlay.cursor_icon(pos, image_rect, self.zoom);
+            }
             if overlay.overwrite_transparent_pixels {
                 if self.paste_layers_below_cache.is_none()
                     && let Some(below_image) = state.composite_layers_below_active()
@@ -1668,33 +1695,34 @@ impl Canvas {
                         image_rect.min.y + y1 as f32 * self.zoom,
                     ),
                 );
-                let grid_color = debug_settings.pixel_grid_outline_color;
+                let grid_color = scale_color(
+                    debug_settings.pixel_grid_outline_color,
+                    debug_settings.pixel_grid_opacity,
+                );
                 let stroke = egui::Stroke::new(1.0, grid_color);
+                let dashed = debug_settings.pixel_grid_dashed;
                 let mut x = rect.min.x;
                 while x <= rect.max.x {
-                    painter
-                        .line_segment([Pos2::new(x, rect.min.y), Pos2::new(x, rect.max.y)], stroke);
+                    let a = Pos2::new(x, rect.min.y);
+                    let b = Pos2::new(x, rect.max.y);
+                    if dashed {
+                        painter.add(egui::Shape::dashed_line(&[a, b], stroke, 2.5, 2.5));
+                    } else {
+                        painter.line_segment([a, b], stroke);
+                    }
                     x += self.zoom;
                 }
                 let mut y = rect.min.y;
                 while y <= rect.max.y {
-                    painter
-                        .line_segment([Pos2::new(rect.min.x, y), Pos2::new(rect.max.x, y)], stroke);
+                    let a = Pos2::new(rect.min.x, y);
+                    let b = Pos2::new(rect.max.x, y);
+                    if dashed {
+                        painter.add(egui::Shape::dashed_line(&[a, b], stroke, 2.5, 2.5));
+                    } else {
+                        painter.line_segment([a, b], stroke);
+                    }
                     y += self.zoom;
                 }
-            }
-
-            // Handle interaction (move, resize, rotate).
-            let paste_input_blocked = modal_open
-                || egui::Popup::is_any_open(ui.ctx())
-                || pointer_over_blocking_ui
-                || ui_blocks_canvas_input;
-            paste_consumed_input =
-                overlay.handle_input(ui, image_rect, canvas_rect, self.zoom, paste_input_blocked);
-            if (!paste_input_blocked || overlay.active_handle.is_some())
-                && let Some(pos) = ui.input(|i| i.pointer.interact_pos())
-            {
-                paste_cursor = overlay.cursor_icon(pos, image_rect, self.zoom);
             }
 
             // Auto-open context menu when requested (e.g. right after paste).
@@ -2244,7 +2272,7 @@ impl Canvas {
                                 - (state.height as f32 * self.zoom / 2.0)
                                 + canvas_y * self.zoom;
                         let anchor = Pos2::new(screen_x, screen_y);
-                        self.zoom_around_screen_point(1.2, anchor, canvas_rect);
+                        self.zoom_step(1.0, Some(anchor), canvas_rect);
                     }
                     ZoomPanAction::ZoomOut { canvas_x, canvas_y } => {
                         let screen_x =
@@ -2256,7 +2284,7 @@ impl Canvas {
                                 - (state.height as f32 * self.zoom / 2.0)
                                 + canvas_y * self.zoom;
                         let anchor = Pos2::new(screen_x, screen_y);
-                        self.zoom_around_screen_point(1.0 / 1.2, anchor, canvas_rect);
+                        self.zoom_step(-1.0, Some(anchor), canvas_rect);
                     }
                     ZoomPanAction::Pan { dx, dy } => {
                         self.pan_by(Vec2::new(dx, dy));
@@ -2304,8 +2332,6 @@ impl Canvas {
             // Always check if text/shape properties changed (color picker, context bar)
             if tools.active_tool == crate::components::tools::Tool::Text {
                 tools.update_text_if_dirty(state, primary_color_f32);
-                // Draw overlay (border, handle, cursor) even when pointer is off-canvas
-                tools.draw_text_overlay(ui, state, &painter, image_rect, self.zoom);
             }
             if tools.active_tool == crate::components::tools::Tool::Shapes {
                 tools.update_shape_if_dirty(state, primary_color_f32, secondary_color_f32);
@@ -2323,6 +2349,32 @@ impl Canvas {
                 || tools.text_state.commit_pending
                 || tools.liquify_state.commit_pending
                 || tools.mesh_warp_state.commit_pending;
+
+            // ====================================================================
+            // CPU PREVIEW OVERLAY (strokes/gradient previews in progress)
+            // ====================================================================
+            // Built AND painted in one pass here — after tool input above
+            // mutated the preview, before the tool overlays are drawn below.
+            // The preview quad's rect is derived from `preview_stroke_bounds`,
+            // so building and painting must use the same frame's bounds: a
+            // later content-only rebuild would put new-bounds content inside
+            // the old quad (visible as the preview jumping/resizing at zoom).
+            Self::flush_committed_preview_region(ui, state, texture_options);
+            // Deferred stroke-preview clear: a committed stroke's preview stays
+            // visible until the composite has caught up (`dirty_rect` consumed
+            // by the composite pass above), so releasing a stroke hands over to
+            // the committed pixels seamlessly instead of flashing blank first.
+            if state.preview_clear_pending && state.dirty_rect.is_none() {
+                state.clear_preview_state();
+            }
+            self.update_preview_overlay(ui, state, debug_settings, prev_filter_was_linear);
+            self.paint_preview_texture(&painter, image_rect, canvas_rect, state, Color32::WHITE, true);
+
+            if tools.active_tool == crate::components::tools::Tool::Text {
+                // Draw overlay (border, handle, cursor) above the preview,
+                // even when pointer is off-canvas.
+                tools.draw_text_overlay(ui, state, &painter, image_rect, self.zoom);
+            }
 
             // ====================================================================
             // TOOL-SPECIFIC CURSOR ICON
@@ -2365,7 +2417,14 @@ impl Canvas {
                 && !egui::Popup::is_any_open(ui.ctx())
                 && !pointer_over_egui_with_touch
                 && !pointer_over_blocking_ui
-                && !ui_blocks_canvas_input;
+                && !ui_blocks_canvas_input
+                // Only replace the OS cursor when the canvas layer is truly on
+                // top at the pointer. Floating windows (Settings, plugin
+                // dialogs, ...) live on their own layers - regardless of order -
+                // and egui's per-widget cursors must win over them.
+                && mouse_pos
+                    .and_then(|pos| ui.ctx().layer_id_at(pos))
+                    == Some(ui.layer_id());
             {
                 // Only override cursor when mouse is truly over just the canvas ÔÇö
                 // not when a dialog, menu, popup, or floating panel is on top.
@@ -2721,12 +2780,31 @@ impl Canvas {
                 let screen_cy = image_rect.min.y + canvas_y * self.zoom;
                 let screen_radius = (brush_size / 2.0) * self.zoom;
 
-                // Draw brush outline ÔÇö circle for circle tip, texture overlay for image tips
+                // Draw brush outline — circle for circle tip, texture overlay for image tips
                 if screen_radius > 1.5 {
                     if is_circle_tip {
-                        // Draw two circles (black + white) for visibility on any background
-                        let stroke_outer = egui::Stroke::new(1.5, Color32::from_black_alpha(160));
-                        let stroke_inner = egui::Stroke::new(0.75, Color32::from_white_alpha(200));
+                        // Smart contrast: sample the composite under the cursor
+                        // and draw the ring in the opposite tone (light ring over
+                        // dark content, dark ring over light content) with the
+                        // other tone as a thin outline — so the cursor stays
+                        // visible over any background, including pure black.
+                        let dark_bg = Self::canvas_is_dark_under(
+                            state,
+                            canvas_x,
+                            canvas_y,
+                            brush_size * 0.5,
+                        );
+                        let (stroke_outer, stroke_inner) = if dark_bg {
+                            (
+                                egui::Stroke::new(1.5, Color32::from_white_alpha(235)),
+                                egui::Stroke::new(0.75, Color32::from_black_alpha(170)),
+                            )
+                        } else {
+                            (
+                                egui::Stroke::new(1.5, Color32::from_black_alpha(170)),
+                                egui::Stroke::new(0.75, Color32::from_white_alpha(225)),
+                            )
+                        };
                         painter.circle_stroke(
                             Pos2::new(screen_cx, screen_cy),
                             screen_radius,
@@ -3191,17 +3269,111 @@ impl Canvas {
         }
     }
 
+    /// Discrete zoom ladder. Wheel and keyboard zoom step through these so
+    /// pixel-art zoom levels stay crisp (whole-pixel 1x, 2x, 3x, ...).
+    pub const ZOOM_LADDER: [f32; 19] = [
+        0.1, 0.125, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0, 24.0, 32.0,
+        48.0, 64.0, 100.0,
+    ];
+
+    /// Step zoom to the next ladder level up (`direction > 0`) or down,
+    /// keeping `anchor` (screen coords) fixed on screen.
+    pub fn zoom_step(&mut self, direction: f32, anchor: Option<Pos2>, canvas_rect: Rect) {
+        let current = self.zoom;
+        let target = if direction > 0.0 {
+            Self::ZOOM_LADDER
+                .iter()
+                .copied()
+                .find(|&z| z > current * 1.001)
+                .unwrap_or(100.0)
+        } else {
+            Self::ZOOM_LADDER
+                .iter()
+                .copied()
+                .rev()
+                .find(|&z| z < current * 0.999)
+                .unwrap_or(0.1)
+        };
+        let anchor = anchor.unwrap_or_else(|| canvas_rect.center());
+        self.zoom_around_screen_point(target / current, anchor, canvas_rect);
+    }
+
     pub fn zoom_in(&mut self) {
-        self.zoom = (self.zoom * 1.2).min(100.0);
+        let rect = self.last_canvas_rect.unwrap_or(Rect::ZERO);
+        let anchor = rect.center();
+        self.zoom_step(1.0, Some(anchor), rect);
     }
 
     pub fn zoom_out(&mut self) {
-        self.zoom = (self.zoom / 1.2).max(0.1);
+        let rect = self.last_canvas_rect.unwrap_or(Rect::ZERO);
+        let anchor = rect.center();
+        self.zoom_step(-1.0, Some(anchor), rect);
     }
 
+    /// Fit the whole canvas into the viewport (zoom + centered).
+    pub fn fit_to_window(&mut self, canvas_size: (u32, u32)) {
+        let Some(rect) = self.last_canvas_rect else {
+            return;
+        };
+        let (w, h) = (canvas_size.0.max(1) as f32, canvas_size.1.max(1) as f32);
+        self.zoom = ((rect.width() / w).min(rect.height() / h)).clamp(0.1, 100.0);
+        self.pan_offset = Vec2::ZERO;
+    }
+
+    /// Reset to 100% zoom and centered.
     pub fn reset_zoom(&mut self) {
         self.zoom = 1.0;
         self.pan_offset = Vec2::ZERO;
+    }
+
+    /// Approximate the displayed luminance under a disc, used for cursor
+    /// contrast. Returns true when the content under the cursor is dark.
+    ///
+    /// Samples the visible layer stack (alpha-blended over the mid-gray canvas
+    /// backdrop) plus any stroke preview. `composite_cpu_buffer` cannot be used
+    /// here: it is not maintained on the native GPU present path.
+    fn canvas_is_dark_under(state: &CanvasState, cx: f32, cy: f32, radius: f32) -> bool {
+        let (w, h) = (state.width as i32, state.height as i32);
+        if w <= 0 || h <= 0 {
+            return false;
+        }
+        let r = radius.max(1.0);
+        let mut total = 0.0f32;
+        let mut count = 0.0f32;
+        for gy in -2i32..=2 {
+            for gx in -2i32..=2 {
+                let sx = cx + gx as f32 * r * 0.4;
+                let sy = cy + gy as f32 * r * 0.4;
+                let (px, py) = (sx.floor() as i32, sy.floor() as i32);
+                if px < 0 || py < 0 || px >= w || py >= h {
+                    continue;
+                }
+                // Alpha-blend visible layers bottom-to-top over a mid-gray
+                // backdrop (blend modes ignored — this is only cursor contrast).
+                let (mut rr, mut gg, mut bb) = (0.5f32, 0.5f32, 0.5f32);
+                for layer in state.layers.iter().filter(|l| l.visible) {
+                    let p = *layer.pixels.get_pixel(px as u32, py as u32);
+                    let a = (p[3] as f32 / 255.0) * layer.opacity.clamp(0.0, 1.0);
+                    rr = rr * (1.0 - a) + (p[0] as f32 / 255.0) * a;
+                    gg = gg * (1.0 - a) + (p[1] as f32 / 255.0) * a;
+                    bb = bb * (1.0 - a) + (p[2] as f32 / 255.0) * a;
+                }
+                // The in-progress stroke preview sits on top of the layers.
+                if let Some(preview) = state.preview_layer.as_ref()
+                    && px < preview.width() as i32
+                    && py < preview.height() as i32
+                {
+                    let p = *preview.get_pixel(px as u32, py as u32);
+                    let a = p[3] as f32 / 255.0;
+                    rr = rr * (1.0 - a) + (p[0] as f32 / 255.0) * a;
+                    gg = gg * (1.0 - a) + (p[1] as f32 / 255.0) * a;
+                    bb = bb * (1.0 - a) + (p[2] as f32 / 255.0) * a;
+                }
+                total += rr * 0.299 + gg * 0.587 + bb * 0.114;
+                count += 1.0;
+            }
+        }
+        count > 0.0 && total / count < 0.5
     }
 
     pub fn view_state(&self) -> (f32, Vec2) {
@@ -3242,6 +3414,37 @@ impl Canvas {
     pub fn pan_by(&mut self, delta: Vec2) {
         self.pan_offset += delta;
     }
+}
+
+/// Premultiply RGBA bytes in place with a 4x4 ordered (Bayer) dither on the
+/// rounding step. The dither spans one quantization level, which dissolves
+/// the contour banding that very soft brush ramps show after 8-bit rounding.
+fn premultiply_dithered(buf: &mut [u8], origin_x: u32, origin_y: u32, width: u32) {
+    const BAYER: [u16; 16] = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+    if width == 0 {
+        return;
+    }
+    for (i, px) in buf.chunks_exact_mut(4).enumerate() {
+        let x = (origin_x + (i as u32 % width)) as usize & 3;
+        let y = (origin_y + (i as u32 / width)) as usize & 3;
+        let dither = BAYER[y * 4 + x] * 17; // 0..=255, mean 127.5
+        let a = px[3] as u16;
+        px[0] = ((px[0] as u16 * a + dither) / 255) as u8;
+        px[1] = ((px[1] as u16 * a + dither) / 255) as u8;
+        px[2] = ((px[2] as u16 * a + dither) / 255) as u8;
+    }
+}
+
+/// Scale a premultiplied `Color32`'s intensity by `f` (keeps the tint
+/// proportional while changing the effective opacity).
+fn scale_color(c: Color32, f: f32) -> Color32 {
+    let f = f.clamp(0.0, 1.0);
+    Color32::from_rgba_premultiplied(
+        (c.r() as f32 * f) as u8,
+        (c.g() as f32 * f) as u8,
+        (c.b() as f32 * f) as u8,
+        (c.a() as f32 * f) as u8,
+    )
 }
 
 fn selection_mask_bounds(mask: &image::GrayImage) -> Option<(u32, u32, u32, u32)> {

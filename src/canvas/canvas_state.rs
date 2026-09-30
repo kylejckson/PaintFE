@@ -17,6 +17,11 @@ pub struct CanvasState {
     pub composite_cache: Option<egui::TextureHandle>,
     pub dirty_rect: Option<egui::Rect>,
     pub commit_composite_flush_rect: Option<egui::Rect>,
+    /// Deferred preview clear: set when a stroke commits. The preview stays
+    /// visible until the composite has caught up with the committed pixels,
+    /// otherwise the stroke visibly disappears for a frame on release.
+    /// Reset by `clear_preview_state`.
+    pub preview_clear_pending: bool,
     pub show_pixel_grid: bool,             // Toggle for pixel grid overlay
     pub show_guidelines: bool,             // Toggle for center/thirds guidelines overlay
     pub mirror_mode: MirrorMode,           // Symmetry mirror mode
@@ -154,6 +159,7 @@ impl CanvasState {
             composite_cache: None,
             dirty_rect: None,
             commit_composite_flush_rect: None,
+            preview_clear_pending: false,
             show_pixel_grid: true,  // Enable by default
             show_guidelines: false, // Disabled by default
             mirror_mode: MirrorMode::None,
@@ -243,6 +249,14 @@ impl CanvasState {
         self.preview_targets_mask = false;
         self.preview_mask_reveal = false;
         self.selection_transform_preview_bounds = None;
+        self.preview_clear_pending = false;
+    }
+
+    /// Keep the preview visible after a stroke commit until the composite has
+    /// caught up with the committed pixels (see `preview_clear_pending`). The
+    /// deferred clear runs from the canvas view once `dirty_rect` is gone.
+    pub fn defer_preview_clear(&mut self) {
+        self.preview_clear_pending = true;
     }
 
     pub fn push_fill_commit_overlay(

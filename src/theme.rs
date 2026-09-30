@@ -1123,11 +1123,12 @@ impl Theme {
     }
 
     /// Floating tool shelf frame — sits below the toolbar, overlaying the canvas.
-    /// Rounded container with subtle shadow, matching website `.card` pattern.
+    /// Rounded, slightly translucent container with subtle shadow, matching the
+    /// website `.card` pattern — it should read as floating over the canvas.
     pub fn tool_shelf_frame(&self) -> egui::Frame {
         let r = CornerRadius::same(self.tool_shelf_rounding as u8);
         egui::Frame::NONE
-            .fill(self.tool_shelf_bg)
+            .fill(self.tool_shelf_bg.gamma_multiply(0.9))
             .corner_radius(r)
             .stroke(Stroke::new(1.0, self.tool_shelf_border))
             .shadow(Shadow {

@@ -63,13 +63,15 @@ impl BrushTip {
 }
 
 /// Painting mode for the Brush tool.
-/// Normal: standard alpha-blend paint
+/// Normal: standard max-alpha paint (one stroke never exceeds its flow)
+/// BuildUp: accumulating paint — repeated passes build toward full opacity
 /// Dodge: lightens (increases luminosity)
 /// Burn: darkens (decreases luminosity)
 /// Sponge: desaturates
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BrushMode {
     Normal,
+    BuildUp,
     Dodge,
     Burn,
     Sponge,
@@ -79,6 +81,7 @@ impl BrushMode {
     pub fn label(&self) -> &'static str {
         match self {
             BrushMode::Normal => "Normal",
+            BrushMode::BuildUp => "Build Up",
             BrushMode::Dodge => "Dodge",
             BrushMode::Burn => "Burn",
             BrushMode::Sponge => "Sponge",
@@ -87,6 +90,7 @@ impl BrushMode {
     pub fn all() -> &'static [BrushMode] {
         &[
             BrushMode::Normal,
+            BrushMode::BuildUp,
             BrushMode::Dodge,
             BrushMode::Burn,
             BrushMode::Sponge,
@@ -1854,6 +1858,10 @@ pub struct ToolsPanel {
     pub shapes_state: ShapesToolState,
     pub move_interpolation: crate::ops::transform::Interpolation,
     pub move_anti_aliasing: bool,
+    /// Stroke stabilization (0.0 = raw pointer path, 0.9 = heavy smoothing).
+    /// Applied as an EMA on brush/eraser pointer samples. The Pencil tool is
+    /// always raw regardless of this value (pixel-exact placement).
+    pub stroke_stabilization: f32,
     pub pending_open_add_shape: bool,
     pub pending_delete_shape: Option<String>,
     last_tracked_layer_index: usize,
@@ -1938,6 +1946,7 @@ impl Default for ToolsPanel {
             shapes_state: ShapesToolState::default(),
             move_interpolation: crate::ops::transform::Interpolation::Bilinear,
             move_anti_aliasing: true,
+            stroke_stabilization: 0.0,
             pending_open_add_shape: false,
             pending_delete_shape: None,
             last_tracked_layer_index: 0,

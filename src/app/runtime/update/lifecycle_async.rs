@@ -700,42 +700,7 @@ impl PaintFEApp {
             ctx.memory_mut(|m| m.request_focus(canvas_id));
         }
 
-        // Handle scroll wheel zoom — only when mouse is over the canvas and NOT over a widget
-
-        let mut should_zoom = false;
-        let mut zoom_amount = 0.0;
-
-        // Check if any floating window/widget is under the pointer.
-        let pointer_over_widget = egui::Popup::is_any_open(ctx)
-            || self.pointer_over_cursor_blocking_ui(ctx)
-            || self.ui_pointer_capture_active;
-
-        if !modal_open {
-            ctx.input_mut(|i| {
-                if i.smooth_scroll_delta.y.abs() > 0.1 {
-                    let mouse_over_canvas = i.pointer.hover_pos().is_some_and(|pos| {
-                        self.canvas
-                            .last_canvas_rect
-                            .is_some_and(|rect| rect.contains(pos))
-                    });
-                    if mouse_over_canvas && !pointer_over_widget {
-                        should_zoom = true;
-                        zoom_amount = i.smooth_scroll_delta.y;
-                        i.smooth_scroll_delta.y = 0.0;
-                    }
-                }
-            });
-        }
-
-        if should_zoom {
-            let zoom_factor = 1.0 + zoom_amount * 0.005;
-            // Zoom around the mouse cursor so the point under the pointer stays fixed
-            let mouse_pos = ctx.input(|i| i.pointer.hover_pos());
-            if let (Some(pos), Some(rect)) = (mouse_pos, self.canvas.last_canvas_rect) {
-                self.canvas.zoom_around_screen_point(zoom_factor, pos, rect);
-            } else {
-                self.canvas.apply_zoom(zoom_factor);
-            }
-        }
+        // Wheel zoom is handled in input_shortcuts.rs (single owner: discrete
+        // zoom ladder on plain wheel, free zoom on Alt+wheel).
     }
 }
