@@ -70,8 +70,10 @@ struct DialogTint {
     muted: Color32,
     accent: Color32,
     accent_faint: Color32,
-    /// Readable accent for text/icons (the raw accent is too light on light
-    /// themes to be legible on tinted pills).
+    /// The saturated accent (selection stroke) — used for primary buttons and
+    /// recommended borders; the fill accent is too pale to read as "accent".
+    accent_solid: Color32,
+    /// Readable accent for text/icons (darkened on light themes).
     accent_text: Color32,
 }
 
@@ -99,6 +101,7 @@ impl DialogTint {
             muted: v.widgets.noninteractive.fg_stroke.color,
             accent,
             accent_faint: accent.gamma_multiply(0.16),
+            accent_solid: line,
             accent_text,
         }
     }
@@ -250,9 +253,10 @@ fn action_row(
     ui.painter()
         .rect_filled(rect, ROW_RADIUS, fill);
 
-    // Border: accent for the recommended row (brightens on hover), hairline otherwise.
+    // Border: saturated accent for the recommended row (brightens on hover),
+    // hairline otherwise.
     let border = if action.recommended {
-        Stroke::new(1.2, tint.accent_text.gamma_multiply(0.75 + 0.25 * hover))
+        Stroke::new(1.2, tint.accent_solid.gamma_multiply(0.8 + 0.2 * hover))
     } else {
         Stroke::new(1.0, tint.stroke.gamma_multiply(0.55 + 0.45 * hover))
     };
@@ -385,7 +389,7 @@ fn confirm_button(
 
     let (fill, fg) = if button.primary {
         (
-            tint.accent.gamma_multiply(0.88 + 0.12 * hover - 0.10 * press),
+            tint.accent_solid.gamma_multiply(0.90 + 0.10 * hover - 0.10 * press),
             Color32::WHITE,
         )
     } else {
