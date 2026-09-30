@@ -56,10 +56,11 @@ impl ConfirmButton {
     }
 }
 
-/// Card metrics shared by the dialog styles.
-const CARD_WIDTH: f32 = 420.0;
-const ROW_HEIGHT: f32 = 62.0;
-const TILE: f32 = 36.0;
+/// Card metrics: compact, consistent with the app's widget radius scale.
+const CARD_WIDTH: f32 = 380.0;
+const ROW_HEIGHT: f32 = 52.0;
+const TILE: f32 = 30.0;
+const ROW_RADIUS: f32 = 6.0;
 
 /// Colors for the dialog card, derived from the current visuals.
 struct DialogTint {
@@ -69,18 +70,36 @@ struct DialogTint {
     muted: Color32,
     accent: Color32,
     accent_faint: Color32,
+    /// Readable accent for text/icons (the raw accent is too light on light
+    /// themes to be legible on tinted pills).
+    accent_text: Color32,
 }
 
 impl DialogTint {
     fn from_ui(ui: &egui::Ui) -> Self {
         let v = ui.visuals();
+        let accent = v.selection.bg_fill;
+        // The saturated accent (selection stroke) carries far more contrast
+        // than the pale fill tint — use it for text, pills and borders.
+        let line = v.selection.stroke.color;
+        let accent_text = if v.dark_mode {
+            line
+        } else {
+            Color32::from_rgba_premultiplied(
+                (line.r() as f32 * 0.72) as u8,
+                (line.g() as f32 * 0.72) as u8,
+                (line.b() as f32 * 0.72) as u8,
+                255,
+            )
+        };
         Self {
             fill: v.window_fill,
             stroke: v.widgets.noninteractive.bg_stroke.color,
             text: v.text_color(),
             muted: v.widgets.noninteractive.fg_stroke.color,
-            accent: v.selection.bg_fill,
-            accent_faint: v.selection.bg_fill.gamma_multiply(0.12),
+            accent,
+            accent_faint: accent.gamma_multiply(0.16),
+            accent_text,
         }
     }
 }
@@ -101,12 +120,12 @@ pub fn dialog_card_header(ui: &mut egui::Ui, assets: &Assets, icon: Icon, title:
     let tint = DialogTint::from_ui(ui);
     let mut closed = false;
     ui.horizontal(|ui| {
-        icon_tile(ui, assets, icon, tint.accent, tint.accent_faint);
-        ui.add_space(10.0);
+        icon_tile(ui, assets, icon, tint.accent_text, tint.accent_faint);
+        ui.add_space(8.0);
         ui.label(
             egui::RichText::new(title)
                 .strong()
-                .size(17.0)
+                .size(15.0)
                 .color(tint.text),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -116,39 +135,42 @@ pub fn dialog_card_header(ui: &mut egui::Ui, assets: &Assets, icon: Icon, title:
             }
         });
     });
-    ui.add_space(6.0);
+    ui.add_space(4.0);
     ui.separator();
-    ui.add_space(6.0);
+    ui.add_space(4.0);
     closed
 }
 
 /// Rounded icon tile (accent-tinted) used in headers and rows.
-fn icon_tile(ui: &mut egui::Ui, assets: &Assets, icon: Icon, accent: Color32, tint: Color32) {
+fn icon_tile(ui: &mut egui::Ui, assets: &Assets, icon: Icon, icon_color: Color32, tint: Color32) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(TILE, TILE), egui::Sense::hover());
-    ui.painter().rect_filled(rect, egui::CornerRadius::same(8), tint);
+    ui.painter()
+        .rect_filled(rect, egui::CornerRadius::same(6), tint);
     if let Some(tex) = assets.get_texture(icon) {
-        let inner = rect.shrink(8.0);
+        let inner = rect.shrink(7.0);
         ui.painter().image(
             tex.id(),
             inner,
             egui::Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
-            accent,
+            icon_color,
         );
     }
 }
 
-/// Small ✕ close button with hover feedback.
+/// Small ✕ close button — bare glyph, subtle hover plate (concept style).
 fn close_button(ui: &mut egui::Ui, muted: Color32) -> egui::Response {
-    let size = egui::vec2(24.0, 24.0);
+    let size = egui::vec2(20.0, 20.0);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     let t = ui
         .ctx()
         .animate_bool(response.id, response.hovered() || response.is_pointer_button_down_on());
-    let bg = muted.gamma_multiply(0.12 + 0.12 * t);
-    ui.painter().rect_filled(rect, 6.0, bg);
-    let stroke = Stroke::new(1.6, muted);
+    if t > 0.01 {
+        ui.painter()
+            .rect_filled(rect, 5.0, muted.gamma_multiply(0.12 * t));
+    }
+    let stroke = Stroke::new(1.5, muted);
     let c = rect.center();
-    let r = 5.0;
+    let r = 4.5;
     ui.painter()
         .line_segment([c - egui::vec2(r, r), c + egui::vec2(r, r)], stroke);
     ui.painter()
@@ -159,7 +181,7 @@ fn close_button(ui: &mut egui::Ui, muted: Color32) -> egui::Response {
 /// Style A — question + vertical action rows.
 ///
 /// Returns the index of the clicked action. `caption` (optional) is a small
-/// muted line under the question, e.g. "File 2 of 3 · name.png".
+/// muted line under the question, e.g. "photo.png · 2 more waiting".
 pub fn action_list(
     ui: &mut egui::Ui,
     assets: &Assets,
@@ -172,18 +194,18 @@ pub fn action_list(
 
     ui.label(
         egui::RichText::new(question)
-            .size(13.5)
+            .size(12.5)
             .color(faded(tint.text, fade)),
     );
     if let Some(caption) = caption {
-        ui.add_space(2.0);
+        ui.add_space(1.0);
         ui.label(
             egui::RichText::new(caption)
                 .small()
                 .color(faded(tint.muted, fade)),
         );
     }
-    ui.add_space(10.0);
+    ui.add_space(8.0);
 
     let mut chosen = None;
     for (idx, action) in actions.iter().enumerate() {
@@ -191,7 +213,7 @@ pub fn action_list(
             chosen = Some(idx);
         }
         if idx + 1 < actions.len() {
-            ui.add_space(6.0);
+            ui.add_space(5.0);
         }
     }
     chosen
@@ -223,39 +245,41 @@ fn action_row(
         tint.accent.r(),
         tint.accent.g(),
         tint.accent.b(),
-        (tint_amt * 28.0) as u8,
+        (tint_amt * 26.0) as u8,
     );
-    ui.painter().rect_filled(rect, 10.0, fill);
+    ui.painter()
+        .rect_filled(rect, ROW_RADIUS, fill);
 
     // Border: accent for the recommended row (brightens on hover), hairline otherwise.
     let border = if action.recommended {
-        Stroke::new(1.5, tint.accent.gamma_multiply(0.65 + 0.35 * hover))
+        Stroke::new(1.2, tint.accent_text.gamma_multiply(0.75 + 0.25 * hover))
     } else {
-        Stroke::new(1.0, tint.stroke.gamma_multiply(0.6 + 0.4 * hover))
+        Stroke::new(1.0, tint.stroke.gamma_multiply(0.55 + 0.45 * hover))
     };
-    ui.painter().rect_stroke(rect, 10.0, border, egui::StrokeKind::Middle);
+    ui.painter()
+        .rect_stroke(rect, ROW_RADIUS, border, egui::StrokeKind::Middle);
 
     // Icon tile.
     let tile = egui::Rect::from_min_size(
-        rect.left_center() + egui::vec2(12.0, -TILE / 2.0),
+        rect.left_center() + egui::vec2(10.0, -TILE / 2.0),
         egui::vec2(TILE, TILE),
     );
     ui.painter().rect_filled(
         tile,
-        8.0,
+        6.0,
         if action.recommended {
             tint.accent_faint
         } else {
-            tint.stroke.gamma_multiply(0.12)
+            tint.stroke.gamma_multiply(0.10)
         },
     );
     if let Some(tex) = assets.get_texture(action.icon) {
         ui.painter().image(
             tex.id(),
-            tile.shrink(8.0),
+            tile.shrink(7.0),
             egui::Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
             if action.recommended {
-                tint.accent
+                tint.accent_text
             } else {
                 tint.text
             }
@@ -264,51 +288,46 @@ fn action_row(
     }
 
     // Title + description.
-    let text_x = tile.max.x + 12.0;
-    let title_pos = egui::pos2(text_x, rect.top() + 15.0);
+    let text_x = tile.max.x + 10.0;
+    let title_pos = egui::pos2(text_x, rect.top() + 11.0);
     ui.painter().text(
         title_pos,
         egui::Align2::LEFT_TOP,
         &action.title,
-        egui::FontId::proportional(15.0),
+        egui::FontId::proportional(13.5),
         tint.text.gamma_multiply(fade),
     );
     ui.painter().text(
-        egui::pos2(text_x, rect.top() + 35.0),
+        egui::pos2(text_x, rect.top() + 28.0),
         egui::Align2::LEFT_TOP,
         &action.desc,
-        egui::FontId::proportional(11.5),
+        egui::FontId::proportional(10.5),
         tint.muted.gamma_multiply(fade),
     );
 
-    // "Recommended" pill (before the chevron).
-    let mut chevron_x = rect.max.x - 16.0;
+    // Chevron always sits at the far right; the "Recommended" pill sits left of it.
+    let chevron = egui::pos2(rect.max.x - 12.0 + hover * 3.0, rect.center().y);
     if action.recommended {
-        let galley = ui.painter().layout_no_wrap(
-            "Recommended".to_string(),
-            egui::FontId::proportional(10.5),
-            tint.accent,
-        );
+        let pill_w = 74.0;
         let pill = egui::Rect::from_min_size(
-            egui::pos2(chevron_x - galley.size().x - 16.0, rect.center().y - 9.0),
-            egui::vec2(galley.size().x + 16.0, 18.0),
+            egui::pos2(chevron.x - 20.0 - pill_w, rect.center().y - 8.0),
+            egui::vec2(pill_w, 16.0),
         );
-        ui.painter().rect_filled(pill, 9.0, tint.accent_faint);
-        ui.painter().galley(
-            pill.left_center() + egui::vec2(8.0, -galley.size().y / 2.0),
-            galley,
-            faded(tint.accent, fade),
+        ui.painter()
+            .rect_filled(pill, 5.0, tint.accent.gamma_multiply(0.35));
+        ui.painter().text(
+            pill.center(),
+            egui::Align2::CENTER_CENTER,
+            "Recommended",
+            egui::FontId::proportional(10.0),
+            tint.accent_text,
         );
-        chevron_x = pill.min.x - 10.0;
     }
-
-    // Chevron, nudged right on hover.
-    let chev = egui::pos2(chevron_x + hover * 3.0, rect.center().y);
     ui.painter().text(
-        chev,
+        chevron,
         egui::Align2::RIGHT_CENTER,
         "\u{203A}",
-        egui::FontId::proportional(22.0),
+        egui::FontId::proportional(16.0),
         tint.muted.gamma_multiply(0.7 + 0.3 * hover),
     );
 
@@ -324,7 +343,7 @@ pub fn confirm_row(
     buttons: &[ConfirmButton],
 ) -> Option<usize> {
     let tint = DialogTint::from_ui(ui);
-    ui.add_space(10.0);
+    ui.add_space(8.0);
     let mut chosen = None;
     ui.horizontal(|ui| {
         for (idx, button) in buttons.iter().enumerate() {
@@ -332,7 +351,7 @@ pub fn confirm_row(
                 chosen = Some(idx);
             }
             if idx + 1 < buttons.len() {
-                ui.add_space(8.0);
+                ui.add_space(7.0);
             }
         }
     });
@@ -346,15 +365,15 @@ fn confirm_button(
     button: &ConfirmButton,
     tint: &DialogTint,
 ) -> bool {
-    let height = 34.0;
-    let pad_x = 18.0;
-    let icon_w = if button.icon.is_some() { 22.0 } else { 0.0 };
+    let height = 28.0;
+    let pad_x = 14.0;
+    let icon_w = if button.icon.is_some() { 20.0 } else { 0.0 };
     let galley = ui.painter().layout_no_wrap(
         button.label.clone(),
-        egui::FontId::proportional(13.5),
+        egui::FontId::proportional(12.5),
         tint.text,
     );
-    let width = (galley.size().x + pad_x * 2.0 + icon_w).max(96.0);
+    let width = (galley.size().x + pad_x * 2.0 + icon_w).max(84.0);
     let (rect, response) =
         ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
     let id = response.id;
@@ -371,15 +390,15 @@ fn confirm_button(
         )
     } else {
         (
-            tint.stroke.gamma_multiply(0.16 + 0.12 * hover - 0.08 * press),
+            tint.stroke.gamma_multiply(0.14 + 0.12 * hover - 0.08 * press),
             tint.text,
         )
     };
-    ui.painter().rect_filled(rect, 8.0, fill);
+    ui.painter().rect_filled(rect, 5.0, fill);
     if !button.primary {
         ui.painter().rect_stroke(
             rect,
-            8.0,
+            5.0,
             Stroke::new(1.0, tint.stroke.gamma_multiply(0.8)),
             egui::StrokeKind::Middle,
         );
@@ -390,8 +409,8 @@ fn confirm_button(
     if let Some(icon) = button.icon {
         if let Some(tex) = assets.get_texture(icon) {
             let tile = egui::Rect::from_min_size(
-                egui::pos2(x, rect.center().y - 8.0),
-                egui::vec2(16.0, 16.0),
+                egui::pos2(x, rect.center().y - 7.0),
+                egui::vec2(14.0, 14.0),
             );
             ui.painter().image(
                 tex.id(),
@@ -406,7 +425,7 @@ fn confirm_button(
         egui::pos2(x, rect.center().y),
         egui::Align2::LEFT_CENTER,
         &button.label,
-        egui::FontId::proportional(13.5),
+        egui::FontId::proportional(12.5),
         fg,
     );
 

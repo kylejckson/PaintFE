@@ -111,7 +111,7 @@ impl PaintFEApp {
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .frame(self.theme.dialog_frame())
                 .show(ctx, |ui| {
-                    ui.set_min_width(420.0);
+                    ui.set_min_width(380.0);
                     if dialog_card_header(
                         ui,
                         &self.assets,
@@ -196,7 +196,7 @@ impl PaintFEApp {
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .frame(self.theme.dialog_frame())
                 .show(ctx, |ui| {
-                    ui.set_min_width(420.0);
+                    ui.set_min_width(380.0);
                     if dialog_card_header(
                         ui,
                         &self.assets,
@@ -273,7 +273,7 @@ impl PaintFEApp {
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .frame(self.theme.dialog_frame())
                 .show(ctx, |ui| {
-                    ui.set_min_width(420.0);
+                    ui.set_min_width(380.0);
                     if dialog_card_header(
                         ui,
                         &self.assets,
@@ -340,7 +340,7 @@ impl PaintFEApp {
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .frame(self.theme.dialog_frame())
                 .show(ctx, |ui| {
-                    ui.set_min_width(420.0);
+                    ui.set_min_width(380.0);
                     if dialog_card_header(
                         ui,
                         &self.assets,
@@ -411,7 +411,7 @@ impl PaintFEApp {
                     .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                     .frame(self.theme.dialog_frame())
                     .show(ctx, |ui| {
-                        ui.set_min_width(420.0);
+                        ui.set_min_width(380.0);
                         if dialog_card_header(
                             ui,
                             &self.assets,

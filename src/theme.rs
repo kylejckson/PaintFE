@@ -549,7 +549,7 @@ impl Theme {
             tool_button_rounding: 4.0,
             badge_rounding: 4.0,
             tab_rounding: 7.0,
-            dialog_rounding: 12.0,
+            dialog_rounding: 6.0,
             glow_intensity: 1.0,
             shadow_strength: 1.0,
         }
@@ -629,7 +629,7 @@ impl Theme {
             tool_button_rounding: 4.0,
             badge_rounding: 4.0,
             tab_rounding: 7.0,
-            dialog_rounding: 12.0,
+            dialog_rounding: 6.0,
             glow_intensity: 1.0,
             shadow_strength: 1.0,
         }
@@ -1150,8 +1150,8 @@ impl Theme {
     }
 
     /// Card frame for the action dialogs (import / oversized paste / unsaved).
-    /// Soft-shadowed floating card like the panels; the corner radius is user
-    /// configurable via `dialog_rounding` (Settings > Advanced Customization).
+    /// Soft, subtle card like the panels; corner radius user configurable via
+    /// `dialog_rounding` (Settings > Advanced Customization).
     pub fn dialog_frame(&self) -> egui::Frame {
         let r = CornerRadius::same(self.dialog_rounding.max(0.0) as u8);
         egui::Frame::NONE
@@ -1159,12 +1159,12 @@ impl Theme {
             .corner_radius(r)
             .stroke(Stroke::new(1.0, self.tool_shelf_border))
             .shadow(Shadow {
-                offset: [0, 6],
-                blur: self.scaled_shadow_blur(18),
+                offset: [0, 3],
+                blur: self.scaled_shadow_blur(8),
                 spread: 0,
-                color: Color32::from_black_alpha(self.scaled_shadow_alpha(70)),
+                color: Color32::from_black_alpha(self.scaled_shadow_alpha(32)),
             })
-            .inner_margin(egui::Margin::symmetric(18, 14))
+            .inner_margin(egui::Margin::symmetric(14, 10))
     }
 
     pub fn icon_button_bg_for(ui: &egui::Ui) -> Color32 {
