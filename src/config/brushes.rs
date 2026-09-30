@@ -1277,8 +1277,14 @@ impl Assets {
     }
 
     /// All known icons, sorted by id (for the Preferences pack preview).
+    /// Dead placeholder icons are hidden.
     pub fn icon_list(&self) -> Vec<Icon> {
-        let mut icons: Vec<Icon> = self.icon_pixels.keys().copied().collect();
+        let mut icons: Vec<Icon> = self
+            .icon_pixels
+            .keys()
+            .copied()
+            .filter(|i| !crate::config::icon_packs::is_excluded_icon(*i))
+            .collect();
         icons.sort_by_key(|i| crate::config::icon_packs::icon_id_name(*i));
         icons
     }
@@ -1311,10 +1317,14 @@ impl Assets {
     }
 
     /// Write an icon-pack template into `dir`: `pack.ini`, the full icon id
-    /// list, and the currently displayed icons as editable PNGs.
+    /// list, and the currently displayed icons as editable PNGs. Dead
+    /// placeholder icons are excluded.
     pub fn export_icon_template(&self, dir: &std::path::Path) -> Result<(), String> {
         let mut icons: Vec<(String, image::RgbaImage)> = Vec::new();
         for &icon in self.icon_pixels.keys() {
+            if crate::config::icon_packs::is_excluded_icon(icon) {
+                continue;
+            }
             if let Some((px, size, _)) = self.display_icon_pixels(icon, false)
                 && let Some(img) = image::RgbaImage::from_raw(size[0] as u32, size[1] as u32, px)
             {

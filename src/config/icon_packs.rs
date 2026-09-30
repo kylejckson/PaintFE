@@ -89,6 +89,9 @@ impl IconPack {
             } else {
                 (stem, 2)
             };
+            if is_excluded_id(base) {
+                continue; // dead placeholder icons are not overridable
+            }
             let Ok(img) = image::open(&path) else {
                 continue; // skip unreadable files, keep the rest of the pack
             };
@@ -173,6 +176,21 @@ pub fn icon_id_name(icon: Icon) -> String {
         }
     }
     out
+}
+
+/// Icon ids that are dead placeholders: never shown in the UI, so they are
+/// excluded from Export Template, hidden from the preview, and ignored when
+/// loading a pack.
+const EXCLUDED_IDS: &[&str] = &["menu_filter_sharpen"];
+
+/// True when an icon id is a dead placeholder (see `EXCLUDED_IDS`).
+pub fn is_excluded_id(id: &str) -> bool {
+    EXCLUDED_IDS.contains(&id)
+}
+
+/// True when an icon is a dead placeholder (see `EXCLUDED_IDS`).
+pub fn is_excluded_icon(icon: Icon) -> bool {
+    is_excluded_id(&icon_id_name(icon))
 }
 
 /// Invert the RGB channels of an image (alpha preserved), matching the
