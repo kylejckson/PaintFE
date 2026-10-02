@@ -160,7 +160,6 @@ impl ScriptEditorPanel {
             theme,
             &crate::t!("script.title"),
             Some(("SCRIPT", accent)),
-            0.0,
         ) {
             self.close_requested = true;
         }

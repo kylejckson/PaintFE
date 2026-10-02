@@ -101,7 +101,6 @@ impl PaintFEApp {
                 &self.theme,
                 "Tools",
                 Some(("TOOLS", self.theme.accent3)),
-                0.0,
             ) {
                 close_clicked = true;
             }
@@ -202,7 +201,6 @@ impl PaintFEApp {
                 &self.theme,
                 "Layers",
                 Some(("LAYERS", self.theme.accent3)),
-                0.0,
             ) {
                 close_clicked = true;
             }
@@ -486,7 +484,6 @@ impl PaintFEApp {
                 &self.theme,
                 "History",
                 Some(("HISTORY", self.theme.accent4)),
-                0.0,
             ) {
                 close_clicked = true;
             }
@@ -561,17 +558,11 @@ impl PaintFEApp {
 
         let resp = window.show(ctx, |ui| {
             // Signal Grid panel header
-            let hdr_extra = if self.colors_panel.is_expanded() {
-                10.0_f32
-            } else {
-                20.0_f32
-            };
             if signal_widgets::panel_header(
                 ui,
                 &self.theme,
                 "Colors",
                 Some(("COLOR", self.theme.accent)),
-                hdr_extra,
             ) {
                 close_clicked = true;
             }
@@ -646,7 +637,6 @@ impl PaintFEApp {
                 &self.theme,
                 "Palette",
                 Some(("PALETTE", self.theme.accent4)),
-                0.0,
             ) {
                 close_clicked = true;
             }

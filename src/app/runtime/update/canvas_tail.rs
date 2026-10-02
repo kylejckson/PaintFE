@@ -91,21 +91,16 @@ impl PaintFEApp {
                                         ui.selectable_value(&mut session.interpolation, interpolation, interpolation.label());
                                     }
                                 });
-                            // Trailing quick-actions — flush right on the bar.
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if ui.button("Cancel").clicked() {
-                                        cancel_straighten = true;
-                                    }
-                                    if ui.button("Apply").clicked() {
-                                        commit_straighten = true;
-                                    }
-                                    if ui.button("Reset").clicked() {
-                                        session.angle_degrees = 0.0;
-                                    }
-                                },
-                            );
+                            // Quick actions — inline with the rest of the controls.
+                            if ui.button("Reset").clicked() {
+                                session.angle_degrees = 0.0;
+                            }
+                            if ui.button("Apply").clicked() {
+                                commit_straighten = true;
+                            }
+                            if ui.button("Cancel").clicked() {
+                                cancel_straighten = true;
+                            }
                         } else if let Some(ref mut overlay) = self.paste_overlay {
                             // --- Paste overlay context bar ---
                             crate::signal_widgets::tool_shelf_tag(ui, "PASTE", self.theme.accent, &self.theme);
@@ -157,23 +152,18 @@ impl PaintFEApp {
 
                             ui.add_space(4.0);
 
-                            // Quick actions — flush right on the bar.
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if ui
-                                        .button("Reset")
-                                        .on_hover_text("Reset all transforms and crop")
-                                        .clicked()
-                                    {
-                                        overlay.rotation = 0.0;
-                                        overlay.scale_x = 1.0;
-                                        overlay.scale_y = 1.0;
-                                        overlay.anchor_offset = egui::Vec2::ZERO;
-                                        overlay.reset_crop();
-                                    }
-                                },
-                            );
+                            // Quick action — inline with the rest of the controls.
+                            if ui
+                                .button("Reset")
+                                .on_hover_text("Reset all transforms and crop")
+                                .clicked()
+                            {
+                                overlay.rotation = 0.0;
+                                overlay.scale_x = 1.0;
+                                overlay.scale_y = 1.0;
+                                overlay.anchor_offset = egui::Vec2::ZERO;
+                                overlay.reset_crop();
+                            }
                         } else {
                             let ctx_primary = self.colors_panel.get_primary_color();
                             let ctx_secondary = self.colors_panel.get_secondary_color();
@@ -184,24 +174,19 @@ impl PaintFEApp {
                                 ctx_secondary,
                                 &self.theme,
                             );
-                            // Trailing quick-action — flush right on the bar.
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if self
-                                        .assets
-                                        .icon_button(
-                                            ui,
-                                            crate::assets::Icon::UiStraighten,
-                                            egui::Vec2::splat(20.0),
-                                        )
-                                        .on_hover_text("Straighten canvas")
-                                        .clicked()
-                                    {
-                                        start_straighten = true;
-                                    }
-                                },
-                            );
+                            // Quick action — inline with the rest of the controls.
+                            if self
+                                .assets
+                                .icon_button(
+                                    ui,
+                                    crate::assets::Icon::UiStraighten,
+                                    egui::Vec2::splat(20.0),
+                                )
+                                .on_hover_text("Straighten canvas")
+                                .clicked()
+                            {
+                                start_straighten = true;
+                            }
                         }
                     });
                 });

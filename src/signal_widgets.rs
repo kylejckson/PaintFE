@@ -293,10 +293,7 @@ impl<'a> SignalButton<'a> {
 // GradientDivider — gradient-fade separator
 // ============================================================================
 
-/// Draw a gradient-fade divider in place of `ui.separator()`.
-///
-/// Allocates 1px of vertical space and draws a horizontal line that fades
-/// from transparent at the edges to `theme.separator_color` in the center.
+/// Draw a solid divider line under a panel header, spanning the full width.
 pub fn gradient_divider(ui: &mut Ui, theme: &Theme) {
     let width = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 1.0), Sense::hover());
@@ -607,30 +604,24 @@ pub fn card_frame_interactive<R>(
 // Panel header — title + optional badge + close button + gradient divider
 // ============================================================================
 
-/// Draw a panel header with badge, close button, and gradient divider.
+/// Draw a panel header with badge, close button, and divider.
 ///
 /// When a badge is provided, it is shown as the sole identifier (no duplicate title).
 /// When no badge is given, the title string is displayed as a heading instead.
 ///
+/// The header row spans the exact panel width so the close button sits in the
+/// corner and the divider below runs corner to corner — this matters on
+/// fixed-size panels (Colors, Palette) where content-based sizing would leave
+/// both of them short.
+///
 /// Returns `true` if the close button was clicked.
-pub fn panel_header(
-    ui: &mut Ui,
-    theme: &Theme,
-    title: &str,
-    badge: Option<(&str, Color32)>,
-    extra_width: f32,
-) -> bool {
+pub fn panel_header(ui: &mut Ui, theme: &Theme, title: &str, badge: Option<(&str, Color32)>) -> bool {
     let mut close_clicked = false;
     // Capture the full available width BEFORE entering the horizontal layout.
     let header_width = ui.available_width();
     ui.horizontal(|ui| {
-        // Fill the parent's width so the close button aligns to the right edge.
-        // Only set min_width for wider panels; skip for narrow ones (e.g. Tools)
-        // to avoid inflating the window beyond the grid content width.
-        let w = (header_width + extra_width).min(500.0);
-        if w > 130.0 {
-            ui.set_min_width(w);
-        }
+        // Exact width: the close button must land on the panel's right edge.
+        ui.set_width(header_width);
 
         if let Some((badge_text, badge_color)) = badge {
             SignalBadge::new(badge_text, badge_color).show(ui, theme);
