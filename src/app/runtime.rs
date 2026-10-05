@@ -9,12 +9,25 @@ impl eframe::App for PaintFEApp {
         ]
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        self.update_runtime_lifecycle_async(&ctx);
-        let modal_open = self.update_runtime_input(&ctx);
-        self.show_runtime_dialogs_menu(&ctx, ui);
-        self.show_runtime_canvas_tail(&ctx, ui, modal_open);
+        let _profile = crate::ui::perf::Frame::begin(&ctx, frame.info().cpu_usage);
+        {
+            let _scope = crate::ui::perf::Scope::new(0);
+            self.update_runtime_lifecycle_async(&ctx);
+        }
+        let modal_open = {
+            let _scope = crate::ui::perf::Scope::new(4);
+            self.update_runtime_input(&ctx)
+        };
+        {
+            let _scope = crate::ui::perf::Scope::new(5);
+            self.show_runtime_dialogs_menu(&ctx, ui);
+        }
+        {
+            let _scope = crate::ui::perf::Scope::new(6);
+            self.show_runtime_canvas_tail(&ctx, ui, modal_open);
+        }
     }
 }
 

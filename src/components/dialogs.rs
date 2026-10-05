@@ -326,7 +326,7 @@ impl NewFileDialog {
 
             let select_all_requested = self.select_all_shortcut_pressed(ctx);
 
-            egui::Window::new("new_file_dialog_internal")
+            crate::ui::polish::window(ctx, "new_file_dialog_internal")
                 .title_bar(false)
                 .collapsible(false)
                 .resizable(false)
@@ -541,7 +541,7 @@ impl NewFileDialog {
                                 ui.label(t!("common.resolution"));
                                 ui.horizontal(|ui| {
                                     ui.add(
-                                        egui::DragValue::new(&mut self.ppi)
+                                        crate::ui::numeric::Numeric::new(&mut self.ppi)
                                             .speed(1.0)
                                             .range(1.0..=1200.0),
                                     );
@@ -1472,7 +1472,7 @@ impl SaveFileDialog {
                 should_close = true;
             }
 
-            egui::Window::new("save_file_dialog_internal")
+            crate::ui::polish::window(ctx, "save_file_dialog_internal")
                 .title_bar(false)
                 .collapsible(false)
                 .resizable(false)

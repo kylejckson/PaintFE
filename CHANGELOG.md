@@ -6,6 +6,50 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.0] - 2026-10-05
+
+- A fresh look with Luminous icons and redesigned Color, Palette, and History panels. Classic icons are still available.
+- Make the workspace yours with panel snapping, saved layouts, configurable motion, and sharper numeric controls.
+- Enjoy a faster, more responsive app, corrected brush hardness, and a clearer pixel-art workspace.
+
+### Added
+
+- Added bundled Luminous and Classic icon styles, custom folder or ZIP icon packs, and icon template export.
+- Added compact Color and Advanced modes, collapsible HSV/RGB/HSL controls, and a resizable Palette with recent colors and favorites.
+- Added a History timeline with tool icons, compact action details, and subtle entry animations.
+- Added optional panel edge and alignment snapping, faint guides, named workspace layouts, and layout reset.
+- Added configurable motion, reduced-motion support, keyboard focus styling, fine numeric adjustment, and consistent resets.
+- Added stroke stabilization, Normal/Uniform/Build Up brush modes, separate opacity controls, and a Pixel Art preset.
+- Added stepped zoom, improved Fit to Window, and a rebindable 100% zoom action.
+- Added paste crop handles, Commit & Crop, select-after-paste, and layer content bounds selection. Closes #131.
+- Added before/after comparison by toggling live effect previews. Closes #128.
+
+### Changed
+
+- Refreshed the application logo, window and taskbar icons, Store assets, and README screenshots.
+- Standardized panel titles, close buttons, spacing, focus feedback, and dialog styling across light and dark themes.
+- Made the floating tool shelf span the available width and simplified icon pack preferences.
+- Improved soft brush coverage when strokes cross themselves, while preserving soft edges and avoiding stationary buildup in Normal mode.
+- Made hovering, clicking, opening menus, and painting more responsive.
+- Reduced brush work, icon rendering overhead, repeated UI layout work, and unnecessary settings writes.
+- Added low-latency presentation settings and customizable pixel-grid and selection-outline appearance.
+- Made the pixel grid clearer and smoother, with subtler lines and configurable opacity and dashes.
+- Improved pixel-art editing with raw Pencil input, stepped zoom, clearer cursor feedback, and the Pixel Art preset.
+- Limited unsaved-file lists to four names plus the remaining count.
+
+### Fixed
+
+- Fixed the longstanding brush hardness falloff: hardness now controls the opaque inner radius, with soft edges fading to zero instead of leaving hard rims.
+- Fixed stale canvas images after switching or closing documents, including returning to an existing blank tab. Closes #123.
+- Fixed layer thumbnails retaining images from another project with matching layer counts.
+- Avoided repeated viewport title and theme commands while idle. Addresses #134; Linux verification is still pending.
+- Fixed dropped images opening before the import choice was confirmed.
+- Fixed palette clicks ignoring the selected Primary or Secondary color slot.
+- Fixed Color panel positioning, panel header alignment, and hex-field spacing.
+- Preserved custom icon colors in menus, Preferences, toolbar controls, layer actions, and cursors.
+- Fixed Preferences wheel input reaching the canvas and improved stroke, gradient, and cursor feedback.
+- Corrected the Flatpak application icon source path.
+
 ## [1.3.11] - 2026-08-10
 
 - Recover transparency from artwork flattened over solid or lightly noisy backgrounds, including enclosed background islands.

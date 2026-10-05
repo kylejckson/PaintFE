@@ -146,29 +146,44 @@ impl ToolsPanel {
 
         // Button showing current tip icon + name
         let btn_response = {
+            let galley = ui.painter().layout_no_wrap(
+                display_name.clone(),
+                egui::FontId::proportional(11.0),
+                ui.visuals().text_color(),
+            );
+            let (rect, btn) = ui.allocate_exact_size(
+                egui::vec2(
+                    6.0 + 12.0 + 3.0 + galley.size().x + 6.0,
+                    ui.spacing().interact_size.y,
+                ),
+                egui::Sense::click(),
+            );
+            let visuals = ui.style().interact(&btn);
+            ui.painter()
+                .rect_filled(rect, visuals.corner_radius, visuals.weak_bg_fill);
+            let icon_rect = egui::Rect::from_center_size(
+                egui::pos2(rect.left() + 12.0, rect.center().y),
+                egui::Vec2::splat(12.0),
+            );
             if let BrushTip::Image(ref name) = self.properties.brush_tip {
-                if let Some(tex) = assets.get_brush_tip_texture(name) {
-                    let sized = egui::load::SizedTexture::from_handle(tex);
-                    let img =
-                        egui::Image::from_texture(sized).fit_to_exact_size(egui::Vec2::splat(16.0));
-                    let btn = egui::Button::image_and_text(img, &display_name);
-                    ui.add(btn)
-                } else {
-                    ui.button(&display_name)
+                if let Some(texture) = assets.get_brush_tip_texture(name) {
+                    ui.painter().image(
+                        texture.id(),
+                        icon_rect,
+                        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                        egui::Color32::WHITE,
+                    );
                 }
             } else {
-                // Circle ÔÇö draw a small filled circle icon on the button
-                let btn = ui.button(format!("      {}", display_name));
-                let rect = btn.rect;
-                let circle_x = rect.left() + 14.0;
-                let circle_y = rect.center().y;
-                ui.painter().circle_filled(
-                    egui::Pos2::new(circle_x, circle_y),
-                    5.0,
-                    ui.visuals().text_color(),
-                );
-                btn
+                ui.painter()
+                    .circle_filled(icon_rect.center(), 5.0, visuals.fg_stroke.color);
             }
+            ui.painter().galley(
+                egui::pos2(rect.left() + 21.0, rect.center().y - galley.size().y / 2.0),
+                galley,
+                visuals.fg_stroke.color,
+            );
+            btn
         };
         if btn_response.clicked() {
             egui::Popup::toggle_id(ui.ctx(), popup_id);
@@ -362,10 +377,8 @@ impl ToolsPanel {
             self.cursor_blocking_rect = None;
             if let Some((ref ctx_tip, cx, cy)) = self.brush_tip_context_menu.clone() {
                 let ctx_id = ui.make_persistent_id("brush_tip_ctx_menu");
-                let ctx_rect = egui::Rect::from_min_size(
-                    egui::pos2(cx, cy),
-                    egui::vec2(120.0, 0.0),
-                );
+                let ctx_rect =
+                    egui::Rect::from_min_size(egui::pos2(cx, cy), egui::vec2(120.0, 0.0));
                 let menu = egui::Area::new(ctx_id)
                     .fixed_pos(ctx_rect.min)
                     .order(egui::Order::Foreground)
@@ -382,10 +395,11 @@ impl ToolsPanel {
                     });
                 let menu_rect = menu.response.rect;
                 self.cursor_blocking_rect = Some(menu_rect);
-                if ui
-                    .ctx()
-                    .input(|i| i.pointer.hover_pos().is_some_and(|pos| menu_rect.contains(pos)))
-                {
+                if ui.ctx().input(|i| {
+                    i.pointer
+                        .hover_pos()
+                        .is_some_and(|pos| menu_rect.contains(pos))
+                }) {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
                 }
                 // Close context menu on any click outside
@@ -406,7 +420,8 @@ impl ToolsPanel {
         let popup_id = ui.make_persistent_id(combo_id);
 
         if ui.small_button("\u{2212}").clicked() {
-            self.properties.size = (self.properties.size - 1.0).max(1.0);
+            self.properties.size =
+                (self.properties.size - crate::ui::numeric::step(ui, 1.0)).max(1.0);
         }
 
         // Merged DragValue + dropdown arrow in one frame
@@ -428,7 +443,7 @@ impl ToolsPanel {
                 vis.widgets.active.bg_stroke = egui::Stroke::NONE;
 
                 let dv_resp = ui.add(
-                    egui::DragValue::new(&mut self.properties.size)
+                    crate::ui::numeric::Numeric::new(&mut self.properties.size)
                         .speed(0.5)
                         .range(1.0..=256.0)
                         .suffix("px"),
@@ -485,7 +500,8 @@ impl ToolsPanel {
             }
         });
         if ui.small_button("+").clicked() {
-            self.properties.size = (self.properties.size + 1.0).min(256.0);
+            self.properties.size =
+                (self.properties.size + crate::ui::numeric::step(ui, 1.0)).min(256.0);
         }
     }
 
@@ -495,7 +511,8 @@ impl ToolsPanel {
         let popup_id = ui.make_persistent_id(combo_id);
 
         if ui.small_button("\u{2212}").clicked() {
-            self.text_state.font_size = (self.text_state.font_size - 1.0).max(6.0);
+            self.text_state.font_size =
+                (self.text_state.font_size - crate::ui::numeric::step(ui, 1.0)).max(6.0);
             self.text_state.preview_dirty = true;
             self.text_state.glyph_cache.clear();
             self.text_state.pending_ctx_style_update =
@@ -520,7 +537,7 @@ impl ToolsPanel {
                 vis.widgets.active.bg_stroke = egui::Stroke::NONE;
 
                 let dv_resp = ui.add(
-                    egui::DragValue::new(&mut self.text_state.font_size)
+                    crate::ui::numeric::Numeric::new(&mut self.text_state.font_size)
                         .speed(0.5)
                         .range(6.0..=f32::MAX)
                         .suffix("px"),
@@ -587,7 +604,7 @@ impl ToolsPanel {
             }
         });
         if ui.small_button("+").clicked() {
-            self.text_state.font_size += 1.0;
+            self.text_state.font_size += crate::ui::numeric::step(ui, 1.0);
             self.text_state.preview_dirty = true;
             self.text_state.glyph_cache.clear();
             self.text_state.pending_ctx_style_update =
@@ -618,7 +635,7 @@ impl ToolsPanel {
             let mut hardness_pct = (self.properties.hardness * 100.0).round();
             if ui
                 .add(
-                    egui::DragValue::new(&mut hardness_pct)
+                    crate::ui::numeric::Numeric::new(&mut hardness_pct)
                         .speed(1.0)
                         .range(0.0..=100.0)
                         .suffix("%"),
@@ -661,18 +678,25 @@ impl ToolsPanel {
         // Brush Mode (Normal/Dodge/Burn/Sponge) - only for Brush tool (disabled for now)
         if self.active_tool == Tool::Brush {
             ui.separator();
-            ui.add_enabled_ui(false, |ui| {
-                ui.label("Mode:");
-                let current_bm = self.properties.brush_mode;
-                egui::ComboBox::from_id_salt("ctx_brush_mode")
-                    .selected_text(current_bm.label())
-                    .width(70.0)
-                    .show_ui(ui, |ui| {
-                        for &mode in BrushMode::all() {
-                            let _ = ui.selectable_label(mode == current_bm, mode.label());
+            ui.label("Mode:");
+            let current_bm = self.properties.brush_mode;
+            egui::ComboBox::from_id_salt("ctx_brush_mode")
+                .selected_text(current_bm.label())
+                .width(75.0)
+                .show_ui(ui, |ui| {
+                    for mode in [BrushMode::Normal, BrushMode::Uniform, BrushMode::BuildUp] {
+                        if ui
+                            .selectable_label(mode == current_bm, mode.label())
+                            .clicked()
+                        {
+                            self.properties.brush_mode = mode;
                         }
-                    });
-            });
+                    }
+                })
+                .response
+                .on_hover_text(
+                    "Normal builds with movement; Uniform keeps the strongest coverage.",
+                );
         }
 
         // Dynamics popup: Scatter, Color Jitter
@@ -681,7 +705,9 @@ impl ToolsPanel {
             || self.properties.hue_jitter > 0.01
             || self.properties.brightness_jitter > 0.01
             || self.properties.pressure_size
-            || self.properties.pressure_opacity;
+            || self.properties.pressure_opacity
+            || self.properties.opacity < 1.0
+            || self.properties.flow < 1.0;
         let dyn_popup_id = ui.make_persistent_id("brush_dyn_popup");
         let dyn_resp = assets.icon_button(ui, Icon::UiBrushDynamics, egui::Vec2::splat(20.0));
         if dyn_active {
@@ -706,6 +732,36 @@ impl ToolsPanel {
                 .num_columns(2)
                 .spacing([8.0, 4.0])
                 .show(ui, |ui| {
+                    for (label, value) in [
+                        ("Opacity", &mut self.properties.opacity),
+                        ("Flow", &mut self.properties.flow),
+                    ] {
+                        ui.label(label);
+                        ui.horizontal(|ui| {
+                            if ui.small_button("-").clicked() {
+                                *value = (*value - 0.05).max(0.0);
+                            }
+                            let mut percent = *value * 100.0;
+                            if ui
+                                .add(
+                                    crate::ui::numeric::Numeric::new(&mut percent)
+                                        .range(0.0..=100.0)
+                                        .suffix("%")
+                                        .speed(1.0),
+                                )
+                                .changed()
+                            {
+                                *value = percent / 100.0;
+                            }
+                            if ui.small_button("+").clicked() {
+                                *value = (*value + 0.05).min(1.0);
+                            }
+                            if ui.small_button("\u{21ba}").clicked() {
+                                *value = 1.0;
+                            }
+                        });
+                        ui.end_row();
+                    }
                     ui.label("Scatter");
                     let mut scatter_pct = (self.properties.scatter * 200.0).round();
                     if ui
@@ -799,7 +855,7 @@ impl ToolsPanel {
             let mut spacing_pct = (self.properties.spacing * 100.0).round();
             if ui
                 .add(
-                    egui::DragValue::new(&mut spacing_pct)
+                    crate::ui::numeric::Numeric::new(&mut spacing_pct)
                         .speed(1.0)
                         .range(1.0..=200.0)
                         .suffix("%"),
@@ -831,7 +887,7 @@ impl ToolsPanel {
             // Min handle
             if ui
                 .add(
-                    egui::DragValue::new(&mut lo)
+                    crate::ui::numeric::Numeric::new(&mut lo)
                         .speed(1.0)
                         .range(0.0..=360.0)
                         .suffix(" deg"),
@@ -885,7 +941,7 @@ impl ToolsPanel {
             // Max handle
             if ui
                 .add(
-                    egui::DragValue::new(&mut hi)
+                    crate::ui::numeric::Numeric::new(&mut hi)
                         .speed(1.0)
                         .range(0.0..=360.0)
                         .suffix(" deg"),
@@ -902,7 +958,7 @@ impl ToolsPanel {
         } else {
             // --- Fixed rotation mode: single angle value ---
             ui.add(
-                egui::DragValue::new(&mut self.properties.tip_rotation)
+                crate::ui::numeric::Numeric::new(&mut self.properties.tip_rotation)
                     .speed(1.0)
                     .range(0.0..=359.0)
                     .suffix(" deg"),
@@ -1029,7 +1085,7 @@ impl ToolsPanel {
         let mut hardness_pct = (self.properties.hardness * 100.0).round();
         if ui
             .add(
-                egui::DragValue::new(&mut hardness_pct)
+                crate::ui::numeric::Numeric::new(&mut hardness_pct)
                     .speed(1.0)
                     .range(0.0..=100.0)
                     .suffix("%"),
@@ -1106,7 +1162,7 @@ impl ToolsPanel {
             let mut spacing_pct = (self.properties.spacing * 100.0).round();
             if ui
                 .add(
-                    egui::DragValue::new(&mut spacing_pct)
+                    crate::ui::numeric::Numeric::new(&mut spacing_pct)
                         .speed(1.0)
                         .range(1.0..=200.0)
                         .suffix("%"),
@@ -1149,7 +1205,9 @@ impl ToolsPanel {
             .on_hover_text(
                 "Lock rectangular selections to width:height. Use image for the canvas ratio.",
             );
-            if let Err(error) = parse_selection_aspect_ratio(&self.selection_state.aspect_ratio_input) {
+            if let Err(error) =
+                parse_selection_aspect_ratio(&self.selection_state.aspect_ratio_input)
+            {
                 ui.colored_label(ui.visuals().error_fg_color, error);
             }
         }
@@ -1186,7 +1244,7 @@ impl ToolsPanel {
     fn show_sel_modify_controls(&mut self, ui: &mut egui::Ui) {
         ui.label("Modify:");
         ui.add(
-            egui::DragValue::new(&mut self.sel_modify_radius)
+            crate::ui::numeric::Numeric::new(&mut self.sel_modify_radius)
                 .range(1.0..=200.0)
                 .speed(0.5)
                 .suffix("px")
@@ -1240,7 +1298,7 @@ impl ToolsPanel {
         // Size
         ui.label(t!("ctx.size"));
         ui.add(
-            egui::DragValue::new(&mut self.properties.size)
+            crate::ui::numeric::Numeric::new(&mut self.properties.size)
                 .range(1.0..=256.0)
                 .speed(0.5)
                 .suffix("px"),
@@ -1252,7 +1310,7 @@ impl ToolsPanel {
         let mut hardness_pct = self.properties.hardness * 100.0;
         if ui
             .add(
-                egui::DragValue::new(&mut hardness_pct)
+                crate::ui::numeric::Numeric::new(&mut hardness_pct)
                     .range(0.0..=100.0)
                     .speed(0.5)
                     .suffix("%"),
@@ -1281,7 +1339,7 @@ impl ToolsPanel {
         // Size
         ui.label(t!("ctx.size"));
         ui.add(
-            egui::DragValue::new(&mut self.properties.size)
+            crate::ui::numeric::Numeric::new(&mut self.properties.size)
                 .range(1.0..=256.0)
                 .speed(0.5)
                 .suffix("px"),
@@ -1293,7 +1351,7 @@ impl ToolsPanel {
         let mut hardness_pct = self.properties.hardness * 100.0;
         if ui
             .add(
-                egui::DragValue::new(&mut hardness_pct)
+                crate::ui::numeric::Numeric::new(&mut hardness_pct)
                     .range(0.0..=100.0)
                     .speed(0.5)
                     .suffix("%"),
@@ -1323,7 +1381,7 @@ impl ToolsPanel {
         if cur_q == ContentAwareQuality::Instant {
             ui.label(t!("ctx.content_aware.sample"));
             ui.add(
-                egui::DragValue::new(&mut self.content_aware_state.sample_radius)
+                crate::ui::numeric::Numeric::new(&mut self.content_aware_state.sample_radius)
                     .range(10.0..=150.0)
                     .speed(0.5)
                     .suffix("px"),
@@ -1335,7 +1393,7 @@ impl ToolsPanel {
         if cur_q.is_async() {
             ui.label("Patch:");
             ui.add(
-                egui::DragValue::new(&mut self.content_aware_state.patch_size)
+                crate::ui::numeric::Numeric::new(&mut self.content_aware_state.patch_size)
                     .range(3_u32..=11_u32)
                     .speed(0.5)
                     .suffix("px"),
@@ -1420,7 +1478,7 @@ impl ToolsPanel {
                 btn_text,
             );
             if minus_resp.clicked() {
-                new_value = (new_value - 1.0).max(0.0);
+                new_value = (new_value - crate::ui::numeric::step(ui, 1.0)).max(0.0);
                 changed = true;
             }
 
@@ -1506,7 +1564,7 @@ impl ToolsPanel {
                 btn_text,
             );
             if plus_resp.clicked() {
-                new_value = (new_value + 1.0).min(100.0);
+                new_value = (new_value + crate::ui::numeric::step(ui, 1.0)).min(100.0);
                 changed = true;
             }
         });
@@ -1642,7 +1700,7 @@ impl ToolsPanel {
         let mut hardness_pct = (self.properties.hardness * 100.0).round();
         if ui
             .add(
-                egui::DragValue::new(&mut hardness_pct)
+                crate::ui::numeric::Numeric::new(&mut hardness_pct)
                     .speed(1.0)
                     .range(0.0..=100.0)
                     .suffix("%"),

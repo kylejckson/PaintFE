@@ -3,14 +3,16 @@ impl InkDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_ink")
+        crate::ui::polish::window(ctx, "dialog_ink")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
-                if paint_dialog_header(ui, &colors, "\u{1F58B}", &t!("dialog.ink")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F58B}", &t!("dialog.ink")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "INK SETTINGS");
 
@@ -70,14 +72,16 @@ impl OilPaintingDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_oil_painting")
+        crate::ui::polish::window(ctx, "dialog_oil_painting")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(360.0);
-                if paint_dialog_header(ui, &colors, "\u{1F3A8}", &t!("dialog.oil_painting")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F3A8}", &t!("dialog.oil_painting")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "PAINTING SETTINGS");
 
@@ -149,14 +153,16 @@ impl ColorFilterDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_color_filter")
+        crate::ui::polish::window(ctx, "dialog_color_filter")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(380.0);
-                if paint_dialog_header(ui, &colors, "\u{1F3AD}", &t!("dialog.color_filter")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F3AD}", &t!("dialog.color_filter")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "FILTER SETTINGS");
 
@@ -322,7 +328,7 @@ impl ColorToAlphaDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_color_to_alpha")
+        crate::ui::polish::window(ctx, "dialog_color_to_alpha")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
@@ -371,9 +377,15 @@ impl ColorToAlphaDialog {
                                 .original_flat
                                 .as_ref()
                                 .map_or(0, |img| img.height().saturating_sub(1));
-                            ui.add(egui::DragValue::new(&mut self.sample_x).range(0..=max_x));
+                            ui.add(
+                                crate::ui::numeric::Numeric::new(&mut self.sample_x)
+                                    .range(0..=max_x),
+                            );
                             ui.label("x");
-                            ui.add(egui::DragValue::new(&mut self.sample_y).range(0..=max_y));
+                            ui.add(
+                                crate::ui::numeric::Numeric::new(&mut self.sample_y)
+                                    .range(0..=max_y),
+                            );
                             if ui.small_button("Pick").clicked()
                                 && let Some(flat) = &self.original_flat
                             {
@@ -423,14 +435,7 @@ impl ColorToAlphaDialog {
                         ui.end_row();
 
                         ui.label("Spill Suppression");
-                        if dialog_slider(
-                            ui,
-                            &mut self.spill_suppression,
-                            0.0..=1.0,
-                            0.01,
-                            "",
-                            2,
-                        ) {
+                        if dialog_slider(ui, &mut self.spill_suppression, 0.0..=1.0, 0.01, "", 2) {
                             changed = true;
                         }
                         ui.end_row();
@@ -450,14 +455,7 @@ impl ColorToAlphaDialog {
                         ui.end_row();
 
                         ui.label("Protect Luminance");
-                        if dialog_slider(
-                            ui,
-                            &mut self.protect_luminance,
-                            0.0..=1.0,
-                            0.01,
-                            "",
-                            2,
-                        ) {
+                        if dialog_slider(ui, &mut self.protect_luminance, 0.0..=1.0, 0.01, "", 2) {
                             changed = true;
                         }
                         ui.end_row();
@@ -560,7 +558,7 @@ impl RecoverTransparencyDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_recover_transparency")
+        crate::ui::polish::window(ctx, "dialog_recover_transparency")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
@@ -621,9 +619,9 @@ impl RecoverTransparencyDialog {
                                 .original_flat
                                 .as_ref()
                                 .map_or(0, |img| img.height().saturating_sub(1));
-                            ui.add(egui::DragValue::new(&mut self.sample_x).range(0..=max_x));
+                            ui.add(crate::ui::numeric::Numeric::new(&mut self.sample_x).range(0..=max_x));
                             ui.label("x");
-                            ui.add(egui::DragValue::new(&mut self.sample_y).range(0..=max_y));
+                            ui.add(crate::ui::numeric::Numeric::new(&mut self.sample_y).range(0..=max_y));
                             if ui.small_button("Pick").clicked()
                                 && let Some(flat) = &self.original_flat
                             {
@@ -754,9 +752,9 @@ impl RecoverTransparencyDialog {
                         ui.horizontal(|ui| {
                             let max_x = self.original_flat.as_ref().map_or(0, |img| img.width().saturating_sub(1));
                             let max_y = self.original_flat.as_ref().map_or(0, |img| img.height().saturating_sub(1));
-                            ui.add(egui::DragValue::new(&mut self.island_x).range(0..=max_x));
+                            ui.add(crate::ui::numeric::Numeric::new(&mut self.island_x).range(0..=max_x));
                             ui.label("x");
-                            ui.add(egui::DragValue::new(&mut self.island_y).range(0..=max_y));
+                            ui.add(crate::ui::numeric::Numeric::new(&mut self.island_y).range(0..=max_y));
                         });
                         ui.end_row();
 
@@ -850,14 +848,16 @@ impl ContoursDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_contours")
+        crate::ui::polish::window(ctx, "dialog_contours")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 190.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(400.0);
-                if paint_dialog_header(ui, &colors, "\u{1F5FA}", &t!("dialog.contours")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F5FA}", &t!("dialog.contours")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "CONTOUR SETTINGS");
 
@@ -959,7 +959,7 @@ impl ContoursDialog {
                             let mut seed_f = self.seed as f32;
                             if ui
                                 .add(
-                                    egui::DragValue::new(&mut seed_f)
+                                    crate::ui::numeric::Numeric::new(&mut seed_f)
                                         .speed(1.0)
                                         .range(0.0..=9999.0),
                                 )
@@ -1057,5 +1057,3 @@ impl ContoursDialog {
         result
     }
 }
-
-

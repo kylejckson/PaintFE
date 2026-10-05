@@ -11,6 +11,8 @@ use egui::{Color32, Pos2, Rect, Stroke, Vec2};
 use image::{GrayImage, Luma, Rgba, RgbaImage, imageops};
 use std::sync::{Arc, Mutex};
 
+mod availability;
+
 #[cfg(target_os = "linux")]
 use image::ImageFormat;
 #[cfg(target_os = "linux")]
@@ -194,12 +196,12 @@ fn clipboard_sequence() -> Option<u32> {
     None
 }
 
-pub fn has_clipboard_image() -> bool {
+pub fn has_clipboard_image(ctx: &egui::Context) -> bool {
     let has_internal = APP_CLIPBOARD
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .is_some();
-    has_internal || get_from_system_clipboard().is_some()
+    has_internal || availability::has_system_image(ctx)
 }
 
 /// Public accessor so app.rs can use the internal clipboard as a fallback.
@@ -1299,9 +1301,9 @@ impl PasteOverlay {
             scaled_h,
             self.interpolation.to_filter(),
         );
-        let scaled_mask = self
-            .content_mask()
-            .map(|mask| imageops::resize(&*mask, scaled_w, scaled_h, imageops::FilterType::Nearest));
+        let scaled_mask = self.content_mask().map(|mask| {
+            imageops::resize(&*mask, scaled_w, scaled_h, imageops::FilterType::Nearest)
+        });
 
         let cw = out.width();
         let ch = out.height();
@@ -1384,7 +1386,10 @@ impl PasteOverlay {
     /// The scaled half-size (cropped content).
     fn scaled_half(&self) -> Vec2 {
         let (cw, ch) = self.content_size();
-        Vec2::new(cw as f32 * self.scale_x / 2.0, ch as f32 * self.scale_y / 2.0)
+        Vec2::new(
+            cw as f32 * self.scale_x / 2.0,
+            ch as f32 * self.scale_y / 2.0,
+        )
     }
 
     /// Snap `center` so the image's top-left corner lands on a whole canvas pixel.
@@ -2327,9 +2332,9 @@ impl PasteOverlay {
         let scaled_w = (src_w * self.scale_x).round().max(1.0) as u32;
         let scaled_h = (src_h * self.scale_y).round().max(1.0) as u32;
         let scaled = imageops::resize(&*content, scaled_w, scaled_h, filter);
-        let scaled_mask = self
-            .content_mask()
-            .map(|mask| imageops::resize(&*mask, scaled_w, scaled_h, imageops::FilterType::Nearest));
+        let scaled_mask = self.content_mask().map(|mask| {
+            imageops::resize(&*mask, scaled_w, scaled_h, imageops::FilterType::Nearest)
+        });
 
         // Compute tight bounding box of the rotated paste to limit iteration.
         let corners = self.corners_canvas();
@@ -2463,12 +2468,8 @@ impl PasteOverlay {
         };
         if need_rescale {
             let content = self.content_image();
-            let scaled = imageops::resize(
-                &*content,
-                scaled_w,
-                scaled_h,
-                imageops::FilterType::Nearest,
-            );
+            let scaled =
+                imageops::resize(&*content, scaled_w, scaled_h, imageops::FilterType::Nearest);
             self.cached_scaled = Some((scaled, scaled_w, scaled_h));
         }
         let scaled = &self.cached_scaled.as_ref().unwrap().0;
@@ -2693,6 +2694,10 @@ mod web_clipboard {
     /// Take whatever image the last browser `paste` event decoded, if any.
     pub fn take_pasted_image() -> Option<RgbaImage> {
         LAST_PASTED.with(|p| p.borrow_mut().clone())
+    }
+
+    pub(super) fn has_pasted_image() -> bool {
+        LAST_PASTED.with(|p| p.borrow().is_some())
     }
 
     /// Install a single global `paste` listener that decodes image data from

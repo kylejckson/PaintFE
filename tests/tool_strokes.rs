@@ -64,7 +64,7 @@ fn tile_to_image(tile: &TiledImage, w: u32, h: u32) -> RgbaImage {
 
 #[test]
 fn brush_circle_center() {
-    let tp = make_brush(20.0, 1.0, true);
+    let mut tp = make_brush(20.0, 1.0, true);
     let mut tile = blank_tile(W, H);
     tp.draw_circle_no_dirty(
         &mut tile,
@@ -83,7 +83,7 @@ fn brush_circle_center() {
 
 #[test]
 fn brush_circle_soft() {
-    let tp = make_brush(30.0, 0.0, true);
+    let mut tp = make_brush(30.0, 0.0, true);
     let mut tile = blank_tile(W, H);
     tp.draw_circle_no_dirty(
         &mut tile,
@@ -102,7 +102,7 @@ fn brush_circle_soft() {
 
 #[test]
 fn brush_circle_hard() {
-    let tp = make_brush(20.0, 1.0, false);
+    let mut tp = make_brush(20.0, 1.0, false);
     let mut tile = blank_tile(W, H);
     tp.draw_circle_no_dirty(
         &mut tile,
@@ -121,7 +121,7 @@ fn brush_circle_hard() {
 
 #[test]
 fn brush_circle_tiny() {
-    let tp = make_brush(3.0, 1.0, true);
+    let mut tp = make_brush(3.0, 1.0, true);
     let mut tile = blank_tile(W, H);
     tp.draw_circle_no_dirty(
         &mut tile,
@@ -140,7 +140,7 @@ fn brush_circle_tiny() {
 
 #[test]
 fn brush_circle_large() {
-    let tp = make_brush(60.0, 0.5, true);
+    let mut tp = make_brush(60.0, 0.5, true);
     let mut tile = blank_tile(W, H);
     tp.draw_circle_no_dirty(
         &mut tile,
@@ -154,12 +154,15 @@ fn brush_circle_large() {
         None,
     );
     let img = tile_to_image(&tile, W, H);
+    // Hardness is the opaque inner radius; the outer material fades to zero.
+    assert_eq!(img.get_pixel(42, 32)[3], 255);
+    assert!(img.get_pixel(59, 32)[3] < 30);
     assert_golden("tools", "brush_circle_large", &img);
 }
 
 #[test]
 fn brush_semi_transparent() {
-    let tp = make_brush(20.0, 1.0, true);
+    let mut tp = make_brush(20.0, 1.0, true);
     let mut tile = blank_tile(W, H);
     tp.draw_circle_no_dirty(
         &mut tile,
@@ -173,12 +176,14 @@ fn brush_semi_transparent() {
         None,
     );
     let img = tile_to_image(&tile, W, H);
+    assert_eq!(img.get_pixel(32, 32)[3], 128);
+    assert!(img.pixels().all(|pixel| pixel[3] <= 128));
     assert_golden("tools", "brush_semi_transparent", &img);
 }
 
 #[test]
 fn brush_secondary_color() {
-    let tp = make_brush(20.0, 1.0, true);
+    let mut tp = make_brush(20.0, 1.0, true);
     let mut tile = blank_tile(W, H);
     tp.draw_circle_no_dirty(
         &mut tile,
@@ -201,7 +206,7 @@ fn brush_secondary_color() {
 
 #[test]
 fn eraser_circle() {
-    let tp = make_brush(20.0, 1.0, true);
+    let mut tp = make_brush(20.0, 1.0, true);
     let mut tile = white_tile(W, H);
     tp.draw_circle_no_dirty(
         &mut tile,
@@ -220,7 +225,7 @@ fn eraser_circle() {
 
 #[test]
 fn eraser_soft() {
-    let tp = make_brush(30.0, 0.0, true);
+    let mut tp = make_brush(30.0, 0.0, true);
     let mut tile = white_tile(W, H);
     tp.draw_circle_no_dirty(
         &mut tile,
@@ -318,6 +323,8 @@ fn line_soft_thick() {
         None,
     );
     let img = tile_to_image(&tile, W, H);
+    assert_eq!(img.get_pixel(32, 32)[3], 255);
+    assert_eq!(img.get_pixel(42, 32)[3], 0);
     assert_golden("tools", "line_soft_thick", &img);
 }
 
@@ -347,7 +354,7 @@ fn line_eraser() {
 
 #[test]
 fn brush_with_selection_mask() {
-    let tp = make_brush(40.0, 1.0, true);
+    let mut tp = make_brush(40.0, 1.0, true);
     let mut tile = blank_tile(W, H);
 
     // Create a selection mask: only the left half is selected
@@ -380,7 +387,7 @@ fn brush_with_selection_mask() {
 
 #[test]
 fn stroke_multiple_stamps() {
-    let tp = make_brush(10.0, 0.8, true);
+    let mut tp = make_brush(10.0, 0.8, true);
     let mut tile = blank_tile(W, H);
     // Simulate a short stroke by stamping along a path
     for i in 0..8 {
@@ -399,6 +406,8 @@ fn stroke_multiple_stamps() {
         );
     }
     let img = tile_to_image(&tile, W, H);
+    // Moving over existing coverage fills the stroke without exceeding opacity.
+    assert_eq!(img.get_pixel(32, 32)[3], 255);
     assert_golden("tools", "stroke_multiple_stamps", &img);
 }
 
@@ -408,7 +417,7 @@ fn stroke_multiple_stamps() {
 
 #[test]
 fn brush_at_origin() {
-    let tp = make_brush(10.0, 1.0, true);
+    let mut tp = make_brush(10.0, 1.0, true);
     let mut tile = blank_tile(W, H);
     tp.draw_circle_no_dirty(
         &mut tile,
@@ -427,7 +436,7 @@ fn brush_at_origin() {
 
 #[test]
 fn brush_at_corner() {
-    let tp = make_brush(20.0, 1.0, true);
+    let mut tp = make_brush(20.0, 1.0, true);
     let mut tile = blank_tile(W, H);
     tp.draw_circle_no_dirty(
         &mut tile,
@@ -521,7 +530,7 @@ fn brush_burn_mode() {
 #[test]
 fn pencil_circle() {
     // Pencil = hard brush with no anti-aliasing
-    let tp = make_brush(12.0, 1.0, false);
+    let mut tp = make_brush(12.0, 1.0, false);
     let mut tile = blank_tile(W, H);
     tp.draw_circle_no_dirty(
         &mut tile,
@@ -597,7 +606,7 @@ fn color_picker_reads_composited() {
 
 #[test]
 fn color_picker_reads_painted_pixel() {
-    let tp = make_brush(10.0, 1.0, true);
+    let mut tp = make_brush(10.0, 1.0, true);
     let mut tile = blank_tile(W, H);
     tp.draw_circle_no_dirty(
         &mut tile,

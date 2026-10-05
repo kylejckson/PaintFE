@@ -180,7 +180,6 @@ impl PaintFEApp {
         self.projects.push(project);
         self.active_project_index = self.projects.len() - 1;
         self.restore_active_project_view();
-        self.canvas.gpu_clear_layers();
         self.maybe_close_initial_blank();
     }
 
@@ -238,9 +237,7 @@ impl PaintFEApp {
                 .and_then(|e| e.to_str())
                 .map(|e| e.to_ascii_lowercase())
                 .as_deref(),
-            Some(
-                "png" | "jpg" | "jpeg" | "webp" | "bmp" | "tga" | "tif" | "tiff" | "gif" | "ico"
-            )
+            Some("png" | "jpg" | "jpeg" | "webp" | "bmp" | "tga" | "tif" | "tiff" | "gif" | "ico")
         )
     }
 
@@ -275,8 +272,10 @@ impl PaintFEApp {
                     return; // undecodable — nothing to import
                 };
                 let img = img.to_rgba8();
-                let oversized =
-                    self.projects.get(self.active_project_index).is_some_and(|p| {
+                let oversized = self
+                    .projects
+                    .get(self.active_project_index)
+                    .is_some_and(|p| {
                         img.width() > p.canvas_state.width || img.height() > p.canvas_state.height
                     });
                 if oversized {
@@ -291,6 +290,20 @@ impl PaintFEApp {
                 self.import_image_as_layer(&img, &item.name, false);
             }
             _ => {}
+        }
+    }
+
+    /// Apply the retained batch choice until a size decision is required.
+    fn process_import_batch(&mut self) {
+        let Some(choice) = self.import_batch_choice else {
+            return;
+        };
+        while self.pending_oversized_import.is_none() && !self.pending_import_queue.is_empty() {
+            let item = self.pending_import_queue.remove(0);
+            self.apply_import_choice(&item, choice);
+        }
+        if self.pending_import_queue.is_empty() {
+            self.import_batch_choice = None;
         }
     }
 
@@ -368,22 +381,22 @@ impl PaintFEApp {
         } else if is_pdn {
             #[cfg(not(target_arch = "wasm32"))]
             {
-            let sender = self.io_sender.clone();
-            if self.pending_io_ops == 0 {
-                self.io_ops_start_time = Some(current_time);
-            }
-            self.pending_io_ops += 1;
-            rayon::spawn(move || match crate::pdn::load_pdn(&path) {
-                Ok(canvas_state) => {
-                    let _ = sender.send(IoResult::PdnLoaded { canvas_state, path });
+                let sender = self.io_sender.clone();
+                if self.pending_io_ops == 0 {
+                    self.io_ops_start_time = Some(current_time);
                 }
-                Err(error) => {
-                    let _ = sender.send(IoResult::LoadFailed {
-                        path: Some(path),
-                        error: format!("Failed to import Paint.NET project: {error}"),
-                    });
-                }
-            });
+                self.pending_io_ops += 1;
+                rayon::spawn(move || match crate::pdn::load_pdn(&path) {
+                    Ok(canvas_state) => {
+                        let _ = sender.send(IoResult::PdnLoaded { canvas_state, path });
+                    }
+                    Err(error) => {
+                        let _ = sender.send(IoResult::LoadFailed {
+                            path: Some(path),
+                            error: format!("Failed to import Paint.NET project: {error}"),
+                        });
+                    }
+                });
             }
             #[cfg(target_arch = "wasm32")]
             {
@@ -602,23 +615,25 @@ impl PaintFEApp {
                         self.io_ops_start_time = Some(current_time);
                     }
                     self.pending_io_ops += 1;
-                    crate::par_compat::spawn(move || match crate::io::write_pfe(&pfe_data, &path) {
-                        Ok(()) => {
-                            let _ = sender.send(IoResult::SaveComplete {
-                                project_index: idx,
-                                path,
-                                format: SaveFormat::Pfe,
-                                quality: 100,
-                                webp_lossless: true,
-                                tiff_compression: TiffCompression::None,
-                                update_project_path: false,
-                            });
-                        }
-                        Err(e) => {
-                            let _ = sender.send(IoResult::SaveFailed {
-                                project_index: idx,
-                                error: format!("{}", e),
-                            });
+                    crate::par_compat::spawn(move || {
+                        match crate::io::write_pfe(&pfe_data, &path) {
+                            Ok(()) => {
+                                let _ = sender.send(IoResult::SaveComplete {
+                                    project_index: idx,
+                                    path,
+                                    format: SaveFormat::Pfe,
+                                    quality: 100,
+                                    webp_lossless: true,
+                                    tiff_compression: TiffCompression::None,
+                                    update_project_path: false,
+                                });
+                            }
+                            Err(e) => {
+                                let _ = sender.send(IoResult::SaveFailed {
+                                    project_index: idx,
+                                    error: format!("{}", e),
+                                });
+                            }
                         }
                     });
                 }
@@ -848,13 +863,9 @@ impl PaintFEApp {
                         crate::io::encode_animated_gif(&frames, fps, gif_colors, gif_dither, &path)
                     }
                     SaveFormat::Png => crate::io::encode_animated_png(&frames, fps, &path),
-                    SaveFormat::Webp => crate::io::encode_animated_webp(
-                        &frames,
-                        &frame_modes,
-                        fps,
-                        quality,
-                        &path,
-                    ),
+                    SaveFormat::Webp => {
+                        crate::io::encode_animated_webp(&frames, &frame_modes, fps, quality, &path)
+                    }
                     _ => Err("Format does not support animation".to_string()),
                 };
                 match result {
@@ -903,10 +914,10 @@ impl PaintFEApp {
                         let _ = sender.send(IoResult::SaveComplete {
                             project_index: idx,
                             path,
-                        format,
-                        quality,
-                        webp_lossless,
-                        tiff_compression,
+                            format,
+                            quality,
+                            webp_lossless,
+                            tiff_compression,
                             update_project_path: false,
                         });
                     }

@@ -1,73 +1,13 @@
 impl PaintFEApp {
     fn update_runtime_input(&mut self, ctx: &egui::Context) -> bool {
         let ui_blocks_canvas_input = self.ui_pointer_capture_active;
-
-        // --- Drag-and-Drop: open dropped image files as new projects ---
-        {
-            let shortcut_paste_present = ctx.input(|i| {
-                i.events.iter().any(|e| {
-                    matches!(
-                        e,
-                        egui::Event::Key {
-                            key: egui::Key::V,
-                            pressed: true,
-                            modifiers,
-                            ..
-                        } if modifiers.command || modifiers.ctrl
-                    )
-                })
-            });
-            if !shortcut_paste_present {
-                let dropped: Vec<egui::DroppedFile> = ctx.input(|i| i.raw.dropped_files.clone());
-                for file in dropped {
-                    if let Some(path) = file.path.clone() {
-                        if path.is_file() {
-                            self.open_file_by_path(path, ctx.input(|i| i.time));
-                            continue;
-                        }
-
-                        // Some Linux/Wayland stacks can surface a dropped URI-like
-                        // string in the path field (e.g. file:///...).
-                        let parsed = Self::parse_file_uri_list(&path.to_string_lossy());
-                        if !parsed.is_empty() {
-                            for path in parsed {
-                                self.open_file_by_path(path, ctx.input(|i| i.time));
-                            }
-                            continue;
-                        }
-                    }
-
-                    if !file.name.is_empty() {
-                        let parsed = Self::parse_file_uri_list(&file.name);
-                        if !parsed.is_empty() {
-                            for path in parsed {
-                                self.open_file_by_path(path, ctx.input(|i| i.time));
-                            }
-                            continue;
-                        }
-
-                        let named_path = PathBuf::from(file.name.clone());
-                        if named_path.is_file() {
-                            self.open_file_by_path(named_path, ctx.input(|i| i.time));
-                            continue;
-                        }
-                    }
-
-                    if let Some(bytes) = file.bytes.as_ref() {
-                        let name_hint = if file.name.is_empty() {
-                            None
-                        } else {
-                            Some(file.name.clone())
-                        };
-                        self.open_image_from_bytes(bytes.as_ref(), name_hint);
-                    }
-                }
-            }
-        }
-
-        // Some Linux/Wayland desktop flows surface file drags as text/uri-list
-        // paste events instead of dropped file paths.
-        self.handle_file_uri_paste_events(ctx);
+        // Keep editing/navigation keys with focused panel text and numeric fields.
+        let panel_keyboard_focus = (self.window_visibility.colors
+            && self.colors_panel.is_hex_editing())
+            || (ctx.egui_wants_keyboard_input()
+                && ctx
+                    .memory(|m| m.focused())
+                    .is_some_and(|id| Some(id) != self.canvas.canvas_widget_id));
 
         // Determine if a modal dialog is open — block all shortcuts and canvas interaction.
         #[cfg(target_arch = "wasm32")]
@@ -78,7 +18,11 @@ impl PaintFEApp {
             || self.save_file_dialog.open
             || self.new_file_dialog.open
             || !matches!(self.active_dialog, ActiveDialog::None)
-            || self.pending_paste_request.is_some();
+            || self.pending_paste_request.is_some()
+            || !self.pending_import_queue.is_empty()
+            || self.pending_oversized_import.is_some()
+            || self.pending_exit
+            || self.pending_close_index.is_some();
 
         let global_probe = ctx.input(|i| {
             let cmd = i.modifiers.ctrl || i.modifiers.command;
@@ -181,7 +125,7 @@ impl PaintFEApp {
 
         // --- Paste Overlay Keyboard Shortcuts ---
         // Delete/Backspace cancels paste overlay (same as Escape)
-        if self.paste_overlay.is_some() {
+        if self.paste_overlay.is_some() && !panel_keyboard_focus {
             let delete_pressed = ctx.input(|i| i.key_pressed(egui::Key::Delete));
             let backspace_pressed = ctx.input(|i| i.key_pressed(egui::Key::Backspace));
             if delete_pressed || backspace_pressed {
@@ -190,7 +134,7 @@ impl PaintFEApp {
         }
 
         // --- Selection Keyboard Shortcuts ---
-        if !modal_open {
+        if !modal_open && !panel_keyboard_focus {
             let delete_pressed = ctx.input(|i| i.key_pressed(egui::Key::Delete));
             let backspace_pressed = ctx.input(|i| i.key_pressed(egui::Key::Backspace));
 
@@ -240,7 +184,7 @@ impl PaintFEApp {
         // Skip all shortcut processing while the settings window is waiting
         // for a keybind combo, so the rebinding handler sees the raw events.
         let is_rebinding = self.settings_window.rebinding_action.is_some();
-        if !modal_open && !is_rebinding {
+        if !modal_open && !is_rebinding && !panel_keyboard_focus {
             self.tools_panel.brush_resize_drag_binding = self
                 .settings
                 .keybindings
@@ -362,11 +306,11 @@ impl PaintFEApp {
             }
 
             // Ctrl+0 — Fit to Window (fits the canvas into the viewport)
-            if kb.is_pressed(ctx, BindableAction::ViewFitToWindow) {
-                if let Some(project) = self.active_project() {
-                    let size = (project.canvas_state.width, project.canvas_state.height);
-                    self.canvas.fit_to_window(size);
-                }
+            if kb.is_pressed(ctx, BindableAction::ViewFitToWindow)
+                && let Some(project) = self.active_project()
+            {
+                let size = (project.canvas_state.width, project.canvas_state.height);
+                self.canvas.fit_to_window(size);
             }
 
             // Ctrl+1 — Zoom to 100%

@@ -26,14 +26,16 @@ impl BrightnessContrastDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_brightness_contrast")
+        crate::ui::polish::window(ctx, "dialog_brightness_contrast")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
-                if paint_dialog_header(ui, &colors, "☀", &t!("dialog.brightness_contrast")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "☀", &t!("dialog.brightness_contrast")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 section_label(ui, &colors, "ADJUSTMENTS");
@@ -148,14 +150,16 @@ impl HueSaturationDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_hue_saturation")
+        crate::ui::polish::window(ctx, "dialog_hue_saturation")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(380.0);
-                if paint_dialog_header(ui, &colors, "🎨", &t!("dialog.hue_saturation")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "🎨", &t!("dialog.hue_saturation")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 section_label(ui, &colors, "GLOBAL ADJUSTMENTS");
@@ -369,14 +373,16 @@ impl ExposureDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_exposure")
+        crate::ui::polish::window(ctx, "dialog_exposure")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 160.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(320.0);
-                if paint_dialog_header(ui, &colors, "📷", &t!("dialog.exposure")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "📷", &t!("dialog.exposure")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 section_label(ui, &colors, "EXPOSURE");
@@ -498,14 +504,16 @@ impl HighlightsShadowsDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_highlights_shadows")
+        crate::ui::polish::window(ctx, "dialog_highlights_shadows")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
-                if paint_dialog_header(ui, &colors, "◑", &t!("dialog.highlights_shadows")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "◑", &t!("dialog.highlights_shadows")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 section_label(ui, &colors, "TONAL ADJUSTMENTS");
@@ -710,14 +718,16 @@ impl LevelsDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_levels")
+        crate::ui::polish::window(ctx, "dialog_levels")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 200.0, 40.0))
             .show(ctx, |ui| {
                 ui.set_min_width(400.0);
-                if paint_dialog_header(ui, &colors, "📊", &t!("dialog.levels")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "📊", &t!("dialog.levels")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 // --- Channel selector ---
@@ -1024,14 +1034,16 @@ impl CurvesDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_curves")
+        crate::ui::polish::window(ctx, "dialog_curves")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 195.0, 40.0))
             .show(ctx, |ui| {
                 ui.set_min_width(390.0);
-                if paint_dialog_header(ui, &colors, "📈", &t!("dialog.curves")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "📈", &t!("dialog.curves")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 // --- Channel selector row ---
@@ -1445,14 +1457,16 @@ impl TemperatureTintDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_temperature_tint")
+        crate::ui::polish::window(ctx, "dialog_temperature_tint")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(360.0);
-                if paint_dialog_header(ui, &colors, "☀", &t!("dialog.temperature_tint")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "☀", &t!("dialog.temperature_tint")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 section_label(ui, &colors, "WHITE BALANCE");
@@ -1650,14 +1664,16 @@ impl ThresholdDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_threshold")
+        crate::ui::polish::window(ctx, "dialog_threshold")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 160.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(320.0);
-                if paint_dialog_header(ui, &colors, "◑", &t!("dialog.threshold")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "◑", &t!("dialog.threshold")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 section_label(ui, &colors, "THRESHOLD");
@@ -1755,14 +1771,16 @@ impl PosterizeDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_posterize")
+        crate::ui::polish::window(ctx, "dialog_posterize")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 160.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(320.0);
-                if paint_dialog_header(ui, &colors, "🎨", &t!("dialog.posterize")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "🎨", &t!("dialog.posterize")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 section_label(ui, &colors, "POSTERIZE");
@@ -1865,14 +1883,16 @@ impl ColorBalanceDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_color_balance")
+        crate::ui::polish::window(ctx, "dialog_color_balance")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 185.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(370.0);
-                if paint_dialog_header(ui, &colors, "⚖", &t!("dialog.color_balance")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "⚖", &t!("dialog.color_balance")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 // Zone selector
@@ -2045,14 +2065,16 @@ impl GradientMapDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_gradient_map")
+        crate::ui::polish::window(ctx, "dialog_gradient_map")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 185.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(370.0);
-                if paint_dialog_header(ui, &colors, "🌈", &t!("dialog.gradient_map")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "🌈", &t!("dialog.gradient_map")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 // Preset buttons
@@ -2198,14 +2220,16 @@ impl BlackAndWhiteDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_black_and_white")
+        crate::ui::polish::window(ctx, "dialog_black_and_white")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 185.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(370.0);
-                if paint_dialog_header(ui, &colors, "🎨", &t!("dialog.black_and_white")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "🎨", &t!("dialog.black_and_white")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 // Quick presets
@@ -2361,14 +2385,16 @@ impl VibranceDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_vibrance")
+        crate::ui::polish::window(ctx, "dialog_vibrance")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
-                if paint_dialog_header(ui, &colors, "✨", &t!("dialog.vibrance")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "✨", &t!("dialog.vibrance")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 section_label(ui, &colors, "VIBRANCE");
@@ -2438,4 +2464,3 @@ impl VibranceDialog {
 }
 
 // ============================================================================
-

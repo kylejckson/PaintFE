@@ -1,5 +1,14 @@
 impl PaintFEApp {
     fn update_runtime_lifecycle_async(&mut self, ctx: &egui::Context) {
+        if self.theme.polish != self.settings.ui_polish
+            || self.theme.density != self.settings.ui_density
+        {
+            self.theme.polish = self.settings.ui_polish.clone();
+            self.theme.density = self.settings.ui_density;
+            self.theme.apply(ctx);
+        }
+        crate::ui::polish::configure(ctx, &self.settings.ui_polish);
+        self.apply_workspace_command(ctx);
         // --- Dynamic window title: "PaintFE - <project name>[*]" ---
         {
             let title = if let Some(project) = self.projects.get(self.active_project_index) {
@@ -403,8 +412,6 @@ impl PaintFEApp {
                     self.persist_active_project_view();
                     self.active_project_index = self.projects.len() - 1;
                     self.restore_active_project_view();
-                    // Clear GPU layer cache for the new project
-                    self.canvas.gpu_clear_layers();
                     self.maybe_close_initial_blank();
                 }
                 IoResult::LoadFailed { path, error } => {
@@ -493,7 +500,6 @@ impl PaintFEApp {
                     self.persist_active_project_view();
                     self.active_project_index = self.projects.len() - 1;
                     self.restore_active_project_view();
-                    self.canvas.gpu_clear_layers();
                     self.maybe_close_initial_blank();
                 }
                 IoResult::AnimatedFramesLoaded { path, frames } => {
@@ -556,7 +562,6 @@ impl PaintFEApp {
                     self.persist_active_project_view();
                     self.active_project_index = self.projects.len() - 1;
                     self.restore_active_project_view();
-                    self.canvas.gpu_clear_layers();
                     self.maybe_close_initial_blank();
                 }
                 IoResult::PdnLoaded {
@@ -577,7 +582,6 @@ impl PaintFEApp {
                     self.persist_active_project_view();
                     self.active_project_index = self.projects.len() - 1;
                     self.restore_active_project_view();
-                    self.canvas.gpu_clear_layers();
                     self.maybe_close_initial_blank();
                 }
             }
@@ -664,7 +668,11 @@ impl PaintFEApp {
         let modal_open = self.save_file_dialog.open
             || self.new_file_dialog.open
             || !matches!(self.active_dialog, ActiveDialog::None)
-            || self.pending_paste_request.is_some();
+            || self.pending_paste_request.is_some()
+            || !self.pending_import_queue.is_empty()
+            || self.pending_oversized_import.is_some()
+            || self.pending_exit
+            || self.pending_close_index.is_some();
 
         let _global_probe = ctx.input(|i| {
             let cmd = i.modifiers.ctrl || i.modifiers.command;

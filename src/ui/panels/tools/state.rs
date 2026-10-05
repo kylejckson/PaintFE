@@ -3,13 +3,13 @@ use crate::canvas::{
     BlendMode, CHUNK_SIZE, CanvasState, SelectionMode, SelectionShape, TiledImage,
 };
 use crate::components::history::{PixelPatch, SelectionCommand};
+use crate::par_compat::*;
+use crate::time_compat::Instant;
 use eframe::egui;
 use egui::{Color32, Pos2, Rect, Vec2};
 use image::{GrayImage, Rgba};
-use crate::par_compat::*;
 use std::collections::VecDeque;
 use std::sync::Arc;
-use crate::time_compat::Instant;
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum Tool {
@@ -63,7 +63,8 @@ impl BrushTip {
 }
 
 /// Painting mode for the Brush tool.
-/// Normal: standard max-alpha paint (one stroke never exceeds its flow)
+/// Normal: movement-driven paint accumulation with a stroke opacity cap
+/// Uniform: strongest coverage only, preserving a uniform soft stroke
 /// BuildUp: accumulating paint — repeated passes build toward full opacity
 /// Dodge: lightens (increases luminosity)
 /// Burn: darkens (decreases luminosity)
@@ -71,6 +72,7 @@ impl BrushTip {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BrushMode {
     Normal,
+    Uniform,
     BuildUp,
     Dodge,
     Burn,
@@ -81,6 +83,7 @@ impl BrushMode {
     pub fn label(&self) -> &'static str {
         match self {
             BrushMode::Normal => "Normal",
+            BrushMode::Uniform => "Uniform",
             BrushMode::BuildUp => "Build Up",
             BrushMode::Dodge => "Dodge",
             BrushMode::Burn => "Burn",
@@ -90,6 +93,7 @@ impl BrushMode {
     pub fn all() -> &'static [BrushMode] {
         &[
             BrushMode::Normal,
+            BrushMode::Uniform,
             BrushMode::BuildUp,
             BrushMode::Dodge,
             BrushMode::Burn,
@@ -124,6 +128,8 @@ pub struct ToolProperties {
     pub tip_rotation_range: (f32, f32),
     /// Flow rate: 0.0..1.0 — scales final brush opacity per stamp. Default 1.0 (full opacity).
     pub flow: f32,
+    /// Maximum alpha multiplier for a complete stroke, independent of flow.
+    pub opacity: f32,
     /// Scatter: 0.0..1.0 — random positional offset as fraction of brush diameter. Default 0.0.
     pub scatter: f32,
     /// Hue jitter: 0.0..1.0 — random hue shift per stamp (0=none, 1=up to ±180°). Default 0.0.
@@ -152,6 +158,7 @@ impl Default for ToolProperties {
             tip_random_rotation: false,
             tip_rotation_range: (0.0, 360.0),
             flow: 1.0,
+            opacity: 1.0,
             scatter: 0.0,
             hue_jitter: 0.0,
             brightness_jitter: 0.0,
@@ -555,7 +562,8 @@ pub fn parse_selection_aspect_ratio(
     if height.contains(':') {
         return Err("Enter width:height or image");
     }
-    let (Ok(width), Ok(height)) = (width.trim().parse::<f32>(), height.trim().parse::<f32>()) else {
+    let (Ok(width), Ok(height)) = (width.trim().parse::<f32>(), height.trim().parse::<f32>())
+    else {
         return Err("Enter width:height or image");
     };
     if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
@@ -1840,6 +1848,8 @@ pub struct ToolsPanel {
     pub fill_state: FillToolState,
     /// Last color picked this frame plus its target swatch; None if color picker not used.
     pub last_picked_color: Option<(Color32, bool)>,
+    pub completed_paint_colors: Vec<Color32>,
+    paint_gesture_color: Color32,
     pub lasso_state: LassoState,
     pub perspective_crop_state: PerspectiveCropState,
     pub zoom_tool_state: ZoomToolState,
@@ -1870,6 +1880,8 @@ pub struct ToolsPanel {
     /// `lut[i]` = alpha for `dist_sq / radius_sq == i / 255.0`.
     /// Eliminates per-pixel `sqrt()` + `smoothstep` computation.
     brush_alpha_lut: [u8; 256],
+    /// Stroke-local coverage precision prevents low-flow accumulation from stalling.
+    brush_coverage: std::collections::HashMap<(u32, u32), Vec<u16>>,
     /// Parameters that were used to build the current LUT (to detect changes).
     lut_params: (f32, f32, bool), // (size, hardness, anti_aliased)
     /// Cached rescaled tip mask for current (tip, size) combo
@@ -1930,6 +1942,8 @@ impl Default for ToolsPanel {
             magic_wand_state: MagicWandState::default(),
             fill_state: FillToolState::default(),
             last_picked_color: None,
+            completed_paint_colors: Vec::new(),
+            paint_gesture_color: Color32::BLACK,
             lasso_state: LassoState::default(),
             perspective_crop_state: PerspectiveCropState::default(),
             zoom_tool_state: ZoomToolState::default(),
@@ -1952,6 +1966,7 @@ impl Default for ToolsPanel {
             last_tracked_layer_index: 0,
             last_tracked_layer_count: 0,
             brush_alpha_lut: [0u8; 256],
+            brush_coverage: std::collections::HashMap::new(),
             lut_params: (0.0, 0.0, false),
             brush_tip_mask: Vec::new(),
             brush_tip_mask_size: 0,
@@ -2116,4 +2131,3 @@ impl Default for ContentAwareBrushState {
         }
     }
 }
-

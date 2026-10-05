@@ -76,7 +76,10 @@ impl ResizeImageDialog {
             original_h: state.height,
             focus_width_on_open: true,
             replace_width_on_first_edit: true,
-            preview_source: state.layers.get(state.active_layer_index).map(|l| l.pixels.clone()),
+            preview_source: state
+                .layers
+                .get(state.active_layer_index)
+                .map(|l| l.pixels.clone()),
             comparison_previews: Vec::new(),
         }
     }
@@ -163,11 +166,7 @@ impl ResizeImageDialog {
             candidates.push((
                 label.to_string(),
                 crate::ops::transform::pixel_art_retarget(
-                    &flat,
-                    target_w,
-                    target_h,
-                    &settings,
-                    None,
+                    &flat, target_w, target_h, &settings, None,
                 ),
             ));
         }
@@ -194,7 +193,7 @@ impl ResizeImageDialog {
         let colors = DialogColors::from_ctx(ctx);
         let mut ok_pressed = false;
 
-        egui::Window::new("dialog_resize_image")
+        crate::ui::polish::window(ctx, "dialog_resize_image")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
@@ -635,7 +634,7 @@ impl ResizeCanvasDialog {
         let colors = DialogColors::from_ctx(ctx);
         let mut ok_pressed = false;
 
-        egui::Window::new("dialog_resize_canvas")
+        crate::ui::polish::window(ctx, "dialog_resize_canvas")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
@@ -1011,7 +1010,7 @@ impl GaussianBlurDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_gaussian_blur")
+        crate::ui::polish::window(ctx, "dialog_gaussian_blur")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
@@ -1041,7 +1040,7 @@ impl GaussianBlurDialog {
                             if self.advanced_blur {
                                 // Advanced: editable DragValue (up to 100)
                                 let r = ui.add(
-                                    egui::DragValue::new(&mut self.sigma)
+                                    crate::ui::numeric::Numeric::new(&mut self.sigma)
                                         .speed(0.2)
                                         .range(0.1..=100.0)
                                         .max_decimals(1),
@@ -1295,7 +1294,7 @@ impl AddBrushTipDialog {
         let mut result: Option<AddBrushTipResult> = None;
         let colors = super::DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_add_brush_tip")
+        crate::ui::polish::window(ctx, "dialog_add_brush_tip")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
@@ -1623,7 +1622,7 @@ impl AddShapeDialog {
 
         let mut result = None;
         let colors = super::DialogColors::from_ctx(ctx);
-        egui::Window::new("dialog_add_shape")
+        crate::ui::polish::window(ctx, "dialog_add_shape")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)

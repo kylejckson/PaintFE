@@ -36,11 +36,14 @@ impl PaintFEApp {
         // Floating overlay: the shelf is an egui::Area over the canvas instead
         // of a Panel, so the canvas fills the full viewport behind it and the
         // shelf genuinely floats above it (see Theme::tool_shelf_frame).
-        let shelf_anchor = self
+        let viewport_rect = ctx.content_rect();
+        let shelf_y = self
             .canvas
             .last_canvas_rect
-            .map(|r| r.min + egui::vec2(12.0, 8.0))
-            .unwrap_or_else(|| root_ui.min_rect().min + egui::vec2(12.0, 8.0));
+            .map(|r| r.min.y)
+            .unwrap_or(root_ui.min_rect().min.y)
+            + 8.0;
+        let shelf_anchor = egui::pos2(viewport_rect.min.x + 12.0, shelf_y);
         egui::Area::new(egui::Id::new("tool_shelf_strip"))
             .order(egui::Order::Middle)
             .fixed_pos(shelf_anchor)
@@ -48,20 +51,13 @@ impl PaintFEApp {
                 // Static full-width bar: the pill spans the viewport minus the
                 // 12px padding on both sides, so its width never jumps when the
                 // active tool's options change.
-                let bar_w = (self
-                    .canvas
-                    .last_canvas_rect
-                    .map(|r| r.width())
-                    .unwrap_or(600.0)
-                    - 24.0)
-                    .max(240.0);
+                let bar_w = (viewport_rect.width() - 24.0).max(0.0);
                 ui.set_width(bar_w);
                 let shelf_frame = self.theme.tool_shelf_frame();
-                // Wrap the shelf content instead of stretching across the full
-                // window width, so the input-blocking rect recorded below matches
-                // the visible shelf and clicks elsewhere in the top strip reach
-                // the canvas.
+                let content_w = (bar_w - shelf_frame.total_margin().sum().x).max(0.0);
                 let shelf_inner = shelf_frame.show(ui, |ui| {
+                    // The painted frame must reserve the blank space as well.
+                    ui.set_width(content_w);
                     // Context bar label styling
                     ui.style_mut().override_font_id =
                         Some(egui::FontId::proportional(crate::theme::Theme::FONT_LABEL));
@@ -71,10 +67,15 @@ impl PaintFEApp {
                             ui.disable();
                         }
                         if let Some(session) = self.straighten_session.as_mut() {
-                            crate::signal_widgets::tool_shelf_tag(ui, "STRAIGHTEN", self.theme.accent, &self.theme);
+                            crate::signal_widgets::tool_shelf_tag(
+                                ui,
+                                "STRAIGHTEN",
+                                self.theme.accent,
+                                &self.theme,
+                            );
                             ui.label("Angle:");
                             ui.add(
-                                egui::DragValue::new(&mut session.angle_degrees)
+                                crate::ui::numeric::Numeric::new(&mut session.angle_degrees)
                                     .speed(0.1)
                                     .range(-180.0..=180.0)
                                     .suffix("°"),
@@ -88,7 +89,11 @@ impl PaintFEApp {
                                         crate::ops::transform::Interpolation::Nearest,
                                         crate::ops::transform::Interpolation::Bilinear,
                                     ] {
-                                        ui.selectable_value(&mut session.interpolation, interpolation, interpolation.label());
+                                        ui.selectable_value(
+                                            &mut session.interpolation,
+                                            interpolation,
+                                            interpolation.label(),
+                                        );
                                     }
                                 });
                             // Quick actions — inline with the rest of the controls.
@@ -103,7 +108,12 @@ impl PaintFEApp {
                             }
                         } else if let Some(ref mut overlay) = self.paste_overlay {
                             // --- Paste overlay context bar ---
-                            crate::signal_widgets::tool_shelf_tag(ui, "PASTE", self.theme.accent, &self.theme);
+                            crate::signal_widgets::tool_shelf_tag(
+                                ui,
+                                "PASTE",
+                                self.theme.accent,
+                                &self.theme,
+                            );
                             ui.add_space(6.0);
 
                             // Filter mode
@@ -193,20 +203,31 @@ impl PaintFEApp {
                 shelf_ui_rect = shelf_inner.response.rect;
             });
         self.remember_ui_cursor_rect(shelf_ui_rect);
-        if start_straighten { self.start_straighten(); }
-        if commit_straighten { self.commit_straighten(); }
-        if cancel_straighten { self.cancel_straighten(); }
+        if start_straighten {
+            self.start_straighten();
+        }
+        if commit_straighten {
+            self.commit_straighten();
+        }
+        if cancel_straighten {
+            self.cancel_straighten();
+        }
 
         // Process pending brush tip actions from context bar
         if self.tools_panel.pending_open_add_brush_tip {
             self.tools_panel.pending_open_add_brush_tip = false;
             // Build category list from assets
-            let cats: Vec<String> = self.assets.brush_tip_categories()
+            let cats: Vec<String> = self
+                .assets
+                .brush_tip_categories()
                 .iter()
                 .map(|c| c.name.clone())
                 .collect();
             let mut dlg = crate::ui::dialogs::core::AddBrushTipDialog::new(&cats);
-            dlg.brush_icon_texture = self.assets.get_texture(crate::config::icons::Icon::Brush).cloned();
+            dlg.brush_icon_texture = self
+                .assets
+                .get_texture(crate::config::icons::Icon::Brush)
+                .cloned();
             dlg.open_dialog();
             self.active_dialog = crate::ui::dialogs::core::ActiveDialog::AddBrushTip(dlg);
         }
@@ -218,18 +239,21 @@ impl PaintFEApp {
                     self.tools_panel.properties.brush_tip
                 && name == &tip_name
             {
-                self.tools_panel.properties.brush_tip =
-                    crate::components::tools::BrushTip::Circle;
+                self.tools_panel.properties.brush_tip = crate::components::tools::BrushTip::Circle;
             }
             self.assets.remove_brush_tip(&tip_name);
             // Also remove from persisted settings
-            self.settings.custom_brush_tips.retain(|(n, _, _)| n != &tip_name);
+            self.settings
+                .custom_brush_tips
+                .retain(|(n, _, _)| n != &tip_name);
             self.settings.save();
         }
 
         if self.tools_panel.pending_open_add_shape {
             self.tools_panel.pending_open_add_shape = false;
-            let cats: Vec<String> = self.assets.custom_shape_categories()
+            let cats: Vec<String> = self
+                .assets
+                .custom_shape_categories()
                 .iter()
                 .map(|c| c.name.clone())
                 .collect();
@@ -244,7 +268,9 @@ impl PaintFEApp {
                 self.tools_panel.shapes_state.selected_custom_shape_data = None;
             }
             self.assets.remove_custom_shape(&shape_name);
-            self.settings.custom_shapes.retain(|(n, _, _)| n != &shape_name);
+            self.settings
+                .custom_shapes
+                .retain(|(n, _, _)| n != &shape_name);
             self.settings.save();
         }
 
@@ -304,8 +330,7 @@ impl PaintFEApp {
                     let secondary_color_f32 = self.colors_panel.get_secondary_color_f32();
                     // Push theme accent colours into canvas for selection rendering.
                     self.canvas.selection_stroke = self.theme.accent;
-                    self.canvas.selection_outline_opacity =
-                        self.settings.selection_outline_opacity;
+                    self.canvas.selection_outline_opacity = self.settings.selection_outline_opacity;
                     self.canvas.selection_fill = {
                         let [r, g, b, _] = self.theme.accent.to_array();
                         egui::Color32::from_rgba_unmultiplied(r, g, b, 25)
@@ -328,6 +353,8 @@ impl PaintFEApp {
                         };
                         self.canvas.tool_cursor_icon =
                             icon_for_cursor.and_then(|ic| self.assets.get_texture(ic).cloned());
+                        self.canvas.tool_cursor_from_pack =
+                            icon_for_cursor.is_some_and(|ic| self.assets.is_pack_icon(ic));
                     }
                     ctx.data_mut(|d| {
                         d.insert_persisted(
@@ -339,18 +366,19 @@ impl PaintFEApp {
                             self.settings.selection_stripe_alpha,
                         );
                     });
+                    let render_profile = crate::ui::perf::Scope::new(7);
                     self.canvas.show_with_state(
                         ui,
                         &mut project.canvas_state,
                         Some(&mut self.tools_panel),
                         primary_color_f32,
                         secondary_color_f32,
-                          canvas_bg_bottom,
-                          self.paste_overlay.as_mut(),
-                          self.straighten_session.as_ref().map(|session| {
-                              (session.generation, &session.preview, session.angle_degrees)
-                          }),
-                          modal_open || self.straighten_session.is_some(),
+                        canvas_bg_bottom,
+                        self.paste_overlay.as_mut(),
+                        self.straighten_session.as_ref().map(|session| {
+                            (session.generation, &session.preview, session.angle_degrees)
+                        }),
+                        modal_open || self.straighten_session.is_some(),
                         &self.settings,
                         self.pending_filter_jobs,
                         self.pending_io_ops,
@@ -362,9 +390,11 @@ impl PaintFEApp {
                         ui_blocks_canvas_input,
                         live_window_resize,
                     );
-                    if let (Some(session), Some(rect)) =
-                        (self.straighten_session.as_mut(), self.canvas.last_image_rect)
-                    {
+                    drop(render_profile);
+                    if let (Some(session), Some(rect)) = (
+                        self.straighten_session.as_mut(),
+                        self.canvas.last_image_rect,
+                    ) {
                         let pointer = ctx.input(|i| i.pointer.interact_pos());
                         let pressed = ctx.input(|i| i.pointer.primary_pressed());
                         let down = ctx.input(|i| i.pointer.primary_down());
@@ -389,7 +419,9 @@ impl PaintFEApp {
                             session.angle_degrees = degrees.clamp(-180.0, 180.0);
                             ctx.request_repaint();
                         }
-                        if released { session.drag_start = None; }
+                        if released {
+                            session.drag_start = None;
+                        }
                         straighten_enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
                         straighten_escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
                     }
@@ -416,12 +448,13 @@ impl PaintFEApp {
                                         project.canvas_state.height,
                                     )
                                 });
-                                let select_bounds = self.paste_overlay.as_ref().and_then(|overlay| {
-                                    overlay.transformed_bounds(
-                                        project.canvas_state.width,
-                                        project.canvas_state.height,
-                                    )
-                                });
+                                let select_bounds =
+                                    self.paste_overlay.as_ref().and_then(|overlay| {
+                                        overlay.transformed_bounds(
+                                            project.canvas_state.width,
+                                            project.canvas_state.height,
+                                        )
+                                    });
                                 if let Some(overlay) = self.paste_overlay.take() {
                                     self.paste_transform_undo.clear();
                                     self.paste_transform_redo.clear();
@@ -471,13 +504,12 @@ impl PaintFEApp {
                                     == crate::canvas::PasteAction::CommitAndSelect
                                     || (action == crate::canvas::PasteAction::Commit
                                         && self.settings.select_after_paste);
-                                project.canvas_state.selection_mask = if needs_mask
-                                    || keep_selection
-                                {
-                                    select_mask
-                                } else {
-                                    None
-                                };
+                                project.canvas_state.selection_mask =
+                                    if needs_mask || keep_selection {
+                                        select_mask
+                                    } else {
+                                        None
+                                    };
                                 if let Some(mask) = project.canvas_state.selection_mask.as_mut()
                                     && let Some((x0, y0, x1, y1)) = select_bounds
                                 {
@@ -535,8 +567,12 @@ impl PaintFEApp {
                     }
                 }
             });
-        if straighten_enter { self.commit_straighten(); }
-        if straighten_escape { self.cancel_straighten(); }
+        if straighten_enter {
+            self.commit_straighten();
+        }
+        if straighten_escape {
+            self.cancel_straighten();
+        }
 
         // --- Floating Panels ---
         // Detect screen size changes ONCE before any panel renders,
@@ -552,12 +588,29 @@ impl PaintFEApp {
                 || (screen_h - self.last_screen_size.1).abs() > 0.5);
 
         self.is_pointer_over_layers_panel = false;
+        crate::ui::workspace::begin_frame(
+            ctx,
+            &self.settings.workspace,
+            &[
+                ("Tools", self.window_visibility.tools),
+                ("Layers", self.window_visibility.layers),
+                ("History", self.window_visibility.history),
+                ("Colors", self.window_visibility.colors),
+                ("Palette", self.window_visibility.palette),
+                ("ScriptEditor", self.window_visibility.script_editor),
+            ],
+        );
         self.show_floating_tools_panel(ctx, screen_size_changed);
         self.show_floating_layers_panel(ctx, screen_size_changed);
         self.show_floating_history_panel(ctx, screen_size_changed);
         self.show_floating_colors_panel(ctx, screen_size_changed);
         self.show_floating_palette_panel(ctx, screen_size_changed);
         self.show_floating_script_editor(ctx, screen_size_changed);
+        crate::ui::workspace::color_sections(
+            ctx,
+            self.colors_panel.is_expanded(),
+            self.colors_panel.section_mask(),
+        );
         self.publish_ui_cursor_blocking_rects();
         if self.palette_reposition_settle_frames > 0 {
             self.palette_reposition_settle_frames -= 1;

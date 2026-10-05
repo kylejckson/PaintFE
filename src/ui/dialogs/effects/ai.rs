@@ -23,14 +23,16 @@ impl RemoveBackgroundDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_remove_bg")
+        crate::ui::polish::window(ctx, "dialog_remove_bg")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 190.0, 80.0))
             .show(ctx, |ui| {
                 ui.set_min_width(380.0);
-                if paint_dialog_header(ui, &colors, "\u{2728}", &t!("dialog.remove_background")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{2728}", &t!("dialog.remove_background")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 section_label(ui, &colors, "MASK SETTINGS");
@@ -232,4 +234,3 @@ impl RemoveBackgroundDialog {
         result
     }
 }
-

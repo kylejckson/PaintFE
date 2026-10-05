@@ -20,7 +20,7 @@ impl ToolsPanel {
         let mut strength_pct = (self.liquify_state.strength * 100.0).round() as i32;
         if ui
             .add(
-                egui::DragValue::new(&mut strength_pct)
+                crate::ui::numeric::Numeric::new(&mut strength_pct)
                     .speed(1)
                     .range(1..=100)
                     .suffix("%"),
@@ -33,7 +33,7 @@ impl ToolsPanel {
         ui.separator();
         ui.label(t!("ctx.size"));
         ui.add(
-            egui::DragValue::new(&mut self.properties.size)
+            crate::ui::numeric::Numeric::new(&mut self.properties.size)
                 .speed(0.5)
                 .range(5.0..=500.0)
                 .suffix("px"),
@@ -444,7 +444,7 @@ impl ToolsPanel {
         ui.separator();
         ui.label(t!("ctx.color_remover.smoothness"));
         ui.add(
-            egui::DragValue::new(&mut self.color_remover_state.smoothness)
+            crate::ui::numeric::Numeric::new(&mut self.color_remover_state.smoothness)
                 .speed(0.2)
                 .range(0..=20)
                 .suffix("px"),
@@ -480,7 +480,7 @@ impl ToolsPanel {
     fn show_smudge_options(&mut self, ui: &mut egui::Ui) {
         ui.label("Size:");
         ui.add(
-            egui::DragValue::new(&mut self.properties.size)
+            crate::ui::numeric::Numeric::new(&mut self.properties.size)
                 .speed(0.5)
                 .range(1.0..=500.0)
                 .suffix("px"),
@@ -599,7 +599,9 @@ impl ToolsPanel {
                 .selected_custom_shape
                 .as_ref()
                 .and_then(|n| assets.get_custom_shape_texture(n));
-            if let Some(tex) = custom_tex.or_else(|| assets.get_shape_texture(self.shapes_state.selected_shape)) {
+            if let Some(tex) =
+                custom_tex.or_else(|| assets.get_shape_texture(self.shapes_state.selected_shape))
+            {
                 let sized = egui::load::SizedTexture::from_handle(tex);
                 let img =
                     egui::Image::from_texture(sized).fit_to_exact_size(egui::Vec2::splat(16.0));
@@ -636,7 +638,10 @@ impl ToolsPanel {
                 70
             };
 
-            if ui.add_sized([54.0, 20.0], egui::Button::new("New...")).clicked() {
+            if ui
+                .add_sized([54.0, 20.0], egui::Button::new("New..."))
+                .clicked()
+            {
                 self.pending_open_add_shape = true;
                 ui.close();
             }
@@ -715,20 +720,34 @@ impl ToolsPanel {
                     .spacing(egui::Vec2::splat(2.0))
                     .show(ui, |ui| {
                         for (i, name) in cat.shapes.iter().enumerate() {
-                            let selected = self.shapes_state.selected_custom_shape.as_ref() == Some(name);
-                            let (rect, response) = ui.allocate_exact_size(icon_size, egui::Sense::click());
+                            let selected =
+                                self.shapes_state.selected_custom_shape.as_ref() == Some(name);
+                            let (rect, response) =
+                                ui.allocate_exact_size(icon_size, egui::Sense::click());
                             if selected {
                                 ui.painter().rect_filled(
                                     rect,
                                     4.0,
                                     egui::Color32::from_rgba_premultiplied(
-                                        accent.r(), accent.g(), accent.b(), selected_alpha,
+                                        accent.r(),
+                                        accent.g(),
+                                        accent.b(),
+                                        selected_alpha,
                                     ),
                                 );
-                                ui.painter().rect_stroke(rect, 4.0, selected_stroke, egui::StrokeKind::Middle);
+                                ui.painter().rect_stroke(
+                                    rect,
+                                    4.0,
+                                    selected_stroke,
+                                    egui::StrokeKind::Middle,
+                                );
                             }
                             if response.hovered() {
-                                ui.painter().rect_filled(rect, 4.0, ui.visuals().widgets.hovered.bg_fill);
+                                ui.painter().rect_filled(
+                                    rect,
+                                    4.0,
+                                    ui.visuals().widgets.hovered.bg_fill,
+                                );
                             }
                             if let Some(tex) = assets.get_custom_shape_texture(name) {
                                 let sized = egui::load::SizedTexture::from_handle(tex);
@@ -801,12 +820,9 @@ impl ToolsPanel {
                 // Dropdown arrow
                 let a_resp = if let Some(tex) = assets.get_texture(Icon::DropDown) {
                     let sized = egui::load::SizedTexture::from_handle(tex);
-                    let img = egui::Image::from_texture(sized)
-                        .fit_to_exact_size(egui::vec2(12.0, 12.0));
-                    ui.add(
-                        egui::Button::image(img)
-                            .min_size(egui::vec2(14.0, i_height)),
-                    )
+                    let img =
+                        egui::Image::from_texture(sized).fit_to_exact_size(egui::vec2(12.0, 12.0));
+                    ui.add(egui::Button::image(img).min_size(egui::vec2(14.0, i_height)))
                 } else {
                     ui.add(
                         egui::Button::new(egui::RichText::new("\u{25BE}").size(9.0))
@@ -846,11 +862,10 @@ impl ToolsPanel {
 
                 let resp = if let Some(tex) = assets.get_texture(mode_icon) {
                     let sized = egui::load::SizedTexture::from_handle(tex);
-                    let img = egui::Image::from_texture(sized)
-                        .fit_to_exact_size(egui::vec2(14.0, 14.0));
+                    let img =
+                        egui::Image::from_texture(sized).fit_to_exact_size(egui::vec2(14.0, 14.0));
                     ui.add(
-                        egui::Button::image_and_text(img, label)
-                            .min_size(egui::vec2(100.0, 22.0)),
+                        egui::Button::image_and_text(img, label).min_size(egui::vec2(100.0, 22.0)),
                     )
                 } else {
                     ui.add(
@@ -863,11 +878,8 @@ impl ToolsPanel {
                 };
 
                 if is_selected {
-                    ui.painter().rect_filled(
-                        resp.rect,
-                        2.0,
-                        ui.visuals().selection.bg_fill,
-                    );
+                    ui.painter()
+                        .rect_filled(resp.rect, 2.0, ui.visuals().selection.bg_fill);
                 }
 
                 if resp.clicked() {
@@ -880,7 +892,7 @@ impl ToolsPanel {
         ui.separator();
         ui.label(t!("ctx.shapes.width"));
         ui.add(
-            egui::DragValue::new(&mut self.properties.size)
+            crate::ui::numeric::Numeric::new(&mut self.properties.size)
                 .speed(0.5)
                 .range(1.0..=100.0)
                 .suffix("px"),
@@ -890,7 +902,7 @@ impl ToolsPanel {
             ui.separator();
             ui.label(t!("ctx.shapes.radius"));
             ui.add(
-                egui::DragValue::new(&mut self.shapes_state.corner_radius)
+                crate::ui::numeric::Numeric::new(&mut self.shapes_state.corner_radius)
                     .speed(0.5)
                     .range(0.0..=500.0)
                     .suffix("px"),
@@ -1204,6 +1216,4 @@ impl ToolsPanel {
         painter.circle_filled(rot_handle, 4.0, accent);
         painter.circle_stroke(rot_handle, 4.0, egui::Stroke::new(1.0, Color32::BLACK));
     }
-
 }
-

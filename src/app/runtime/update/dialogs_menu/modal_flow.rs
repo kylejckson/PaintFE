@@ -3,9 +3,9 @@ impl PaintFEApp {
         #[cfg(target_arch = "wasm32")]
         self.show_welcome_popup_window(ctx);
 
-        let settings_window_rect = self
-            .settings_window
-            .show(ctx, &mut self.settings, &mut self.theme, &self.assets);
+        let settings_window_rect =
+            self.settings_window
+                .show(ctx, &mut self.settings, &mut self.theme, &self.assets);
         // Keep the runtime stroke stabilization in sync with the settings
         // slider (the slider writes AppSettings only).
         self.tools_panel.stroke_stabilization = self.settings.persisted_stroke_stabilization;
@@ -42,10 +42,20 @@ impl PaintFEApp {
             self.assets.reload_icons(ctx, dark);
             self.settings.save();
         }
-        if self.settings_window.pending_icon_pack_clear {
-            self.settings_window.pending_icon_pack_clear = false;
-            self.assets.clear_icon_pack();
-            self.settings.icon_pack_path.clear();
+        let bundled_icons_changed =
+            self.assets.bundled_icon_style() != self.settings.bundled_icon_style;
+        if bundled_icons_changed
+            && let Err(e) = self.assets.set_bundled_icon_style(self.settings.bundled_icon_style)
+        {
+            log_info!("Bundled icon style load failed: {e}");
+            self.settings.bundled_icon_style = self.assets.bundled_icon_style();
+        }
+        if self.settings_window.pending_icon_pack_clear || bundled_icons_changed {
+            if self.settings_window.pending_icon_pack_clear {
+                self.settings_window.pending_icon_pack_clear = false;
+                self.assets.clear_icon_pack();
+                self.settings.icon_pack_path.clear();
+            }
             self.assets.reload_icons(ctx, dark);
             self.settings.save();
         }
@@ -76,9 +86,20 @@ impl PaintFEApp {
 
         // Paste size confirmation (when clipboard image exceeds current canvas bounds)
         // ---- Import image: one dialog per dropped image ----
+        // Only handle an oversized dialog that was already pending this frame:
+        // Enter on "Add as Layer" must not also accept "Expand Canvas".
+        let oversized_at_frame_start = self.pending_oversized_import.is_some();
+        if !oversized_at_frame_start {
+            self.process_import_batch();
+            if self.pending_oversized_import.is_some() {
+                ctx.request_repaint();
+            }
+        }
         let mut import_choice: Option<usize> = None;
-        if let Some(item) = self.pending_import_queue.first() {
-            use crate::ops::dialogs::{action_list, dialog_card_header, DialogAction};
+        if self.pending_oversized_import.is_none()
+            && let Some(item) = self.pending_import_queue.first().cloned()
+        {
+            use crate::ops::dialogs::{DialogAction, action_list, dialog_card_header};
             let total = self.pending_import_queue.len();
             let caption = if total > 1 {
                 Some(format!("{} · {} more waiting", item.name, total - 1))
@@ -104,7 +125,7 @@ impl PaintFEApp {
                 ),
             ];
             let mut apply_all = self.import_apply_to_all;
-            let window_response = egui::Window::new("Import Image")
+            let window_response = crate::ui::polish::window(ctx, "Import Image")
                 .title_bar(false)
                 .collapsible(false)
                 .resizable(false)
@@ -149,22 +170,22 @@ impl PaintFEApp {
             }
 
             if let Some(choice) = import_choice {
-                let apply_all = self.import_apply_to_all;
-                while let Some(next) = self.pending_import_queue.first().cloned() {
+                if self.import_apply_to_all {
+                    self.import_batch_choice = Some(choice);
+                    self.process_import_batch();
+                } else {
                     self.pending_import_queue.remove(0);
-                    self.apply_import_choice(&next, choice);
-                    if !apply_all {
-                        break;
-                    }
+                    self.apply_import_choice(&item, choice);
                 }
                 self.import_apply_to_all = false;
+                ctx.request_repaint();
             }
         }
 
         // ---- Oversized import (image being added as a layer is too big) ----
         let mut oversize_choice: Option<usize> = None;
-        if let Some(item) = self.pending_oversized_import.clone() {
-            use crate::ops::dialogs::{action_list, dialog_card_header, DialogAction};
+        if oversized_at_frame_start && let Some(item) = self.pending_oversized_import.clone() {
+            use crate::ops::dialogs::{DialogAction, action_list, dialog_card_header};
             let (iw, ih) = (item.width, item.height);
             let (cw, ch) = self
                 .projects
@@ -189,7 +210,7 @@ impl PaintFEApp {
                     "Don't import the image.",
                 ),
             ];
-            let window_response = egui::Window::new("Oversized Import")
+            let window_response = crate::ui::polish::window(ctx, "Oversized Import")
                 .title_bar(false)
                 .collapsible(false)
                 .resizable(false)
@@ -225,6 +246,7 @@ impl PaintFEApp {
             }
             if let Some(choice) = oversize_choice {
                 self.pending_oversized_import = None;
+                ctx.request_repaint();
                 match choice {
                     0 => {
                         if let Ok(img) = image::load_from_memory(&item.bytes) {
@@ -240,7 +262,7 @@ impl PaintFEApp {
                 }
             }
         } else if let Some(req) = self.pending_paste_request.as_ref() {
-            use crate::ops::dialogs::{action_list, dialog_card_header, DialogAction};
+            use crate::ops::dialogs::{DialogAction, action_list, dialog_card_header};
             let (iw, ih) = (req.image.width(), req.image.height());
             let (cw, ch) = self
                 .projects
@@ -266,7 +288,7 @@ impl PaintFEApp {
                     "Don't paste the image.",
                 ),
             ];
-            let window_response = egui::Window::new("Paste Image")
+            let window_response = crate::ui::polish::window(ctx, "Paste Image")
                 .title_bar(false)
                 .collapsible(false)
                 .resizable(false)
@@ -319,7 +341,7 @@ impl PaintFEApp {
         }
 
         if let Some(close_idx) = self.pending_close_index {
-            use crate::ops::dialogs::{confirm_row, dialog_card_header, ConfirmButton};
+            use crate::ops::dialogs::{ConfirmButton, confirm_row, dialog_card_header};
             let name = self
                 .projects
                 .get(close_idx)
@@ -333,7 +355,7 @@ impl PaintFEApp {
                 ConfirmButton::new("Don't Save"),
                 ConfirmButton::new("Cancel"),
             ];
-            let window_response = egui::Window::new("Unsaved Changes")
+            let window_response = crate::ui::polish::window(ctx, "Unsaved Changes")
                 .title_bar(false)
                 .collapsible(false)
                 .resizable(false)
@@ -384,7 +406,7 @@ impl PaintFEApp {
         }
 
         if self.pending_exit {
-            use crate::ops::dialogs::{confirm_row, dialog_card_header, ConfirmButton};
+            use crate::ops::dialogs::{ConfirmButton, confirm_row, dialog_card_header};
             let dirty_projects: Vec<String> = self
                 .projects
                 .iter()
@@ -404,7 +426,7 @@ impl PaintFEApp {
                     ConfirmButton::new("Don't Save"),
                     ConfirmButton::new("Cancel"),
                 ];
-                let window_response = egui::Window::new("Exit PaintFE")
+                let window_response = crate::ui::polish::window(ctx, "Exit PaintFE")
                     .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
@@ -426,7 +448,7 @@ impl PaintFEApp {
                                 dirty_projects[0]
                             ));
                         } else {
-                            const SHOW_MAX: usize = 3;
+                            const SHOW_MAX: usize = 4;
                             ui.label(format!(
                                 "{} projects have unsaved changes.",
                                 dirty_projects.len()
@@ -438,7 +460,7 @@ impl PaintFEApp {
                             let overflow = dirty_projects.len().saturating_sub(SHOW_MAX);
                             if overflow > 0 {
                                 ui.label(
-                                    egui::RichText::new(format!("...and {} more", overflow))
+                                    egui::RichText::new(format!("({} more)…", overflow))
                                         .weak()
                                         .italics(),
                                 );
@@ -520,23 +542,25 @@ impl PaintFEApp {
                     }
                     self.pending_io_ops += 1;
 
-                    crate::par_compat::spawn(move || match crate::io::write_pfe(&pfe_data, &path) {
-                        Ok(()) => {
-                            let _ = sender.send(IoResult::SaveComplete {
-                                project_index,
-                                path,
-                                format: SaveFormat::Pfe,
-                                quality: 100,
-                                webp_lossless: true,
-                                tiff_compression: TiffCompression::None,
-                                update_project_path: true,
-                            });
-                        }
-                        Err(e) => {
-                            let _ = sender.send(IoResult::SaveFailed {
-                                project_index,
-                                error: format!("{}", e),
-                            });
+                    crate::par_compat::spawn(move || {
+                        match crate::io::write_pfe(&pfe_data, &path) {
+                            Ok(()) => {
+                                let _ = sender.send(IoResult::SaveComplete {
+                                    project_index,
+                                    path,
+                                    format: SaveFormat::Pfe,
+                                    quality: 100,
+                                    webp_lossless: true,
+                                    tiff_compression: TiffCompression::None,
+                                    update_project_path: true,
+                                });
+                            }
+                            Err(e) => {
+                                let _ = sender.send(IoResult::SaveFailed {
+                                    project_index,
+                                    error: format!("{}", e),
+                                });
+                            }
                         }
                     });
                 } else if action.animated && action.format.supports_animation() {
@@ -690,6 +714,10 @@ impl PaintFEApp {
             || self.new_file_dialog.open
             || !matches!(self.active_dialog, ActiveDialog::None)
             || self.pending_paste_request.is_some()
+            || !self.pending_import_queue.is_empty()
+            || self.pending_oversized_import.is_some()
+            || self.pending_exit
+            || self.pending_close_index.is_some()
     }
 
     /// First-run welcome / beta-disclaimer popup (web only). Shown once per
@@ -707,15 +735,10 @@ impl PaintFEApp {
         // independent of the color's own alpha.
         let tint = |c: egui::Color32, alpha: u8| {
             let scale = |channel: u8| (channel as u16 * alpha as u16 / 255) as u8;
-            egui::Color32::from_rgba_premultiplied(
-                scale(c.r()),
-                scale(c.g()),
-                scale(c.b()),
-                alpha,
-            )
+            egui::Color32::from_rgba_premultiplied(scale(c.r()), scale(c.g()), scale(c.b()), alpha)
         };
 
-        egui::Window::new("welcome_popup")
+        crate::ui::polish::window(ctx, "welcome_popup")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
@@ -733,7 +756,10 @@ impl PaintFEApp {
                 ui.vertical_centered(|ui| {
                     ui.add_space(20.0);
                     ui.label(
-                        egui::RichText::new("PaintFE").strong().size(24.0).color(colors.text_color),
+                        egui::RichText::new("PaintFE")
+                            .strong()
+                            .size(24.0)
+                            .color(colors.text_color),
                     );
                     ui.add_space(4.0);
                     egui::Frame::NONE

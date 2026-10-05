@@ -1,0 +1,17 @@
+PaintFE release screenshots
+
+main_screenshot.png
+Forest sunrise by Peter Heeling (Skitterphoto), CC0 public-domain dedication.
+Source: https://commons.wikimedia.org/wiki/File:Forest_sunrise.jpg
+Resized in PaintFE and lightly retouched on a separate layer.
+
+photo-dark.png
+Landscape of a wild forest by SpessiG, CC0 public-domain dedication.
+Source: https://commons.wikimedia.org/wiki/File:Landscape_of_a_wild_forest.jpg
+Resized in PaintFE and lightly retouched on a separate layer.
+
+poster-scripting.png
+Solstice poster artwork generated for the PaintFE screenshot showcase.
+Print Finish Rhai script applied to the colour-grade layer in PaintFE.
+
+All screenshots are native PaintFE window captures at 1920 x 1032.

@@ -77,6 +77,16 @@ impl PaintFEApp {
                 proportional.insert(2, name);
             }
 
+            fonts.font_data.insert(
+                "dm_sans_medium".to_owned(),
+                egui::FontData::from_static(include_bytes!("../../assets/fonts/DMSans-Medium.ttf"))
+                    .into(),
+            );
+            let mut titles = fonts.families[&egui::FontFamily::Proportional].clone();
+            titles.insert(0, "dm_sans_medium".to_owned());
+            fonts
+                .families
+                .insert(egui::FontFamily::Name("WidgetTitle".into()), titles);
             cc.egui_ctx.set_fonts(fonts);
         }
 
@@ -97,6 +107,8 @@ impl PaintFEApp {
         };
         let ov = settings.build_theme_overrides();
         theme.apply_overrides(&ov);
+        theme.polish = settings.ui_polish.clone();
+        theme.density = settings.ui_density;
         // Floating panels (Tools, Layers, ...) use a near-opaque fill (~94%)
         // on native, where a compositor-level effect isn't used either — it's
         // meant to read as "subtle transparency" over the canvas. On web,
@@ -150,15 +162,22 @@ impl PaintFEApp {
         // Initialize assets
         let mut assets = Assets::new();
         assets.init(&cc.egui_ctx);
+        if let Err(e) = assets.set_bundled_icon_style(settings.bundled_icon_style) {
+            log_info!("Bundled icon style load failed: {e}");
+            settings.bundled_icon_style = assets.bundled_icon_style();
+        }
         // User icon pack (if configured): PNG overrides resolved before the
         // built-in icons.
         assets.set_icon_pack_invert_mismatch(settings.icon_pack_invert_mismatch);
-        if !settings.icon_pack_path.is_empty()
-            && let Err(e) =
-                assets.load_icon_pack(std::path::Path::new(&settings.icon_pack_path))
-        {
-            log_info!("Icon pack load failed: {e}");
+        if !settings.icon_pack_path.is_empty() {
+            match assets.load_icon_pack(std::path::Path::new(&settings.icon_pack_path)) {
+                Ok(_) => {}
+                Err(e) => {
+                    log_info!("Icon pack load failed: {e}");
+                }
+            }
         }
+        assets.reload_icons(&cc.egui_ctx, matches!(theme.mode, crate::theme::ThemeMode::Dark));
 
         let (filter_sender, filter_receiver) = mpsc::channel();
         let (io_sender, io_receiver) = mpsc::channel();
@@ -217,6 +236,7 @@ impl PaintFEApp {
             pending_paste_request: None,
             pending_import_queue: Vec::new(),
             import_apply_to_all: false,
+            import_batch_choice: None,
             pending_oversized_import: None,
             clipboard_paste_receiver: None,
             pending_clipboard_cursor: None,
@@ -235,7 +255,8 @@ impl PaintFEApp {
             layers_panel_size: None,
             history_panel_right_offset: None,
             history_panel_size: None,
-            colors_panel_left_offset: None,
+            colors_panel_pos: None,
+            palette_panel_size: None,
             palette_panel_pos: None,
             tools_panel_pos: None,
             last_screen_size: (0.0, 0.0),
@@ -292,8 +313,6 @@ impl PaintFEApp {
             prev_vk_v_press_count: 0,
             prev_vk_enter_press_count: 0,
             prev_vk_escape_press_count: 0,
-            recent_color_project_id: None,
-            recent_color_undo_count: 0,
             palette_reposition_settle_frames: 8,
             palette_startup_target_pos: None,
             last_tool_settings_fingerprint: 0,
@@ -310,31 +329,48 @@ impl PaintFEApp {
         app.window_visibility.colors = app.settings.persist_colors_visible;
         app.window_visibility.palette = app.settings.persist_palette_visible;
         app.window_visibility.script_editor = app.settings.persist_script_editor_visible;
-        app.tools_panel_pos = app.settings.persist_tools_panel_pos;
-        app.layers_panel_right_offset = app.settings.persist_layers_panel_right_offset;
-        app.layers_panel_size = app.settings.persist_layers_panel_size;
-        app.history_panel_right_offset = app.settings.persist_history_panel_right_offset;
-        app.history_panel_size = app.settings.persist_history_panel_size;
-        app.colors_panel_left_offset = app.settings.persist_colors_panel_left_offset;
-        app.palette_panel_pos = app.settings.persist_palette_panel_pos.or_else(|| {
-            app.settings
-                .persist_palette_panel_right_offset
-                .map(|(right, bottom)| {
-                    (
-                        app.settings.persist_window_width - right,
-                        app.settings.persist_window_height - bottom,
-                    )
-                })
-                .or_else(|| {
-                    app.settings
-                        .persist_palette_panel_left_offset
-                        .map(|(x, bottom)| (x, app.settings.persist_window_height - bottom))
-                })
-        });
-        app.palette_startup_target_pos = app.palette_panel_pos;
-        app.script_right_offset = app.settings.persist_script_right_offset;
+        if app.settings.workspace.remember_positions {
+            app.tools_panel_pos = app.settings.persist_tools_panel_pos;
+            app.layers_panel_right_offset = app.settings.persist_layers_panel_right_offset;
+            app.layers_panel_size = app.settings.persist_layers_panel_size;
+            app.history_panel_right_offset = app.settings.persist_history_panel_right_offset;
+            app.history_panel_size = app.settings.persist_history_panel_size;
+            app.colors_panel_pos = app.settings.persist_colors_panel_pos;
+            app.palette_panel_size = app.settings.persist_palette_panel_size;
+            app.palette_panel_pos = app.settings.persist_palette_panel_pos.or_else(|| {
+                app.settings
+                    .persist_palette_panel_right_offset
+                    .map(|(right, bottom)| {
+                        (
+                            app.settings.persist_window_width - right,
+                            app.settings.persist_window_height - bottom,
+                        )
+                    })
+                    .or_else(|| {
+                        app.settings
+                            .persist_palette_panel_left_offset
+                            .map(|(x, bottom)| (x, app.settings.persist_window_height - bottom))
+                    })
+            });
+            app.palette_startup_target_pos = app.palette_panel_pos;
+            app.script_right_offset = app.settings.persist_script_right_offset;
+        }
+        if !app.settings.workspace.remember_positions {
+            for (panel, size) in [
+                ("Layers", egui::vec2(240.0, 200.0)),
+                ("History", egui::vec2(200.0, 200.0)),
+                ("Palette", egui::vec2(300.0, 108.0)),
+                ("ScriptEditor", egui::vec2(520.0, 500.0)),
+            ] {
+                cc.egui_ctx.data_mut(|d| {
+                    d.insert_temp(egui::Id::new(("workspace_size_request", panel)), size)
+                });
+            }
+        }
         app.colors_panel
             .set_expanded(app.settings.persist_colors_panel_expanded);
+        app.colors_panel
+            .load_section_mask(app.settings.persist_colors_section_mask);
         app.new_file_dialog
             .set_lock_aspect_ratio(app.settings.persist_new_file_lock_aspect);
         app.palette_panel
@@ -361,13 +397,6 @@ impl PaintFEApp {
         }
         app.apply_persisted_tool_settings();
         app.last_tool_settings_fingerprint = app.compute_tool_settings_fingerprint();
-        if let Some((project_id, undo_count)) = app
-            .active_project()
-            .map(|project| (project.id, project.history.undo_count()))
-        {
-            app.recent_color_project_id = Some(project_id);
-            app.recent_color_undo_count = undo_count;
-        }
         app.last_window_state_fingerprint = app.compute_window_state_fingerprint();
         app.last_window_state_observed_fingerprint = app.last_window_state_fingerprint;
         log_info!(
@@ -398,6 +427,9 @@ impl PaintFEApp {
     }
 
     fn restore_active_project_view(&mut self) {
+        // All document activation paths converge here, including async opens,
+        // closing a tab and restoring an existing clean/blank document.
+        self.canvas.gpu_clear_layers();
         if let Some(project) = self.projects.get(self.active_project_index) {
             self.canvas
                 .set_view_state(project.view_zoom, project.view_pan_offset);
@@ -416,7 +448,6 @@ impl PaintFEApp {
         let project = Project::new_untitled(self.untitled_counter, width, height);
         self.projects.push(project);
         self.active_project_index = self.projects.len() - 1;
-        self.canvas.gpu_clear_layers();
         self.restore_active_project_view();
     }
 
@@ -439,7 +470,9 @@ impl PaintFEApp {
         }
         let generation = self.next_straighten_generation;
         self.next_straighten_generation = self.next_straighten_generation.wrapping_add(1);
-        let Some(project) = self.active_project() else { return; };
+        let Some(project) = self.active_project() else {
+            return;
+        };
         self.straighten_session = Some(StraightenSession {
             project_id: project.id,
             preview: project.canvas_state.composite(),
@@ -455,8 +488,12 @@ impl PaintFEApp {
     }
 
     fn commit_straighten(&mut self) {
-        let Some(session) = self.straighten_session.take() else { return; };
-        let Some(project) = self.active_project_mut() else { return; };
+        let Some(session) = self.straighten_session.take() else {
+            return;
+        };
+        let Some(project) = self.active_project_mut() else {
+            return;
+        };
         if project.id != session.project_id || session.angle_degrees.abs() < 0.001 {
             return;
         }
@@ -467,9 +504,13 @@ impl PaintFEApp {
             session.interpolation,
         );
         let after = CanvasSnapshot::capture(&project.canvas_state);
-        project.history.push(Box::new(SnapshotCommand::from_snapshots(
-            format!("Straighten {:.1}°", session.angle_degrees), before, after,
-        )));
+        project
+            .history
+            .push(Box::new(SnapshotCommand::from_snapshots(
+                format!("Straighten {:.1}°", session.angle_degrees),
+                before,
+                after,
+            )));
         project.mark_dirty();
         self.canvas.gpu_clear_layers();
     }
@@ -492,8 +533,6 @@ impl PaintFEApp {
                 self.projects.remove(0);
                 // The newly loaded project was pushed to the end; adjust index.
                 self.active_project_index = self.projects.len() - 1;
-                // Drop shared GPU caches from the removed blank project.
-                self.canvas.gpu_clear_layers();
                 self.restore_active_project_view();
             }
         }
@@ -529,10 +568,6 @@ impl PaintFEApp {
             self.active_project_index -= 1;
         }
 
-        // Drop shared GPU caches (layer textures / native composite) — they
-        // belong to the closed project and would otherwise be displayed for
-        // the newly active one (same as switch_to_project).
-        self.canvas.gpu_clear_layers();
         self.restore_active_project_view();
     }
 
@@ -554,8 +589,6 @@ impl PaintFEApp {
         } else if index < self.active_project_index {
             self.active_project_index -= 1;
         }
-        // Drop shared GPU caches from the closed project (see switch_to_project).
-        self.canvas.gpu_clear_layers();
         self.restore_active_project_view();
     }
 
@@ -577,9 +610,6 @@ impl PaintFEApp {
             self.move_sel_start_bounds = None;
             self.pending_selection_reassert = None;
             self.is_move_pixels_active = false;
-
-            // Clear GPU layer textures — different project, different layers.
-            self.canvas.gpu_clear_layers();
 
             self.active_project_index = index;
             self.restore_active_project_view();
@@ -822,6 +852,7 @@ impl PaintFEApp {
         self.tools_panel.properties.hardness =
             self.settings.persisted_brush_hardness.clamp(0.0, 1.0);
         self.tools_panel.properties.flow = self.settings.persisted_brush_flow.clamp(0.0, 1.0);
+        self.tools_panel.properties.opacity = self.settings.persisted_brush_opacity.clamp(0.0, 1.0);
         self.tools_panel.properties.spacing =
             self.settings.persisted_brush_spacing.clamp(0.01, 2.0);
         self.tools_panel.properties.scatter = self.settings.persisted_brush_scatter.clamp(0.0, 1.0);
@@ -840,6 +871,7 @@ impl PaintFEApp {
             self.settings.persisted_pressure_min_opacity.clamp(0.0, 1.0);
 
         self.tools_panel.properties.brush_mode = match self.settings.persisted_brush_mode.as_str() {
+            "uniform" => tools::BrushMode::Uniform,
             "buildup" => tools::BrushMode::BuildUp,
             "dodge" => tools::BrushMode::Dodge,
             "burn" => tools::BrushMode::Burn,
@@ -917,6 +949,11 @@ impl PaintFEApp {
         self.tools_panel.properties.flow.to_bits().hash(&mut hasher);
         self.tools_panel
             .properties
+            .opacity
+            .to_bits()
+            .hash(&mut hasher);
+        self.tools_panel
+            .properties
             .spacing
             .to_bits()
             .hash(&mut hasher);
@@ -953,6 +990,7 @@ impl PaintFEApp {
             .hash(&mut hasher);
         match self.tools_panel.properties.brush_mode {
             tools::BrushMode::Normal => 0u8,
+            tools::BrushMode::Uniform => 5u8,
             tools::BrushMode::BuildUp => 4u8,
             tools::BrushMode::Dodge => 1u8,
             tools::BrushMode::Burn => 2u8,
@@ -1067,10 +1105,12 @@ impl PaintFEApp {
         hash_opt_pair(self.layers_panel_size, &mut hasher);
         hash_opt_pair(self.history_panel_right_offset, &mut hasher);
         hash_opt_pair(self.history_panel_size, &mut hasher);
-        hash_opt_pair(self.colors_panel_left_offset, &mut hasher);
+        hash_opt_pair(self.colors_panel_pos, &mut hasher);
+        hash_opt_pair(self.palette_panel_size, &mut hasher);
         hash_opt_pair(self.palette_panel_pos, &mut hasher);
         hash_opt_pair(self.script_right_offset, &mut hasher);
         self.colors_panel.is_expanded().hash(&mut hasher);
+        self.colors_panel.section_mask().hash(&mut hasher);
         self.new_file_dialog.lock_aspect_ratio().hash(&mut hasher);
 
         let resize_lock = match &self.active_dialog {
@@ -1083,6 +1123,7 @@ impl PaintFEApp {
     }
 
     fn persist_window_state_if_changed(&mut self, current_time: f64, force: bool) {
+        let _profile = crate::ui::perf::Scope::new(15);
         let resize_lock = match &self.active_dialog {
             ActiveDialog::ResizeImage(d) => d.lock_aspect,
             ActiveDialog::ResizeCanvas(d) => d.lock_aspect,
@@ -1095,16 +1136,56 @@ impl PaintFEApp {
         self.settings.persist_colors_visible = self.window_visibility.colors;
         self.settings.persist_palette_visible = self.window_visibility.palette;
         self.settings.persist_script_editor_visible = self.window_visibility.script_editor;
-        self.settings.persist_tools_panel_pos = self.tools_panel_pos;
-        self.settings.persist_layers_panel_right_offset = self.layers_panel_right_offset;
-        self.settings.persist_layers_panel_size = self.layers_panel_size;
-        self.settings.persist_history_panel_right_offset = self.history_panel_right_offset;
-        self.settings.persist_history_panel_size = self.history_panel_size;
-        self.settings.persist_colors_panel_left_offset = self.colors_panel_left_offset;
-        self.settings.persist_palette_panel_pos = self.palette_panel_pos;
+        self.settings.persist_tools_panel_pos = if self.settings.workspace.remember_positions {
+            self.tools_panel_pos
+        } else {
+            None
+        };
+        self.settings.persist_layers_panel_right_offset =
+            if self.settings.workspace.remember_positions {
+                self.layers_panel_right_offset
+            } else {
+                None
+            };
+        self.settings.persist_layers_panel_size = if self.settings.workspace.remember_positions {
+            self.layers_panel_size
+        } else {
+            None
+        };
+        self.settings.persist_history_panel_right_offset =
+            if self.settings.workspace.remember_positions {
+                self.history_panel_right_offset
+            } else {
+                None
+            };
+        self.settings.persist_history_panel_size = if self.settings.workspace.remember_positions {
+            self.history_panel_size
+        } else {
+            None
+        };
+        self.settings.persist_colors_panel_pos = if self.settings.workspace.remember_positions {
+            self.colors_panel_pos
+        } else {
+            None
+        };
+        self.settings.persist_palette_panel_size = if self.settings.workspace.remember_positions {
+            self.palette_panel_size
+        } else {
+            None
+        };
+        self.settings.persist_palette_panel_pos = if self.settings.workspace.remember_positions {
+            self.palette_panel_pos
+        } else {
+            None
+        };
         self.settings.persist_palette_recent_colors = self.palette_panel.serialize_recent_colors();
-        self.settings.persist_script_right_offset = self.script_right_offset;
+        self.settings.persist_script_right_offset = if self.settings.workspace.remember_positions {
+            self.script_right_offset
+        } else {
+            None
+        };
         self.settings.persist_colors_panel_expanded = self.colors_panel.is_expanded();
+        self.settings.persist_colors_section_mask = self.colors_panel.section_mask();
         self.settings.persist_new_file_lock_aspect = self.new_file_dialog.lock_aspect_ratio();
         self.settings.persist_resize_lock_aspect = resize_lock;
 
@@ -1145,6 +1226,7 @@ impl PaintFEApp {
         self.settings.persisted_brush_size = self.tools_panel.properties.size;
         self.settings.persisted_brush_hardness = self.tools_panel.properties.hardness;
         self.settings.persisted_brush_flow = self.tools_panel.properties.flow;
+        self.settings.persisted_brush_opacity = self.tools_panel.properties.opacity;
         self.settings.persisted_brush_spacing = self.tools_panel.properties.spacing;
         self.settings.persisted_brush_scatter = self.tools_panel.properties.scatter;
         self.settings.persisted_brush_hue_jitter = self.tools_panel.properties.hue_jitter;
@@ -1158,6 +1240,7 @@ impl PaintFEApp {
             self.tools_panel.properties.pressure_min_opacity;
         self.settings.persisted_brush_mode = match self.tools_panel.properties.brush_mode {
             tools::BrushMode::Normal => "normal",
+            tools::BrushMode::Uniform => "uniform",
             tools::BrushMode::BuildUp => "buildup",
             tools::BrushMode::Dodge => "dodge",
             tools::BrushMode::Burn => "burn",

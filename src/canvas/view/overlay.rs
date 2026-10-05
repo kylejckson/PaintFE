@@ -207,7 +207,9 @@ impl Canvas {
             ));
             self.straighten_preview_generation = generation;
         }
-        let Some(texture) = self.straighten_preview_texture.as_ref() else { return; };
+        let Some(texture) = self.straighten_preview_texture.as_ref() else {
+            return;
+        };
 
         let clipped = painter.with_clip_rect(image_rect);
         let cell = 12.0;
@@ -222,7 +224,10 @@ impl Canvas {
                 clipped.rect_filled(
                     Rect::from_min_max(
                         Pos2::new(x, y),
-                        Pos2::new((x + cell).min(image_rect.max.x), (y + cell).min(image_rect.max.y)),
+                        Pos2::new(
+                            (x + cell).min(image_rect.max.x),
+                            (y + cell).min(image_rect.max.y),
+                        ),
                     ),
                     0.0,
                     if col % 2 == 0 { light } else { dark },
@@ -239,7 +244,10 @@ impl Canvas {
         let (sin, cos) = radians.sin_cos();
         let rotate = |p: Pos2| {
             let d = p - center;
-            Pos2::new(center.x + d.x * cos - d.y * sin, center.y + d.x * sin + d.y * cos)
+            Pos2::new(
+                center.x + d.x * cos - d.y * sin,
+                center.y + d.x * sin + d.y * cos,
+            )
         };
         let mut mesh = egui::Mesh::with_texture(texture.id());
         for (pos, uv) in [
@@ -248,7 +256,11 @@ impl Canvas {
             (image_rect.left_bottom(), Pos2::new(0.0, 1.0)),
             (image_rect.right_bottom(), Pos2::new(1.0, 1.0)),
         ] {
-            mesh.vertices.push(egui::epaint::Vertex { pos: rotate(pos), uv, color: Color32::WHITE });
+            mesh.vertices.push(egui::epaint::Vertex {
+                pos: rotate(pos),
+                uv,
+                color: Color32::WHITE,
+            });
         }
         mesh.indices.extend_from_slice(&[0, 1, 2, 1, 3, 2]);
         clipped.add(egui::Shape::mesh(mesh));
@@ -271,6 +283,39 @@ impl Canvas {
             return;
         }
 
+        if !state.preview_tile_textures.is_empty() {
+            let clipped = painter.with_clip_rect(viewport);
+            let cs = BRUSH_PREVIEW_TILE_SIZE;
+            for (&(cx, cy), texture) in &state.preview_tile_textures {
+                let x = cx * cs;
+                let y = cy * cs;
+                let x2 = ((cx + 1) * cs).min(state.width);
+                let y2 = ((cy + 1) * cs).min(state.height);
+                let tile_rect = Rect::from_min_max(
+                    Pos2::new(
+                        image_rect.min.x + x as f32 / state.width as f32 * image_rect.width(),
+                        image_rect.min.y + y as f32 / state.height as f32 * image_rect.height(),
+                    ),
+                    Pos2::new(
+                        image_rect.min.x + x2 as f32 / state.width as f32 * image_rect.width(),
+                        image_rect.min.y + y2 as f32 / state.height as f32 * image_rect.height(),
+                    ),
+                );
+                if !tile_rect.intersects(visible) {
+                    continue;
+                }
+                let tx = x.saturating_sub(1);
+                let ty = y.saturating_sub(1);
+                let tw = (((cx + 1) * cs + 1).min(state.width) - tx) as f32;
+                let th = (((cy + 1) * cs + 1).min(state.height) - ty) as f32;
+                let uv = Rect::from_min_max(
+                    Pos2::new((x - tx) as f32 / tw, (y - ty) as f32 / th),
+                    Pos2::new((x2 - tx) as f32 / tw, (y2 - ty) as f32 / th),
+                );
+                clipped.image(texture.id(), tile_rect, uv, tint);
+            }
+            return;
+        }
         let Some(tex) = state.preview_texture_cache.as_ref() else {
             return;
         };

@@ -85,10 +85,7 @@ impl Canvas {
 
     /// Build on eframe's device so compositor textures can be shown directly.
     pub fn new_for_render_state(rs: &eframe::egui_wgpu::RenderState) -> Self {
-        Self::from_gpu_renderer(
-            crate::gpu::GpuRenderer::new_for_egui(rs),
-            Some(rs.clone()),
-        )
+        Self::from_gpu_renderer(crate::gpu::GpuRenderer::new_for_egui(rs), Some(rs.clone()))
     }
 
     fn from_gpu_renderer(
@@ -128,6 +125,7 @@ impl Canvas {
             brush_tip_cursor_tex_inv: None,
             brush_tip_cursor_key: (String::new(), 0, 0),
             tool_cursor_icon: None,
+            tool_cursor_from_pack: false,
             canvas_widget_id: None,
             checkerboard_texture: None,
             checkerboard_brightness_cached: 0.0,
@@ -258,10 +256,12 @@ impl Canvas {
             ) && self.zoom < 2.0;
             if prev_filter_was_linear != Some(current_filter_is_linear) {
                 state.preview_texture_cache = None;
+                state.preview_tile_textures.clear();
             }
 
-            let needs_upload =
-                state.preview_texture_cache.is_none() || state.preview_dirty_rect.is_some();
+            let needs_upload = (state.preview_texture_cache.is_none()
+                && state.preview_tile_textures.is_empty())
+                || state.preview_dirty_rect.is_some();
 
             if needs_upload {
                 // Determine the stroke's accumulated bounding box.
@@ -319,6 +319,7 @@ impl Canvas {
 
                 if use_fast_path {
                     if state.preview_flat_ready {
+                        state.preview_tile_textures.clear();
                         // -- Ultra-fast path: buffer already premultiplied --
                         // Transmute &[u8] ÔåÆ &[Color32] (both are 4 bytes, same
                         // layout) to avoid the copy that from_rgba_premultiplied
@@ -353,210 +354,10 @@ impl Canvas {
                             ));
                         }
                     } else {
-                        // -- Incremental fast path: only re-extract dirty rect --
-                        // The brush uses max-alpha stamping, so previously
-                        // written pixels never decrease ÔÇö their premultiplied
-                        // values in the cache stay valid.  Each frame we only
-                        // re-extract the small dirty region (brush-sized) and
-                        // blit it into the persistent cache, reducing per-frame
-                        // work from O(stroke_bounds) to O(brush_size).
-                        let preview = state.preview_layer.as_ref().unwrap();
-                        let rx = (sb.min.x.max(0.0) as u32).min(preview.width().saturating_sub(1));
-                        let ry = (sb.min.y.max(0.0) as u32).min(preview.height().saturating_sub(1));
-                        let rx2 = (sb.max.x.ceil() as u32).min(preview.width());
-                        let ry2 = (sb.max.y.ceil() as u32).min(preview.height());
-                        let rw = rx2.saturating_sub(rx).max(1);
-                        let rh = ry2.saturating_sub(ry).max(1);
-
-                        let old_cache = state.preview_cache_rect;
-                        let bounds_match = old_cache.is_some_and(|(ox, oy, ow, oh)| {
-                            ox == rx && oy == ry && ow == rw && oh == rh
-                        });
-
-                        if bounds_match && state.preview_dirty_rect.is_some() {
-                            // -- Incremental update: extract only the dirty rect --
-                            let dr = state.preview_dirty_rect.unwrap();
-                            let dx = (dr.min.x.max(0.0).floor() as u32).max(rx);
-                            let dy = (dr.min.y.max(0.0).floor() as u32).max(ry);
-                            let dx2 = (dr.max.x.ceil() as u32).min(rx + rw);
-                            let dy2 = (dr.max.y.ceil() as u32).min(ry + rh);
-                            let dw = dx2.saturating_sub(dx);
-                            let dh = dy2.saturating_sub(dy);
-
-                            if dw > 0 && dh > 0 {
-                                preview.extract_region_rgba_fast(
-                                    dx,
-                                    dy,
-                                    dw,
-                                    dh,
-                                    &mut state.preview_flat_buffer,
-                                );
-
-                                // Premultiply the small dirty region in-place
-                                premultiply_dithered(&mut state.preview_flat_buffer, dx, dy, dw);
-
-                                // Blit dirty pixels into persistent cache
-                                let dirty_pixels: &[Color32] =
-                                    bytemuck::cast_slice(&state.preview_flat_buffer);
-                                let cache_w = rw as usize;
-                                let off_x = (dx - rx) as usize;
-                                let off_y = (dy - ry) as usize;
-                                for row in 0..dh as usize {
-                                    let src_start = row * dw as usize;
-                                    let dst_start = (off_y + row) * cache_w + off_x;
-                                    state.preview_premul_cache[dst_start..dst_start + dw as usize]
-                                        .copy_from_slice(
-                                            &dirty_pixels[src_start..src_start + dw as usize],
-                                        );
-                                }
-
-                                // B2: Partial upload ÔÇö only send the dirty rect to egui.
-                                // During brush strokes this uploads ~brush_size┬▓ pixels
-                                // instead of cloning the full stroke_bounds cache.
-                                let region_pixels: Vec<Color32> = dirty_pixels.to_vec();
-                                let region_image = ColorImage {
-                                    size: [dw as usize, dh as usize],
-                                    source_size: egui::Vec2::new(dw as f32, dh as f32),
-                                    pixels: region_pixels,
-                                };
-                                let region_data = ImageData::Color(Arc::new(region_image));
-                                if let Some(ref mut tex) = state.preview_texture_cache {
-                                    tex.set_partial([off_x, off_y], region_data, tex_options);
-                                } else {
-                                    // No texture yet ÔÇö fall back to full upload
-                                    let color_image = ColorImage {
-                                        size: [rw as usize, rh as usize],
-                                        source_size: egui::Vec2::new(rw as f32, rh as f32),
-                                        pixels: state.preview_premul_cache.clone(),
-                                    };
-                                    let image_data = ImageData::Color(Arc::new(color_image));
-                                    state.preview_texture_cache = Some(ui.ctx().load_texture(
-                                        "preview_overlay",
-                                        image_data,
-                                        tex_options,
-                                    ));
-                                }
-                            }
-                        } else if old_cache.is_some() && !bounds_match {
-                            // -- Bounds changed: resize cache, preserve overlapping data --
-                            let (ox, oy, ow, oh) = old_cache.unwrap();
-                            let new_size = (rw as usize) * (rh as usize);
-                            let mut new_cache = vec![Color32::TRANSPARENT; new_size];
-
-                            // Compute the intersection of old and new bounds
-                            // to safely copy only the overlapping region.
-                            // Bounds can shrink or shift (e.g. text alignment
-                            // change), not just grow.
-                            let inter_x0 = ox.max(rx);
-                            let inter_y0 = oy.max(ry);
-                            let inter_x1 = (ox + ow).min(rx + rw);
-                            let inter_y1 = (oy + oh).min(ry + rh);
-                            let new_w = rw as usize;
-                            let old_w = ow as usize;
-                            if inter_x1 > inter_x0 && inter_y1 > inter_y0 {
-                                let copy_w = (inter_x1 - inter_x0) as usize;
-                                let copy_h = (inter_y1 - inter_y0) as usize;
-                                let src_off_x = (inter_x0 - ox) as usize;
-                                let src_off_y = (inter_y0 - oy) as usize;
-                                let dst_off_x = (inter_x0 - rx) as usize;
-                                let dst_off_y = (inter_y0 - ry) as usize;
-                                for row in 0..copy_h {
-                                    let src_start = (src_off_y + row) * old_w + src_off_x;
-                                    let dst_start = (dst_off_y + row) * new_w + dst_off_x;
-                                    new_cache[dst_start..dst_start + copy_w].copy_from_slice(
-                                        &state.preview_premul_cache[src_start..src_start + copy_w],
-                                    );
-                                }
-                            }
-
-                            // Extract and premultiply only the dirty rect
-                            if let Some(dr) = state.preview_dirty_rect {
-                                let dx = (dr.min.x.max(0.0).floor() as u32).max(rx);
-                                let dy = (dr.min.y.max(0.0).floor() as u32).max(ry);
-                                let dx2 = (dr.max.x.ceil() as u32).min(rx + rw);
-                                let dy2 = (dr.max.y.ceil() as u32).min(ry + rh);
-                                let dw = dx2.saturating_sub(dx);
-                                let dh = dy2.saturating_sub(dy);
-
-                                if dw > 0 && dh > 0 {
-                                    preview.extract_region_rgba_fast(
-                                        dx,
-                                        dy,
-                                        dw,
-                                        dh,
-                                        &mut state.preview_flat_buffer,
-                                    );
-                                    premultiply_dithered(&mut state.preview_flat_buffer, dx, dy, dw);
-                                    let dirty_pixels: &[Color32] =
-                                        bytemuck::cast_slice(&state.preview_flat_buffer);
-                                    let off_x = (dx - rx) as usize;
-                                    let off_y = (dy - ry) as usize;
-                                    for row in 0..dh as usize {
-                                        let src_start = row * dw as usize;
-                                        let dst_start = (off_y + row) * new_w + off_x;
-                                        new_cache[dst_start..dst_start + dw as usize]
-                                            .copy_from_slice(
-                                                &dirty_pixels[src_start..src_start + dw as usize],
-                                            );
-                                    }
-                                }
-                            }
-
-                            state.preview_premul_cache = new_cache;
-                            state.preview_cache_rect = Some((rx, ry, rw, rh));
-
-                            // Bounds changed ÔÇö must do full texture upload
-                            let color_image = ColorImage {
-                                size: [rw as usize, rh as usize],
-                                source_size: egui::Vec2::new(rw as f32, rh as f32),
-                                pixels: state.preview_premul_cache.clone(),
-                            };
-                            let image_data = ImageData::Color(Arc::new(color_image));
-                            if let Some(ref mut tex) = state.preview_texture_cache {
-                                tex.set(image_data, tex_options);
-                            } else {
-                                state.preview_texture_cache = Some(ui.ctx().load_texture(
-                                    "preview_overlay",
-                                    image_data,
-                                    tex_options,
-                                ));
-                            }
-                        } else {
-                            // -- First frame or full rebuild --
-                            preview.extract_region_rgba_fast(
-                                rx,
-                                ry,
-                                rw,
-                                rh,
-                                &mut state.preview_flat_buffer,
-                            );
-
-                            premultiply_dithered(&mut state.preview_flat_buffer, rx, ry, rw);
-
-                            let pixels: &[Color32] =
-                                bytemuck::cast_slice(&state.preview_flat_buffer);
-                            state.preview_premul_cache = pixels.to_vec();
-                            state.preview_cache_rect = Some((rx, ry, rw, rh));
-
-                            // First frame ÔÇö must do full texture upload
-                            let color_image = ColorImage {
-                                size: [rw as usize, rh as usize],
-                                source_size: egui::Vec2::new(rw as f32, rh as f32),
-                                pixels: state.preview_premul_cache.clone(),
-                            };
-                            let image_data = ImageData::Color(Arc::new(color_image));
-                            if let Some(ref mut tex) = state.preview_texture_cache {
-                                tex.set(image_data, tex_options);
-                            } else {
-                                state.preview_texture_cache = Some(ui.ctx().load_texture(
-                                    "preview_overlay",
-                                    image_data,
-                                    tex_options,
-                                ));
-                            }
-                        }
+                        Self::update_tiled_brush_preview(ui, state, tex_options);
                     }
                 } else {
+                    state.preview_tile_textures.clear();
                     // -- Blend-aware path: full-stack composite --
                     // composite_partial blends the preview into the
                     // active layer (via preview_blend_mode) and then
@@ -587,11 +388,96 @@ impl Canvas {
                 state.preview_dirty_rect = None;
             }
         } else {
+            state.preview_tile_textures.clear();
             // No preview layer ÔÇö drop cached texture and buffer.
             state.preview_texture_cache = None;
             // Don't clear preview_flat_buffer here to avoid dealloc; it will
             // be reused on the next stroke.
         }
+    }
+
+    fn update_tiled_brush_preview(ui: &egui::Ui, state: &mut CanvasState, options: TextureOptions) {
+        let preview = state.preview_layer.as_ref().unwrap();
+        let cs = BRUSH_PREVIEW_TILE_SIZE;
+        let rebuild = state.preview_tile_textures.is_empty();
+        let dirty = state.preview_dirty_rect.unwrap_or_else(|| {
+            Rect::from_min_max(
+                Pos2::ZERO,
+                egui::pos2(state.width as f32, state.height as f32),
+            )
+        });
+        let mut keys = std::collections::BTreeSet::new();
+        for (cx, cy) in preview.chunk_keys() {
+            let tx = cx * CHUNK_SIZE / cs;
+            let ty = cy * CHUNK_SIZE / cs;
+            // Only boundary chunks need a neighbour to cover the half-pixel
+            // filtering footprint; interior chunks do not allocate empty tiles.
+            let per_tile = cs / CHUNK_SIZE;
+            let x0 = if cx % per_tile == 0 {
+                tx.saturating_sub(1)
+            } else {
+                tx
+            };
+            let y0 = if cy % per_tile == 0 {
+                ty.saturating_sub(1)
+            } else {
+                ty
+            };
+            let x1 = (tx + u32::from(cx % per_tile == per_tile - 1)).min((state.width - 1) / cs);
+            let y1 = (ty + u32::from(cy % per_tile == per_tile - 1)).min((state.height - 1) / cs);
+            for y in y0..=y1 {
+                for x in x0..=x1 {
+                    keys.insert((x, y));
+                }
+            }
+        }
+        for (cx, cy) in keys {
+            // Include adjacent pixels in each texture, then crop the UVs when
+            // drawing. Bilinear filtering therefore sees the same neighbours
+            // as the former single texture, including at tile boundaries.
+            let x = (cx * cs).saturating_sub(1);
+            let y = (cy * cs).saturating_sub(1);
+            let x2 = ((cx + 1) * cs + 1).min(state.width);
+            let y2 = ((cy + 1) * cs + 1).min(state.height);
+            let tile_rect = Rect::from_min_max(
+                egui::pos2(x as f32, y as f32),
+                egui::pos2(x2 as f32, y2 as f32),
+            );
+            let existing = state.preview_tile_textures.get_mut(&(cx, cy));
+            let region = if rebuild || existing.is_none() {
+                tile_rect
+            } else {
+                tile_rect.intersect(dirty)
+            };
+            if region.width() <= 0.0 || region.height() <= 0.0 {
+                continue;
+            }
+            let dx = (region.min.x.floor().max(x as f32)) as u32;
+            let dy = (region.min.y.floor().max(y as f32)) as u32;
+            let dw = (region.max.x.ceil().min(x2 as f32) as u32).saturating_sub(dx);
+            let dh = (region.max.y.ceil().min(y2 as f32) as u32).saturating_sub(dy);
+            if dw == 0 || dh == 0 {
+                continue;
+            }
+            preview.extract_region_rgba_fast(dx, dy, dw, dh, &mut state.preview_flat_buffer);
+            premultiply_dithered(&mut state.preview_flat_buffer, dx, dy, dw);
+            let pixels: &[Color32] = bytemuck::cast_slice(&state.preview_flat_buffer);
+            let image = ColorImage {
+                size: [dw as usize, dh as usize],
+                source_size: egui::vec2(dw as f32, dh as f32),
+                pixels: pixels.to_vec(),
+            };
+            if let Some(texture) = existing {
+                texture.set_partial([(dx - x) as usize, (dy - y) as usize], image, options);
+            } else {
+                state.preview_tile_textures.insert(
+                    (cx, cy),
+                    ui.ctx()
+                        .load_texture(format!("brush_preview_{cx}_{cy}"), image, options),
+                );
+            }
+        }
+        state.preview_texture_cache = None;
     }
 
     pub fn show_with_state(
@@ -720,9 +606,10 @@ impl Canvas {
                 filter_changed && !pixels_dirty && !state.composite_cpu_buffer.is_empty();
 
             if pixels_dirty && (has_visible_adjustment || state.cmyk_preview) {
-                if let (Some(rs), Some(id)) =
-                    (self.egui_render_state.as_ref(), self.native_composite_texture.take())
-                {
+                if let (Some(rs), Some(id)) = (
+                    self.egui_render_state.as_ref(),
+                    self.native_composite_texture.take(),
+                ) {
                     rs.renderer.write().free_texture(&id);
                     self.native_composite_key = None;
                 }
@@ -883,9 +770,8 @@ impl Canvas {
                                 );
                             }
                         } else {
-                            self.native_composite_texture = Some(
-                                renderer.register_native_texture(&rs.device, &view, filter),
-                            );
+                            self.native_composite_texture =
+                                Some(renderer.register_native_texture(&rs.device, &view, filter));
                         }
                         self.native_composite_key = Some((source_key, use_linear_filter));
                         gpu.async_readback.cancel_pending();
@@ -900,110 +786,45 @@ impl Canvas {
                 if native_presented {
                     state.dirty_rect = None;
                 } else {
-
-                // B1: Async double-buffered readback.  GPU composites the full
-                // canvas (fast, stays on GPU) and copies to a staging buffer.
-                // We read from the PREVIOUS frame's staging buffer (non-blocking,
-                // 1-frame latency ÔÇö imperceptible at 60fps).
-                let have_existing_buffer = state.composite_cpu_buffer.len()
-                    == (state.width as usize * state.height as usize);
-                let dr_for_readback = if have_existing_buffer {
-                    state.dirty_rect
-                } else {
-                    None // Force full readback on first frame or after resize
-                };
-
-                // Always use async readback so the UI thread never blocks on
-                // GPU completion during repaint-heavy events like live window
-                // resizing. While the async copy finishes we keep displaying
-                // the previous composite.
-                let result = gpu.composite_dirty_readback_async(
-                    state.width,
-                    state.height,
-                    &layer_info,
-                    dr_for_readback,
-                );
-
-                if let Some((pixels, rx, ry, rw, rh, is_full)) = result {
-                    if !Self::valid_readback_for_canvas(pixels.len(), rx, ry, rw, rh, state) {
-                        Self::reject_stale_readback(ui, state);
+                    // B1: Async double-buffered readback.  GPU composites the full
+                    // canvas (fast, stays on GPU) and copies to a staging buffer.
+                    // We read from the PREVIOUS frame's staging buffer (non-blocking,
+                    // 1-frame latency ÔÇö imperceptible at 60fps).
+                    let have_existing_buffer = state.composite_cpu_buffer.len()
+                        == (state.width as usize * state.height as usize);
+                    let dr_for_readback = if have_existing_buffer {
+                        state.dirty_rect
                     } else {
-                        // Plan D: bytemuck zero-copy cast from &[u8] to &[Color32]
-                        let src: &[Color32] = bytemuck::cast_slice(&pixels);
-                        let cmyk = state.cmyk_preview;
+                        None // Force full readback on first frame or after resize
+                    };
 
-                        if is_full {
-                            // Full readback ÔÇö replace entire CPU buffer.
-                            // Create ColorImage directly from src to avoid a
-                            // redundant 33MB clone at 4K.
-                            let display_pixels = if cmyk {
-                                apply_cmyk_soft_proof(src)
-                            } else {
-                                src.to_vec()
-                            };
-                            let color_image = ColorImage {
-                                size: [state.width as usize, state.height as usize],
-                                source_size: egui::Vec2::new(
-                                    state.width as f32,
-                                    state.height as f32,
-                                ),
-                                pixels: display_pixels,
-                            };
-                            // Update persistent CPU buffer from the same source
-                            // (un-proofed ÔÇö true pixel values)
-                            state.composite_cpu_buffer.clear();
-                            state.composite_cpu_buffer.extend_from_slice(src);
+                    // Always use async readback so the UI thread never blocks on
+                    // GPU completion during repaint-heavy events like live window
+                    // resizing. While the async copy finishes we keep displaying
+                    // the previous composite.
+                    let result = gpu.composite_dirty_readback_async(
+                        state.width,
+                        state.height,
+                        &layer_info,
+                        dr_for_readback,
+                    );
 
-                            let image_data = ImageData::Color(Arc::new(color_image));
-                            if let Some(ref mut tex) = state.composite_cache {
-                                tex.set(image_data, texture_options);
-                            } else {
-                                state.composite_cache = Some(ui.ctx().load_texture(
-                                    "canvas_composite",
-                                    image_data,
-                                    texture_options,
-                                ));
-                            }
+                    if let Some((pixels, rx, ry, rw, rh, is_full)) = result {
+                        if !Self::valid_readback_for_canvas(pixels.len(), rx, ry, rw, rh, state) {
+                            Self::reject_stale_readback(ui, state);
                         } else {
-                            // Partial readback ÔÇö patch dirty region into persistent CPU buffer
-                            let canvas_w = state.width as usize;
-                            let region_w = rw as usize;
-                            for row in 0..rh as usize {
-                                let dst_y = ry as usize + row;
-                                let dst_start = dst_y * canvas_w + rx as usize;
-                                let src_start = row * region_w;
-                                state.composite_cpu_buffer[dst_start..dst_start + region_w]
-                                    .copy_from_slice(&src[src_start..src_start + region_w]);
-                            }
+                            // Plan D: bytemuck zero-copy cast from &[u8] to &[Color32]
+                            let src: &[Color32] = bytemuck::cast_slice(&pixels);
+                            let cmyk = state.cmyk_preview;
 
-                            // B2: Partial upload ÔÇö only send the dirty region to egui.
-                            // This avoids cloning the entire 33MB CPU buffer at 4K.
-                            // A brush stroke (e.g. 40├ù40px) uploads ~6KB instead of ~33MB.
-                            let region_pixels = if cmyk {
-                                apply_cmyk_soft_proof(src)
-                            } else {
-                                src.to_vec()
-                            };
-                            let region_image = ColorImage {
-                                size: [rw as usize, rh as usize],
-                                source_size: egui::Vec2::new(rw as f32, rh as f32),
-                                pixels: region_pixels,
-                            };
-                            let region_data = ImageData::Color(Arc::new(region_image));
-                            if let Some(ref mut tex) = state.composite_cache {
-                                tex.set_partial(
-                                    [rx as usize, ry as usize],
-                                    region_data,
-                                    texture_options,
-                                );
-                            } else {
-                                // No texture yet ÔÇö need full upload. Fall back to
-                                // full buffer (shouldn't happen: partial readback
-                                // requires an existing buffer).
+                            if is_full {
+                                // Full readback ÔÇö replace entire CPU buffer.
+                                // Create ColorImage directly from src to avoid a
+                                // redundant 33MB clone at 4K.
                                 let display_pixels = if cmyk {
-                                    apply_cmyk_soft_proof(&state.composite_cpu_buffer)
+                                    apply_cmyk_soft_proof(src)
                                 } else {
-                                    state.composite_cpu_buffer.clone()
+                                    src.to_vec()
                                 };
                                 let color_image = ColorImage {
                                     size: [state.width as usize, state.height as usize],
@@ -1013,21 +834,85 @@ impl Canvas {
                                     ),
                                     pixels: display_pixels,
                                 };
+                                // Update persistent CPU buffer from the same source
+                                // (un-proofed ÔÇö true pixel values)
+                                state.composite_cpu_buffer.clear();
+                                state.composite_cpu_buffer.extend_from_slice(src);
+
                                 let image_data = ImageData::Color(Arc::new(color_image));
-                                state.composite_cache = Some(ui.ctx().load_texture(
-                                    "canvas_composite",
-                                    image_data,
-                                    texture_options,
-                                ));
+                                if let Some(ref mut tex) = state.composite_cache {
+                                    tex.set(image_data, texture_options);
+                                } else {
+                                    state.composite_cache = Some(ui.ctx().load_texture(
+                                        "canvas_composite",
+                                        image_data,
+                                        texture_options,
+                                    ));
+                                }
+                            } else {
+                                // Partial readback ÔÇö patch dirty region into persistent CPU buffer
+                                let canvas_w = state.width as usize;
+                                let region_w = rw as usize;
+                                for row in 0..rh as usize {
+                                    let dst_y = ry as usize + row;
+                                    let dst_start = dst_y * canvas_w + rx as usize;
+                                    let src_start = row * region_w;
+                                    state.composite_cpu_buffer[dst_start..dst_start + region_w]
+                                        .copy_from_slice(&src[src_start..src_start + region_w]);
+                                }
+
+                                // B2: Partial upload ÔÇö only send the dirty region to egui.
+                                // This avoids cloning the entire 33MB CPU buffer at 4K.
+                                // A brush stroke (e.g. 40├ù40px) uploads ~6KB instead of ~33MB.
+                                let region_pixels = if cmyk {
+                                    apply_cmyk_soft_proof(src)
+                                } else {
+                                    src.to_vec()
+                                };
+                                let region_image = ColorImage {
+                                    size: [rw as usize, rh as usize],
+                                    source_size: egui::Vec2::new(rw as f32, rh as f32),
+                                    pixels: region_pixels,
+                                };
+                                let region_data = ImageData::Color(Arc::new(region_image));
+                                if let Some(ref mut tex) = state.composite_cache {
+                                    tex.set_partial(
+                                        [rx as usize, ry as usize],
+                                        region_data,
+                                        texture_options,
+                                    );
+                                } else {
+                                    // No texture yet ÔÇö need full upload. Fall back to
+                                    // full buffer (shouldn't happen: partial readback
+                                    // requires an existing buffer).
+                                    let display_pixels = if cmyk {
+                                        apply_cmyk_soft_proof(&state.composite_cpu_buffer)
+                                    } else {
+                                        state.composite_cpu_buffer.clone()
+                                    };
+                                    let color_image = ColorImage {
+                                        size: [state.width as usize, state.height as usize],
+                                        source_size: egui::Vec2::new(
+                                            state.width as f32,
+                                            state.height as f32,
+                                        ),
+                                        pixels: display_pixels,
+                                    };
+                                    let image_data = ImageData::Color(Arc::new(color_image));
+                                    state.composite_cache = Some(ui.ctx().load_texture(
+                                        "canvas_composite",
+                                        image_data,
+                                        texture_options,
+                                    ));
+                                }
                             }
                         }
+                    } else if gpu.async_readback.read_pending {
+                        // First async frame after a dirty update: keep the last
+                        // composite visible and poll again next frame.
+                        ui.ctx().request_repaint();
                     }
-                } else if gpu.async_readback.read_pending {
-                    // First async frame after a dirty update: keep the last
-                    // composite visible and poll again next frame.
-                    ui.ctx().request_repaint();
-                }
-                state.dirty_rect = None;
+                    state.dirty_rect = None;
                 }
             } else if pixels_dirty && defer_live_resize_composite {
                 if let Some((pixels, rx, ry, rw, rh, is_full)) =
@@ -1233,6 +1118,7 @@ impl Canvas {
         if state.layers.is_empty() {
             state.composite_cache = None;
             state.preview_texture_cache = None;
+            state.preview_tile_textures.clear();
             state.composite_cpu_buffer.clear();
             self.paste_layers_above_cache = None;
             self.paste_layers_below_cache = None;
@@ -1309,7 +1195,14 @@ impl Canvas {
             self.paint_composite_texture(&painter, image_rect, canvas_rect, state, Color32::WHITE);
         }
         if let Some((generation, preview, angle_degrees)) = straighten_preview {
-            self.paint_straighten_preview(ui, &painter, image_rect, generation, preview, angle_degrees);
+            self.paint_straighten_preview(
+                ui,
+                &painter,
+                image_rect,
+                generation,
+                preview,
+                angle_degrees,
+            );
         }
 
         // ====================================================================
@@ -1349,7 +1242,11 @@ impl Canvas {
         // Animated time value for marching ants (frozen when animation is off,
         // so the app can go idle with a selection active).
         let ants_animated = debug_settings.animated_selection_ants;
-        let anim_time = if ants_animated { ui.input(|i| i.time) } else { 0.0 };
+        let anim_time = if ants_animated {
+            ui.input(|i| i.time)
+        } else {
+            0.0
+        };
 
         // Keep repainting so marching ants stay animated even when mouse is idle.
         let has_selection_mask = state.has_selection();
@@ -2124,11 +2021,15 @@ impl Canvas {
             let is_painting = ui.input(|i| {
                 i.pointer.primary_down()
                     || i.pointer.secondary_down()
+                    || i.pointer.any_pressed()
+                    || i.pointer.any_released()
                     || i.events.iter().any(|e| {
                         matches!(
                             e,
                             egui::Event::Touch {
-                                phase: egui::TouchPhase::Start | egui::TouchPhase::Move,
+                                phase: egui::TouchPhase::Start
+                                    | egui::TouchPhase::Move
+                                    | egui::TouchPhase::End,
                                 ..
                             }
                         )
@@ -2141,38 +2042,7 @@ impl Canvas {
             // When painting, use unclamped conversion so strokes can start from
             // off-canvas and still track motion back onto the canvas.
             let raw_motion_events: Vec<(f32, f32)> = if is_painting {
-                ui.input(|i| {
-                    i.events
-                        .iter()
-                        .filter_map(|e| {
-                            let screen_pos = match e {
-                                egui::Event::PointerMoved(pos) => *pos,
-                                egui::Event::Touch {
-                                    phase: egui::TouchPhase::Move,
-                                    pos,
-                                    ..
-                                } => *pos,
-                                _ => return None,
-                            };
-                            // Convert screen coordinates to canvas coordinates
-                            // Inline the conversion to avoid borrow issues
-                            let image_width = state.width as f32 * self.zoom;
-                            let image_height = state.height as f32 * self.zoom;
-                            let center_x = canvas_rect.center().x + self.pan_offset.x;
-                            let center_y = canvas_rect.center().y + self.pan_offset.y;
-                            let ir = Rect::from_center_size(
-                                Pos2::new(center_x, center_y),
-                                Vec2::new(image_width, image_height),
-                            );
-                            let rel_x = (screen_pos.x - ir.min.x) / self.zoom;
-                            let rel_y = (screen_pos.y - ir.min.y) / self.zoom;
-                            // Pass raw coordinates — draw functions clip to canvas
-                            // bounds internally. Off-canvas positions produce no
-                            // pixels but maintain natural stroke flow.
-                            Some((rel_x, rel_y))
-                        })
-                        .collect()
-                })
+                ui.input(|i| collect_stroke_motion(&i.events, image_rect, self.zoom))
             } else {
                 Vec::new()
             };
@@ -2368,7 +2238,14 @@ impl Canvas {
                 state.clear_preview_state();
             }
             self.update_preview_overlay(ui, state, debug_settings, prev_filter_was_linear);
-            self.paint_preview_texture(&painter, image_rect, canvas_rect, state, Color32::WHITE, true);
+            self.paint_preview_texture(
+                &painter,
+                image_rect,
+                canvas_rect,
+                state,
+                Color32::WHITE,
+                true,
+            );
 
             if tools.active_tool == crate::components::tools::Tool::Text {
                 // Draw overlay (border, handle, cursor) above the preview,
@@ -2719,7 +2596,7 @@ impl Canvas {
             // TOOL ICON CURSOR OVERLAY
             // Draws the active tool's icon near the cursor for Pencil, Fill,
             // ColorPicker, Zoom, Pan.
-            // Crisp border: white icon scaled +3px behind, full-dark icon on top.
+            // Built-ins use a contrast outline; imported artwork retains its colors.
             // ====================================================================
             {
                 let needs_icon_cursor = active_tool_for_cursor.is_some_and(|t| {
@@ -2743,18 +2620,23 @@ impl Canvas {
                         _ => Pos2::new(pos.x + icon_sz * 0.5 + 1.0, pos.y - icon_sz * 0.5),
                     };
                     let uv = egui::Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0));
-                    // White border: draw icon 3px larger (centered same point)
-                    let border_sz = icon_sz + 4.0;
-                    let border_rect = Rect::from_center_size(center, Vec2::splat(border_sz));
-                    painter.image(
-                        icon_tex.id(),
-                        border_rect,
-                        uv,
-                        Color32::from_white_alpha(230),
-                    );
-                    // Dark icon on top at normal size
-                    let icon_rect = Rect::from_center_size(center, Vec2::splat(icon_sz));
-                    painter.image(icon_tex.id(), icon_rect, uv, Color32::from_black_alpha(230));
+                    // Built-in cursors retain their contrast outline. Pack artwork
+                    // uses its authored colors and alpha without a duplicate image.
+                    if !self.tool_cursor_from_pack {
+                        let border_sz = icon_sz + 4.0;
+                        let border_rect = Rect::from_center_size(center, Vec2::splat(border_sz));
+                        painter.image(
+                            icon_tex.id(),
+                            border_rect,
+                            uv,
+                            Color32::from_white_alpha(230),
+                        );
+                        let icon_rect = Rect::from_center_size(center, Vec2::splat(icon_sz));
+                        painter.image(icon_tex.id(), icon_rect, uv, Color32::from_black_alpha(230));
+                    } else {
+                        let icon_rect = Rect::from_center_size(center, Vec2::splat(icon_sz));
+                        painter.image(icon_tex.id(), icon_rect, uv, Color32::WHITE);
+                    }
                 } // if let icon_tex
                 // if needs_icon_cursor
             }
@@ -2788,12 +2670,8 @@ impl Canvas {
                         // dark content, dark ring over light content) with the
                         // other tone as a thin outline — so the cursor stays
                         // visible over any background, including pure black.
-                        let dark_bg = Self::canvas_is_dark_under(
-                            state,
-                            canvas_x,
-                            canvas_y,
-                            brush_size * 0.5,
-                        );
+                        let dark_bg =
+                            Self::canvas_is_dark_under(state, canvas_x, canvas_y, brush_size * 0.5);
                         let (stroke_outer, stroke_inner) = if dark_bg {
                             (
                                 egui::Stroke::new(1.5, Color32::from_white_alpha(235)),
@@ -3597,4 +3475,83 @@ fn shape_handle_cursor(
         ShapeHandle::TopRight | ShapeHandle::BottomLeft => egui::CursorIcon::ResizeNeSw,
         ShapeHandle::Rotate => egui::CursorIcon::Alias,
     })
+}
+
+#[cfg(test)]
+mod brush_preview_optimization_tests {
+    use super::*;
+
+    #[test]
+    fn tiled_preview_uploads_match_full_pixels_and_preserve_texture_sizes() {
+        let ctx = egui::Context::default();
+        let mut state = CanvasState::new(777, 529);
+        state.preview_layer = Some(TiledImage::new(777, 529));
+        let mut uploaded: std::collections::HashMap<egui::TextureId, ColorImage> =
+            std::collections::HashMap::new();
+        let mut ids = std::collections::BTreeMap::new();
+        for (step, (x, y)) in [(254, 255), (255, 255), (256, 256), (600, 400), (776, 528)]
+            .into_iter()
+            .enumerate()
+        {
+            state
+                .preview_layer
+                .as_mut()
+                .unwrap()
+                .put_pixel(x, y, Rgba([90, 40, 20, 128]));
+            state.preview_dirty_rect = Some(Rect::from_min_max(
+                egui::pos2(x as f32, y as f32),
+                egui::pos2((x + 1) as f32, (y + 1) as f32),
+            ));
+            let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                Canvas::update_tiled_brush_preview(ui, &mut state, TextureOptions::LINEAR);
+            });
+            for (key, texture) in &state.preview_tile_textures {
+                if let Some(id) = ids.get(key) {
+                    assert_eq!(*id, texture.id());
+                }
+                ids.insert(*key, texture.id());
+            }
+            for (id, delta) in output.textures_delta.set {
+                if !ids.values().any(|tile_id| *tile_id == id) {
+                    continue;
+                }
+                let ImageData::Color(image) = delta.image;
+                if let Some([ox, oy]) = delta.pos {
+                    let tile = uploaded.get_mut(&id).unwrap();
+                    assert!(ox + image.size[0] <= tile.size[0]);
+                    assert!(oy + image.size[1] <= tile.size[1]);
+                    for row in 0..image.size[1] {
+                        let dst = (oy + row) * tile.size[0] + ox;
+                        tile.pixels[dst..dst + image.size[0]].copy_from_slice(
+                            &image.pixels[row * image.size[0]..(row + 1) * image.size[0]],
+                        );
+                    }
+                } else {
+                    assert!(
+                        !uploaded.contains_key(&id),
+                        "existing textures must not be fully uploaded again, step={step}"
+                    );
+                    uploaded.insert(id, (*image).clone());
+                }
+            }
+            for (&(cx, cy), texture) in &state.preview_tile_textures {
+                let cs = BRUSH_PREVIEW_TILE_SIZE;
+                let x0 = (cx * cs).saturating_sub(1);
+                let y0 = (cy * cs).saturating_sub(1);
+                let width = ((cx + 1) * cs + 1).min(state.width) - x0;
+                let height = ((cy + 1) * cs + 1).min(state.height) - y0;
+                let mut expected = Vec::new();
+                state
+                    .preview_layer
+                    .as_ref()
+                    .unwrap()
+                    .extract_region_rgba_fast(x0, y0, width, height, &mut expected);
+                premultiply_dithered(&mut expected, x0, y0, width);
+                let pixels: &[Color32] = bytemuck::cast_slice(&expected);
+                assert_eq!(uploaded[&texture.id()].pixels, pixels);
+            }
+        }
+        state.clear_preview_state();
+        assert!(state.preview_tile_textures.is_empty());
+    }
 }

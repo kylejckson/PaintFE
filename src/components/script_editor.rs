@@ -155,12 +155,8 @@ impl ScriptEditorPanel {
         let time = ui.input(|i| i.time);
 
         // -- Signal Grid panel header --
-        if crate::signal_widgets::panel_header(
-            ui,
-            theme,
-            &crate::t!("script.title"),
-            Some(("SCRIPT", accent)),
-        ) {
+        if crate::signal_widgets::panel_header(ui, theme, "ScriptEditor", Some(("SCRIPT", accent)))
+        {
             self.close_requested = true;
         }
 

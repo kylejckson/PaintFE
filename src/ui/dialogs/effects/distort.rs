@@ -3,14 +3,16 @@ impl CrystallizeDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_crystallize")
+        crate::ui::polish::window(ctx, "dialog_crystallize")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
-                if paint_dialog_header(ui, &colors, "\u{1F48E}", &t!("dialog.crystallize")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F48E}", &t!("dialog.crystallize")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "VORONOI SETTINGS");
 
@@ -37,7 +39,7 @@ impl CrystallizeDialog {
                             let mut seed_f = self.seed as f32;
                             if ui
                                 .add(
-                                    egui::DragValue::new(&mut seed_f)
+                                    crate::ui::numeric::Numeric::new(&mut seed_f)
                                         .speed(1.0)
                                         .range(0.0..=9999.0),
                                 )
@@ -120,14 +122,16 @@ impl DentsDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_dents")
+        crate::ui::polish::window(ctx, "dialog_dents")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(370.0);
-                if paint_dialog_header(ui, &colors, "\u{1F30A}", &t!("dialog.dents")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F30A}", &t!("dialog.dents")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "DISTORTION SETTINGS");
 
@@ -157,7 +161,7 @@ impl DentsDialog {
                             let mut seed_f = self.seed as f32;
                             if ui
                                 .add(
-                                    egui::DragValue::new(&mut seed_f)
+                                    crate::ui::numeric::Numeric::new(&mut seed_f)
                                         .speed(1.0)
                                         .range(0.0..=9999.0),
                                 )
@@ -261,14 +265,16 @@ impl PixelateDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_pixelate")
+        crate::ui::polish::window(ctx, "dialog_pixelate")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
-                if paint_dialog_header(ui, &colors, "\u{1F9E9}", &t!("dialog.pixelate")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F9E9}", &t!("dialog.pixelate")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "PIXEL SETTINGS");
 
@@ -348,14 +354,16 @@ impl BulgeDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_bulge")
+        crate::ui::polish::window(ctx, "dialog_bulge")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
-                if paint_dialog_header(ui, &colors, "\u{1F534}", &t!("dialog.bulge_pinch")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F534}", &t!("dialog.bulge_pinch")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "DISTORTION SETTINGS");
 
@@ -418,7 +426,11 @@ impl BulgeDialog {
 
                 let (ok, cancel) = dialog_footer(ui, &colors);
                 if ok {
-                    result = DialogResult::Ok((self.amount, self.origin_x / 100.0, self.origin_y / 100.0));
+                    result = DialogResult::Ok((
+                        self.amount,
+                        self.origin_x / 100.0,
+                        self.origin_y / 100.0,
+                    ));
                 }
                 if cancel {
                     result = DialogResult::Cancel;
@@ -442,14 +454,16 @@ impl TwistDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_twist")
+        crate::ui::polish::window(ctx, "dialog_twist")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
-                if paint_dialog_header(ui, &colors, "\u{1F300}", &t!("dialog.twist")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F300}", &t!("dialog.twist")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "TWIST SETTINGS");
 
@@ -533,7 +547,11 @@ impl TwistDialog {
 
                 let (ok, cancel) = dialog_footer(ui, &colors);
                 if ok {
-                    result = DialogResult::Ok((self.angle, self.origin_x / 100.0, self.origin_y / 100.0));
+                    result = DialogResult::Ok((
+                        self.angle,
+                        self.origin_x / 100.0,
+                        self.origin_y / 100.0,
+                    ));
                 }
                 if cancel {
                     result = DialogResult::Cancel;
@@ -556,5 +574,3 @@ effect_dialog_base!(AddNoiseDialog {
     octaves: f32 = 1.0,
     first_open: bool = true
 });
-
-

@@ -3,14 +3,16 @@ impl BokehBlurDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_bokeh_blur")
+        crate::ui::polish::window(ctx, "dialog_bokeh_blur")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
-                if paint_dialog_header(ui, &colors, "\u{2B55}", &t!("dialog.bokeh_blur")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{2B55}", &t!("dialog.bokeh_blur")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "BLUR SETTINGS");
 
@@ -27,7 +29,7 @@ impl BokehBlurDialog {
                             if self.advanced_blur {
                                 // Advanced: editable DragValue (up to 100)
                                 let r = ui.add(
-                                    egui::DragValue::new(&mut self.radius)
+                                    crate::ui::numeric::Numeric::new(&mut self.radius)
                                         .speed(0.2)
                                         .range(1.0..=100.0)
                                         .max_decimals(1),
@@ -133,14 +135,16 @@ impl MotionBlurDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_motion_blur")
+        crate::ui::polish::window(ctx, "dialog_motion_blur")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
-                if paint_dialog_header(ui, &colors, "\u{27A1}", &t!("dialog.motion_blur")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{27A1}", &t!("dialog.motion_blur")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "MOTION SETTINGS");
 
@@ -220,14 +224,16 @@ impl BoxBlurDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_box_blur")
+        crate::ui::polish::window(ctx, "dialog_box_blur")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
-                if paint_dialog_header(ui, &colors, "\u{25A3}", &t!("dialog.box_blur")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{25A3}", &t!("dialog.box_blur")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "BLUR SETTINGS");
 
@@ -305,14 +311,16 @@ impl ZoomBlurDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_zoom_blur")
+        crate::ui::polish::window(ctx, "dialog_zoom_blur")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 190.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(380.0);
-                if paint_dialog_header(ui, &colors, "\u{25CE}", &t!("dialog.zoom_blur")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{25CE}", &t!("dialog.zoom_blur")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
 
                 let mut changed = false;
@@ -581,5 +589,3 @@ effect_dialog_base!(CrystallizeDialog {
     seed: u32 = 42,
     first_open: bool = true
 });
-
-

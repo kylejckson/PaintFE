@@ -9,6 +9,7 @@ impl ToolsPanel {
     }
 
     fn reset_brush_pointer_state(&mut self) {
+        self.brush_coverage.clear();
         self.tool_state.last_pos = None;
         self.tool_state.last_precise_pos = None;
         self.tool_state.distance_remainder = 0.0;

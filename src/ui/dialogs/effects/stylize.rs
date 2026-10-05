@@ -3,14 +3,16 @@ impl GlowDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_glow")
+        crate::ui::polish::window(ctx, "dialog_glow")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
-                if paint_dialog_header(ui, &colors, "\u{2728}", &t!("dialog.glow")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{2728}", &t!("dialog.glow")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "GLOW SETTINGS");
 
@@ -67,14 +69,16 @@ impl SharpenDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_sharpen")
+        crate::ui::polish::window(ctx, "dialog_sharpen")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
-                if paint_dialog_header(ui, &colors, "\u{1F4CC}", &t!("dialog.sharpen")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F4CC}", &t!("dialog.sharpen")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "SHARPEN SETTINGS");
 
@@ -131,14 +135,16 @@ impl VignetteDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_vignette")
+        crate::ui::polish::window(ctx, "dialog_vignette")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
-                if paint_dialog_header(ui, &colors, "\u{1F311}", &t!("dialog.vignette")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F311}", &t!("dialog.vignette")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "VIGNETTE SETTINGS");
 
@@ -205,14 +211,16 @@ impl HalftoneDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_halftone")
+        crate::ui::polish::window(ctx, "dialog_halftone")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(370.0);
-                if paint_dialog_header(ui, &colors, "\u{25CF}", &t!("dialog.halftone")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{25CF}", &t!("dialog.halftone")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "HALFTONE SETTINGS");
 
@@ -302,5 +310,3 @@ effect_dialog_base!(GridDialog {
     style_idx: usize = 0,
     first_open: bool = true
 });
-
-

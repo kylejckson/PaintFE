@@ -303,7 +303,11 @@ fn main_inner() -> Result<(), eframe::Error> {
     eframe::run_native(
         "PaintFE",
         options,
-        Box::new(move |cc| Ok(Box::new(PaintFEApp::new(cc, startup_files, ipc_receiver)))),
+        Box::new(move |cc| {
+            #[cfg(target_os = "windows")]
+            set_windows_app_icons(cc);
+            Ok(Box::new(PaintFEApp::new(cc, startup_files, ipc_receiver)))
+        }),
     )
 }
 
@@ -401,7 +405,7 @@ fn configure_event_loop(_builder: &mut eframe::EventLoopBuilder<eframe::UserEven
 
 /// Decode the embedded PNG icon into raw RGBA for the egui viewport.
 fn load_app_icon() -> Option<egui::viewport::IconData> {
-    let png_bytes = include_bytes!("../assets/icons/app_icon.png");
+    let png_bytes = include_bytes!("../assets/icons/app_icon_128.png");
     let img = image::load_from_memory(png_bytes).ok()?.into_rgba8();
     let (w, h) = img.dimensions();
     Some(egui::viewport::IconData {
@@ -409,6 +413,42 @@ fn load_app_icon() -> Option<egui::viewport::IconData> {
         width: w,
         height: h,
     })
+}
+
+/// Select authored small and large ICO frames independently of winit's PNG icon.
+#[cfg(target_os = "windows")]
+fn set_windows_app_icons(cc: &eframe::CreationContext<'_>) {
+    use winapi::um::winuser::{
+        IMAGE_ICON, LR_SHARED, LoadImageW, MAKEINTRESOURCEW, SendMessageW, WM_SETICON,
+    };
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let Ok(handle) = cc.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(window) = handle.as_raw() else {
+        return;
+    };
+    let Some(instance) = window.hinstance else {
+        return;
+    };
+    // Resource 1 is embedded by winresource. Shared resource handles live for
+    // the process lifetime and must not be destroyed by the application.
+    for (slot, size) in [(0, 32), (1, 128)] {
+        unsafe {
+            let icon = LoadImageW(
+                instance.get() as _,
+                MAKEINTRESOURCEW(1),
+                IMAGE_ICON,
+                size,
+                size,
+                LR_SHARED,
+            );
+            if !icon.is_null() {
+                SendMessageW(window.hwnd.get() as _, WM_SETICON, slot, icon as isize);
+            }
+        }
+    }
 }
 
 // dummy comment

@@ -850,6 +850,33 @@ impl TiledImage {
     }
 
     /// Read-only access to a chunk (if it exists).
+    pub(crate) fn chunks_in_rect_mut(
+        &mut self,
+        x0: u32,
+        y0: u32,
+        x1: u32,
+        y1: u32,
+    ) -> impl Iterator<Item = (u32, u32, &mut RgbaImage)> {
+        let stride = self.chunks_per_row as usize;
+        let start = y0 as usize * stride + x0 as usize;
+        let end = y1 as usize * stride + x1 as usize + 1;
+        self.chunks[start..end]
+            .iter_mut()
+            .enumerate()
+            .filter_map(move |(offset, chunk)| {
+                let index = start + offset;
+                let cx = (index % stride) as u32;
+                let cy = (index / stride) as u32;
+                if cx < x0 || cx > x1 {
+                    return None;
+                }
+                let chunk =
+                    chunk.get_or_insert_with(|| Arc::new(RgbaImage::new(CHUNK_SIZE, CHUNK_SIZE)));
+                Some((cx, cy, Arc::make_mut(chunk)))
+            })
+    }
+
+    /// Read-only access to a chunk (if it exists).
     pub fn get_chunk(&self, cx: u32, cy: u32) -> Option<&RgbaImage> {
         let idx = self.flat_index(cx, cy);
         self.chunks.get(idx).and_then(|c| c.as_deref())

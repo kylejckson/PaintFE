@@ -104,6 +104,9 @@ pub struct ThemeOverrides {
     pub accent4: Option<Color32>,
 
     // Geometry
+    pub history_rounding: Option<f32>,
+    pub history_placeholder_opacity: Option<f32>,
+    pub history_animations: Option<bool>,
     pub widget_rounding: Option<f32>,
     pub window_rounding: Option<f32>,
     pub menu_rounding: Option<f32>,
@@ -156,6 +159,9 @@ impl ThemeOverrides {
             && self.glow_accent.is_none()
             && self.accent3.is_none()
             && self.accent4.is_none()
+            && self.history_rounding.is_none()
+            && self.history_placeholder_opacity.is_none()
+            && self.history_animations.is_none()
             && self.widget_rounding.is_none()
             && self.window_rounding.is_none()
             && self.menu_rounding.is_none()
@@ -393,6 +399,8 @@ impl ThemePreset {
 /// Application theme (light/dark mode + accent colors).
 #[derive(Clone, Debug)]
 pub struct Theme {
+    pub polish: crate::ui::polish::PolishSettings,
+    pub density: UiDensity,
     pub mode: ThemeMode,
     pub preset: ThemePreset,
     pub accent_colors: AccentColors,
@@ -455,6 +463,9 @@ pub struct Theme {
     pub panel_opacity: u8,
 
     // Geometry overrides (applied from ThemeOverrides, used in apply())
+    pub history_rounding: f32,
+    pub history_placeholder_opacity: f32,
+    pub history_animations: bool,
     pub widget_rounding: f32,
     pub window_rounding: f32,
     pub menu_rounding: f32,
@@ -480,6 +491,8 @@ impl Theme {
         let hover = Self::lighten(normal, 25);
 
         Self {
+            polish: crate::ui::polish::PolishSettings::default(),
+            density: UiDensity::Normal,
             mode: ThemeMode::Dark,
             preset,
             accent_colors,
@@ -542,6 +555,9 @@ impl Theme {
             panel_opacity: 248,
 
             // Default geometry
+            history_rounding: 12.0,
+            history_placeholder_opacity: 0.22,
+            history_animations: true,
             widget_rounding: 6.0,
             window_rounding: 10.0,
             menu_rounding: 8.0,
@@ -560,6 +576,8 @@ impl Theme {
         let hover = Self::lighten(normal, 25);
 
         Self {
+            polish: crate::ui::polish::PolishSettings::default(),
+            density: UiDensity::Normal,
             mode: ThemeMode::Light,
             preset,
             accent_colors,
@@ -622,6 +640,9 @@ impl Theme {
             panel_opacity: 252,
 
             // Default geometry
+            history_rounding: 12.0,
+            history_placeholder_opacity: 0.22,
+            history_animations: true,
             widget_rounding: 6.0,
             window_rounding: 10.0,
             menu_rounding: 8.0,
@@ -645,22 +666,38 @@ impl Theme {
     }
 
     pub fn with_accent(&self, preset: ThemePreset, accent_colors: AccentColors) -> Self {
-        match self.mode {
+        let mut theme = match self.mode {
             ThemeMode::Dark => Self::dark_with_accent(preset, accent_colors),
             ThemeMode::Light => Self::light_with_accent(preset, accent_colors),
-        }
+        };
+        theme.polish = self.polish.clone();
+        theme.density = self.density;
+        theme
     }
 
     /// Toggle between light and dark mode (preserving accent)
     pub fn toggle(&mut self) {
+        let polish = self.polish.clone();
+        let density = self.density;
         *self = match self.mode {
             ThemeMode::Dark => Self::light_with_accent(self.preset, self.accent_colors),
             ThemeMode::Light => Self::dark_with_accent(self.preset, self.accent_colors),
         };
+        self.polish = polish;
+        self.density = density;
     }
 
     /// Apply user overrides on top of the current theme values.
     pub fn apply_overrides(&mut self, ov: &ThemeOverrides) {
+        if let Some(v) = ov.history_animations {
+            self.history_animations = v;
+        }
+        if let Some(v) = ov.history_rounding {
+            self.history_rounding = v.clamp(0.0, 24.0);
+        }
+        if let Some(v) = ov.history_placeholder_opacity {
+            self.history_placeholder_opacity = v.clamp(0.0, 1.0);
+        }
         if let Some(c) = ov.bg_color {
             self.bg_color = c;
         }
@@ -818,6 +855,9 @@ impl Theme {
     }
 
     pub fn apply(&self, ctx: &egui::Context) {
+        let _scope = crate::ui::perf::Scope::new(16);
+        crate::ui::polish::configure(ctx, &self.polish);
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("floating_widget_theme"), self.clone()));
         ctx.set_theme(match self.mode {
             ThemeMode::Dark => egui::Theme::Dark,
             ThemeMode::Light => egui::Theme::Light,
@@ -836,7 +876,8 @@ impl Theme {
         // Widget styling
         visuals.widgets.noninteractive.bg_fill = self.panel_bg;
         visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, self.text_muted);
-        visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, self.border_color);
+        visuals.widgets.noninteractive.bg_stroke =
+            Stroke::new(self.polish.border_width, self.border_color);
         visuals.widgets.noninteractive.corner_radius =
             CornerRadius::same(self.widget_rounding as u8);
 
@@ -867,14 +908,14 @@ impl Theme {
         // Hover: accent-tinted fill + accent border for clear feedback.
         visuals.widgets.hovered.bg_fill = self.button_hover;
         visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, self.text_color);
-        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, self.border_lit);
+        visuals.widgets.hovered.bg_stroke = Stroke::new(self.polish.border_width, self.border_lit);
         visuals.widgets.hovered.corner_radius = CornerRadius::same(self.widget_rounding as u8);
-        visuals.widgets.hovered.expansion = 1.0; // subtle grow on hover (Phase 9)
+        visuals.widgets.hovered.expansion = 0.0; // subtle grow on hover (Phase 9)
 
         // Active/selected: stronger accent-tinted fill
         visuals.widgets.active.bg_fill = self.button_active;
         visuals.widgets.active.fg_stroke = Stroke::new(1.0, self.text_color);
-        visuals.widgets.active.bg_stroke = Stroke::new(1.0, self.accent_strong);
+        visuals.widgets.active.bg_stroke = Stroke::new(self.polish.focus_width, self.accent_strong);
         visuals.widgets.active.corner_radius = CornerRadius::same(self.widget_rounding as u8);
 
         // Open menus: accent3 (green) text, accent3 alpha-20 bg — matches website nav active style
@@ -886,7 +927,7 @@ impl Theme {
         );
         visuals.widgets.open.bg_fill = accent3_bg;
         visuals.widgets.open.fg_stroke = Stroke::new(1.0, self.accent3);
-        visuals.widgets.open.bg_stroke = Stroke::new(1.0, self.accent3);
+        visuals.widgets.open.bg_stroke = Stroke::new(self.polish.border_width, self.accent3);
         visuals.widgets.open.corner_radius = CornerRadius::same(self.widget_rounding as u8);
 
         // Selection: explicit accent fill/stroke to avoid default-blue fallbacks.
@@ -960,8 +1001,34 @@ impl Theme {
 
         // Smooth transitions — slightly longer animation time for polished feel.
         // Mutate the active style in-place so we don't overwrite the visuals we just set.
+        let animation_duration =
+            crate::ui::polish::duration(ctx, crate::ui::polish::MotionKind::Overlay);
         ctx.global_style_mut(|style| {
-            style.animation_time = 0.15; // 150ms (default ~83ms)
+            let scale = self.polish.spacing_scale;
+            let gap = self.density.item_spacing() * scale;
+            style.spacing.item_spacing = egui::vec2(gap, gap);
+            style.spacing.button_padding = egui::vec2(6.0 * scale, 3.0 * scale);
+            style.spacing.interact_size.y = match self.density {
+                UiDensity::Compact => 18.0,
+                UiDensity::Normal => 22.0,
+                UiDensity::Spacious => 26.0,
+            } * scale;
+            for (text, size) in [
+                (egui::TextStyle::Small, 10.0),
+                (egui::TextStyle::Body, 13.0),
+                (egui::TextStyle::Button, 13.0),
+                (egui::TextStyle::Heading, 18.0),
+            ] {
+                style.text_styles.insert(
+                    text,
+                    egui::FontId::proportional(size * self.polish.text_scale),
+                );
+            }
+            style.text_styles.insert(
+                egui::TextStyle::Monospace,
+                egui::FontId::monospace(13.0 * self.polish.text_scale),
+            );
+            style.animation_time = animation_duration; // 150ms (default ~83ms)
 
             // Scrollbar: solid style with foreground_color=true for high-contrast handles.
             // Handle uses fg_stroke (text color) instead of bg_fill (button bg) which was
@@ -1023,7 +1090,9 @@ impl Theme {
                 spread: 0,
                 color: Color32::from_black_alpha(self.scaled_shadow_alpha(shadow_alpha)),
             })
-            .inner_margin(egui::Margin::same(10))
+            .inner_margin(egui::Margin::same(
+                (self.density.margin() * self.polish.spacing_scale).round() as i8,
+            ))
     }
 
     /// Floating window frame with animated border — call with hover_t from
@@ -1041,21 +1110,23 @@ impl Theme {
         egui::Frame::NONE
             .fill(self.floating_window_bg)
             .corner_radius(self.widget_cr(10))
-            .stroke(Stroke::new(1.0, border))
+            .stroke(Stroke::new(self.polish.border_width, border))
             .shadow(Shadow {
                 offset: [0, 0],
                 blur: self.scaled_shadow_blur(shadow_blur),
                 spread: 0,
                 color: Color32::from_black_alpha(self.scaled_shadow_alpha(shadow_alpha)),
             })
-            .inner_margin(egui::Margin::same(10))
+            .inner_margin(egui::Margin::same(
+                (self.density.margin() * self.polish.spacing_scale).round() as i8,
+            ))
     }
 
     /// Linearly interpolate between two colors.
     pub fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
         let t = t.clamp(0.0, 1.0);
         let inv = 1.0 - t;
-        Color32::from_rgba_unmultiplied(
+        Color32::from_rgba_premultiplied(
             (a.r() as f32 * inv + b.r() as f32 * t) as u8,
             (a.g() as f32 * inv + b.g() as f32 * t) as u8,
             (a.b() as f32 * inv + b.b() as f32 * t) as u8,
@@ -1135,7 +1206,8 @@ impl Theme {
     /// Floating tool shelf frame — sits below the toolbar, overlaying the canvas.
     /// Rounded, slightly translucent container with subtle shadow, matching the
     /// website `.card` pattern — it should read as floating over the canvas.
-    pub fn tool_shelf_frame(&self) -> egui::Frame {        let r = CornerRadius::same(self.tool_shelf_rounding as u8);
+    pub fn tool_shelf_frame(&self) -> egui::Frame {
+        let r = CornerRadius::same(self.tool_shelf_rounding as u8);
         egui::Frame::NONE
             .fill(self.tool_shelf_bg.gamma_multiply(0.9))
             .corner_radius(r)

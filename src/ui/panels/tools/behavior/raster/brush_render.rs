@@ -57,11 +57,20 @@ impl ToolsPanel {
     /// left a faint hard-edged ring — overlapping soft passes stacked rims
     /// instead of blending into each other.
     fn compute_brush_alpha(&self, dist: f32, radius: f32) -> f32 {
+        Self::brush_alpha_profile(
+            dist,
+            radius,
+            self.properties.hardness,
+            self.properties.anti_aliased,
+        )
+    }
+
+    fn brush_alpha_profile(dist: f32, radius: f32, hardness: f32, anti_aliased: bool) -> f32 {
         if radius <= 0.0 {
             return 0.0;
         }
 
-        let safe_hardness = self.properties.hardness.clamp(0.0, 1.0);
+        let safe_hardness = hardness.clamp(0.0, 1.0);
         let t = (dist / radius).clamp(0.0, 1.0);
         let material_alpha = if t <= safe_hardness {
             1.0
@@ -75,7 +84,7 @@ impl ToolsPanel {
             }
         };
 
-        let coverage = if self.properties.anti_aliased {
+        let coverage = if anti_aliased {
             let edge0 = radius + 0.5;
             let edge1 = radius - 0.5;
             if dist <= edge1 {
@@ -150,6 +159,15 @@ impl ToolsPanel {
     /// Shared by the capsule segment sweep and the discrete stamp path.
     #[inline]
     #[allow(clippy::too_many_arguments)]
+    fn brush_pixel_writer(&self) -> BrushPixelWriter {
+        BrushPixelWriter {
+            mode: self.properties.brush_mode,
+            flow: self.pressure_flow(),
+            opacity: self.properties.opacity,
+        }
+    }
+
+    #[cfg(test)]
     fn write_brush_pixel(
         &self,
         chunk_raw: &mut [u8],
@@ -161,76 +179,9 @@ impl ToolsPanel {
         src_b8: u8,
         is_eraser: bool,
     ) {
-        if is_eraser {
-            let erase_strength = geom_alpha * src_a * self.pressure_flow();
-            if erase_strength < 0.01 {
-                return;
-            }
-            let old_mask = chunk_raw[px_off + 3] as f32 / 255.0;
-            if erase_strength > old_mask {
-                chunk_raw[px_off] = 0;
-                chunk_raw[px_off + 1] = 0;
-                chunk_raw[px_off + 2] = 0;
-                chunk_raw[px_off + 3] = (erase_strength * 255.0) as u8;
-            }
-            return;
-        }
-        let brush_alpha = geom_alpha * src_a * self.pressure_flow();
-        if brush_alpha < 0.01 {
-            return;
-        }
-        match self.properties.brush_mode {
-            BrushMode::Normal => {
-                let brush_alpha_u8 = (brush_alpha * 255.0) as u8;
-                let old_alpha = chunk_raw[px_off + 3];
-                // Max-alpha stamping: only update if increasing opacity
-                if brush_alpha_u8 >= old_alpha {
-                    chunk_raw[px_off] = src_r8;
-                    chunk_raw[px_off + 1] = src_g8;
-                    chunk_raw[px_off + 2] = src_b8;
-                    chunk_raw[px_off + 3] = brush_alpha_u8;
-                }
-            }
-            BrushMode::BuildUp => {
-                // Paint-like accumulation: each pass adds coverage over what is
-                // already there (`1 - (1-a)(1-b)`), so painting over an area
-                // reliably builds toward full opacity.
-                let old_a = chunk_raw[px_off + 3] as f32 / 255.0;
-                let add = (1.0 - old_a) * brush_alpha;
-                let new_a = old_a + add;
-                if new_a <= 0.0 {
-                    return;
-                }
-                let w_old = old_a / new_a;
-                let w_new = add / new_a;
-                chunk_raw[px_off] =
-                    (chunk_raw[px_off] as f32 * w_old + src_r8 as f32 * w_new).round() as u8;
-                chunk_raw[px_off + 1] =
-                    (chunk_raw[px_off + 1] as f32 * w_old + src_g8 as f32 * w_new).round() as u8;
-                chunk_raw[px_off + 2] =
-                    (chunk_raw[px_off + 2] as f32 * w_old + src_b8 as f32 * w_new).round() as u8;
-                chunk_raw[px_off + 3] = (new_a * 255.0).round().min(255.0) as u8;
-            }
-            BrushMode::Dodge | BrushMode::Burn | BrushMode::Sponge => {
-                // Read existing pixel, modify in HSL space, write back
-                let old_r = chunk_raw[px_off] as f32 / 255.0;
-                let old_g = chunk_raw[px_off + 1] as f32 / 255.0;
-                let old_b = chunk_raw[px_off + 2] as f32 / 255.0;
-                let (h, mut s, mut l) = crate::ops::adjustments::rgb_to_hsl(old_r, old_g, old_b);
-                let strength = brush_alpha * 0.5;
-                match self.properties.brush_mode {
-                    BrushMode::Dodge => l = (l + strength).clamp(0.0, 1.0),
-                    BrushMode::Burn => l = (l - strength).clamp(0.0, 1.0),
-                    BrushMode::Sponge => s = (s - strength).clamp(0.0, 1.0),
-                    _ => {}
-                }
-                let (nr, ng, nb) = crate::ops::adjustments::hsl_to_rgb(h, s, l);
-                chunk_raw[px_off] = (nr * 255.0) as u8;
-                chunk_raw[px_off + 1] = (ng * 255.0) as u8;
-                chunk_raw[px_off + 2] = (nb * 255.0) as u8;
-                // alpha unchanged
-            }
-        }
+        self.brush_pixel_writer().write(
+            chunk_raw, px_off, geom_alpha, src_a, src_r8, src_g8, src_b8, is_eraser, None,
+        );
     }
 
     /// Draw one drag segment as a swept capsule: every pixel within the brush
@@ -240,7 +191,7 @@ impl ToolsPanel {
     /// consistently. One pixel pass per segment (cheaper than N stamps).
     #[allow(clippy::too_many_arguments)]
     fn draw_capsule_no_dirty(
-        &self,
+        &mut self,
         target_image: &mut TiledImage,
         width: u32,
         height: u32,
@@ -264,6 +215,7 @@ impl ToolsPanel {
         };
         let draw_radius_sq = draw_radius * draw_radius;
         let use_direct_alpha = draw_radius > radius;
+        let aa_inner_radius_sq = (radius - 0.5).max(0.0).powi(2);
         let inv_radius_sq = 1.0 / radius_sq;
 
         // Segment geometry for point-to-segment distance.
@@ -292,6 +244,7 @@ impl ToolsPanel {
         let src_g8 = (src_g * 255.0) as u8;
         let src_b8 = (src_b * 255.0) as u8;
 
+        let writer = self.brush_pixel_writer();
         let lut = &self.brush_alpha_lut;
         let cs = crate::canvas::CHUNK_SIZE;
 
@@ -315,6 +268,13 @@ impl ToolsPanel {
                     continue;
                 }
 
+                let mut precise = (!is_eraser
+                    && matches!(writer.mode, BrushMode::Normal | BrushMode::BuildUp))
+                .then(|| {
+                    self.brush_coverage
+                        .entry((chunk_cx, chunk_cy))
+                        .or_insert_with(|| vec![0u16; (cs * cs) as usize])
+                });
                 let chunk = target_image.ensure_chunk_mut(chunk_cx, chunk_cy);
                 let chunk_raw = chunk.as_mut();
                 let chunk_stride = cs as usize * 4;
@@ -340,7 +300,8 @@ impl ToolsPanel {
                         let px = global_x as f32;
                         let py = global_y as f32;
                         let t = if inv_len_sq > 0.0 {
-                            (((px - start.0) * dx + (py - start.1) * dy) * inv_len_sq).clamp(0.0, 1.0)
+                            (((px - start.0) * dx + (py - start.1) * dy) * inv_len_sq)
+                                .clamp(0.0, 1.0)
                         } else {
                             0.0
                         };
@@ -353,8 +314,13 @@ impl ToolsPanel {
                             continue;
                         }
 
-                        let geom_alpha_u8 = if use_direct_alpha {
-                            (self.compute_brush_alpha(dist_sq.sqrt(), radius) * 255.0)
+                        let geom_alpha_u8 = if use_direct_alpha && dist_sq > aa_inner_radius_sq {
+                            (Self::brush_alpha_profile(
+                                dist_sq.sqrt(),
+                                radius,
+                                self.properties.hardness,
+                                self.properties.anti_aliased,
+                            ) * 255.0)
                                 .round()
                                 .min(255.0) as u8
                         } else {
@@ -366,7 +332,7 @@ impl ToolsPanel {
                         }
 
                         let px_off = row_off + lx as usize * 4;
-                        self.write_brush_pixel(
+                        writer.write(
                             chunk_raw,
                             px_off,
                             geom_alpha_u8 as f32 / 255.0,
@@ -375,6 +341,7 @@ impl ToolsPanel {
                             src_g8,
                             src_b8,
                             is_eraser,
+                            precise.as_deref_mut().map(|a| &mut a[px_off / 4]),
                         );
                     }
                 }
@@ -383,7 +350,7 @@ impl ToolsPanel {
     }
 
     pub fn draw_circle_no_dirty(
-        &self,
+        &mut self,
         target_image: &mut TiledImage,
         width: u32,
         height: u32,
@@ -393,6 +360,33 @@ impl ToolsPanel {
         primary_color_f32: [f32; 4],
         secondary_color_f32: [f32; 4],
         selection_mask: Option<&GrayImage>,
+    ) {
+        self.draw_circle_no_dirty_impl(
+            target_image,
+            width,
+            height,
+            pos,
+            is_eraser,
+            use_secondary,
+            primary_color_f32,
+            secondary_color_f32,
+            selection_mask,
+            true,
+        );
+    }
+
+    fn draw_circle_no_dirty_impl(
+        &mut self,
+        target_image: &mut TiledImage,
+        width: u32,
+        height: u32,
+        pos: (f32, f32),
+        is_eraser: bool,
+        use_secondary: bool,
+        primary_color_f32: [f32; 4],
+        secondary_color_f32: [f32; 4],
+        selection_mask: Option<&GrayImage>,
+        parallel: bool,
     ) {
         // Dispatch to image tip path if active
         if !self.properties.brush_tip.is_circle() {
@@ -453,6 +447,7 @@ impl ToolsPanel {
         };
         let draw_radius_sq = draw_radius * draw_radius;
         let use_direct_alpha = draw_radius > radius;
+        let aa_inner_radius_sq = (radius - 0.5).max(0.0).powi(2);
         let inv_radius_sq = 1.0 / radius_sq;
 
         let min_x = ((cx - draw_radius).floor().max(0.0)) as u32;
@@ -505,6 +500,7 @@ impl ToolsPanel {
                 (base_r8, base_g8, base_b8)
             };
 
+        let writer = self.brush_pixel_writer();
         let lut = &self.brush_alpha_lut;
         let cs = crate::canvas::CHUNK_SIZE;
 
@@ -513,6 +509,131 @@ impl ToolsPanel {
         let chunk_y0 = min_y / cs;
         let chunk_x1 = max_x / cs;
         let chunk_y1 = max_y / cs;
+
+        // Parallelize independent chunks only for large dabs. Each dab finishes
+        // before the next one starts, preserving per-pixel accumulation order.
+        if parallel && (max_x - min_x + 1) as u64 * (max_y - min_y + 1) as u64 >= 65_536 {
+            use crate::par_compat::*;
+            let hardness = self.properties.hardness;
+            let anti_aliased = self.properties.anti_aliased;
+            let needs_coverage =
+                !is_eraser && matches!(writer.mode, BrushMode::Normal | BrushMode::BuildUp);
+            let mut jobs: Vec<_> = target_image
+                .chunks_in_rect_mut(chunk_x0, chunk_y0, chunk_x1, chunk_y1)
+                .map(|(x, y, chunk)| {
+                    let coverage = needs_coverage.then(|| {
+                        self.brush_coverage
+                            .remove(&(x, y))
+                            .unwrap_or_else(|| vec![0; (cs * cs) as usize])
+                    });
+                    (x, y, chunk, coverage)
+                })
+                .collect();
+            jobs.par_iter_mut()
+                .for_each(|(chunk_cx, chunk_cy, chunk, precise)| {
+                    let chunk_cx = *chunk_cx;
+                    let chunk_cy = *chunk_cy;
+                    let chunk_base_x = chunk_cx * cs;
+                    let chunk_base_y = chunk_cy * cs;
+
+                    // Local pixel range within this chunk (clamped to brush bbox & canvas)
+                    let lx0 = min_x.saturating_sub(chunk_base_x);
+                    let ly0 = min_y.saturating_sub(chunk_base_y);
+                    let lx1 = (max_x + 1 - chunk_base_x).min(cs).min(width - chunk_base_x);
+                    let ly1 = (max_y + 1 - chunk_base_y)
+                        .min(cs)
+                        .min(height - chunk_base_y);
+                    if lx0 >= lx1 || ly0 >= ly1 {
+                        return;
+                    }
+
+                    // Quick check: does ANY pixel in this chunk-local range fall within the circle?
+                    // Test the closest point of the local rect to the circle center
+                    let near_x = (cx).clamp(
+                        chunk_base_x as f32 + lx0 as f32,
+                        chunk_base_x as f32 + lx1 as f32 - 1.0,
+                    );
+                    let near_y = (cy).clamp(
+                        chunk_base_y as f32 + ly0 as f32,
+                        chunk_base_y as f32 + ly1 as f32 - 1.0,
+                    );
+                    let nd = (near_x - cx) * (near_x - cx) + (near_y - cy) * (near_y - cy);
+                    if nd > draw_radius_sq {
+                        return;
+                    }
+
+                    let chunk_raw = chunk.as_mut();
+                    let chunk_stride = cs as usize * 4;
+
+                    for ly in ly0..ly1 {
+                        let global_y = chunk_base_y + ly;
+                        let dy = global_y as f32 - cy;
+                        let dy_sq = dy * dy;
+                        let row_off = ly as usize * chunk_stride;
+
+                        for lx in lx0..lx1 {
+                            let global_x = chunk_base_x + lx;
+
+                            // Selection mask check
+                            if let Some(mask) = selection_mask {
+                                if global_x < mask.width() && global_y < mask.height() {
+                                    if mask.get_pixel(global_x, global_y).0[0] == 0 {
+                                        continue;
+                                    }
+                                } else {
+                                    continue;
+                                }
+                            }
+
+                            let dx = global_x as f32 - cx;
+                            let dist_sq = dx * dx + dy_sq;
+                            if dist_sq > draw_radius_sq {
+                                continue;
+                            }
+
+                            let geom_alpha_u8 = if use_direct_alpha && dist_sq > aa_inner_radius_sq
+                            {
+                                (Self::brush_alpha_profile(
+                                    dist_sq.sqrt(),
+                                    radius,
+                                    hardness,
+                                    anti_aliased,
+                                ) * 255.0)
+                                    .round()
+                                    .min(255.0) as u8
+                            } else {
+                                // B6: LUT lookup — replaces sqrt + smoothstep
+                                let lut_idx = (dist_sq * inv_radius_sq * 255.0).min(255.0) as usize;
+                                lut[lut_idx]
+                            };
+                            if geom_alpha_u8 == 0 {
+                                continue;
+                            }
+                            let geom_alpha = geom_alpha_u8 as f32 / 255.0;
+
+                            let px_off = row_off + lx as usize * 4;
+
+                            writer.write(
+                                chunk_raw,
+                                px_off,
+                                geom_alpha,
+                                src_a,
+                                src_r8,
+                                src_g8,
+                                src_b8,
+                                is_eraser,
+                                precise.as_deref_mut().map(|a| &mut a[px_off / 4]),
+                            );
+                        }
+                    }
+                });
+            for (x, y, _, coverage) in jobs {
+                if let Some(coverage) = coverage {
+                    self.brush_coverage.insert((x, y), coverage);
+                }
+            }
+            return;
+        }
 
         for chunk_cy in chunk_y0..=chunk_y1 {
             for chunk_cx in chunk_x0..=chunk_x1 {
@@ -546,6 +667,13 @@ impl ToolsPanel {
                 }
 
                 // Get or create chunk (COW-safe via ensure_chunk_mut)
+                let mut precise = (!is_eraser
+                    && matches!(writer.mode, BrushMode::Normal | BrushMode::BuildUp))
+                .then(|| {
+                    self.brush_coverage
+                        .entry((chunk_cx, chunk_cy))
+                        .or_insert_with(|| vec![0u16; (cs * cs) as usize])
+                });
                 let chunk = target_image.ensure_chunk_mut(chunk_cx, chunk_cy);
                 let chunk_raw = chunk.as_mut();
                 let chunk_stride = cs as usize * 4;
@@ -576,8 +704,13 @@ impl ToolsPanel {
                             continue;
                         }
 
-                        let geom_alpha_u8 = if use_direct_alpha {
-                            (self.compute_brush_alpha(dist_sq.sqrt(), radius) * 255.0)
+                        let geom_alpha_u8 = if use_direct_alpha && dist_sq > aa_inner_radius_sq {
+                            (Self::brush_alpha_profile(
+                                dist_sq.sqrt(),
+                                radius,
+                                self.properties.hardness,
+                                self.properties.anti_aliased,
+                            ) * 255.0)
                                 .round()
                                 .min(255.0) as u8
                         } else {
@@ -592,7 +725,7 @@ impl ToolsPanel {
 
                         let px_off = row_off + lx as usize * 4;
 
-                        self.write_brush_pixel(
+                        writer.write(
                             chunk_raw,
                             px_off,
                             geom_alpha,
@@ -601,6 +734,7 @@ impl ToolsPanel {
                             src_g8,
                             src_b8,
                             is_eraser,
+                            precise.as_deref_mut().map(|a| &mut a[px_off / 4]),
                         );
                     }
                 }
@@ -740,7 +874,7 @@ impl ToolsPanel {
     /// Uses the pre-scaled tip mask from `brush_tip_mask`.
     /// `rotation_deg` applies rotation (degrees) to the mask sampling.
     fn draw_image_tip_no_dirty(
-        &self,
+        &mut self,
         target_image: &mut TiledImage,
         width: u32,
         height: u32,
@@ -841,6 +975,7 @@ impl ToolsPanel {
             };
 
         let cs = crate::canvas::CHUNK_SIZE;
+        let writer = self.brush_pixel_writer();
         let mask = &self.brush_tip_mask;
 
         // Chunk iteration (same pattern as draw_circle_no_dirty)
@@ -866,6 +1001,13 @@ impl ToolsPanel {
                     continue;
                 }
 
+                let mut precise = (!is_eraser
+                    && matches!(writer.mode, BrushMode::Normal | BrushMode::BuildUp))
+                .then(|| {
+                    self.brush_coverage
+                        .entry((chunk_cx, chunk_cy))
+                        .or_insert_with(|| vec![0u16; (cs * cs) as usize])
+                });
                 let chunk = target_image.ensure_chunk_mut(chunk_cx, chunk_cy);
                 let chunk_raw = chunk.as_mut();
                 let chunk_stride = cs as usize * 4;
@@ -939,29 +1081,17 @@ impl ToolsPanel {
 
                         let px_off = row_off + lx as usize * 4;
 
-                        if is_eraser {
-                            let erase_strength = geom_alpha * src_a * self.pressure_flow();
-                            if erase_strength < 0.01 {
-                                continue;
-                            }
-                            let old_mask = chunk_raw[px_off + 3] as f32 / 255.0;
-                            if erase_strength > old_mask {
-                                chunk_raw[px_off] = 0;
-                                chunk_raw[px_off + 1] = 0;
-                                chunk_raw[px_off + 2] = 0;
-                                chunk_raw[px_off + 3] = (erase_strength * 255.0) as u8;
-                            }
-                        } else {
-                            let brush_alpha = geom_alpha * src_a * self.pressure_flow();
-                            let brush_alpha_u8 = (brush_alpha * 255.0) as u8;
-                            let old_alpha = chunk_raw[px_off + 3];
-                            if brush_alpha_u8 >= old_alpha {
-                                chunk_raw[px_off] = src_r8;
-                                chunk_raw[px_off + 1] = src_g8;
-                                chunk_raw[px_off + 2] = src_b8;
-                                chunk_raw[px_off + 3] = brush_alpha_u8;
-                            }
-                        }
+                        writer.write(
+                            chunk_raw,
+                            px_off,
+                            geom_alpha,
+                            src_a,
+                            src_r8,
+                            src_g8,
+                            src_b8,
+                            is_eraser,
+                            precise.as_deref_mut().map(|a| &mut a[px_off / 4]),
+                        );
                     }
                 }
             }
@@ -1157,3 +1287,492 @@ impl ToolsPanel {
     // ================================================================
 }
 
+/// Resample by travelled distance, independent of frame/event frequency.
+fn sample_brush_path(
+    mut previous: Option<(f32, f32)>,
+    points: &[(f32, f32)],
+    step: f32,
+    remainder: &mut f32,
+) -> Vec<(f32, f32)> {
+    let mut samples = Vec::new();
+    let step = step.max(0.5);
+    *remainder = remainder.clamp(0.0, step);
+    for &point in points {
+        if let Some(start) = previous {
+            let dx = point.0 - start.0;
+            let dy = point.1 - start.1;
+            let length = dx.hypot(dy);
+            if length > 1e-6 {
+                let mut distance = step - *remainder;
+                while distance <= length + 1e-5 {
+                    let travelled = distance.min(length);
+                    samples.push((
+                        start.0 + (dx / length) * travelled,
+                        start.1 + (dy / length) * travelled,
+                    ));
+                    distance += step;
+                }
+                *remainder = (*remainder + length) % step;
+                if *remainder < 1e-5 || step - *remainder < 1e-5 {
+                    *remainder = 0.0;
+                }
+            }
+        } else {
+            samples.push(point);
+            *remainder = 0.0;
+        }
+        previous = Some(point);
+    }
+    samples
+}
+
+#[cfg(test)]
+mod mega_pass_brush_tests {
+    use super::*;
+
+    #[test]
+    fn stationary_hold_has_no_extra_deposits() {
+        let mut remainder = 0.0;
+        assert_eq!(
+            sample_brush_path(None, &[(4.0, 5.0)], 10.0, &mut remainder).len(),
+            1
+        );
+        assert!(
+            sample_brush_path(Some((4.0, 5.0)), &[(4.0, 5.0); 100], 10.0, &mut remainder)
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn event_batches_produce_identical_deposits() {
+        let mut r = 0.0;
+        let whole = sample_brush_path(None, &[(0.0, 0.0), (35.0, 0.0), (35.0, 27.0)], 10.0, &mut r);
+        let mut r = 0.0;
+        let mut batches = sample_brush_path(None, &[(0.0, 0.0), (7.0, 0.0)], 10.0, &mut r);
+        batches.extend(sample_brush_path(
+            Some((7.0, 0.0)),
+            &[(35.0, 0.0)],
+            10.0,
+            &mut r,
+        ));
+        batches.extend(sample_brush_path(
+            Some((35.0, 0.0)),
+            &[(35.0, 8.0), (35.0, 27.0)],
+            10.0,
+            &mut r,
+        ));
+        assert_eq!(whole, batches);
+    }
+
+    #[test]
+    fn soft_overlap_builds_and_center_fills_without_exceeding_opacity() {
+        let mut tools = ToolsPanel::default();
+        tools.properties.opacity = 0.6;
+        let mut pixel = [0u8; 4];
+        tools.write_brush_pixel(&mut pixel, 0, 0.3, 1.0, 80, 40, 20, false);
+        let first = pixel[3];
+        tools.write_brush_pixel(&mut pixel, 0, 0.3, 1.0, 80, 40, 20, false);
+        assert!(pixel[3] > first);
+        tools.write_brush_pixel(&mut pixel, 0, 1.0, 1.0, 80, 40, 20, false);
+        assert_eq!(pixel, [80, 40, 20, 153]);
+        for _ in 0..100 {
+            tools.write_brush_pixel(&mut pixel, 0, 0.5, 1.0, 80, 40, 20, false);
+        }
+        assert_eq!(pixel[3], 153);
+    }
+
+    #[test]
+    fn large_soft_raster_crossing_fills_center_and_commits_identically() {
+        let mut tools = ToolsPanel::default();
+        tools.properties.size = 200.0;
+        tools.properties.hardness = 0.0;
+        tools.rebuild_brush_lut();
+        let mut canvas = CanvasState::new(256, 256);
+        canvas.layers[0].pixels = TiledImage::new(256, 256);
+        let mut preview = TiledImage::new(256, 256);
+        let color = [0.3, 0.2, 0.1, 1.0];
+        tools.draw_circle_no_dirty(
+            &mut preview,
+            256,
+            256,
+            (128.0, 60.0),
+            false,
+            false,
+            color,
+            color,
+            None,
+        );
+        let faint = preview.get_pixel(128, 128)[3];
+        assert!(faint > 0 && faint < 200);
+        tools.draw_circle_no_dirty(
+            &mut preview,
+            256,
+            256,
+            (128.0, 128.0),
+            false,
+            false,
+            color,
+            color,
+            None,
+        );
+        assert_eq!(preview.get_pixel(128, 128)[3], 255);
+        let expected = *preview.get_pixel(128, 100);
+        canvas.preview_layer = Some(preview);
+        tools.commit_bezier_to_layer(&mut canvas, color);
+        assert_eq!(*canvas.layers[0].pixels.get_pixel(128, 100), expected);
+    }
+
+    #[test]
+    fn brush_respects_selection_and_pressure_limit() {
+        let mut tools = ToolsPanel::default();
+        tools.properties.size = 30.0;
+        tools.properties.hardness = 0.0;
+        tools.properties.pressure_opacity = true;
+        tools.properties.pressure_min_opacity = 0.0;
+        tools.tool_state.current_pressure = 0.5;
+        tools.rebuild_brush_lut();
+        let mut preview = TiledImage::new(40, 40);
+        let mut selection = GrayImage::new(40, 40);
+        selection.put_pixel(20, 20, image::Luma([255]));
+        let color = [0.0, 0.0, 0.0, 0.4];
+        tools.draw_circle_no_dirty(
+            &mut preview,
+            40,
+            40,
+            (20.0, 20.0),
+            false,
+            false,
+            color,
+            color,
+            Some(&selection),
+        );
+        assert_eq!(preview.get_pixel(20, 20)[3], 51);
+        assert_eq!(preview.get_pixel(21, 20)[3], 0);
+    }
+
+    #[test]
+    fn low_flow_keeps_accumulating_past_eight_bit_rounding_limit() {
+        let writer = BrushPixelWriter {
+            mode: BrushMode::Normal,
+            flow: 0.01,
+            opacity: 1.0,
+        };
+        let mut pixel = [0u8; 4];
+        let mut precise = 0u16;
+        for _ in 0..1000 {
+            writer.write(&mut pixel, 0, 1.0, 1.0, 0, 0, 0, false, Some(&mut precise));
+        }
+        assert_eq!(pixel[3], 255);
+    }
+
+    #[test]
+    fn uniform_center_replaces_faint_coverage() {
+        let mut tools = ToolsPanel::default();
+        tools.properties.brush_mode = BrushMode::Uniform;
+        let mut pixel = [0u8; 4];
+        tools.write_brush_pixel(&mut pixel, 0, 0.2, 1.0, 0, 0, 0, false);
+        tools.write_brush_pixel(&mut pixel, 0, 1.0, 1.0, 0, 0, 0, false);
+        assert_eq!(pixel[3], 255);
+    }
+}
+
+struct BrushPixelWriter {
+    mode: BrushMode,
+    flow: f32,
+    opacity: f32,
+}
+impl BrushPixelWriter {
+    fn write(
+        &self,
+        chunk_raw: &mut [u8],
+        px_off: usize,
+        geom_alpha: f32,
+        src_a: f32,
+        src_r8: u8,
+        src_g8: u8,
+        src_b8: u8,
+        is_eraser: bool,
+        precise: Option<&mut u16>,
+    ) {
+        if is_eraser {
+            let erase_strength = geom_alpha * src_a * self.flow;
+            if erase_strength < 0.01 {
+                return;
+            }
+            let old_mask = chunk_raw[px_off + 3] as f32 / 255.0;
+            if erase_strength > old_mask {
+                chunk_raw[px_off] = 0;
+                chunk_raw[px_off + 1] = 0;
+                chunk_raw[px_off + 2] = 0;
+                chunk_raw[px_off + 3] = (erase_strength * 255.0) as u8;
+            }
+            return;
+        }
+        let brush_alpha = geom_alpha * src_a * self.flow;
+        if brush_alpha <= 0.0 {
+            return;
+        }
+        match self.mode {
+            BrushMode::Uniform => {
+                let brush_alpha_u8 = (brush_alpha * self.opacity * 255.0).round() as u8;
+                let old_alpha = chunk_raw[px_off + 3];
+                // Max-alpha stamping: only update if increasing opacity
+                if brush_alpha_u8 >= old_alpha {
+                    chunk_raw[px_off] = src_r8;
+                    chunk_raw[px_off + 1] = src_g8;
+                    chunk_raw[px_off + 2] = src_b8;
+                    chunk_raw[px_off + 3] = brush_alpha_u8;
+                }
+            }
+            BrushMode::Normal | BrushMode::BuildUp => {
+                // Paint-like accumulation: each pass adds coverage over what is
+                // already there (`1 - (1-a)(1-b)`), so painting over an area
+                // reliably builds toward full opacity.
+                let old_a = precise
+                    .as_deref()
+                    .map_or(chunk_raw[px_off + 3] as f32 / 255.0, |a| {
+                        *a as f32 / 65535.0
+                    });
+                let cap = (src_a * self.opacity).clamp(0.0, 1.0);
+                let add = (cap - old_a).max(0.0) * (geom_alpha * self.flow).clamp(0.0, 1.0);
+                if add == 0.0 {
+                    return;
+                }
+                let new_a = old_a + add;
+                if new_a <= 0.0 {
+                    return;
+                }
+                if let Some(a) = precise {
+                    *a = (new_a * 65535.0).round() as u16;
+                }
+                if old_a == 0.0 {
+                    chunk_raw[px_off..px_off + 3].copy_from_slice(&[src_r8, src_g8, src_b8]);
+                } else if chunk_raw[px_off..px_off + 3] != [src_r8, src_g8, src_b8] {
+                    let w_old = old_a / new_a;
+                    let w_new = add / new_a;
+                    chunk_raw[px_off] =
+                        (chunk_raw[px_off] as f32 * w_old + src_r8 as f32 * w_new).round() as u8;
+                    chunk_raw[px_off + 1] = (chunk_raw[px_off + 1] as f32 * w_old
+                        + src_g8 as f32 * w_new)
+                        .round() as u8;
+                    chunk_raw[px_off + 2] = (chunk_raw[px_off + 2] as f32 * w_old
+                        + src_b8 as f32 * w_new)
+                        .round() as u8;
+                }
+                chunk_raw[px_off + 3] = (new_a * 255.0).round().min(255.0) as u8;
+            }
+            BrushMode::Dodge | BrushMode::Burn | BrushMode::Sponge => {
+                // Read existing pixel, modify in HSL space, write back
+                let old_r = chunk_raw[px_off] as f32 / 255.0;
+                let old_g = chunk_raw[px_off + 1] as f32 / 255.0;
+                let old_b = chunk_raw[px_off + 2] as f32 / 255.0;
+                let (h, mut s, mut l) = crate::ops::adjustments::rgb_to_hsl(old_r, old_g, old_b);
+                let strength = brush_alpha * 0.5;
+                match self.mode {
+                    BrushMode::Dodge => l = (l + strength).clamp(0.0, 1.0),
+                    BrushMode::Burn => l = (l - strength).clamp(0.0, 1.0),
+                    BrushMode::Sponge => s = (s - strength).clamp(0.0, 1.0),
+                    _ => {}
+                }
+                let (nr, ng, nb) = crate::ops::adjustments::hsl_to_rgb(h, s, l);
+                chunk_raw[px_off] = (nr * 255.0) as u8;
+                chunk_raw[px_off + 1] = (ng * 255.0) as u8;
+                chunk_raw[px_off + 2] = (nb * 255.0) as u8;
+                // alpha unchanged
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod brush_optimization_tests {
+    use super::*;
+
+    fn reference_write(
+        pixel: &mut [u8; 4],
+        coverage: &mut u16,
+        flow: f32,
+        opacity: f32,
+        geom: f32,
+        source: [u8; 3],
+        source_alpha: f32,
+    ) {
+        if geom * source_alpha * flow <= 0.0 {
+            return;
+        }
+        let old = *coverage as f32 / 65535.0;
+        let cap = (source_alpha * opacity).clamp(0.0, 1.0);
+        let add = (cap - old).max(0.0) * (geom * flow).clamp(0.0, 1.0);
+        let next = old + add;
+        if next <= 0.0 {
+            return;
+        }
+        *coverage = (next * 65535.0).round() as u16;
+        let a = old / next;
+        let b = add / next;
+        for c in 0..3 {
+            pixel[c] = (pixel[c] as f32 * a + source[c] as f32 * b).round() as u8;
+        }
+        pixel[3] = (next * 255.0).round().min(255.0) as u8;
+    }
+
+    #[test]
+    fn pixel_fast_path_matches_previous_formula() {
+        for flow in [0.01, 0.3, 1.0] {
+            for opacity in [0.0, 0.4, 1.0] {
+                let writer = BrushPixelWriter {
+                    mode: BrushMode::Normal,
+                    flow,
+                    opacity,
+                };
+                let (mut actual, mut expected) = ([0; 4], [0; 4]);
+                let (mut coverage, mut reference) = (0, 0);
+                for i in 0..2000 {
+                    let source = if i < 1000 {
+                        [80, 40, 20]
+                    } else {
+                        [20, 80, 150]
+                    };
+                    let alpha = if i < 1500 { 0.8 } else { 0.2 };
+                    let geom = (i % 256) as f32 / 255.0;
+                    writer.write(
+                        &mut actual,
+                        0,
+                        geom,
+                        alpha,
+                        source[0],
+                        source[1],
+                        source[2],
+                        false,
+                        Some(&mut coverage),
+                    );
+                    reference_write(
+                        &mut expected,
+                        &mut reference,
+                        flow,
+                        opacity,
+                        geom,
+                        source,
+                        alpha,
+                    );
+                    assert_eq!(
+                        (actual, coverage),
+                        (expected, reference),
+                        "flow={flow} opacity={opacity} dab={i}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn parallel_large_dabs_match_serial_pixels_and_coverage() {
+        for (mode, eraser, masked) in [
+            (BrushMode::Normal, false, false),
+            (BrushMode::BuildUp, false, true),
+            (BrushMode::Uniform, false, false),
+            (BrushMode::Normal, true, true),
+        ] {
+            let mut serial = ToolsPanel::default();
+            serial.properties.size = 300.0;
+            serial.properties.hardness = 0.0;
+            serial.properties.flow = 0.07;
+            serial.properties.opacity = 0.63;
+            serial.properties.brush_mode = mode;
+            serial.properties.hue_jitter = 0.2;
+            serial.rebuild_brush_lut();
+            let mut parallel = ToolsPanel {
+                properties: serial.properties.clone(),
+                ..Default::default()
+            };
+            parallel.rebuild_brush_lut();
+            let mut a = TiledImage::new(389, 311);
+            let mut b = TiledImage::new(389, 311);
+            let mask = GrayImage::from_fn(389, 311, |x, y| {
+                image::Luma([if (x + y) % 7 == 0 { 0 } else { 255 }])
+            });
+            let color = [0.3, 0.1, 0.7, 0.8];
+            for (i, pos) in [
+                (12.4, 10.8),
+                (171.2, 158.9),
+                (240.7, 154.3),
+                (171.2, 158.9),
+                (380.0, 300.0),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                serial.stamp_counter = i as u32;
+                parallel.stamp_counter = i as u32;
+                serial.draw_circle_no_dirty_impl(
+                    &mut a,
+                    389,
+                    311,
+                    pos,
+                    eraser,
+                    false,
+                    color,
+                    color,
+                    masked.then_some(&mask),
+                    false,
+                );
+                parallel.draw_circle_no_dirty_impl(
+                    &mut b,
+                    389,
+                    311,
+                    pos,
+                    eraser,
+                    false,
+                    color,
+                    color,
+                    masked.then_some(&mask),
+                    true,
+                );
+            }
+            for y in 0..311 {
+                for x in 0..389 {
+                    assert_eq!(a.get_pixel(x, y), b.get_pixel(x, y));
+                }
+            }
+            for (key, values) in &serial.brush_coverage {
+                assert_eq!(Some(values), parallel.brush_coverage.get(key));
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "manual development-profile timing comparison"]
+    fn large_brush_timing() {
+        for use_parallel in [false, true] {
+            let mut tools = ToolsPanel::default();
+            tools.properties.size = 512.0;
+            tools.properties.hardness = 0.0;
+            tools.rebuild_brush_lut();
+            let mut image = TiledImage::new(1536, 1024);
+            let start = std::time::Instant::now();
+            for i in 0..120 {
+                let pos = (
+                    256.0 + (i % 40) as f32 * 24.0,
+                    350.0 + (i % 15) as f32 * 16.0,
+                );
+                tools.draw_circle_no_dirty_impl(
+                    &mut image,
+                    1536,
+                    1024,
+                    pos,
+                    false,
+                    false,
+                    [0.3, 0.2, 0.1, 1.0],
+                    [0.0; 4],
+                    None,
+                    use_parallel,
+                );
+            }
+            eprintln!(
+                "512px 120 dabs parallel={use_parallel}: {:?}",
+                start.elapsed()
+            );
+            std::hint::black_box(image);
+        }
+    }
+}

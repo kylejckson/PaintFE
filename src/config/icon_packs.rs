@@ -27,6 +27,29 @@ use std::path::{Path, PathBuf};
 use crate::config::icons::Icon;
 use crate::ops::shapes::ShapeKind;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BundledIconStyle {
+    #[default]
+    Luminous,
+    Classic,
+}
+
+impl BundledIconStyle {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Luminous => "Luminous Gradients (Default)",
+            Self::Classic => "Classic",
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Luminous => "luminous",
+            Self::Classic => "classic",
+        }
+    }
+}
+
 /// Which source produced a displayed icon (used by the Preferences preview).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IconSource {
@@ -90,17 +113,31 @@ const ZIP_MAX_ENTRIES: usize = 4096;
 const ZIP_MAX_ENTRY_BYTES: u64 = 32 * 1024 * 1024;
 
 impl IconPack {
+    pub fn luminous() -> Result<Self, String> {
+        let (icons, _) = read_archive(std::io::Cursor::new(include_bytes!(
+            "../../assets/icon_packs/luminous.zip"
+        )))?;
+        if icons.is_empty() {
+            return Err("Bundled Luminous icons are empty".into());
+        }
+        Ok(Self {
+            path: PathBuf::new(),
+            name: "Luminous Gradients".into(),
+            icons,
+        })
+    }
+
     /// Load a pack from a folder of PNGs, or a .zip archive of PNGs.
     pub fn load(path: &Path) -> Result<Self, String> {
         let mut icons: HashMap<String, PackIconVariants> = HashMap::new();
-        let mut ini = String::new();
+        let ini;
 
         if path.is_dir() {
             // Scan the root plus one level of subfolders (Export Template puts
             // PNGs under `icons/`, and packs may be organized in folders).
             let mut files: Vec<PathBuf> = Vec::new();
-            let entries =
-                std::fs::read_dir(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+            let entries = std::fs::read_dir(path)
+                .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
             for entry in entries.flatten() {
                 let file = entry.path();
                 if file.is_dir() {
@@ -128,51 +165,7 @@ impl IconPack {
         } else if path.extension().and_then(|e| e.to_str()) == Some("zip") {
             let file = std::fs::File::open(path)
                 .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
-            let mut zip =
-                zip::ZipArchive::new(file).map_err(|e| format!("bad zip {}: {e}", path.display()))?;
-            if zip.len() > ZIP_MAX_ENTRIES {
-                return Err(format!("too many entries in {}", path.display()));
-            }
-            for i in 0..zip.len() {
-                let entry = zip
-                    .by_index(i)
-                    .map_err(|e| format!("bad zip entry: {e}"))?;
-                if !entry.is_file() {
-                    continue;
-                }
-                let Some(name) = entry.enclosed_name().map(|p| p.to_path_buf()) else {
-                    continue; // path traversal guard
-                };
-                if name.components().count() > 2 {
-                    continue; // root files + one folder at most
-                }
-                let stem = match name.extension().and_then(|e| e.to_str()) {
-                    Some("png") => name
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    Some("ini") if name.file_name().and_then(|s| s.to_str()) == Some("pack.ini") => {
-                        let mut buf = String::new();
-                        let mut limited = entry.take(ZIP_MAX_ENTRY_BYTES);
-                        let _ = limited.read_to_string(&mut buf);
-                        ini = buf;
-                        continue;
-                    }
-                    _ => continue,
-                };
-                if stem.is_empty() || entry.size() > ZIP_MAX_ENTRY_BYTES {
-                    continue;
-                }
-                let mut buf = Vec::new();
-                let mut limited = entry.take(ZIP_MAX_ENTRY_BYTES);
-                if limited.read_to_end(&mut buf).is_err() {
-                    continue;
-                }
-                if let Ok(img) = image::load_from_memory(&buf) {
-                    ingest_png(&mut icons, &stem, img.to_rgba8());
-                }
-            }
+            (icons, ini) = read_archive(file)?;
         } else {
             return Err(format!(
                 "icon packs must be a folder or a .zip file: {}",
@@ -297,6 +290,10 @@ pub fn courtesy_alias(icon: Icon) -> Option<&'static str> {
 /// Parse `name.png` / `name_dark.png` / `name_light.png` into the pack map.
 /// Dead placeholder icons are ignored.
 fn ingest_png(icons: &mut HashMap<String, PackIconVariants>, stem: &str, img: image::RgbaImage) {
+    // Some retired canonical names themselves end in `_dark` or `_light`.
+    if is_excluded_id(stem) {
+        return;
+    }
     let (base, variant) = if let Some(b) = stem.strip_suffix("_dark") {
         (b, 0)
     } else if let Some(b) = stem.strip_suffix("_light") {
@@ -307,10 +304,7 @@ fn ingest_png(icons: &mut HashMap<String, PackIconVariants>, stem: &str, img: im
     if is_excluded_id(base) {
         return;
     }
-    icons
-        .entry(base.to_string())
-        .or_default()
-        .set(variant, img);
+    icons.entry(base.to_string()).or_default().set(variant, img);
 }
 
 /// Legacy icon id used by packs made for the original naming: snake case of
@@ -353,7 +347,37 @@ pub fn shape_pack_id(kind: ShapeKind) -> String {
 /// Icon ids that are dead placeholders: never shown in the UI, so they are
 /// excluded from Export Template, hidden from the preview, and ignored when
 /// loading a pack.
-const EXCLUDED_IDS: &[&str] = &["menu_filter_sharpen"];
+const EXCLUDED_IDS: &[&str] = &[
+    "menu_filter_sharpen",
+    "color_copy_hex",
+    "layer_peek",
+    "toolbar_grid",
+    "ui_clear_search",
+    "ui_collapse",
+    "ui_commit",
+    "ui_current_marker",
+    "ui_info",
+    "ui_reset_cancel",
+    "ui_search",
+    "menu_filter_blur",
+    "menu_filter_distort",
+    "menu_filter_glitch",
+    "menu_filter_noise",
+    "menu_filter_stylize",
+    "menu_view_theme_dark",
+    "menu_view_theme_light",
+    // Original filenames for the retired assets.
+    "copy_hex",
+    "peek",
+    "grid",
+    "clear_search",
+    "collapse",
+    "commit",
+    "current_marker",
+    "info",
+    "reset_cancel",
+    "search",
+];
 
 /// True when an icon id is a dead placeholder (see `EXCLUDED_IDS`).
 pub fn is_excluded_id(id: &str) -> bool {
@@ -396,6 +420,9 @@ pub fn export_template(
         "# PaintFE icon pack template\n# Drop PNGs named <id>.png here to override icons.\n# Add <id>_dark.png / <id>_light.png for theme-specific variants.\n\n",
     );
     for (id, _) in icons {
+        if is_excluded_id(id) {
+            continue;
+        }
         list.push_str(id);
         list.push('\n');
     }
@@ -403,6 +430,9 @@ pub fn export_template(
         "\n# Legacy names (older packs) still resolve to these ids:\n#   legacy_name -> canonical_id\n",
     );
     for (legacy, canonical) in legacy_names {
+        if is_excluded_id(canonical) || is_excluded_id(legacy) {
+            continue;
+        }
         list.push_str(&format!("#   {legacy} -> {canonical}\n"));
     }
     std::fs::write(dir.join("icons.txt"), list).map_err(|e| e.to_string())?;
@@ -410,11 +440,64 @@ pub fn export_template(
     let icons_dir = dir.join("icons");
     std::fs::create_dir_all(&icons_dir).map_err(|e| e.to_string())?;
     for (id, img) in icons {
+        if is_excluded_id(id) {
+            continue;
+        }
         let path = icons_dir.join(format!("{id}.png"));
         img.save(&path)
             .map_err(|e| format!("{}: {e}", path.display()))?;
     }
     Ok(())
+}
+
+fn read_archive(
+    reader: impl std::io::Read + std::io::Seek,
+) -> Result<(HashMap<String, PackIconVariants>, String), String> {
+    let mut icons = HashMap::new();
+    let mut ini = String::new();
+    let mut zip = zip::ZipArchive::new(reader).map_err(|e| format!("bad icon-pack zip: {e}"))?;
+    if zip.len() > ZIP_MAX_ENTRIES {
+        return Err("too many icon-pack zip entries".to_string());
+    }
+    for i in 0..zip.len() {
+        let entry = zip.by_index(i).map_err(|e| format!("bad zip entry: {e}"))?;
+        if !entry.is_file() {
+            continue;
+        }
+        let Some(name) = entry.enclosed_name().map(|p| p.to_path_buf()) else {
+            continue; // path traversal guard
+        };
+        if name.components().count() > 2 {
+            continue; // root files + one folder at most
+        }
+        let stem = match name.extension().and_then(|e| e.to_str()) {
+            Some("png") => name
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default()
+                .to_string(),
+            Some("ini") if name.file_name().and_then(|s| s.to_str()) == Some("pack.ini") => {
+                let mut buf = String::new();
+                let mut limited = entry.take(ZIP_MAX_ENTRY_BYTES);
+                let _ = limited.read_to_string(&mut buf);
+                ini = buf;
+                continue;
+            }
+            _ => continue,
+        };
+        if stem.is_empty() || entry.size() > ZIP_MAX_ENTRY_BYTES {
+            continue;
+        }
+        let mut buf = Vec::new();
+        let mut limited = entry.take(ZIP_MAX_ENTRY_BYTES);
+        if limited.read_to_end(&mut buf).is_err() {
+            continue;
+        }
+        if let Ok(img) = image::load_from_memory(&buf) {
+            ingest_png(&mut icons, &stem, img.to_rgba8());
+        }
+    }
+    Ok((icons, ini))
 }
 
 #[cfg(test)]
@@ -427,10 +510,8 @@ mod tests {
     }
 
     fn tmp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "paintfe_icon_pack_{tag}_{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("paintfe_icon_pack_{tag}_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -463,8 +544,7 @@ mod tests {
         assert_eq!(img.get_pixel(0, 0).0[0], 10);
         assert!(pack.resolve(Icon::MenuFileNew, false, true).is_some());
         assert!(
-            pack.resolve_shape(ShapeKind::Heart, false, true)
-                .is_some(),
+            pack.resolve_shape(ShapeKind::Heart, false, true).is_some(),
             "legacy shape stem resolves"
         );
         let _ = std::fs::remove_dir_all(&dir);
@@ -505,11 +585,8 @@ mod tests {
         let dir = tmp_dir("zip");
         let png = image::RgbaImage::from_pixel(2, 2, image::Rgba([1, 2, 3, 255]));
         let mut buf = Vec::new();
-        png.write_to(
-            &mut std::io::Cursor::new(&mut buf),
-            image::ImageFormat::Png,
-        )
-        .unwrap();
+        png.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .unwrap();
         let zip_path = dir.join("pack.zip");
         {
             let file = std::fs::File::create(&zip_path).unwrap();
@@ -540,8 +617,49 @@ mod tests {
         write_png(&dir.join("tool_pencil.png"), [2, 2, 2]);
         let pack = IconPack::load(&dir).unwrap();
         assert_eq!(pack.icon_count(), 1, "placeholder skipped");
-        assert!(pack.resolve(Icon::MenuFilterSharpen, false, false).is_none());
+        assert!(
+            pack.resolve(Icon::MenuFilterSharpen, false, false)
+                .is_none()
+        );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn retired_icons_and_legacy_theme_variants_are_not_imported_or_exported() {
+        let dir = tmp_dir("retired");
+        for id in EXCLUDED_IDS {
+            for suffix in ["", "_dark", "_light"] {
+                write_png(&dir.join(format!("{id}{suffix}.png")), [1, 2, 3]);
+            }
+        }
+        write_png(&dir.join("color_swap.png"), [4, 5, 6]);
+        write_png(&dir.join("ui_close.png"), [7, 8, 9]);
+        let pack = IconPack::load(&dir).unwrap();
+        assert_eq!(pack.icon_count(), 2);
+        assert!(pack.resolve(Icon::SwapColors, false, false).is_some());
+        assert!(pack.resolve(Icon::Close, false, false).is_some());
+
+        let out = dir.join("export");
+        let image = image::RgbaImage::from_pixel(2, 2, image::Rgba([1, 2, 3, 255]));
+        let mut icons: Vec<_> = EXCLUDED_IDS
+            .iter()
+            .map(|id| (id.to_string(), image.clone()))
+            .collect();
+        icons.push(("color_swap".to_string(), image));
+        export_template(
+            &out,
+            &icons,
+            &[("copy_hex".into(), "color_copy_hex".into())],
+        )
+        .unwrap();
+        let listing = std::fs::read_to_string(out.join("icons.txt")).unwrap();
+        for id in EXCLUDED_IDS {
+            assert!(!listing.lines().any(|line| line == *id));
+            assert!(!out.join("icons").join(format!("{id}.png")).exists());
+        }
+        assert!(!listing.contains("copy_hex ->"));
+        assert!(out.join("icons/color_swap.png").exists());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -584,7 +702,10 @@ mod tests {
         assert_eq!(Icon::DialogExpandCanvas.pack_id(), "dialog_expand_canvas");
         assert_eq!(Icon::DialogKeepCanvas.pack_id(), "dialog_keep_canvas");
         assert_eq!(Icon::DialogCancel.pack_id(), "dialog_cancel");
-        assert_eq!(Icon::DialogUnsavedWarning.pack_id(), "dialog_unsaved_warning");
+        assert_eq!(
+            Icon::DialogUnsavedWarning.pack_id(),
+            "dialog_unsaved_warning"
+        );
         assert_eq!(Icon::DialogSave.pack_id(), "dialog_save");
 
         // The save icon lives on filled accent buttons: never inverted.
@@ -607,7 +728,11 @@ mod tests {
         let pack = IconPack::load(&dir).unwrap();
         let (img, src) = pack.resolve(Icon::DialogSave, true, true).unwrap();
         assert_eq!(src, IconSource::PackGeneric);
-        assert_eq!(img.get_pixel(0, 0).0, [0, 255, 0, 255], "save icon never inverts");
+        assert_eq!(
+            img.get_pixel(0, 0).0,
+            [0, 255, 0, 255],
+            "save icon never inverts"
+        );
         let (_, src) = pack.resolve(Icon::DialogOpenImage, true, true).unwrap();
         assert_eq!(src, IconSource::PackGenericInverted);
 

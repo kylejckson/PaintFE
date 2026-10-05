@@ -43,7 +43,7 @@ modules:
       - dotnet publish paintdotnet-host/src/PaintFE.PaintDotNetHost/PaintFE.PaintDotNetHost.csproj
           -c Release --no-self-contained -m:1 -o /app/bin/paintdotnet-host
       # Icon
-      - install -Dm644 assets/icons/ui/app_icon.png
+      - install -Dm644 assets/icons/app_icon.png
           /app/share/icons/hicolor/256x256/apps/io.github.paintfe.PaintFE.png
       # Desktop entry
       - install -Dm644 packaging/flatpak/io.github.paintfe.PaintFE.desktop

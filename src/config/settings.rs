@@ -28,6 +28,9 @@ impl ZoomFilterMode {
 /// Application settings that persist across sessions
 #[derive(Clone, Debug)]
 pub struct AppSettings {
+    pub ui_polish: crate::ui::polish::PolishSettings,
+    pub workspace: crate::ui::workspace::WorkspaceSettings,
+    pub workspace_profiles: Vec<crate::ui::workspace::WorkspaceLayout>,
     /// Theme mode (Light or Dark)
     pub theme_mode: ThemeMode,
     /// Active accent preset
@@ -70,8 +73,9 @@ pub struct AppSettings {
     /// render a static pattern and the app can go fully idle with a selection
     /// active.
     pub animated_selection_ants: bool,
-    /// Path to the active user icon pack folder (empty = built-in icons).
+    /// Path to the active custom icon pack (empty = selected bundled style).
     pub icon_pack_path: String,
+    pub bundled_icon_style: crate::config::icon_packs::BundledIconStyle,
     /// Invert generic pack icons in dark mode when the pack has no dark
     /// variant for an icon (theme-specific variants are never inverted).
     pub icon_pack_invert_mismatch: bool,
@@ -133,12 +137,15 @@ pub struct AppSettings {
     pub persist_history_panel_right_offset: Option<(f32, f32)>,
     pub persist_history_panel_size: Option<(f32, f32)>,
     pub persist_colors_panel_left_offset: Option<(f32, f32)>,
+    pub persist_colors_panel_pos: Option<(f32, f32)>,
+    pub persist_palette_panel_size: Option<(f32, f32)>,
     pub persist_palette_panel_pos: Option<(f32, f32)>,
     pub persist_palette_panel_left_offset: Option<(f32, f32)>,
     pub persist_palette_panel_right_offset: Option<(f32, f32)>,
     pub persist_palette_recent_colors: String,
     pub persist_script_right_offset: Option<(f32, f32)>,
     pub persist_colors_panel_expanded: bool,
+    pub persist_colors_section_mask: u8,
 
     // Dialog option persistence
     pub persist_new_file_lock_aspect: bool,
@@ -149,6 +156,7 @@ pub struct AppSettings {
     pub persisted_brush_size: f32,
     pub persisted_brush_hardness: f32,
     pub persisted_brush_flow: f32,
+    pub persisted_brush_opacity: f32,
     pub persisted_brush_spacing: f32,
     pub persisted_brush_scatter: f32,
     pub persisted_brush_hue_jitter: f32,
@@ -209,6 +217,9 @@ pub struct AppSettings {
     /// Shadow strength multiplier (0.0–2.0, default 1.0).
     pub shadow_strength: f32,
     /// Widget rounding override (px).
+    pub history_rounding: Option<f32>,
+    pub history_placeholder_opacity: Option<f32>,
+    pub history_animations: Option<bool>,
     pub widget_rounding: Option<f32>,
     /// Window rounding override (px).
     pub window_rounding: Option<f32>,
@@ -260,6 +271,9 @@ impl Default for AppSettings {
     fn default() -> Self {
         let preset = ThemePreset::Signal;
         Self {
+            ui_polish: crate::ui::polish::PolishSettings::default(),
+            workspace: crate::ui::workspace::WorkspaceSettings::default(),
+            workspace_profiles: Vec::new(),
             // Web has no persisted settings file (no real filesystem), so
             // `default()` runs fresh every session — making this the
             // effective permanent default there. Desktop keeps Light as
@@ -288,6 +302,7 @@ impl Default for AppSettings {
             low_latency_present: true,
             animated_selection_ants: true,
             icon_pack_path: String::new(),
+            bundled_icon_style: crate::config::icon_packs::BundledIconStyle::Luminous,
             icon_pack_invert_mismatch: true,
             select_after_paste: false,
             onnx_runtime_path: String::new(),
@@ -328,12 +343,15 @@ impl Default for AppSettings {
             persist_history_panel_right_offset: None,
             persist_history_panel_size: None,
             persist_colors_panel_left_offset: None,
+            persist_colors_panel_pos: None,
+            persist_palette_panel_size: None,
             persist_palette_panel_pos: None,
             persist_palette_panel_left_offset: None,
             persist_palette_panel_right_offset: None,
             persist_palette_recent_colors: String::new(),
             persist_script_right_offset: None,
             persist_colors_panel_expanded: false,
+            persist_colors_section_mask: 1,
 
             persist_new_file_lock_aspect: true,
             persist_resize_lock_aspect: true,
@@ -342,6 +360,7 @@ impl Default for AppSettings {
             persisted_brush_size: 10.0,
             persisted_brush_hardness: 0.75,
             persisted_brush_flow: 1.0,
+            persisted_brush_opacity: 1.0,
             persisted_brush_spacing: 0.01,
             persisted_brush_scatter: 0.0,
             persisted_brush_hue_jitter: 0.0,
@@ -384,6 +403,9 @@ impl Default for AppSettings {
             canvas_grid_opacity: 0.4,
             glow_intensity: 1.0,
             shadow_strength: 1.0,
+            history_rounding: None,
+            history_placeholder_opacity: None,
+            history_animations: None,
             widget_rounding: None,
             window_rounding: None,
             menu_rounding: None,
@@ -575,6 +597,9 @@ impl AppSettings {
             glow_accent: self.ov_glow_accent,
             accent3: self.ov_accent3,
             accent4: self.ov_accent4,
+            history_rounding: self.history_rounding,
+            history_placeholder_opacity: self.history_placeholder_opacity,
+            history_animations: self.history_animations,
             widget_rounding: self.widget_rounding,
             window_rounding: self.window_rounding,
             menu_rounding: self.menu_rounding,
@@ -645,6 +670,18 @@ impl AppSettings {
             self.glow_intensity,
             self.shadow_strength,
         );
+        if let Ok(value) = serde_json::to_string(&self.ui_polish) {
+            content.push_str(&format!("ui_polish={value}\n"));
+        }
+        if let Some(v) = self.history_rounding {
+            content.push_str(&format!("history_rounding={v}\n"));
+        }
+        if let Some(v) = self.history_animations {
+            content.push_str(&format!("history_animations={v}\n"));
+        }
+        if let Some(v) = self.history_placeholder_opacity {
+            content.push_str(&format!("history_placeholder_opacity={v}\n"));
+        }
         if let Some(v) = self.widget_rounding {
             content.push_str(&format!("widget_rounding={v}\n"));
         }
@@ -659,6 +696,15 @@ impl AppSettings {
         }
         if let Some(v) = self.tool_button_rounding {
             content.push_str(&format!("tool_button_rounding={v}\n"));
+        }
+        for (key, value) in [
+            ("badge_rounding", self.badge_rounding),
+            ("tab_rounding", self.tab_rounding),
+            ("dialog_rounding", self.dialog_rounding),
+        ] {
+            if let Some(v) = value {
+                content.push_str(&format!("{key}={v}\n"));
+            }
         }
         let ov_fields: &[(&str, Option<Color32>)] = &[
             ("ov_bg_color", self.ov_bg_color),
@@ -711,6 +757,15 @@ impl AppSettings {
             if let Some((key, val)) = line.split_once('=') {
                 map.insert(key.trim().to_string(), val.trim().to_string());
             }
+        }
+        if let Some(value) = map.get("ui_polish") {
+            if let Ok(mut polish) = serde_json::from_str::<crate::ui::polish::PolishSettings>(value)
+            {
+                polish.sanitize();
+                self.ui_polish = polish;
+            }
+        } else if map.get("history_animations").is_some_and(|v| v == "false") {
+            self.ui_polish.row_motion = false;
         }
         if let Some(v) = map.get("theme_mode") {
             self.theme_mode = match v.as_str() {
@@ -791,6 +846,15 @@ impl AppSettings {
         {
             self.shadow_strength = f;
         }
+        if let Some(v) = map.get("history_rounding") {
+            self.history_rounding = v.parse::<f32>().ok().map(|v| v.clamp(0.0, 24.0));
+        }
+        if let Some(v) = map.get("history_animations") {
+            self.history_animations = v.parse().ok();
+        }
+        if let Some(v) = map.get("history_placeholder_opacity") {
+            self.history_placeholder_opacity = v.parse::<f32>().ok().map(|v| v.clamp(0.0, 1.0));
+        }
         if let Some(v) = map.get("widget_rounding") {
             self.widget_rounding = v.parse::<f32>().ok();
         }
@@ -812,6 +876,19 @@ impl AppSettings {
                     self.$field = Self::str_to_color(v);
                 }
             };
+        }
+        for (key, target) in [
+            ("badge_rounding", &mut self.badge_rounding),
+            ("tab_rounding", &mut self.tab_rounding),
+            ("dialog_rounding", &mut self.dialog_rounding),
+        ] {
+            if let Some(v) = map.get(key) {
+                *target = v
+                    .parse::<f32>()
+                    .ok()
+                    .filter(|v| v.is_finite())
+                    .map(|v| v.clamp(0.0, 24.0));
+            }
         }
         import_ov!("ov_bg_color", ov_bg_color);
         import_ov!("ov_panel_bg", ov_panel_bg);
@@ -850,6 +927,7 @@ impl AppSettings {
 
     /// Save settings to disk
     pub fn save(&self) {
+        let _scope = crate::ui::perf::Scope::new(3);
         #[cfg(not(target_arch = "wasm32"))]
         let Some(path) = Self::settings_path() else {
             return;
@@ -913,6 +991,7 @@ impl AppSettings {
               low_latency_present={}\n\
               animated_selection_ants={}\n\
               icon_pack_path={}\n\
+              bundled_icon_style={}\n\
               icon_pack_invert_mismatch={}\n\
               select_after_paste={}\n\
              onnx_runtime_path={}\n\
@@ -944,6 +1023,7 @@ impl AppSettings {
             self.low_latency_present,
             self.animated_selection_ants,
             self.icon_pack_path,
+            self.bundled_icon_style.key(),
             self.icon_pack_invert_mismatch,
             self.select_after_paste,
             self.onnx_runtime_path,
@@ -957,6 +1037,19 @@ impl AppSettings {
         );
         // Append keybinding lines
         let mut content = content;
+        for (key, value) in [
+            ("ui_polish", serde_json::to_string(&self.ui_polish)),
+            ("workspace", serde_json::to_string(&self.workspace)),
+            (
+                "workspace_profiles",
+                serde_json::to_string(&self.workspace_profiles),
+            ),
+        ] {
+            if let Ok(value) = value {
+                content.push_str(&format!("{key}={value}\n"));
+            }
+        }
+
         content.push_str(&format!(
             "persist_window_width={}\n",
             self.persist_window_width
@@ -1018,6 +1111,10 @@ impl AppSettings {
             Self::opt_pair_to_str(self.persist_colors_panel_left_offset)
         ));
         content.push_str(&format!(
+            "persist_palette_panel_size={}\n",
+            Self::opt_pair_to_str(self.persist_palette_panel_size)
+        ));
+        content.push_str(&format!(
             "persist_palette_panel_pos={}\n",
             Self::opt_pair_to_str(self.persist_palette_panel_pos)
         ));
@@ -1036,6 +1133,14 @@ impl AppSettings {
         content.push_str(&format!(
             "persist_script_right_offset={}\n",
             Self::opt_pair_to_str(self.persist_script_right_offset)
+        ));
+        content.push_str(&format!(
+            "persist_colors_panel_pos={}\n",
+            Self::opt_pair_to_str(self.persist_colors_panel_pos)
+        ));
+        content.push_str(&format!(
+            "persist_colors_section_mask={}\n",
+            self.persist_colors_section_mask
         ));
         content.push_str(&format!(
             "persist_colors_panel_expanded={}\n",
@@ -1060,6 +1165,10 @@ impl AppSettings {
         content.push_str(&format!(
             "persisted_brush_hardness={}\n",
             self.persisted_brush_hardness
+        ));
+        content.push_str(&format!(
+            "persisted_brush_opacity={}\n",
+            self.persisted_brush_opacity
         ));
         content.push_str(&format!(
             "persisted_brush_flow={}\n",
@@ -1224,6 +1333,15 @@ impl AppSettings {
         ));
         content.push_str(&format!("glow_intensity={}\n", self.glow_intensity));
         content.push_str(&format!("shadow_strength={}\n", self.shadow_strength));
+        if let Some(v) = self.history_rounding {
+            content.push_str(&format!("history_rounding={v}\n"));
+        }
+        if let Some(v) = self.history_animations {
+            content.push_str(&format!("history_animations={v}\n"));
+        }
+        if let Some(v) = self.history_placeholder_opacity {
+            content.push_str(&format!("history_placeholder_opacity={v}\n"));
+        }
         if let Some(v) = self.widget_rounding {
             content.push_str(&format!("widget_rounding={v}\n"));
         }
@@ -1324,6 +1442,32 @@ impl AppSettings {
             let key = key.trim();
             let val = val.trim();
             match key {
+                "ui_polish" => {
+                    if let Ok(mut value) =
+                        serde_json::from_str::<crate::ui::polish::PolishSettings>(val)
+                    {
+                        value.sanitize();
+                        s.ui_polish = value;
+                    }
+                }
+                "workspace" => {
+                    if let Ok(mut value) =
+                        serde_json::from_str::<crate::ui::workspace::WorkspaceSettings>(val)
+                    {
+                        value.sanitize();
+                        s.workspace = value;
+                    }
+                }
+                "workspace_profiles" => {
+                    if let Ok(mut profiles) =
+                        serde_json::from_str::<Vec<crate::ui::workspace::WorkspaceLayout>>(val)
+                    {
+                        profiles.retain_mut(|p| p.validate().is_ok());
+                        profiles.truncate(32);
+                        s.workspace_profiles = profiles;
+                    }
+                }
+
                 "theme_mode" => {
                     s.theme_mode = match val {
                         "dark" => ThemeMode::Dark,
@@ -1448,6 +1592,13 @@ impl AppSettings {
                 "icon_pack_path" => {
                     s.icon_pack_path = val.to_string();
                 }
+                "bundled_icon_style" => {
+                    s.bundled_icon_style = if val == "classic" {
+                        crate::config::icon_packs::BundledIconStyle::Classic
+                    } else {
+                        crate::config::icon_packs::BundledIconStyle::Luminous
+                    };
+                }
                 "icon_pack_invert_mismatch" => {
                     s.icon_pack_invert_mismatch = val == "true";
                 }
@@ -1514,6 +1665,9 @@ impl AppSettings {
                 "persist_colors_panel_left_offset" => {
                     s.persist_colors_panel_left_offset = Self::str_to_opt_pair(val);
                 }
+                "persist_palette_panel_size" => {
+                    s.persist_palette_panel_size = Self::str_to_opt_pair(val);
+                }
                 "persist_palette_panel_pos" => {
                     s.persist_palette_panel_pos = Self::str_to_opt_pair(val);
                 }
@@ -1528,6 +1682,12 @@ impl AppSettings {
                 }
                 "persist_script_right_offset" => {
                     s.persist_script_right_offset = Self::str_to_opt_pair(val);
+                }
+                "persist_colors_panel_pos" => {
+                    s.persist_colors_panel_pos = Self::str_to_opt_pair(val);
+                }
+                "persist_colors_section_mask" => {
+                    s.persist_colors_section_mask = val.parse::<u8>().unwrap_or(1) & 7;
                 }
                 "persist_colors_panel_expanded" => {
                     s.persist_colors_panel_expanded = val == "true";
@@ -1549,6 +1709,9 @@ impl AppSettings {
                 }
                 "persisted_stroke_stabilization" => {
                     s.persisted_stroke_stabilization = val.parse().unwrap_or(0.0);
+                }
+                "persisted_brush_opacity" => {
+                    s.persisted_brush_opacity = val.parse::<f32>().unwrap_or(1.0).clamp(0.0, 1.0);
                 }
                 "persisted_brush_flow" => {
                     s.persisted_brush_flow = val.parse().unwrap_or(1.0);
@@ -1692,6 +1855,16 @@ impl AppSettings {
                 "shadow_strength" => {
                     s.shadow_strength = val.parse().unwrap_or(1.0);
                 }
+                "history_rounding" => {
+                    s.history_rounding = val.parse::<f32>().ok().map(|v| v.clamp(0.0, 24.0));
+                }
+                "history_animations" => {
+                    s.history_animations = val.parse().ok();
+                }
+                "history_placeholder_opacity" => {
+                    s.history_placeholder_opacity =
+                        val.parse::<f32>().ok().map(|v| v.clamp(0.0, 1.0));
+                }
                 "widget_rounding" => {
                     s.widget_rounding = val.parse().ok();
                 }
@@ -1813,6 +1986,14 @@ impl AppSettings {
             }
         }
 
+        if !content
+            .lines()
+            .any(|line| line.trim_start().starts_with("ui_polish="))
+            && s.history_animations == Some(false)
+        {
+            s.ui_polish.row_motion = false;
+        }
+
         // Corruption detection: if language field looks like a number, the
         // settings file was saved with the old misaligned argument order.
         // Reset to defaults to avoid cascading corruption.
@@ -1826,6 +2007,32 @@ impl AppSettings {
         }
 
         s
+    }
+}
+
+#[cfg(test)]
+mod refinement_tests {
+    use super::*;
+    #[test]
+    fn theme_roundtrip_retains_new_widget_geometry_and_history_opacity() {
+        let original = AppSettings {
+            advanced_customization: true,
+            history_rounding: Some(17.0),
+            history_placeholder_opacity: Some(0.35),
+            badge_rounding: Some(8.0),
+            tab_rounding: Some(3.0),
+            ..Default::default()
+        };
+        let mut imported = AppSettings::default();
+        imported.import_theme_from_string(&original.export_theme_to_string());
+        assert_eq!(imported.history_rounding, Some(17.0));
+        assert_eq!(imported.history_placeholder_opacity, Some(0.35));
+        assert_eq!(imported.badge_rounding, Some(8.0));
+        assert_eq!(imported.tab_rounding, Some(3.0));
+        let mut theme = crate::theme::Theme::default();
+        theme.apply_overrides(&imported.build_theme_overrides());
+        assert_eq!(theme.history_rounding, 17.0);
+        assert_eq!(theme.history_placeholder_opacity, 0.35);
     }
 }
 
@@ -1855,5 +2062,53 @@ impl PixelGridMode {
             PixelGridMode::AlwaysOn,
             PixelGridMode::AlwaysOff,
         ]
+    }
+}
+
+#[cfg(test)]
+mod mega_pass_settings_tests {
+    use super::*;
+    #[test]
+    fn history_animation_preference_roundtrips_theme_export() {
+        let original = AppSettings {
+            advanced_customization: true,
+            history_animations: Some(false),
+            ..Default::default()
+        };
+        let mut imported = AppSettings::default();
+        imported.import_theme_from_string(&original.export_theme_to_string());
+        assert_eq!(imported.history_animations, Some(false));
+        let mut theme = crate::theme::Theme::default();
+        theme.apply_overrides(&imported.build_theme_overrides());
+        assert!(!theme.history_animations);
+    }
+}
+
+#[cfg(test)]
+mod polish_tests {
+    use super::*;
+    #[test]
+    fn theme_import_preserves_workspace_and_roundtrips_polish() {
+        let mut source = AppSettings::default();
+        source.ui_polish.mode = crate::ui::polish::MotionMode::Expressive;
+        source.ui_polish.icon_gap = 6.0;
+        let mut target = AppSettings::default();
+        target.workspace.snapping = false;
+        let workspace = target.workspace.clone();
+        let text = source.export_theme_to_string();
+        assert!(!text.contains("workspace="));
+        assert!(!text.contains("workspace_profiles="));
+        target.import_theme_from_string(&text);
+        assert_eq!(target.ui_polish, source.ui_polish);
+        assert_eq!(target.workspace, workspace);
+    }
+    #[test]
+    fn legacy_theme_motion_migrates_and_malformed_json_is_ignored() {
+        let mut settings = AppSettings::default();
+        settings.import_theme_from_string("history_animations=false\n");
+        assert!(!settings.ui_polish.row_motion);
+        let before = settings.ui_polish.clone();
+        settings.import_theme_from_string("ui_polish={broken\n");
+        assert_eq!(settings.ui_polish, before);
     }
 }

@@ -148,28 +148,36 @@ impl<'a> SignalButton<'a> {
 
     /// Render the button and return the response.
     pub fn show(self, ui: &mut Ui, theme: &Theme) -> Response {
-        let font = egui::FontId::proportional(Theme::FONT_BODY);
+        let font = egui::FontId::proportional(Theme::FONT_BODY * theme.polish.text_scale);
         let text_galley = ui
             .painter()
             .layout_no_wrap(self.text.to_string(), font, Color32::WHITE);
 
-        let padding = Vec2::new(16.0, 6.0);
+        let padding = Vec2::new(12.0, 5.0) * theme.polish.spacing_scale;
         let desired = text_galley.size() + padding * 2.0;
         let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
 
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), self.text)
+        });
         if ui.is_rect_visible(rect) {
             let hovered = response.hovered();
+            let hover = crate::ui::polish::hover(
+                ui.ctx(),
+                response.id.with("button_hover"),
+                hovered && ui.is_enabled(),
+            );
             let active = response.is_pointer_button_down_on();
 
             match self.style {
                 SignalButtonStyle::Primary => {
-                    self.paint_primary(ui, rect, theme, hovered, active);
+                    self.paint_primary(ui, rect, theme, hover, active);
                 }
                 SignalButtonStyle::Ghost => {
-                    self.paint_ghost(ui, rect, theme, hovered, active);
+                    self.paint_ghost(ui, rect, theme, hover, active);
                 }
                 SignalButtonStyle::OutlineAccent => {
-                    self.paint_outline_accent(ui, rect, theme, hovered, active);
+                    self.paint_outline_accent(ui, rect, theme, hover, active);
                 }
             }
 
@@ -192,7 +200,7 @@ impl<'a> SignalButton<'a> {
                 }
             };
 
-            let font = egui::FontId::proportional(Theme::FONT_BODY);
+            let font = egui::FontId::proportional(Theme::FONT_BODY * theme.polish.text_scale);
             let galley = ui
                 .painter()
                 .layout_no_wrap(self.text.to_string(), font, text_color);
@@ -204,87 +212,50 @@ impl<'a> SignalButton<'a> {
             );
         }
 
+        if !ui.is_enabled() {
+            ui.painter().rect_filled(
+                rect,
+                theme.widget_rounding,
+                theme.panel_bg.gamma_multiply(0.5),
+            );
+        }
+        crate::ui::polish::focus(ui, &response, theme.widget_rounding);
         response
     }
 
-    fn paint_primary(&self, ui: &Ui, rect: Rect, theme: &Theme, hovered: bool, active: bool) {
+    fn paint_primary(&self, ui: &Ui, rect: Rect, theme: &Theme, hover: f32, active: bool) {
         let fill = if active {
             darken(theme.accent, 15)
-        } else if hovered {
-            lighten(theme.accent, 20)
         } else {
-            theme.accent
+            Theme::lerp_color(theme.accent, lighten(theme.accent, 20), hover)
         };
-
-        // Glow behind on hover
-        if hovered {
-            signal_draw::draw_glow_rect(ui.painter(), rect, theme.glow_accent, 8.0, 8.0);
-        }
-
-        ui.painter().rect_filled(rect, CornerRadius::same(8), fill);
+        ui.painter().rect_filled(rect, theme.widget_rounding, fill);
     }
 
-    fn paint_ghost(&self, ui: &Ui, rect: Rect, theme: &Theme, hovered: bool, active: bool) {
+    fn paint_ghost(&self, ui: &Ui, rect: Rect, theme: &Theme, hover: f32, active: bool) {
         let fill = if active {
             theme.bg3
-        } else if hovered {
-            theme.bg2
         } else {
-            Color32::TRANSPARENT
+            theme.bg2.gamma_multiply(hover)
         };
-
-        let stroke_color = if hovered {
-            theme.border_lit
-        } else {
-            theme.border_color
-        };
-
+        let stroke = Theme::lerp_color(theme.border_color, theme.border_lit, hover);
         ui.painter().rect(
             rect,
-            CornerRadius::same(6),
+            theme.widget_rounding,
             fill,
-            Stroke::new(1.0, stroke_color),
-            egui::StrokeKind::Middle,
+            Stroke::new(theme.polish.border_width, stroke),
+            egui::StrokeKind::Inside,
         );
     }
 
-    fn paint_outline_accent(
-        &self,
-        ui: &Ui,
-        rect: Rect,
-        theme: &Theme,
-        hovered: bool,
-        active: bool,
-    ) {
-        let fill = if active {
-            Color32::from_rgba_unmultiplied(
-                theme.accent3.r(),
-                theme.accent3.g(),
-                theme.accent3.b(),
-                40,
-            )
-        } else if hovered {
-            Color32::from_rgba_unmultiplied(
-                theme.accent3.r(),
-                theme.accent3.g(),
-                theme.accent3.b(),
-                25,
-            )
-        } else {
-            Color32::TRANSPARENT
-        };
-
-        // Glow behind on hover
-        if hovered {
-            signal_draw::draw_glow_rect(ui.painter(), rect, theme.glow_accent3, 6.0, 6.0);
-        }
-
+    fn paint_outline_accent(&self, ui: &Ui, rect: Rect, theme: &Theme, hover: f32, active: bool) {
+        let strength = if active { 0.16 } else { hover * 0.10 };
         ui.painter().rect(
             rect,
-            CornerRadius::same(6),
-            fill,
-            Stroke::new(1.0, theme.accent3),
-            egui::StrokeKind::Middle,
+            theme.widget_rounding,
+            theme.accent3.gamma_multiply(strength),
+            Stroke::new(theme.polish.border_width, theme.accent3),
+            egui::StrokeKind::Inside,
         );
     }
 }
@@ -426,7 +397,7 @@ impl<'a> PillTabBar<'a> {
     }
 
     fn paint_tab(&self, ui: &mut Ui, theme: &Theme, tab: &PillTab, is_active: bool) -> TabResponse {
-        let font = egui::FontId::proportional(Theme::FONT_BODY);
+        let font = egui::FontId::proportional(Theme::FONT_BODY * theme.polish.text_scale);
         let text_color = if is_active {
             theme.text_color
         } else {
@@ -452,35 +423,27 @@ impl<'a> PillTabBar<'a> {
             let hovered = response.hovered();
 
             let tab_cr = CornerRadius::same(theme.tab_rounding as u8);
-            // Tab background
-            if is_active {
-                ui.painter().rect(
-                    tab_rect,
-                    tab_cr,
-                    theme.bg3,
-                    Stroke::NONE,
-                    egui::StrokeKind::Middle,
-                );
-                // Subtle inset shadow for active tab
-                let shadow_rect =
-                    Rect::from_min_size(tab_rect.min, Vec2::new(tab_rect.width(), 2.0));
-                ui.painter().rect_filled(
-                    shadow_rect,
-                    CornerRadius::same(1),
-                    Color32::from_black_alpha(20),
-                );
-            } else if hovered {
-                ui.painter().rect_filled(
-                    tab_rect,
-                    tab_cr,
-                    Color32::from_rgba_unmultiplied(
-                        theme.bg3.r(),
-                        theme.bg3.g(),
-                        theme.bg3.b(),
-                        80,
-                    ),
-                );
-            }
+            response.widget_info(|| {
+                egui::WidgetInfo::selected(
+                    egui::WidgetType::Button,
+                    ui.is_enabled(),
+                    is_active,
+                    &tab.label,
+                )
+            });
+            let selected = crate::ui::polish::animate(
+                ui.ctx(),
+                response.id.with("selected"),
+                if is_active { 1.0 } else { 0.0 },
+                crate::ui::polish::MotionKind::Selection,
+            );
+            let hover = crate::ui::polish::hover(ui.ctx(), response.id.with("hover"), hovered);
+            ui.painter().rect_filled(
+                tab_rect,
+                tab_cr,
+                theme.bg3.gamma_multiply((selected + hover * 0.3).min(1.0)),
+            );
+            crate::ui::polish::focus(ui, &response, tab_cr);
 
             // Tab label
             let text_pos = egui::pos2(
@@ -507,17 +470,20 @@ impl<'a> PillTabBar<'a> {
                     theme.text_faint
                 };
 
-                // Draw × symbol
-                let close_font = egui::FontId::proportional(10.0);
-                let close_galley =
-                    ui.painter()
-                        .layout_no_wrap("×".to_string(), close_font, close_color);
-                let close_text_pos = close_rect.center() - close_galley.size() / 2.0;
-                ui.painter().galley(
-                    egui::pos2(close_text_pos.x, close_text_pos.y),
-                    close_galley,
-                    egui::Color32::TRANSPARENT,
+                close_response.widget_info(|| {
+                    egui::WidgetInfo::labeled(
+                        egui::WidgetType::Button,
+                        ui.is_enabled(),
+                        format!("Close {}", tab.label),
+                    )
+                });
+                crate::ui::polish::control(
+                    ui,
+                    &close_response,
+                    false,
+                    theme.widget_rounding.min(6.0),
                 );
+                paint_close_cross(ui, close_rect, close_color);
 
                 if close_response.clicked() {
                     close_clicked = true;
@@ -575,7 +541,7 @@ pub fn card_frame_interactive<R>(
     theme: &Theme,
     add_contents: impl FnOnce(&mut Ui) -> R,
 ) -> egui::InnerResponse<R> {
-    let hover_t = ui.ctx().animate_bool(id.with("card_hover"), false);
+    let hover_t = crate::ui::polish::panel_hover(ui.ctx(), id.with("card_hover"));
 
     let border = lerp_color(theme.border_color, theme.border_lit, hover_t);
 
@@ -595,7 +561,7 @@ pub fn card_frame_interactive<R>(
 
     // Update hover animation state for next frame
     let hovered = ui.rect_contains_pointer(resp.response.rect);
-    ui.ctx().animate_bool(id.with("card_hover"), hovered);
+    crate::ui::polish::remember_hover(ui.ctx(), id.with("card_hover"), hovered);
 
     resp
 }
@@ -615,7 +581,65 @@ pub fn card_frame_interactive<R>(
 /// both of them short.
 ///
 /// Returns `true` if the close button was clicked.
-pub fn panel_header(ui: &mut Ui, theme: &Theme, title: &str, badge: Option<(&str, Color32)>) -> bool {
+/// Preserve resize gestures even when press, move and release arrive in one frame.
+pub(crate) fn floating_resize(
+    ctx: &egui::Context,
+    response: &egui::Response,
+    id: &'static str,
+    min: Vec2,
+) -> Option<Vec2> {
+    let panel = id;
+    let id = egui::Id::new(("floating_resize_capture", id));
+    let mut capture = ctx.data_mut(|d| d.get_temp::<(egui::Pos2, Vec2)>(id));
+    let grip = egui::Rect::from_min_max(response.rect.max - Vec2::splat(18.0), response.rect.max);
+    let mut size = None;
+    let events = ctx.input(|i| i.events.clone());
+    for event in events {
+        match event {
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                ..
+            } if response.enabled()
+                && grip.contains(pos)
+                && ctx.layer_id_at(pos) == Some(response.layer_id) =>
+            {
+                capture = Some((pos, response.rect.size()));
+            }
+            egui::Event::PointerMoved(pos) if capture.is_some() => {
+                let (start, original) = capture.unwrap();
+                size = Some((original + (pos - start)).max(min));
+            }
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                ..
+            } if capture.is_some() => {
+                let (start, original) = capture.take().unwrap();
+                size = Some((original + (pos - start)).max(min));
+            }
+            egui::Event::PointerGone => capture = None,
+            _ => {}
+        }
+    }
+    ctx.data_mut(|d| {
+        if let Some(c) = capture {
+            d.insert_temp(id, c);
+        } else {
+            d.remove::<(egui::Pos2, Vec2)>(id);
+        }
+    });
+    size.map(|size| crate::ui::workspace::resize(ctx, panel, response.rect, size, min))
+}
+
+pub fn panel_header(
+    ui: &mut Ui,
+    theme: &Theme,
+    title: &str,
+    badge: Option<(&str, Color32)>,
+) -> bool {
     let mut close_clicked = false;
     // Capture the full available width BEFORE entering the horizontal layout.
     let header_width = ui.available_width();
@@ -623,44 +647,81 @@ pub fn panel_header(ui: &mut Ui, theme: &Theme, title: &str, badge: Option<(&str
         // Exact width: the close button must land on the panel's right edge.
         ui.set_width(header_width);
 
-        if let Some((badge_text, badge_color)) = badge {
-            SignalBadge::new(badge_text, badge_color).show(ui, theme);
-        } else {
-            // No badge — show the title text as a heading
-            ui.label(
-                egui::RichText::new(title)
-                    .size(Theme::FONT_HEADING)
-                    .color(theme.text_color),
-            );
-        }
+        let label = badge.map_or(title, |(label, _)| label);
+        ui.label(
+            egui::RichText::new(label)
+                .font(egui::FontId::new(
+                    11.0 * theme.polish.text_scale,
+                    egui::FontFamily::Name("WidgetTitle".into()),
+                ))
+                .strong()
+                .color(theme.text_color),
+        );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            // Ghost-style close button
-            let (close_rect, close_resp) =
-                ui.allocate_exact_size(Vec2::splat(18.0), Sense::click());
-            if ui.is_rect_visible(close_rect) {
-                let hovered = close_resp.hovered();
-                if hovered {
-                    ui.painter()
-                        .rect_filled(close_rect, CornerRadius::same(4), theme.bg3);
-                }
-                let color = if hovered {
-                    theme.accent
-                } else {
-                    theme.text_muted
-                };
-                let font = egui::FontId::proportional(13.0);
-                let galley = ui.painter().layout_no_wrap("×".to_string(), font, color);
-                let pos = close_rect.center() - galley.size() / 2.0;
-                ui.painter()
-                    .galley(egui::pos2(pos.x, pos.y), galley, egui::Color32::TRANSPARENT);
-            }
-            if close_resp.clicked() {
-                close_clicked = true;
-            }
+            close_clicked = close_button(ui, theme).clicked();
         });
     });
-    gradient_divider(ui, theme);
-    ui.add_space(2.0);
+    if matches!(
+        title,
+        "Tools" | "Layers" | "Colors" | "Palette" | "History" | "ScriptEditor"
+    ) {
+        let rect = egui::Rect::from_min_size(
+            ui.min_rect().min,
+            egui::vec2((header_width - 24.0).max(0.0), 18.0),
+        );
+        ui.interact(rect, ui.layer_id().id.with("header_drag"), Sense::drag())
+            .on_hover_cursor(egui::CursorIcon::Grab);
+        let gesture_id = egui::Id::new(("floating_header_pointer", title));
+        let mut last = ui.ctx().data_mut(|d| d.get_temp::<egui::Pos2>(gesture_id));
+        let mut delta = Vec2::ZERO;
+        // Process the press position before later motion, including fast gestures batched into one frame.
+        let events = ui.input(|input| input.events.clone());
+        for event in &events {
+            match event {
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    ..
+                } if ui.is_enabled()
+                    && rect.intersect(ui.clip_rect()).contains(*pos)
+                    && ui
+                        .ctx()
+                        .layer_id_at(*pos)
+                        .is_none_or(|layer| layer == ui.layer_id()) =>
+                {
+                    last = Some(*pos)
+                }
+                egui::Event::PointerMoved(pos) => {
+                    if let Some(previous) = last {
+                        delta += *pos - previous;
+                        last = Some(*pos);
+                    }
+                }
+                egui::Event::PointerButton {
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    ..
+                }
+                | egui::Event::PointerGone => last = None,
+                _ => {}
+            }
+        }
+        ui.ctx().data_mut(|d| {
+            if let Some(pos) = last {
+                d.insert_temp(gesture_id, pos);
+            } else {
+                d.remove::<egui::Pos2>(gesture_id);
+            }
+            if delta != Vec2::ZERO {
+                d.insert_temp(egui::Id::new(("floating_header_drag", title)), delta);
+            }
+        });
+        if delta != Vec2::ZERO {
+            ui.ctx().request_repaint();
+        }
+    }
+    ui.add_space(4.0);
     close_clicked
 }
 
@@ -733,10 +794,107 @@ fn darken(c: Color32, amount: u8) -> Color32 {
 fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
     let t = t.clamp(0.0, 1.0);
     let inv = 1.0 - t;
-    Color32::from_rgba_unmultiplied(
+    Color32::from_rgba_premultiplied(
         (a.r() as f32 * inv + b.r() as f32 * t) as u8,
         (a.g() as f32 * inv + b.g() as f32 * t) as u8,
         (a.b() as f32 * inv + b.b() as f32 * t) as u8,
         (a.a() as f32 * inv + b.a() as f32 * t) as u8,
     )
+}
+
+/// Shared font-independent close mark for panels and document tabs.
+pub fn paint_close_cross(ui: &Ui, rect: Rect, color: Color32) {
+    let custom = ui
+        .ctx()
+        .data(|d| {
+            d.get_temp::<Option<egui::TextureHandle>>(egui::Id::new("paintfe_close_override"))
+        })
+        .flatten();
+    if let Some(texture) = custom {
+        ui.painter().image(
+            texture.id(),
+            Rect::from_center_size(rect.center(), Vec2::splat(10.0)),
+            Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+            Color32::WHITE,
+        );
+        return;
+    }
+    let center = rect.center();
+    let d = 3.5;
+    let stroke = egui::Stroke::new(1.35, color);
+    for (a, b) in [
+        (Vec2::new(-d, -d), Vec2::new(d, d)),
+        (Vec2::new(-d, d), Vec2::new(d, -d)),
+    ] {
+        ui.painter().line_segment([center + a, center + b], stroke);
+        ui.painter().circle_filled(center + a, 0.675, color);
+        ui.painter().circle_filled(center + b, 0.675, color);
+    }
+}
+
+pub fn close_button(ui: &mut Ui, theme: &Theme) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Close")
+    });
+    crate::ui::polish::control(ui, &response, false, theme.widget_rounding.min(6.0));
+    let hover = crate::ui::polish::hover(
+        ui.ctx(),
+        response.id.with("close_color"),
+        response.hovered(),
+    );
+    paint_close_cross(
+        ui,
+        rect,
+        Theme::lerp_color(theme.text_muted, theme.accent, hover),
+    );
+    response.on_hover_text("Close")
+}
+
+#[cfg(test)]
+mod refinement_tests {
+    use super::*;
+    #[test]
+    fn fast_resize_releases_capture_and_respects_minimum() {
+        let ctx = egui::Context::default();
+        let mut rect = Rect::NOTHING;
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            rect = ui.allocate_exact_size(Vec2::splat(100.0), Sense::hover()).0;
+        });
+        let start = rect.max - Vec2::splat(5.0);
+        let end = start + egui::vec2(80.0, 40.0);
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let mut result = None;
+        let _ = ctx.run_ui(
+            egui::RawInput {
+                events: vec![
+                    button(start, true),
+                    egui::Event::PointerMoved(end),
+                    button(end, false),
+                ],
+                ..Default::default()
+            },
+            |ui| {
+                let response = ui.allocate_exact_size(Vec2::splat(100.0), Sense::hover()).1;
+                result = floating_resize(&ctx, &response, "test", Vec2::splat(50.0));
+            },
+        );
+        assert_eq!(result, Some(egui::vec2(180.0, 140.0)));
+        let _ = ctx.run_ui(
+            egui::RawInput {
+                events: vec![egui::Event::PointerMoved(start)],
+                ..Default::default()
+            },
+            |ui| {
+                let response = ui.allocate_exact_size(Vec2::splat(100.0), Sense::hover()).1;
+                result = floating_resize(&ctx, &response, "test", Vec2::splat(50.0));
+            },
+        );
+        assert_eq!(result, None);
+    }
 }

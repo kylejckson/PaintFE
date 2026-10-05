@@ -418,6 +418,28 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout release notes
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Prepare release notes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          notes=".github/release-notes/$RELEASE_TAG.md"
+          if [ -f "$notes" ]; then
+            cp "$notes" release-notes.md
+          else
+            awk -v version="${RELEASE_TAG#v}" '
+              /^## \[/ {
+                if (found) exit
+                if (index($0, "## [" version "]") == 1) found = 1
+                next
+              }
+              found { print }
+            ' CHANGELOG.md > release-notes.md
+          fi
+          test -s release-notes.md
+
       - name: Download Windows binary
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -486,7 +508,7 @@ jobs:
           name: PaintFE ${{ github.ref_name }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
-          generate_release_notes: true
+          body_path: release-notes.md
           files: |
             dist/windows/PaintFE.exe
             dist/linux/PaintFE

@@ -174,6 +174,8 @@ pub struct PaintFEApp {
     pending_import_queue: Vec<PendingImport>,
     /// When checked in the import dialog, the choice applies to the whole queue.
     import_apply_to_all: bool,
+    /// Retained while an oversized import pauses an apply-to-all batch.
+    import_batch_choice: Option<usize>,
     /// Oversized "add as layer" import awaiting the expand/keep/cancel choice.
     pending_oversized_import: Option<PendingImport>,
     clipboard_paste_receiver:
@@ -199,9 +201,10 @@ pub struct PaintFEApp {
     layers_panel_size: Option<(f32, f32)>,
     history_panel_right_offset: Option<(f32, f32)>, // (offset_from_right, offset_from_bottom)
     history_panel_size: Option<(f32, f32)>,
-    colors_panel_left_offset: Option<(f32, f32)>, // (x, offset_from_bottom)
-    palette_panel_pos: Option<(f32, f32)>,        // (x, y)
-    tools_panel_pos: Option<(f32, f32)>,          // (x, y) absolute
+    colors_panel_pos: Option<(f32, f32)>, // (x, offset_from_bottom)
+    palette_panel_size: Option<(f32, f32)>,
+    palette_panel_pos: Option<(f32, f32)>, // (x, y)
+    tools_panel_pos: Option<(f32, f32)>,   // (x, y) absolute
     last_screen_size: (f32, f32),
     ui_cursor_blocking_rects: Vec<egui::Rect>,
     ui_cursor_blocking_rects_next: Vec<egui::Rect>,
@@ -304,8 +307,6 @@ pub struct PaintFEApp {
     prev_vk_v_press_count: u64,
     prev_vk_enter_press_count: u64,
     prev_vk_escape_press_count: u64,
-    recent_color_project_id: Option<uuid::Uuid>,
-    recent_color_undo_count: usize,
     palette_reposition_settle_frames: u8,
     palette_startup_target_pos: Option<(f32, f32)>,
     last_tool_settings_fingerprint: u64,

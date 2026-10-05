@@ -40,7 +40,17 @@ impl ToolsPanel {
                     return;
                 }
 
-                let is_painting = is_primary_down || is_secondary_down;
+                let is_painting = is_primary_down
+                    || is_secondary_down
+                    || ((is_primary_released
+                        || is_secondary_released
+                        || is_primary_clicked
+                        || is_secondary_clicked)
+                        && (self.tool_state.last_pos.is_some()
+                            || is_primary_pressed
+                            || is_secondary_pressed
+                            || is_primary_clicked
+                            || is_secondary_clicked));
                 let editing_mask = canvas_state.edit_layer_mask
                     && canvas_state
                         .layers
@@ -154,19 +164,22 @@ impl ToolsPanel {
                     // stroke tracks the real pointer position. Draw functions clip
                     // to canvas bounds internally — off-canvas positions produce
                     // no pixels but maintain natural stroke flow onto the canvas.
-                    let current_f32 = canvas_pos_f32.or(
-                        canvas_pos_unclamped
-                    ).or_else(|| canvas_pos.map(|(x, y)| (x as f32, y as f32)));
-                    let current_pos = canvas_pos.or_else(|| {
-                        canvas_pos_unclamped.map(|(x, y)| (x as u32, y as u32))
-                    });
+                    let current_f32 = canvas_pos_f32
+                        .or(canvas_pos_unclamped)
+                        .or_else(|| canvas_pos.map(|(x, y)| (x as f32, y as f32)));
+                    let current_pos = canvas_pos
+                        .or_else(|| canvas_pos_unclamped.map(|(x, y)| (x as u32, y as u32)));
                     if let (Some(cf), Some(current_pos)) = (current_f32, current_pos) {
                         // Initialize on first paint
-                        if self.tool_state.last_pos.is_none() {
-                            self.tool_state.using_secondary_color = is_secondary_down;
-                            self.tool_state.last_precise_pos = Some(Pos2::new(cf.0, cf.1));
+                        let starting_stroke = self.tool_state.last_pos.is_none();
+                        if starting_stroke {
+                            self.brush_coverage.clear();
+                            self.tool_state.using_secondary_color =
+                                is_secondary_down || is_secondary_pressed || is_secondary_clicked;
+                            let first = raw_motion_events.first().copied().unwrap_or(cf);
+                            self.tool_state.last_precise_pos = Some(Pos2::new(first.0, first.1));
                             self.tool_state.distance_remainder = 0.0;
-                            self.tool_state.smooth_pos = Some(Pos2::new(cf.0, cf.1));
+                            self.tool_state.smooth_pos = Some(Pos2::new(first.0, first.1));
 
                             // Start stroke tracking for Undo/Redo
                             let is_eraser = self.active_tool == Tool::Eraser;
@@ -265,7 +278,35 @@ impl ToolsPanel {
 
                         // Stroke stabilization (EMA smoothing of raw pointer
                         // samples; 0 = raw, Pencil always raw).
-                        let smoothed_positions = self.stabilize_positions(&positions);
+                        let mut smoothed_positions = self.stabilize_positions(&positions);
+                        let movement_deposits = self.active_tool == Tool::Brush
+                            && matches!(
+                                self.properties.brush_mode,
+                                BrushMode::Normal | BrushMode::BuildUp
+                            );
+                        if movement_deposits {
+                            let spacing = if self.properties.brush_tip.is_circle() {
+                                0.1
+                            } else {
+                                self.properties.spacing.clamp(0.01, 2.0)
+                            };
+                            let step = (self.pressure_size() * spacing).max(0.5);
+                            let start = if starting_stroke {
+                                None
+                            } else {
+                                self.tool_state.last_precise_pos.map(|p| (p.x, p.y))
+                            };
+                            let last = smoothed_positions.last().copied();
+                            smoothed_positions = sample_brush_path(
+                                start,
+                                &smoothed_positions,
+                                step,
+                                &mut self.tool_state.distance_remainder,
+                            );
+                            if let Some((x, y)) = last {
+                                self.tool_state.last_precise_pos = Some(Pos2::new(x, y));
+                            }
+                        }
 
                         // Accumulate a single dirty rect for the entire frame
                         let mut frame_dirty_rect = Rect::NOTHING;
@@ -284,7 +325,16 @@ impl ToolsPanel {
 
                             for &mpos in positions_to_draw.iter() {
                                 // CPU-only paint step: lerp from last_precise_pos -> pos
-                                let modified_rect = if self.active_tool == Tool::Pencil {
+                                let modified_rect = if movement_deposits {
+                                    self.draw_circle_and_get_bounds(
+                                        canvas_state,
+                                        mpos,
+                                        false,
+                                        use_secondary,
+                                        primary_color_f32,
+                                        secondary_color_f32,
+                                    )
+                                } else if self.active_tool == Tool::Pencil {
                                     if let Some(start_p) = start_precise {
                                         let start_mirrors =
                                             mirror.mirror_positions(start_p.x, start_p.y, mw, mh);
@@ -352,7 +402,9 @@ impl ToolsPanel {
                             }
 
                             // Update last position for next paint step (always track the original, not mirrored)
-                            self.tool_state.last_precise_pos = Some(Pos2::new(pos.0, pos.1));
+                            if !movement_deposits {
+                                self.tool_state.last_precise_pos = Some(Pos2::new(pos.0, pos.1));
+                            }
                         }
 
                         // Track stroke bounds for undo/redo
@@ -374,12 +426,47 @@ impl ToolsPanel {
 
                         self.tool_state.last_pos = Some(current_pos);
                         self.tool_state.last_brush_pos = Some(current_pos);
-                        ui.ctx().request_repaint();
+                        if !movement_deposits || frame_dirty_rect.is_positive() {
+                            ui.ctx().request_repaint();
+                        }
                     }
-                } else {
+                }
+                if !is_primary_down && !is_secondary_down {
                     // Mouse released - commit and reset state
                     if self.tool_state.last_pos.is_some() {
                         let is_eraser = self.active_tool == Tool::Eraser;
+
+                        // Finish the short tail left after the last distance-spaced deposit.
+                        if self.active_tool == Tool::Brush
+                            && matches!(
+                                self.properties.brush_mode,
+                                BrushMode::Normal | BrushMode::BuildUp
+                            )
+                            && self.tool_state.distance_remainder > 1e-5
+                            && let Some(end) = self.tool_state.last_precise_pos
+                        {
+                            let positions = canvas_state.mirror_mode.mirror_positions(
+                                end.x,
+                                end.y,
+                                canvas_state.width,
+                                canvas_state.height,
+                            );
+                            let mut bounds = Rect::NOTHING;
+                            for &pos in positions.iter() {
+                                bounds = bounds.union(self.draw_circle_and_get_bounds(
+                                    canvas_state,
+                                    pos,
+                                    false,
+                                    self.tool_state.using_secondary_color,
+                                    primary_color_f32,
+                                    secondary_color_f32,
+                                ));
+                            }
+                            self.stroke_tracker.expand_bounds(bounds);
+                            if bounds.is_positive() {
+                                canvas_state.mark_preview_changed_rect(bounds);
+                            }
+                        }
 
                         // Capture "before" NOW (layer still unchanged), then commit
                         // Finish stroke tracking BEFORE commit - this captures "before" from unchanged layer
@@ -438,9 +525,7 @@ impl ToolsPanel {
                         // Allow off-canvas start: use raw unclamped f32 coords so the line
                         // tracks the real pointer. Rasterization clips to canvas bounds.
                         // Use f32 directly — u32 cast breaks for negative (left/top off-canvas).
-                        let line_pos_f32 = canvas_pos_f32.or(
-                            canvas_pos_unclamped
-                        );
+                        let line_pos_f32 = canvas_pos_f32.or(canvas_pos_unclamped);
 
                         if !self.line_state.line_tool.require_mouse_release {
                             // Normal behavior: start line on click (or click and drag)
@@ -486,9 +571,7 @@ impl ToolsPanel {
                     }
                     LineStage::Dragging => {
                         // Allow off-canvas drag: use raw unclamped f32 coords.
-                        let drag_pos_f32 = canvas_pos_f32.or(
-                            canvas_pos_unclamped
-                        );
+                        let drag_pos_f32 = canvas_pos_f32.or(canvas_pos_unclamped);
                         if let Some(pos) = drag_pos_f32 {
                             let raw_pos = Pos2::new(pos.0, pos.1);
                             let p0 = self.line_state.line_tool.control_points[0];
@@ -585,7 +668,9 @@ impl ToolsPanel {
                         let mouse_pos = ui.input(|i| {
                             i.pointer.interact_pos().or_else(|| {
                                 i.events.iter().rev().find_map(|e| match e {
-                                    egui::Event::PointerButton { pressed: true, pos, .. } => Some(*pos),
+                                    egui::Event::PointerButton {
+                                        pressed: true, pos, ..
+                                    } => Some(*pos),
                                     egui::Event::Touch {
                                         phase: egui::TouchPhase::Start | egui::TouchPhase::Move,
                                         pos,
@@ -837,7 +922,8 @@ impl ToolsPanel {
                                 let canvas_pos_float =
                                     self.screen_to_canvas_pos2(screen_pos, canvas_rect, zoom);
                                 // Allow handles off-canvas — rasterizer clips to bounds.
-                                self.line_state.line_tool.control_points[handle_idx] = canvas_pos_float;
+                                self.line_state.line_tool.control_points[handle_idx] =
+                                    canvas_pos_float;
 
                                 // OPTIMIZATION: Calculate bounds and use smart dirty rects
                                 let current_bounds = self.get_bezier_bounds(
@@ -891,3 +977,137 @@ impl ToolsPanel {
     }
 }
 
+#[cfg(test)]
+mod mega_pass_input_tests {
+    use super::*;
+
+    #[test]
+    fn one_held_stroke_can_retrace_without_stationary_buildup() {
+        let ctx = egui::Context::default();
+        let mut tools = ToolsPanel::default();
+        tools.properties.size = 32.0;
+        tools.properties.hardness = 0.0;
+        let mut canvas = CanvasState::new(64, 64);
+        canvas.layers[0].pixels = TiledImage::new(64, 64);
+        let mut gpu = None;
+        let mut event = None;
+        let mut frame = |tools: &mut ToolsPanel,
+                         canvas: &mut CanvasState,
+                         points: &[(f32, f32)],
+                         down,
+                         released,
+                         pressed| {
+            let end = *points.last().unwrap();
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let painter = ui.painter().clone();
+                tools.handle_stroke_tools_input(
+                    ui,
+                    canvas,
+                    Some((end.0 as u32, end.1 as u32)),
+                    Some(end),
+                    None,
+                    Some(end),
+                    points,
+                    &painter,
+                    Rect::from_min_size(Pos2::ZERO, egui::vec2(64.0, 64.0)),
+                    1.0,
+                    [0.0, 0.0, 0.0, 1.0],
+                    [1.0; 4],
+                    &mut gpu,
+                    &mut event,
+                    down,
+                    released,
+                    released,
+                    pressed,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                );
+            });
+        };
+        frame(
+            &mut tools,
+            &mut canvas,
+            &[(8.0, 32.0), (56.0, 32.0)],
+            true,
+            false,
+            true,
+        );
+        let edge_before = *canvas.preview_layer.as_ref().unwrap().get_pixel(56, 44);
+        frame(&mut tools, &mut canvas, &[(56.0, 32.0)], true, false, false);
+        assert_eq!(
+            *canvas.preview_layer.as_ref().unwrap().get_pixel(56, 44),
+            edge_before
+        );
+        frame(
+            &mut tools,
+            &mut canvas,
+            &[(56.0, 48.0), (8.0, 48.0), (8.0, 32.0), (56.0, 32.0)],
+            true,
+            false,
+            false,
+        );
+        assert_eq!(
+            canvas.preview_layer.as_ref().unwrap().get_pixel(32, 32)[3],
+            255
+        );
+        frame(&mut tools, &mut canvas, &[(56.0, 32.0)], false, true, false);
+        assert!(event.is_some());
+        assert_eq!(canvas.layers[0].pixels.get_pixel(32, 32)[3], 255);
+        assert!(tools.brush_coverage.is_empty());
+    }
+
+    #[test]
+    fn press_move_release_in_one_frame_paints_whole_path_and_commits() {
+        let ctx = egui::Context::default();
+        let mut tools = ToolsPanel::default();
+        tools.properties.size = 16.0;
+        tools.properties.hardness = 0.0;
+        let mut canvas = CanvasState::new(64, 64);
+        canvas.layers[0].pixels = TiledImage::new(64, 64);
+        let mut gpu = None;
+        let mut stroke_event = None;
+        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+            egui::CentralPanel::default().show(root_ui, |ui| {
+                let painter = ui.painter().clone();
+                tools.handle_stroke_tools_input(
+                    ui,
+                    &mut canvas,
+                    Some((56, 32)),
+                    Some((56.0, 32.0)),
+                    None,
+                    Some((56.0, 32.0)),
+                    &[(8.0, 32.0), (32.0, 32.0), (56.0, 32.0)],
+                    &painter,
+                    Rect::from_min_size(Pos2::ZERO, egui::vec2(64.0, 64.0)),
+                    1.0,
+                    [0.0, 0.0, 0.0, 1.0],
+                    [1.0; 4],
+                    &mut gpu,
+                    &mut stroke_event,
+                    false,
+                    true,
+                    true,
+                    true,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                );
+            });
+        });
+        assert!(stroke_event.is_some());
+        assert_eq!(canvas.layers[0].pixels.get_pixel(8, 32)[3], 255);
+        assert_eq!(canvas.layers[0].pixels.get_pixel(32, 32)[3], 255);
+        assert_eq!(canvas.layers[0].pixels.get_pixel(56, 32)[3], 255);
+        assert!(tools.tool_state.last_pos.is_none());
+        assert!(tools.brush_coverage.is_empty());
+    }
+}

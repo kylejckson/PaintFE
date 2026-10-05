@@ -202,12 +202,7 @@ impl DialogColors {
         } else {
             Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 25)
         };
-        // Blue-tinted muted text matching Signal Grid palette
-        let text_muted = if is_dark {
-            Color32::from_rgb(122, 122, 144) // #7a7a90
-        } else {
-            Color32::from_rgb(85, 85, 110) // #55556e
-        };
+        let text_muted = v.weak_text_color();
         Self {
             accent,
             accent_strong: v.selection.stroke.color,
@@ -219,6 +214,11 @@ impl DialogColors {
             is_dark,
         }
     }
+}
+
+fn ctx_theme(ctx: &egui::Context) -> crate::theme::Theme {
+    ctx.data(|d| d.get_temp::<crate::theme::Theme>(egui::Id::new("floating_widget_theme")))
+        .unwrap_or_else(crate::theme::Theme::light)
 }
 
 fn srgb_to_linear_component(c: u8) -> f32 {
@@ -275,7 +275,7 @@ fn paint_dialog_header_impl(
     texture_icon: Option<&egui::TextureHandle>,
 ) -> bool {
     let available_width = ui.available_width();
-    let header_height = 32.0;
+    let header_height = 32.0 * crate::ui::polish::settings(ui.ctx()).spacing_scale;
     // Leave dragging to the containing movable Window while keeping the close
     // button as its own clickable interaction.
     let (rect, response) =
@@ -283,7 +283,7 @@ fn paint_dialog_header_impl(
 
     let painter = ui.painter();
     // Gradient-like header: accent faint fill with rounded top corners
-    painter.rect_filled(rect, CornerRadius::same(4), colors.accent_faint);
+    painter.rect_filled(rect, ctx_theme(ui.ctx()).widget_cr(4), colors.accent_faint);
     // Left accent bar (3px, full accent color)
     painter.rect_filled(
         Rect::from_min_size(rect.min, Vec2::new(3.0, header_height)),
@@ -304,10 +304,16 @@ fn paint_dialog_header_impl(
             ),
         );
         painter.text(
-            Pos2::new(text_pos.x + 22.0, text_pos.y),
+            Pos2::new(
+                text_pos.x + 16.0 + crate::ui::polish::settings(ui.ctx()).icon_gap,
+                text_pos.y,
+            ),
             egui::Align2::LEFT_CENTER,
             title,
-            egui::FontId::proportional(14.0),
+            egui::FontId::new(
+                13.0 * crate::ui::polish::settings(ui.ctx()).text_scale,
+                egui::FontFamily::Name("WidgetTitle".into()),
+            ),
             colors.accent_strong,
         );
     } else {
@@ -315,7 +321,10 @@ fn paint_dialog_header_impl(
             text_pos,
             egui::Align2::LEFT_CENTER,
             format!("{icon} {title}"),
-            egui::FontId::proportional(14.0),
+            egui::FontId::new(
+                13.0 * crate::ui::polish::settings(ui.ctx()).text_scale,
+                egui::FontFamily::Name("WidgetTitle".into()),
+            ),
             colors.accent_strong,
         );
     }
@@ -333,18 +342,14 @@ fn paint_dialog_header_impl(
         )
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let close_visual_rect = Rect::from_center_size(close_rect.center(), Vec2::splat(18.0));
-    if close_response.hovered() {
-        painter.rect_filled(
-            close_visual_rect,
-            CornerRadius::same(4),
-            ui.visuals().widgets.hovered.weak_bg_fill,
-        );
-    }
-    painter.text(
-        close_visual_rect.center(),
-        egui::Align2::CENTER_CENTER,
-        "×",
-        egui::FontId::proportional(13.0),
+    let theme = ctx_theme(ui.ctx());
+    crate::ui::polish::control(ui, &close_response, false, theme.widget_rounding.min(6.0));
+    close_response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Close dialog")
+    });
+    crate::signal_widgets::paint_close_cross(
+        ui,
+        close_visual_rect,
         if close_response.hovered() {
             colors.accent
         } else {
@@ -362,7 +367,7 @@ pub(crate) fn section_label(ui: &mut egui::Ui, colors: &DialogColors, text: &str
         ui.add_space(2.0);
         ui.label(
             egui::RichText::new(text.to_uppercase())
-                .size(11.0)
+                .size(11.0 * crate::ui::polish::settings(ui.ctx()).text_scale)
                 .color(colors.text_muted)
                 .strong()
                 .monospace(),
@@ -412,6 +417,7 @@ pub(crate) fn numeric_field_with_buttons_focus(
     step: f32,
     request_focus: bool,
 ) -> bool {
+    let step = crate::ui::numeric::step(ui, step);
     let mut changed = false;
     let range_start = *range.start();
     let range_end = *range.end();
@@ -421,7 +427,9 @@ pub(crate) fn numeric_field_with_buttons_focus(
             *value = (*value - step).max(range_start);
             changed = true;
         }
-        let dv = egui::DragValue::new(value).speed(speed).range(range);
+        let dv = crate::ui::numeric::Numeric::new(value)
+            .speed(speed)
+            .range(range);
         let dv = if !suffix.is_empty() {
             dv.suffix(suffix)
         } else {
@@ -461,6 +469,8 @@ pub(crate) fn dialog_slider(
     } else {
         range_start
     };
+    let keyboard_step = step;
+    let step = crate::ui::numeric::step(ui, step);
     let mut changed = false;
 
     ui.horizontal(|ui| {
@@ -477,6 +487,14 @@ pub(crate) fn dialog_slider(
             egui::Vec2::new(rect.width(), bar_h),
         );
 
+        resp.widget_info(|| egui::WidgetInfo::slider(ui.is_enabled(), *value as f64, suffix));
+        changed |= crate::ui::numeric::slider_input(
+            ui,
+            &resp,
+            value,
+            range_start..=range_end,
+            keyboard_step,
+        );
         if ui.is_rect_visible(rect) {
             let p = ui.painter();
             let vis = ui.visuals();
@@ -523,13 +541,16 @@ pub(crate) fn dialog_slider(
             let br = egui::Pos2::new(tx + aw, base_y);
             p.add(egui::Shape::convex_polygon(
                 vec![tip, bl, br],
-                egui::Color32::from_gray(20),
+                vis.text_color(),
                 egui::Stroke::NONE,
             ));
             p.add(egui::Shape::convex_polygon(
                 vec![tip, bl, br],
                 egui::Color32::TRANSPARENT,
-                egui::Stroke::new(1.5, egui::Color32::WHITE),
+                egui::Stroke::new(
+                    crate::ui::polish::settings(ui.ctx()).border_width,
+                    vis.panel_fill,
+                ),
             ));
         }
 
@@ -557,8 +578,8 @@ pub(crate) fn dialog_slider(
                     changed = true;
                 }
 
-                let dv = egui::DragValue::new(value)
-                    .speed(step * 0.5)
+                let dv = crate::ui::numeric::Numeric::new(value)
+                    .speed(keyboard_step * 0.5)
                     .range(range)
                     .max_decimals(decimals);
                 let dv = if !suffix.is_empty() {
@@ -578,7 +599,7 @@ pub(crate) fn dialog_slider(
                 let is_default = (*value - default_value).abs() <= step.abs().max(0.0001) * 0.5;
                 let reset_resp = ui
                     .add_enabled(!is_default, egui::Button::new("↺"))
-                    .on_hover_text("Reset to default");
+                    .on_hover_text(format!("Reset to {default_value}{suffix}"));
                 if reset_resp.clicked() {
                     *value = default_value;
                     changed = true;

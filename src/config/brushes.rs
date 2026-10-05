@@ -51,6 +51,8 @@ pub struct Assets {
     icons_loaded: bool,
     /// Optional user icon pack (PNG overrides) — resolved before built-ins.
     icon_pack: Option<crate::config::icon_packs::IconPack>,
+    /// Embedded style beneath custom overrides, with Classic as the final fallback.
+    bundled_icon_pack: Option<std::sync::Arc<crate::config::icon_packs::IconPack>>,
     /// Invert generic pack icons in dark mode when no theme variant exists.
     icon_pack_invert_mismatch: bool,
     /// Brush tip data indexed by name
@@ -1221,6 +1223,25 @@ impl Assets {
             self.textures.insert(icon, texture);
         }
 
+        let close_override = self
+            .icon_pack
+            .as_ref()
+            .and_then(|pack| pack.resolve(Icon::Close, dark, self.icon_pack_invert_mismatch))
+            .or_else(|| {
+                self.bundled_icon_pack
+                    .as_ref()?
+                    .resolve(Icon::Close, dark, false)
+            })
+            .map(|(img, _)| {
+                let size = [img.width() as usize, img.height() as usize];
+                ctx.load_texture(
+                    "pack_close",
+                    ColorImage::from_rgba_unmultiplied(size, img.as_raw()),
+                    TextureOptions::LINEAR,
+                )
+            });
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("paintfe_close_override"), close_override));
+
         // Re-upload all shape textures (pack overrides resolved per shape)
         let resolved_shapes: Vec<(ShapeKind, Vec<u8>, [usize; 2])> = self
             .shape_pixels
@@ -1286,8 +1307,13 @@ impl Assets {
     ) -> Option<(Vec<u8>, [usize; 2], crate::config::icon_packs::IconSource)> {
         use crate::config::icon_packs::IconSource;
         if let Some(pack) = &self.icon_pack
-            && let Some((img, src)) =
-                pack.resolve(icon, dark, self.icon_pack_invert_mismatch)
+            && let Some((img, src)) = pack.resolve(icon, dark, self.icon_pack_invert_mismatch)
+        {
+            let size = [img.width() as usize, img.height() as usize];
+            return Some((img.into_raw(), size, src));
+        }
+        if let Some(pack) = &self.bundled_icon_pack
+            && let Some((img, src)) = pack.resolve(icon, dark, false)
         {
             let size = [img.width() as usize, img.height() as usize];
             return Some((img.into_raw(), size, src));
@@ -1317,6 +1343,27 @@ impl Assets {
             .unwrap_or(crate::config::icon_packs::IconSource::Builtin)
     }
 
+    /// Metadata-only check: never clone or decode icon pixels while painting.
+    pub fn is_pack_icon(&self, icon: Icon) -> bool {
+        self.icon_pack
+            .as_ref()
+            .is_some_and(|pack| pack.has_icon(icon))
+            || self
+                .bundled_icon_pack
+                .as_ref()
+                .is_some_and(|pack| pack.has_icon(icon))
+    }
+
+    /// Pack artwork keeps its RGB colors; interaction states only change opacity.
+    pub fn icon_tint(&self, icon: Icon, tint: Color32) -> Color32 {
+        if self.is_pack_icon(icon) {
+            let alpha = tint.a();
+            Color32::from_rgba_premultiplied(alpha, alpha, alpha, alpha)
+        } else {
+            tint
+        }
+    }
+
     /// Resolve the RGBA pixels to display for a shape-kind icon (see
     /// `display_icon_pixels`).
     fn display_shape_pixels(
@@ -1326,8 +1373,13 @@ impl Assets {
     ) -> Option<(Vec<u8>, [usize; 2], crate::config::icon_packs::IconSource)> {
         use crate::config::icon_packs::IconSource;
         if let Some(pack) = &self.icon_pack
-            && let Some((img, src)) =
-                pack.resolve_shape(kind, dark, self.icon_pack_invert_mismatch)
+            && let Some((img, src)) = pack.resolve_shape(kind, dark, self.icon_pack_invert_mismatch)
+        {
+            let size = [img.width() as usize, img.height() as usize];
+            return Some((img.into_raw(), size, src));
+        }
+        if let Some(pack) = &self.bundled_icon_pack
+            && let Some((img, src)) = pack.resolve_shape(kind, dark, false)
         {
             let size = [img.width() as usize, img.height() as usize];
             return Some((img.into_raw(), size, src));
@@ -1348,10 +1400,7 @@ impl Assets {
     }
 
     /// Shape-kind icon texture (for the Preferences preview).
-    pub fn shape_texture(
-        &self,
-        kind: crate::ops::shapes::ShapeKind,
-    ) -> Option<&TextureHandle> {
+    pub fn shape_texture(&self, kind: crate::ops::shapes::ShapeKind) -> Option<&TextureHandle> {
         self.shape_textures.get(&kind)
     }
 
@@ -1394,9 +1443,35 @@ impl Assets {
         Ok(name)
     }
 
-    /// Remove the active icon pack (back to built-in icons only).
+    /// Remove custom overrides, returning to the selected bundled style.
     pub fn clear_icon_pack(&mut self) {
         self.icon_pack = None;
+    }
+
+    pub fn set_bundled_icon_style(
+        &mut self,
+        style: crate::config::icon_packs::BundledIconStyle,
+    ) -> Result<(), String> {
+        use crate::config::icon_packs::{BundledIconStyle, IconPack};
+        use std::sync::{Arc, OnceLock};
+        static LUMINOUS: OnceLock<Result<Arc<IconPack>, String>> = OnceLock::new();
+        self.bundled_icon_pack = match style {
+            BundledIconStyle::Classic => None,
+            BundledIconStyle::Luminous => Some(
+                LUMINOUS
+                    .get_or_init(|| IconPack::luminous().map(Arc::new))
+                    .clone()?,
+            ),
+        };
+        Ok(())
+    }
+
+    pub fn bundled_icon_style(&self) -> crate::config::icon_packs::BundledIconStyle {
+        if self.bundled_icon_pack.is_some() {
+            crate::config::icon_packs::BundledIconStyle::Luminous
+        } else {
+            crate::config::icon_packs::BundledIconStyle::Classic
+        }
     }
 
     pub fn icon_pack_name(&self) -> Option<&str> {
@@ -1409,6 +1484,7 @@ impl Assets {
 
     /// Force re-upload of all icon textures (e.g. after loading an icon pack).
     pub fn reload_icons(&mut self, ctx: &egui::Context, dark: bool) {
+        self.inline_icon_textures.clear();
         self.icons_inverted = !dark;
         self.update_theme(ctx, dark);
     }
@@ -1682,6 +1758,14 @@ impl Assets {
             ui.add_sized(size, egui::Button::new(icon.emoji()))
         };
 
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), icon.tooltip())
+        });
+        crate::ui::polish::focus(
+            ui,
+            &response,
+            crate::theme::Theme::tool_button_rounding_for(ui),
+        );
         response.on_hover_text(icon.tooltip())
     }
 
@@ -1711,6 +1795,14 @@ impl Assets {
             let text = egui::RichText::new(icon.emoji()).size(size.y * 0.5);
             ui.add_sized(size, egui::Button::selectable(selected, text))
         };
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), icon.tooltip())
+        });
+        crate::ui::polish::focus(
+            ui,
+            &response,
+            crate::theme::Theme::tool_button_rounding_for(ui),
+        );
         response.on_hover_text(icon.tooltip()).clicked()
     }
 
@@ -1740,6 +1832,14 @@ impl Assets {
         } else {
             ui.button(icon.emoji())
         };
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), icon.tooltip())
+        });
+        crate::ui::polish::focus(
+            ui,
+            &response,
+            crate::theme::Theme::tool_button_rounding_for(ui),
+        );
         response.on_hover_text(icon.tooltip())
     }
 
@@ -1752,6 +1852,14 @@ impl Assets {
         } else {
             ui.add(egui::Button::new(icon.emoji()).frame(false))
         };
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), icon.tooltip())
+        });
+        crate::ui::polish::focus(
+            ui,
+            &response,
+            crate::theme::Theme::tool_button_rounding_for(ui),
+        );
         response.on_hover_text(icon.tooltip())
     }
 
@@ -1782,7 +1890,7 @@ impl Assets {
             };
             let img = egui::Image::from_texture(sized_texture)
                 .fit_to_exact_size(Vec2::splat(24.0))
-                .tint(tint);
+                .tint(self.icon_tint(icon, tint));
             let btn = egui::Button::image(img);
             ui.scope(|ui| {
                 ui.visuals_mut().widgets.inactive.bg_fill = icon_bg;
@@ -1800,6 +1908,14 @@ impl Assets {
         } else {
             ui.add_enabled(enabled, egui::Button::new(icon.emoji()))
         };
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), icon.tooltip())
+        });
+        crate::ui::polish::focus(
+            ui,
+            &response,
+            crate::theme::Theme::tool_button_rounding_for(ui),
+        );
         response.on_hover_text(icon.tooltip())
     }
 
@@ -1816,7 +1932,7 @@ impl Assets {
             let sized_texture = egui::load::SizedTexture::from_handle(texture);
             let img = egui::Image::from_texture(sized_texture)
                 .fit_to_exact_size(rect.size())
-                .tint(tint);
+                .tint(self.icon_tint(icon, tint));
             ui.put(rect, img.sense(Sense::click()))
         } else {
             ui.put(
@@ -1838,25 +1954,18 @@ impl Assets {
         rect: egui::Rect,
         dark: bool,
     ) -> egui::Response {
-        if let (Some(original_pixels), Some(size)) =
-            (self.icon_pixels.get(&icon), self.icon_sizes.get(&icon))
+        if !self.inline_icon_textures.contains_key(&(icon, dark))
+            && let Some((display_pixels, size, _)) = self.display_icon_pixels(icon, dark)
         {
-            let texture = self
-                .inline_icon_textures
-                .entry((icon, dark))
-                .or_insert_with(|| {
-                    let display_pixels = if dark {
-                        Self::invert_rgb(original_pixels)
-                    } else {
-                        original_pixels.clone()
-                    };
-                    let color_image = ColorImage::from_rgba_unmultiplied(*size, &display_pixels);
-                    ui.ctx().load_texture(
-                        format!("inline_icon_{:?}_{dark}", icon),
-                        color_image,
-                        TextureOptions::LINEAR,
-                    )
-                });
+            let color_image = ColorImage::from_rgba_unmultiplied(size, &display_pixels);
+            let texture = ui.ctx().load_texture(
+                format!("inline_icon_{icon:?}_{dark}"),
+                color_image,
+                TextureOptions::LINEAR,
+            );
+            self.inline_icon_textures.insert((icon, dark), texture);
+        }
+        if let Some(texture) = self.inline_icon_textures.get(&(icon, dark)) {
             let sized_texture = egui::load::SizedTexture::from_handle(texture);
             let img = egui::Image::from_texture(sized_texture).fit_to_exact_size(rect.size());
             ui.put(rect, img.sense(Sense::click()))
@@ -1908,7 +2017,7 @@ impl Assets {
                     texture.id(),
                     icon_rect,
                     egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                    tint,
+                    self.icon_tint(icon, tint),
                 );
                 r
             });
@@ -1946,7 +2055,7 @@ impl Assets {
     ) -> egui::Response {
         let icon_size = 16.0_f32;
         let padding = ui.spacing().button_padding;
-        let icon_gap = 4.0_f32;
+        let icon_gap = crate::ui::polish::settings(ui.ctx()).icon_gap;
         let accent_bar_width = 2.0_f32;
 
         let text_font = egui::TextStyle::Button.resolve(ui.style());
@@ -1998,13 +2107,13 @@ impl Assets {
                 let tint = if enabled {
                     text_color
                 } else {
-                    Color32::from_gray(128)
+                    Color32::from_rgba_premultiplied(128, 128, 128, 128)
                 };
                 ui.painter().image(
                     texture.id(),
                     icon_rect,
                     egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                    tint,
+                    self.icon_tint(icon, tint),
                 );
             }
 
@@ -2017,6 +2126,10 @@ impl Assets {
                 .galley(text_pos, text_galley, egui::Color32::TRANSPARENT);
         }
 
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), text)
+        });
+        crate::ui::polish::focus(ui, &response, ui.visuals().widgets.inactive.corner_radius);
         response
     }
 
@@ -2064,7 +2177,7 @@ impl Assets {
     ) -> egui::Response {
         let icon_size = 16.0_f32;
         let padding = ui.spacing().button_padding;
-        let icon_gap = 4.0_f32;
+        let icon_gap = crate::ui::polish::settings(ui.ctx()).icon_gap;
         let accent_bar_width = 2.0_f32;
 
         let text_font = egui::TextStyle::Button.resolve(ui.style());
@@ -2138,13 +2251,13 @@ impl Assets {
                 let tint = if enabled {
                     text_color
                 } else {
-                    Color32::from_gray(128)
+                    Color32::from_rgba_premultiplied(128, 128, 128, 128)
                 };
                 ui.painter().image(
                     texture.id(),
                     icon_rect,
                     egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                    tint,
+                    self.icon_tint(icon, tint),
                 );
             }
 
@@ -2165,6 +2278,10 @@ impl Assets {
                 .galley(shortcut_pos, shortcut_galley, egui::Color32::TRANSPARENT);
         }
 
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), text)
+        });
+        crate::ui::polish::focus(ui, &response, ui.visuals().widgets.inactive.corner_radius);
         response
     }
 
@@ -2212,7 +2329,7 @@ impl Assets {
     ) -> egui::Response {
         let icon_size = 16.0_f32;
         let padding = ui.spacing().button_padding;
-        let icon_gap = 4.0_f32;
+        let icon_gap = crate::ui::polish::settings(ui.ctx()).icon_gap;
         let accent_bar_width = 2.0_f32;
 
         let text_font = egui::TextStyle::Button.resolve(ui.style());
@@ -2275,13 +2392,13 @@ impl Assets {
                 let tint = if enabled {
                     text_color
                 } else {
-                    Color32::from_gray(128)
+                    Color32::from_rgba_premultiplied(128, 128, 128, 128)
                 };
                 ui.painter().image(
                     texture.id(),
                     icon_rect,
                     egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                    tint,
+                    self.icon_tint(icon, tint),
                 );
             }
 
@@ -2304,6 +2421,10 @@ impl Assets {
             );
         }
 
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), text)
+        });
+        crate::ui::polish::focus(ui, &response, ui.visuals().widgets.inactive.corner_radius);
         response
     }
 }

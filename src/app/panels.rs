@@ -1,4 +1,118 @@
 impl PaintFEApp {
+    fn apply_workspace_command(&mut self, ctx: &egui::Context) {
+        use crate::ui::workspace::Command;
+        let Some(command) = crate::ui::workspace::take_command(ctx) else {
+            return;
+        };
+        let viewport = ctx.content_rect();
+        crate::ui::workspace::clear_gestures(ctx);
+        match command {
+            Command::Reset => {
+                self.tools_panel_pos = Some((12.0, 128.0));
+                self.layers_panel_right_offset = Some((264.0, 128.0));
+                self.layers_panel_size = Some((240.0, 200.0));
+                self.history_panel_right_offset = Some((224.0, 380.0));
+                self.history_panel_size = Some((200.0, 200.0));
+                self.colors_panel_pos = Some((12.0, 530.0));
+                self.palette_panel_pos = Some((280.0, 128.0));
+                self.palette_panel_size = Some((300.0, 108.0));
+                self.script_right_offset = Some((540.0, 128.0));
+                self.window_visibility.tools = true;
+                self.window_visibility.layers = true;
+                self.window_visibility.history = true;
+                self.window_visibility.colors = true;
+                self.window_visibility.palette = true;
+                self.window_visibility.script_editor = false;
+                for (panel, size) in [
+                    ("Layers", egui::vec2(240.0, 200.0)),
+                    ("History", egui::vec2(200.0, 200.0)),
+                    ("Palette", egui::vec2(300.0, 108.0)),
+                    ("ScriptEditor", egui::vec2(520.0, 500.0)),
+                ] {
+                    ctx.data_mut(|d| {
+                        d.insert_temp(egui::Id::new(("workspace_size_request", panel)), size)
+                    });
+                }
+            }
+            Command::Apply(mut layout) => {
+                if layout.validate().is_err() {
+                    return;
+                }
+                self.window_visibility.tools = false;
+                self.window_visibility.layers = false;
+                self.window_visibility.history = false;
+                self.window_visibility.colors = false;
+                self.window_visibility.palette = false;
+                self.window_visibility.script_editor = false;
+                for panel in &layout.panels {
+                    let pos = layout.panel_position(panel, viewport);
+                    let size = egui::vec2(panel.size[0], panel.size[1]);
+                    match panel.panel.as_str() {
+                        "Tools" => {
+                            self.tools_panel_pos = Some((pos.x, pos.y));
+                            self.window_visibility.tools = panel.visible;
+                        }
+                        "Layers" => {
+                            self.layers_panel_right_offset =
+                                Some((viewport.right() - pos.x, pos.y));
+                            self.layers_panel_size = Some((size.x, size.y));
+                            self.window_visibility.layers = panel.visible;
+                        }
+                        "History" => {
+                            self.history_panel_right_offset =
+                                Some((viewport.right() - pos.x, pos.y));
+                            self.history_panel_size = Some((size.x, size.y));
+                            self.window_visibility.history = panel.visible;
+                        }
+                        "Colors" => {
+                            self.colors_panel_pos = Some((pos.x, pos.y));
+                            self.window_visibility.colors = panel.visible;
+                            if let Some(expanded) = panel.expanded {
+                                self.colors_panel.set_expanded(expanded);
+                            }
+                            if let Some(mask) = panel.section_mask {
+                                self.colors_panel.load_section_mask(mask);
+                            }
+                        }
+                        "Palette" => {
+                            self.palette_panel_pos = Some((pos.x, pos.y));
+                            self.palette_panel_size = Some((size.x, size.y));
+                            self.window_visibility.palette = panel.visible;
+                        }
+                        "ScriptEditor" => {
+                            self.script_right_offset = Some((viewport.right() - pos.x, pos.y));
+                            self.window_visibility.script_editor = panel.visible;
+                        }
+                        _ => {}
+                    }
+                    if matches!(
+                        panel.panel.as_str(),
+                        "Layers" | "History" | "Palette" | "ScriptEditor"
+                    ) {
+                        ctx.data_mut(|d| {
+                            d.insert_temp(
+                                egui::Id::new(("workspace_size_request", panel.panel.as_str())),
+                                size.max(egui::vec2(80.0, 60.0)),
+                            )
+                        });
+                    }
+                    ctx.data_mut(|d| {
+                        d.remove::<egui::Vec2>(egui::Id::new((
+                            "floating_header_drag",
+                            panel.panel.as_str(),
+                        )));
+                        d.remove::<egui::Pos2>(egui::Id::new((
+                            "floating_header_pointer",
+                            panel.panel.as_str(),
+                        )));
+                    });
+                }
+            }
+        }
+        ctx.request_repaint();
+        self.persist_window_state_if_changed(ctx.input(|i| i.time), true);
+    }
+
     fn reset_ui_cursor_blocking_rects(&mut self) {
         self.ui_cursor_blocking_rects_next.clear();
     }
@@ -18,6 +132,9 @@ impl PaintFEApp {
     }
 
     fn pointer_over_cursor_blocking_ui(&self, ctx: &egui::Context) -> bool {
+        if crate::ui::polish::popup_blocks_input(ctx) {
+            return true;
+        }
         ctx.input(|i| {
             i.pointer
                 .hover_pos()
@@ -32,8 +149,29 @@ impl PaintFEApp {
     }
 
     fn update_ui_pointer_capture(&mut self, ctx: &egui::Context) -> bool {
+        let popup_blocks_input = crate::ui::polish::popup_blocks_input(ctx);
+        let started_over_ui = ctx.input(|i| {
+            i.events.iter().any(|event| {
+                if let egui::Event::PointerButton {
+                    pos, pressed: true, ..
+                } = event
+                {
+                    popup_blocks_input
+                        || self
+                            .ui_cursor_blocking_rects
+                            .iter()
+                            .chain(self.ui_cursor_blocking_rects_next.iter())
+                            .any(|rect| rect.contains(*pos))
+                } else {
+                    false
+                }
+            })
+        });
+        if started_over_ui {
+            self.ui_pointer_capture_active = true;
+        }
         let any_down = ctx.input(|i| i.pointer.any_down());
-        if !any_down {
+        if !any_down && !started_over_ui {
             self.ui_pointer_capture_active = false;
             return false;
         }
@@ -64,6 +202,7 @@ impl PaintFEApp {
 
     /// Show the floating Tools panel (minimalist vertical strip) - anchored to left edge
     fn show_floating_tools_panel(&mut self, ctx: &egui::Context, _screen_size_changed: bool) {
+        let _profile = crate::ui::perf::Scope::new(8);
         self.tools_panel.cursor_blocking_rect = None;
         let mut show = self.window_visibility.tools;
         let mut close_clicked = false;
@@ -73,9 +212,10 @@ impl PaintFEApp {
         let (pos_x, pos_y) = self.tools_panel_pos.unwrap_or((12.0, 128.0));
 
         let hover_id = egui::Id::new("ToolsStrip_hover");
-        let hover_t = ctx.animate_bool(hover_id, false);
-        let mut window = egui::Window::new("ToolsStrip")
+        let hover_t = crate::ui::polish::panel_hover(ctx, hover_id);
+        let mut window = crate::ui::polish::window(ctx, "ToolsStrip")
             .open(&mut show)
+            .movable(false)
             .resizable(false)
             .collapsible(false)
             .default_size(egui::vec2(120.0, 400.0))
@@ -90,6 +230,17 @@ impl PaintFEApp {
             window = window.current_pos(clamped);
         }
 
+        window = window.current_pos(crate::ui::workspace::place(
+            ctx,
+            "Tools",
+            egui::pos2(pos_x, pos_y),
+            egui::vec2(114.0, 400.0),
+        ));
+        if let Some(size) = ctx.data_mut(|d| {
+            d.remove_temp::<egui::Vec2>(egui::Id::new(("workspace_size_request", "Tools")))
+        }) {
+            window = window.fixed_size(size);
+        }
         let resp = window.show(ctx, |ui| {
             // Constrain content width to match the tool grid (3×26 + 2×6 = 90px)
             // so the header doesn't inflate the window wider than the buttons.
@@ -142,11 +293,12 @@ impl PaintFEApp {
 
         if let Some(inner_resp) = resp {
             let win_rect = inner_resp.response.rect;
+            crate::ui::workspace::register(ctx, "Tools", win_rect);
             self.remember_ui_cursor_rect(win_rect);
             self.tools_panel_pos = Some((win_rect.min.x, win_rect.min.y));
             let hovered =
                 ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p)));
-            ctx.animate_bool(hover_id, hovered);
+            crate::ui::polish::remember_hover(ctx, hover_id, hovered);
         }
         if let Some(rect) = self.tools_panel.cursor_blocking_rect {
             self.remember_ui_cursor_rect(rect);
@@ -160,6 +312,7 @@ impl PaintFEApp {
 
     /// Show the floating Layers panel
     fn show_floating_layers_panel(&mut self, ctx: &egui::Context, _screen_size_changed: bool) {
+        let _profile = crate::ui::perf::Scope::new(9);
         self.layers_panel.settings_popup_rect = None;
         let mut show = self.window_visibility.layers;
         let mut close_clicked = false;
@@ -176,9 +329,10 @@ impl PaintFEApp {
         let panel_size = self.layers_panel_size.unwrap_or((240.0, 200.0));
 
         let hover_id = egui::Id::new("Layers_hover");
-        let hover_t = ctx.animate_bool(hover_id, false);
-        let mut window = egui::Window::new("Layers")
+        let hover_t = crate::ui::polish::panel_hover(ctx, hover_id);
+        let mut window = crate::ui::polish::window(ctx, "Layers")
             .open(&mut show)
+            .movable(false)
             .resizable(true)
             .collapsible(false)
             .default_size(egui::vec2(panel_size.0, panel_size.1))
@@ -194,6 +348,17 @@ impl PaintFEApp {
             window = window.current_pos(clamped);
         }
 
+        window = window.current_pos(crate::ui::workspace::place(
+            ctx,
+            "Layers",
+            egui::pos2(pos_x, y_pos),
+            egui::vec2(panel_size.0, panel_size.1),
+        ));
+        if let Some(size) = ctx.data_mut(|d| {
+            d.remove_temp::<egui::Vec2>(egui::Id::new(("workspace_size_request", "Layers")))
+        }) {
+            window = window.fixed_size(size);
+        }
         let resp = window.show(ctx, |ui| {
             // Signal Grid panel header
             if signal_widgets::panel_header(
@@ -206,6 +371,7 @@ impl PaintFEApp {
             }
 
             if let Some(project) = self.projects.get_mut(self.active_project_index) {
+                self.layers_panel.set_thumbnail_project(project.id);
                 self.layers_panel.show(
                     ui,
                     &mut project.canvas_state,
@@ -328,9 +494,7 @@ impl PaintFEApp {
                     crate::components::layers::LayerAppAction::AlignLayer => {
                         if let Some(project) = self.projects.get(self.active_project_index) {
                             self.active_dialog = ActiveDialog::AlignLayer(
-                                crate::ops::dialogs::AlignLayerDialog::new(
-                                    &project.canvas_state,
-                                ),
+                                crate::ops::dialogs::AlignLayerDialog::new(&project.canvas_state),
                             );
                         }
                     }
@@ -414,14 +578,25 @@ impl PaintFEApp {
         // so that user drags are remembered and window resizes keep the offset.
         if let Some(inner_resp) = resp {
             let win_rect = inner_resp.response.rect;
+            crate::ui::workspace::register(ctx, "Layers", win_rect);
+            if let Some(size) = crate::signal_widgets::floating_resize(
+                ctx,
+                &inner_resp.response,
+                "Layers",
+                egui::vec2(180.0, 140.0),
+            ) {
+                ctx.data_mut(|d| {
+                    d.insert_temp(egui::Id::new(("workspace_size_request", "Layers")), size)
+                });
+                ctx.request_repaint();
+            }
             self.remember_ui_cursor_rect(win_rect);
             self.layers_panel_right_offset = Some((screen_w - win_rect.min.x, win_rect.min.y));
             let observed_size = (win_rect.width().round(), win_rect.height().round());
             let pointer_down = ctx.input(|i| i.pointer.primary_down());
             let should_store_size = pointer_down
                 && self.layers_panel_size.is_none_or(|old| {
-                    (old.0 - observed_size.0).abs() >= 4.0
-                        || (old.1 - observed_size.1).abs() >= 4.0
+                    (old.0 - observed_size.0).abs() >= 4.0 || (old.1 - observed_size.1).abs() >= 4.0
                 });
             if should_store_size {
                 self.layers_panel_size = Some(observed_size);
@@ -429,7 +604,7 @@ impl PaintFEApp {
             let hovered =
                 ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p)));
             self.is_pointer_over_layers_panel = hovered;
-            ctx.animate_bool(hover_id, hovered);
+            crate::ui::polish::remember_hover(ctx, hover_id, hovered);
         }
         if let Some(rect) = self.layers_panel.settings_popup_rect {
             self.remember_ui_cursor_rect(rect);
@@ -443,6 +618,7 @@ impl PaintFEApp {
 
     /// Show the floating History panel
     fn show_floating_history_panel(&mut self, ctx: &egui::Context, screen_size_changed: bool) {
+        let _profile = crate::ui::perf::Scope::new(10);
         let mut show = self.window_visibility.history;
         let mut close_clicked = false;
 
@@ -453,15 +629,19 @@ impl PaintFEApp {
         let first_show = self.history_panel_right_offset.is_none();
         let saved_size = self.history_panel_size.unwrap_or((200.0, 200.0));
         let panel_size = egui::vec2(saved_size.0, saved_size.1);
-        let (right_off, y_pos) = self
+        let (right_off, mut y_pos) = self
             .history_panel_right_offset
             .unwrap_or((12.0, screen_rect.center().y - panel_size.y * 0.5));
-        let pos_x = screen_w - right_off;
+        let mut pos_x = screen_w - right_off;
+        let drag_delta = egui::Vec2::ZERO;
+        pos_x += drag_delta.x;
+        y_pos += drag_delta.y;
 
         let hover_id = egui::Id::new("History_hover");
-        let hover_t = ctx.animate_bool(hover_id, false);
-        let mut window = egui::Window::new("History")
+        let hover_t = crate::ui::polish::panel_hover(ctx, hover_id);
+        let mut window = crate::ui::polish::window(ctx, "History")
             .open(&mut show)
+            .movable(false)
             .resizable(true)
             .collapsible(false)
             .min_width(200.0)
@@ -472,11 +652,28 @@ impl PaintFEApp {
             .title_bar(false)
             .frame(self.theme.floating_window_frame_animated(hover_t));
 
-        if first_show || screen_size_changed {
+        if let Some(size) =
+            ctx.data_mut(|d| d.remove_temp::<egui::Vec2>(egui::Id::new("history_resize_request")))
+        {
+            window = window.fixed_size(size);
+        }
+
+        if first_show || screen_size_changed || drag_delta != egui::Vec2::ZERO {
             let clamped = Self::clamp_floating_pos(pos_x, y_pos, panel_size, screen_rect);
             window = window.current_pos(clamped);
         }
 
+        window = window.current_pos(crate::ui::workspace::place(
+            ctx,
+            "History",
+            egui::pos2(pos_x, y_pos),
+            panel_size,
+        ));
+        if let Some(size) = ctx.data_mut(|d| {
+            d.remove_temp::<egui::Vec2>(egui::Id::new(("workspace_size_request", "History")))
+        }) {
+            window = window.fixed_size(size);
+        }
         let resp = window.show(ctx, |ui| {
             // Signal Grid panel header
             if signal_widgets::panel_header(
@@ -494,27 +691,38 @@ impl PaintFEApp {
                     &mut project.history,
                     &mut project.canvas_state,
                     &self.assets,
+                    &self.theme,
                 );
             }
         });
 
         if let Some(inner_resp) = resp {
             let win_rect = inner_resp.response.rect;
+            crate::ui::workspace::register(ctx, "History", win_rect);
             self.remember_ui_cursor_rect(win_rect);
             self.history_panel_right_offset = Some((screen_w - win_rect.min.x, win_rect.min.y));
+            if let Some(size) = signal_widgets::floating_resize(
+                ctx,
+                &inner_resp.response,
+                "History",
+                egui::vec2(200.0, 150.0),
+            ) {
+                self.history_panel_size = Some((size.x, size.y));
+                ctx.data_mut(|d| d.insert_temp(egui::Id::new("history_resize_request"), size));
+                ctx.request_repaint();
+            }
             let observed_size = (win_rect.width().round(), win_rect.height().round());
             let pointer_down = ctx.input(|i| i.pointer.primary_down());
             let should_store_size = pointer_down
                 && self.history_panel_size.is_none_or(|old| {
-                    (old.0 - observed_size.0).abs() >= 4.0
-                        || (old.1 - observed_size.1).abs() >= 4.0
+                    (old.0 - observed_size.0).abs() >= 4.0 || (old.1 - observed_size.1).abs() >= 4.0
                 });
             if should_store_size {
                 self.history_panel_size = Some(observed_size);
             }
             let hovered =
                 ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p)));
-            ctx.animate_bool(hover_id, hovered);
+            crate::ui::polish::remember_hover(ctx, hover_id, hovered);
         }
 
         if close_clicked {
@@ -524,39 +732,62 @@ impl PaintFEApp {
     }
 
     /// Show the floating Colors panel - anchored below tools
-    fn show_floating_colors_panel(&mut self, ctx: &egui::Context, _screen_size_changed: bool) {
+    fn show_floating_colors_panel(&mut self, ctx: &egui::Context, screen_size_changed: bool) {
+        let _profile = crate::ui::perf::Scope::new(11);
         let mut show = self.window_visibility.colors;
         let mut close_clicked = false;
 
         let screen_rect = ctx.content_rect();
         let screen_h = screen_rect.max.y;
 
-        // Dynamic size based on compact / expanded state
-        let panel_size = if self.colors_panel.is_expanded() {
-            egui::vec2(430.0, 330.0)
-        } else {
-            egui::vec2(168.0, 310.0)
-        };
-        let (x_off, mut bot_off) = self.colors_panel_left_offset.unwrap_or((12.0, 12.0));
-        if bot_off > panel_size.y + 48.0 {
-            bot_off -= panel_size.y;
-        }
-        let pos_y = screen_h - bot_off - panel_size.y;
+        let panel_size = egui::vec2(220.0, 310.0);
+        let first_show = self.colors_panel_pos.is_none();
+        let (mut x_off, mut pos_y) = self.colors_panel_pos.unwrap_or_else(|| {
+            let (x, bottom) = self
+                .settings
+                .persist_colors_panel_left_offset
+                .unwrap_or((12.0, 12.0));
+            (x, screen_h - bottom - panel_size.y)
+        });
 
+        let drag_delta = egui::Vec2::ZERO;
+        x_off += drag_delta.x;
+        pos_y += drag_delta.y;
         let hover_id = egui::Id::new("Colors_hover");
-        let hover_t = ctx.animate_bool(hover_id, false);
-        let mut window = egui::Window::new("Colors")
+        let hover_t = crate::ui::polish::panel_hover(ctx, hover_id);
+        let mut window = crate::ui::polish::window(ctx, "Colors")
             .open(&mut show)
+            .movable(false)
+            // Our top-left clamp and body scroll bounds own positioning. egui's
+            // size-based constraint otherwise moves the header when Advanced grows.
+            .constrain(false)
             .resizable(false)
             .collapsible(false)
-            .fixed_size(panel_size)
+            .auto_sized()
             .title_bar(false)
             .frame(self.theme.floating_window_frame_animated(hover_t));
 
         let clamped = Self::clamp_floating_pos(x_off, pos_y, panel_size, screen_rect);
-        window = window.current_pos(clamped);
+        window = window.default_pos(clamped);
+        if first_show || screen_size_changed || drag_delta != egui::Vec2::ZERO {
+            window = window.current_pos(clamped);
+        }
 
+        window = window.current_pos(crate::ui::workspace::place(
+            ctx,
+            "Colors",
+            egui::pos2(x_off, pos_y),
+            panel_size,
+        ));
+        if let Some(size) = ctx.data_mut(|d| {
+            d.remove_temp::<egui::Vec2>(egui::Id::new(("workspace_size_request", "Colors")))
+        }) {
+            window = window.fixed_size(size);
+        }
         let resp = window.show(ctx, |ui| {
+            // Reserve the body width before the header; fixed-size windows can
+            // otherwise grow later when the color controls are laid out.
+            ui.set_width(panel_size.x);
             // Signal Grid panel header
             if signal_widgets::panel_header(
                 ui,
@@ -567,17 +798,22 @@ impl PaintFEApp {
                 close_clicked = true;
             }
             ui.style_mut().override_text_style = Some(egui::TextStyle::Small);
-            self.colors_panel.show(ui, &self.assets);
+            egui::ScrollArea::vertical()
+                .id_salt("color_panel_scroll")
+                .max_height((screen_rect.max.y - clamped.y - 50.0).max(100.0))
+                .show(ui, |ui| {
+                    self.colors_panel.show(ui, &self.assets);
+                });
         });
 
         if let Some(inner_resp) = resp {
             let win_rect = inner_resp.response.rect;
+            crate::ui::workspace::register(ctx, "Colors", win_rect);
             self.remember_ui_cursor_rect(win_rect);
-            self.colors_panel_left_offset =
-                Some((win_rect.min.x, screen_h - win_rect.min.y - panel_size.y));
+            self.colors_panel_pos = Some((win_rect.min.x, win_rect.min.y));
             let hovered =
                 ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p)));
-            ctx.animate_bool(hover_id, hovered);
+            crate::ui::polish::remember_hover(ctx, hover_id, hovered);
         }
 
         if close_clicked {
@@ -588,6 +824,7 @@ impl PaintFEApp {
 
     /// Show the floating Script Editor panel
     fn show_floating_palette_panel(&mut self, ctx: &egui::Context, screen_size_changed: bool) {
+        let _profile = crate::ui::perf::Scope::new(12);
         let mut show = self.window_visibility.palette;
         let mut close_clicked = false;
 
@@ -595,30 +832,44 @@ impl PaintFEApp {
             .input(|i| i.viewport().inner_rect)
             .unwrap_or_else(|| ctx.content_rect());
 
-        let panel_size = egui::vec2(286.0, 138.0);
+        let saved_size = self.palette_panel_size.unwrap_or((302.0, 108.0));
+        let panel_size = egui::vec2(saved_size.0, saved_size.1);
         let first_show = self.palette_panel_pos.is_none();
         let source_pos = if self.palette_reposition_settle_frames > 0 {
             self.palette_startup_target_pos.or(self.palette_panel_pos)
         } else {
             self.palette_panel_pos
         };
-        let (pos_x, pos_y) = source_pos.unwrap_or((
+        let (mut pos_x, mut pos_y) = source_pos.unwrap_or((
             screen_rect.max.x - panel_size.x - 8.0,
             screen_rect.max.y - panel_size.y - 8.0,
         ));
 
+        let drag_delta = egui::Vec2::ZERO;
+        pos_x += drag_delta.x;
+        pos_y += drag_delta.y;
         let hover_id = egui::Id::new("Palette_hover");
-        let hover_t = ctx.animate_bool(hover_id, false);
-        let mut window = egui::Window::new("Palette")
+        let hover_t = crate::ui::polish::panel_hover(ctx, hover_id);
+        let mut window = crate::ui::polish::window(ctx, "Palette")
             .open(&mut show)
-            .resizable(false)
+            .movable(false)
+            .resizable(true)
             .collapsible(false)
-            .fixed_size(panel_size)
+            .min_size(egui::vec2(280.0, 108.0))
+            .default_size(panel_size)
             .title_bar(false)
             .frame(self.theme.floating_window_frame_animated(hover_t));
 
-        let should_reposition =
-            first_show || screen_size_changed || self.palette_reposition_settle_frames > 0;
+        if let Some(size) =
+            ctx.data_mut(|d| d.remove_temp::<egui::Vec2>(egui::Id::new("palette_resize_request")))
+        {
+            window = window.fixed_size(size);
+        }
+
+        let should_reposition = first_show
+            || screen_size_changed
+            || self.palette_reposition_settle_frames > 0
+            || drag_delta != egui::Vec2::ZERO;
 
         if should_reposition {
             // Keep palette where user placed it. Only apply a relaxed clamp so it remains
@@ -628,9 +879,20 @@ impl PaintFEApp {
             let max_x = screen_rect.max.x - 24.0;
             let max_y = screen_rect.max.y - 24.0;
             let clamped = egui::pos2(pos_x.clamp(min_x, max_x), pos_y.clamp(min_y, max_y));
-            window = window.fixed_pos(clamped);
+            window = window.current_pos(clamped);
         }
 
+        window = window.current_pos(crate::ui::workspace::place(
+            ctx,
+            "Palette",
+            egui::pos2(pos_x, pos_y),
+            panel_size,
+        ));
+        if let Some(size) = ctx.data_mut(|d| {
+            d.remove_temp::<egui::Vec2>(egui::Id::new(("workspace_size_request", "Palette")))
+        }) {
+            window = window.fixed_size(size);
+        }
         let resp = window.show(ctx, |ui| {
             if signal_widgets::panel_header(
                 ui,
@@ -646,6 +908,7 @@ impl PaintFEApp {
                 &self.assets,
                 self.colors_panel.get_primary_color(),
                 self.colors_panel.get_secondary_color(),
+                self.colors_panel.editing_secondary(),
             ) {
                 if secondary {
                     self.colors_panel.set_secondary_color(color);
@@ -676,6 +939,20 @@ impl PaintFEApp {
             });
 
             let win_rect = inner_resp.response.rect;
+            crate::ui::workspace::register(ctx, "Palette", win_rect);
+            if let Some(size) = signal_widgets::floating_resize(
+                ctx,
+                &inner_resp.response,
+                "Palette",
+                egui::vec2(280.0, 108.0),
+            ) {
+                self.palette_panel_size = Some((size.x, size.y));
+                ctx.data_mut(|d| d.insert_temp(egui::Id::new("palette_resize_request"), size));
+                ctx.request_repaint();
+            }
+            if ctx.input(|i| i.pointer.primary_down()) {
+                self.palette_panel_size = Some((win_rect.width(), win_rect.height()));
+            }
             self.remember_ui_cursor_rect(win_rect);
             if self.palette_reposition_settle_frames == 0 {
                 self.palette_panel_pos = Some((win_rect.min.x, win_rect.min.y));
@@ -683,7 +960,7 @@ impl PaintFEApp {
             }
             let hovered =
                 ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p)));
-            ctx.animate_bool(hover_id, hovered);
+            crate::ui::polish::remember_hover(ctx, hover_id, hovered);
         }
 
         if close_clicked {
@@ -694,6 +971,7 @@ impl PaintFEApp {
 
     /// Show the floating Script Editor panel
     fn show_floating_script_editor(&mut self, ctx: &egui::Context, screen_size_changed: bool) {
+        let _profile = crate::ui::perf::Scope::new(13);
         let mut show = self.window_visibility.script_editor;
         if !show {
             return;
@@ -713,9 +991,10 @@ impl PaintFEApp {
         let pos_y = top_off;
 
         let hover_id = egui::Id::new("ScriptEditor_hover");
-        let hover_t = ctx.animate_bool(hover_id, false);
-        let mut window = egui::Window::new("ScriptEditor")
+        let hover_t = crate::ui::polish::panel_hover(ctx, hover_id);
+        let mut window = crate::ui::polish::window(ctx, "ScriptEditor")
             .open(&mut show)
+            .movable(false)
             .resizable(true)
             .collapsible(false)
             .min_width(400.0)
@@ -731,6 +1010,17 @@ impl PaintFEApp {
         }
 
         let theme_copy = self.theme.clone();
+        window = window.current_pos(crate::ui::workspace::place(
+            ctx,
+            "ScriptEditor",
+            egui::pos2(pos_x, pos_y),
+            egui::vec2(520.0, 500.0),
+        ));
+        if let Some(size) = ctx.data_mut(|d| {
+            d.remove_temp::<egui::Vec2>(egui::Id::new(("workspace_size_request", "ScriptEditor")))
+        }) {
+            window = window.fixed_size(size);
+        }
         let resp = window.show(ctx, |ui| {
             self.script_editor.show(ui, &theme_copy);
 
@@ -752,11 +1042,26 @@ impl PaintFEApp {
 
         if let Some(inner_resp) = resp {
             let win_rect = inner_resp.response.rect;
+            crate::ui::workspace::register(ctx, "ScriptEditor", win_rect);
+            if let Some(size) = crate::signal_widgets::floating_resize(
+                ctx,
+                &inner_resp.response,
+                "ScriptEditor",
+                egui::vec2(320.0, 240.0),
+            ) {
+                ctx.data_mut(|d| {
+                    d.insert_temp(
+                        egui::Id::new(("workspace_size_request", "ScriptEditor")),
+                        size,
+                    )
+                });
+                ctx.request_repaint();
+            }
             self.remember_ui_cursor_rect(win_rect);
             self.script_right_offset = Some((screen_w - win_rect.min.x, win_rect.min.y));
             let hovered =
                 ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p)));
-            ctx.animate_bool(hover_id, hovered);
+            crate::ui::polish::remember_hover(ctx, hover_id, hovered);
         }
 
         if self.script_editor.close_requested {

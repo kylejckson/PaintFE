@@ -9,8 +9,7 @@ impl ToolsPanel {
             egui::pos2(canvas_rect.min.x + cx * zoom, canvas_rect.min.y + cy * zoom)
         };
 
-        if self.active_tool == Tool::Line && self.line_state.line_tool.stage == LineStage::Editing
-        {
+        if self.active_tool == Tool::Line && self.line_state.line_tool.stage == LineStage::Editing {
             let handle_radius = 8.0;
             for point in self.line_state.line_tool.control_points {
                 if (to_screen(point.x, point.y) - screen_pos).length() < handle_radius {
@@ -473,6 +472,19 @@ impl ToolsPanel {
             is_secondary_released = false;
             is_secondary_clicked = false;
         }
+        if pointer_allowed && (is_primary_pressed || is_secondary_pressed) {
+            let c = if is_secondary_pressed {
+                secondary_color_f32
+            } else {
+                primary_color_f32
+            };
+            self.paint_gesture_color = crate::components::color_widgets::rgba(
+                (c[0] * 255.0).round() as u8,
+                (c[1] * 255.0).round() as u8,
+                (c[2] * 255.0).round() as u8,
+                (c[3] * 255.0).round() as u8,
+            );
+        }
         let shift_held = ui.input(|i| i.modifiers.shift);
         let enter_pressed =
             ui.input(|i| i.key_pressed(egui::Key::Enter)) || self.injected_enter_pressed;
@@ -506,33 +518,34 @@ impl ToolsPanel {
         }
 
         match self.active_tool {
-            Tool::Brush | Tool::Eraser | Tool::Pencil | Tool::Line => self.handle_stroke_tools_input(
-                ui,
-                canvas_state,
-                canvas_pos,
-                canvas_pos_f32,
-                canvas_pos_f32_clamped,
-                canvas_pos_unclamped,
-                raw_motion_events,
-                painter,
-                canvas_rect,
-                zoom,
-                primary_color_f32,
-                secondary_color_f32,
-                &mut gpu_renderer,
-                &mut stroke_event,
-                is_primary_down,
-                is_primary_released,
-                is_primary_clicked,
-                is_primary_pressed,
-                is_secondary_down,
-                is_secondary_pressed,
-                is_secondary_released,
-                is_secondary_clicked,
-                shift_held,
-                enter_pressed,
-                escape_pressed_global,
-            ),
+            Tool::Brush | Tool::Eraser | Tool::Pencil | Tool::Line => self
+                .handle_stroke_tools_input(
+                    ui,
+                    canvas_state,
+                    canvas_pos,
+                    canvas_pos_f32,
+                    canvas_pos_f32_clamped,
+                    canvas_pos_unclamped,
+                    raw_motion_events,
+                    painter,
+                    canvas_rect,
+                    zoom,
+                    primary_color_f32,
+                    secondary_color_f32,
+                    &mut gpu_renderer,
+                    &mut stroke_event,
+                    is_primary_down,
+                    is_primary_released,
+                    is_primary_clicked,
+                    is_primary_pressed,
+                    is_secondary_down,
+                    is_secondary_pressed,
+                    is_secondary_released,
+                    is_secondary_clicked,
+                    shift_held,
+                    enter_pressed,
+                    escape_pressed_global,
+                ),
             Tool::RectangleSelect
             | Tool::EllipseSelect
             | Tool::MovePixels
@@ -661,10 +674,33 @@ impl ToolsPanel {
         }
 
         if stroke_event.is_some() {
+            if matches!(
+                self.active_tool,
+                Tool::Brush
+                    | Tool::Pencil
+                    | Tool::Line
+                    | Tool::Fill
+                    | Tool::Gradient
+                    | Tool::Shapes
+            ) && !canvas_state.edit_layer_mask
+            {
+                self.completed_paint_colors.push(self.paint_gesture_color);
+                if self.active_tool == Tool::Gradient {
+                    let c = secondary_color_f32;
+                    self.completed_paint_colors
+                        .push(crate::components::color_widgets::rgba(
+                            (c[0] * 255.0).round() as u8,
+                            (c[1] * 255.0).round() as u8,
+                            (c[2] * 255.0).round() as u8,
+                            (c[3] * 255.0).round() as u8,
+                        ));
+                }
+            }
             self.pending_stroke_event = stroke_event;
         }
 
-        if is_primary_released || is_secondary_released || (!is_primary_down && !is_secondary_down) {
+        if is_primary_released || is_secondary_released || (!is_primary_down && !is_secondary_down)
+        {
             self.canvas_pointer_active = false;
         }
     }
@@ -675,4 +711,3 @@ include!("handle_input/selection_fill_input.rs");
 include!("handle_input/text_tool_input.rs");
 include!("handle_input/surface_transform_input.rs");
 include!("handle_input/utility_navigation_input.rs");
-

@@ -66,6 +66,8 @@ pub struct Canvas {
     brush_tip_cursor_key: (String, u32, u32),
     /// Tool icon texture for custom cursor overlay (set from app.rs each frame).
     pub tool_cursor_icon: Option<egui::TextureHandle>,
+    /// Preserve authored colors for icon-pack cursor artwork.
+    pub tool_cursor_from_pack: bool,
     /// The egui widget Id of the main canvas area (used to distinguish canvas focus
     /// from text-input focus so single-key tool shortcuts are suppressed while typing).
     pub canvas_widget_id: Option<egui::Id>,

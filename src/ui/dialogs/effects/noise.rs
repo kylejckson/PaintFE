@@ -14,14 +14,16 @@ impl AddNoiseDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_add_noise")
+        crate::ui::polish::window(ctx, "dialog_add_noise")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 185.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(380.0);
-                if paint_dialog_header(ui, &colors, "\u{1F4A5}", &t!("dialog.add_noise")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F4A5}", &t!("dialog.add_noise")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "NOISE SETTINGS");
 
@@ -73,7 +75,7 @@ impl AddNoiseDialog {
                             let mut seed_f = self.seed as f32;
                             if ui
                                 .add(
-                                    egui::DragValue::new(&mut seed_f)
+                                    crate::ui::numeric::Numeric::new(&mut seed_f)
                                         .speed(1.0)
                                         .range(0.0..=9999.0),
                                 )
@@ -179,14 +181,16 @@ impl ReduceNoiseDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_reduce_noise")
+        crate::ui::polish::window(ctx, "dialog_reduce_noise")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
-                if paint_dialog_header(ui, &colors, "\u{1F50A}", &t!("dialog.reduce_noise")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F50A}", &t!("dialog.reduce_noise")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "DENOISE SETTINGS");
 
@@ -245,14 +249,16 @@ impl MedianDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_median")
+        crate::ui::polish::window(ctx, "dialog_median")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
-                if paint_dialog_header(ui, &colors, "\u{1F4CA}", &t!("dialog.median_filter")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F4CA}", &t!("dialog.median_filter")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "FILTER SETTINGS");
 
@@ -303,5 +309,3 @@ effect_dialog_base!(GlowDialog {
     intensity: f32 = 0.0,
     first_open: bool = true
 });
-
-

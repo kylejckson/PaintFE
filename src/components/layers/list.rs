@@ -1,4 +1,14 @@
 impl LayersPanel {
+    /// Drop thumbnails before drawing another document, even when layer counts
+    /// and dirty generations match. Do not throttle the first draw after a switch.
+    pub fn set_thumbnail_project(&mut self, project_id: uuid::Uuid) {
+        if self.thumbnail_project_id != Some(project_id) {
+            self.thumbnail_project_id = Some(project_id);
+            self.thumbnail_cache.clear();
+            self.last_layer_count = 0;
+        }
+    }
+
     fn folder_color(
         folder: &crate::canvas::LayerFolder,
         settings: &AppSettings,
@@ -402,7 +412,11 @@ impl LayersPanel {
                         // Reset drag state
                         self.drag_state.dragging_display_idx = None;
                         self.drag_state.drag_offset_y = 0.0;
-                        for v in self.drag_state.anim_offsets.iter_mut() {
+                        for (i, v) in self.drag_state.anim_offsets.iter_mut().enumerate() {
+                            crate::ui::polish::reset(
+                                ui.ctx(),
+                                ui.id().with(("layer_reorder_offset", (i, layer_count))),
+                            );
                             *v = 0.0;
                         }
                     }
@@ -481,22 +495,23 @@ impl LayersPanel {
                         } else {
                             0.0
                         };
-                        // Smooth interpolation toward target
-                        let speed = 0.25;
-                        self.drag_state.anim_offsets[i] +=
-                            (target_offset - self.drag_state.anim_offsets[i]) * speed;
-                        // Snap when close
-                        if (self.drag_state.anim_offsets[i] - target_offset).abs() < 0.5 {
-                            self.drag_state.anim_offsets[i] = target_offset;
-                        }
+                        let id = ui.id().with(("layer_reorder_offset", (i, layer_count)));
+                        self.drag_state.anim_offsets[i] = crate::ui::polish::animate(
+                            ui.ctx(),
+                            id,
+                            target_offset,
+                            crate::ui::polish::MotionKind::Rows,
+                        );
                     }
                 } else {
-                    // No drag — decay all offsets to 0
-                    for v in self.drag_state.anim_offsets.iter_mut() {
-                        *v *= 0.7;
-                        if v.abs() < 0.5 {
-                            *v = 0.0;
-                        }
+                    for (i, value) in self.drag_state.anim_offsets.iter_mut().enumerate() {
+                        let id = ui.id().with(("layer_reorder_offset", (i, layer_count)));
+                        *value = crate::ui::polish::animate(
+                            ui.ctx(),
+                            id,
+                            0.0,
+                            crate::ui::polish::MotionKind::Rows,
+                        );
                     }
                 }
 
@@ -785,7 +800,11 @@ impl LayersPanel {
                                 self.drag_state.dragging_display_idx = Some(display_idx);
                                 self.drag_state.origin_display_idx = display_idx;
                                 self.drag_state.drag_offset_y = 0.0;
-                                for v in self.drag_state.anim_offsets.iter_mut() {
+                                for (i, v) in self.drag_state.anim_offsets.iter_mut().enumerate() {
+                                    crate::ui::polish::reset(
+                                        ui.ctx(),
+                                        ui.id().with(("layer_reorder_offset", (i, layer_count))),
+                                    );
                                     *v = 0.0;
                                 }
                             }

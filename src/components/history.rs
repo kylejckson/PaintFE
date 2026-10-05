@@ -17,6 +17,85 @@ pub trait Command: Send + Sync {
     fn redo(&self, canvas: &mut CanvasState);
     fn description(&self) -> String;
     fn memory_size(&self) -> usize;
+    /// Optional display metadata; commands without it retain their original descriptions.
+    fn presentation(&self) -> Option<HistoryPresentation> {
+        None
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct HistoryPresentation {
+    pub title: String,
+    pub icon: Icon,
+    pub detail: Option<String>,
+}
+
+#[cfg(test)]
+mod refinement_tests {
+    use super::*;
+    #[test]
+    fn presentation_tracks_revert_and_redo_without_changing_commands() {
+        let mut history = HistoryManager::new(20);
+        let mut canvas = CanvasState::new(2, 2);
+        for label in ["Brush Stroke", "Fill", "Rectangle Selection"] {
+            history.push(Box::new(MarkerCommand::new(label)));
+        }
+        assert_eq!(history.presentation_history()[0].icon, Icon::RectSelect);
+        history.undo_to(2, &mut canvas);
+        assert_eq!(history.presentation_history()[0].title, "Brush Stroke");
+        assert_eq!(history.redo_count(), 2);
+        history.redo(&mut canvas);
+        assert_eq!(history.presentation_history()[0].icon, Icon::Fill);
+        history.push(Box::new(MarkerCommand::new("Custom operation")));
+        assert_eq!(history.redo_count(), 0);
+        assert_eq!(history.presentation_history()[0].icon, Icon::Undo);
+    }
+}
+
+impl HistoryPresentation {
+    fn fallback(title: String) -> Self {
+        let lower = title.to_lowercase();
+        let icon = if lower.contains("eraser") {
+            Icon::Eraser
+        } else if lower.contains("pencil") {
+            Icon::Pencil
+        } else if lower.contains("clone") {
+            Icon::CloneStamp
+        } else if lower.contains("smudge") {
+            Icon::Smudge
+        } else if lower.contains("liquify") {
+            Icon::Liquify
+        } else if lower.contains("shape") {
+            Icon::Shapes
+        } else if lower.contains("fill") {
+            Icon::Fill
+        } else if lower.contains("gradient") {
+            Icon::Gradient
+        } else if lower.contains("selection") || lower.contains("select") {
+            Icon::RectSelect
+        } else if lower.contains("text") {
+            Icon::Text
+        } else if lower.contains("flatten") {
+            Icon::Flatten
+        } else if lower.contains("merge") {
+            Icon::MergeDown
+        } else if lower.contains("delete") {
+            Icon::Delete
+        } else if lower.contains("layer") || lower.contains("duplicate") {
+            Icon::Layers
+        } else if lower.contains("line") {
+            Icon::Line
+        } else if lower.contains("brush") || lower.contains("stroke") {
+            Icon::Brush
+        } else {
+            Icon::Undo
+        };
+        Self {
+            title,
+            icon,
+            detail: None,
+        }
+    }
 }
 
 pub struct MarkerCommand {
@@ -233,6 +312,15 @@ impl Command for BrushCommand {
 
     fn description(&self) -> String {
         self.description.clone()
+    }
+
+    fn presentation(&self) -> Option<HistoryPresentation> {
+        let mut entry = HistoryPresentation::fallback(self.description.clone());
+        entry.detail = Some(format!(
+            "{} × {} px bounds",
+            self.before_patch.width, self.before_patch.height
+        ));
+        Some(entry)
     }
 
     fn memory_size(&self) -> usize {
@@ -636,6 +724,11 @@ impl Command for LayerOpCommand {
 
 /// Undo/redo history manager with memory limits.
 pub struct HistoryManager {
+    identity: u64,
+    revision: u64,
+    next_entry: u64,
+    undo_ids: VecDeque<u64>,
+    redo_ids: VecDeque<u64>,
     undo_stack: VecDeque<Box<dyn Command>>,
     redo_stack: VecDeque<Box<dyn Command>>,
     max_history_size: usize,
@@ -653,7 +746,13 @@ impl Default for HistoryManager {
 
 impl HistoryManager {
     pub fn new(max_history_size: usize) -> Self {
+        static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         Self {
+            identity: NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            revision: 0,
+            next_entry: 0,
+            undo_ids: VecDeque::new(),
+            redo_ids: VecDeque::new(),
             undo_stack: VecDeque::new(),
             redo_stack: VecDeque::new(),
             max_history_size,
@@ -663,6 +762,10 @@ impl HistoryManager {
     }
 
     pub fn push(&mut self, command: Box<dyn Command>) {
+        self.revision = self.revision.wrapping_add(1);
+        self.next_entry = self.next_entry.wrapping_add(1);
+        self.undo_ids.push_back(self.next_entry);
+        self.redo_ids.clear();
         // Clear redo stack when a new action is performed
         for cmd in self.redo_stack.drain(..) {
             self.total_memory = self.total_memory.saturating_sub(cmd.memory_size());
@@ -678,6 +781,9 @@ impl HistoryManager {
 
     pub fn undo(&mut self, canvas: &mut CanvasState) -> Option<String> {
         if let Some(command) = self.undo_stack.pop_back() {
+            self.revision = self.revision.wrapping_add(1);
+            self.redo_ids
+                .push_back(self.undo_ids.pop_back().expect("history entry identity"));
             let description = command.description();
             command.undo(canvas);
             self.redo_stack.push_back(command);
@@ -689,6 +795,9 @@ impl HistoryManager {
 
     pub fn redo(&mut self, canvas: &mut CanvasState) -> Option<String> {
         if let Some(command) = self.redo_stack.pop_back() {
+            self.revision = self.revision.wrapping_add(1);
+            self.undo_ids
+                .push_back(self.redo_ids.pop_back().expect("history entry identity"));
             let description = command.description();
             command.redo(canvas);
             self.undo_stack.push_back(command);
@@ -723,6 +832,17 @@ impl HistoryManager {
             .collect()
     }
 
+    pub fn presentation_history(&self) -> Vec<HistoryPresentation> {
+        self.undo_stack
+            .iter()
+            .rev()
+            .map(|c| {
+                c.presentation()
+                    .unwrap_or_else(|| HistoryPresentation::fallback(c.description()))
+            })
+            .collect()
+    }
+
     /// Get the current memory usage of the history (O(1) via cached total)
     pub fn memory_usage(&self) -> usize {
         self.total_memory
@@ -733,6 +853,7 @@ impl HistoryManager {
         // Prune by count
         while self.undo_stack.len() > self.max_history_size {
             if let Some(removed) = self.undo_stack.pop_front() {
+                self.undo_ids.pop_front();
                 self.total_memory = self.total_memory.saturating_sub(removed.memory_size());
             }
         }
@@ -741,6 +862,7 @@ impl HistoryManager {
         if let Some(max_bytes) = self.max_memory_bytes {
             while self.total_memory > max_bytes && self.undo_stack.len() > 1 {
                 if let Some(removed) = self.undo_stack.pop_front() {
+                    self.undo_ids.pop_front();
                     self.total_memory = self.total_memory.saturating_sub(removed.memory_size());
                 }
             }
@@ -748,6 +870,9 @@ impl HistoryManager {
     }
 
     pub fn clear(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
+        self.undo_ids.clear();
+        self.redo_ids.clear();
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.total_memory = 0;
@@ -1402,6 +1527,10 @@ impl Command for CutSelectionCommand {
 #[derive(Default)]
 pub struct HistoryPanel {
     show_memory_info: bool,
+    cached_key: Option<(u64, u64)>,
+    cached_entries: Vec<HistoryPresentation>,
+    latest_id: Option<u64>,
+    insertion_start: Option<f64>,
 }
 
 impl HistoryPanel {
@@ -1454,87 +1583,334 @@ impl HistoryPanel {
         history: &mut HistoryManager,
         canvas: &mut CanvasState,
         assets: &Assets,
+        theme: &crate::theme::Theme,
     ) {
-        // Show history list (no undo/redo buttons - they're in the toolbar)
+        let now = ui.input(|i| i.time);
+        let key = (history.identity, history.revision);
+        if self.cached_key != Some(key) {
+            let latest = history.undo_ids.back().copied();
+            let same_document = self.cached_key.is_some_and(|k| k.0 == key.0);
+            let inserted =
+                same_document && latest.is_some_and(|id| self.latest_id.is_none_or(|old| id > old));
+            self.insertion_start = (inserted
+                && theme.history_animations
+                && crate::ui::polish::duration(ui.ctx(), crate::ui::polish::MotionKind::Rows)
+                    > 0.0)
+                .then_some(now);
+            self.cached_entries = history.presentation_history();
+            self.cached_key = Some(key);
+            self.latest_id = latest;
+        }
+        if crate::ui::polish::duration(ui.ctx(), crate::ui::polish::MotionKind::Rows) == 0.0 {
+            self.insertion_start = None;
+        }
+        let progress = self.insertion_start.map_or(1.0, |start| {
+            ((now - start)
+                / crate::ui::polish::duration(ui.ctx(), crate::ui::polish::MotionKind::Rows)
+                    .max(0.001) as f64)
+                .clamp(0.0, 1.0) as f32
+        });
+        let progress = 1.0 - (1.0 - progress).powi(3);
+        if progress < 1.0 && theme.history_animations {
+            ui.ctx().request_repaint();
+        } else {
+            self.insertion_start = None;
+        }
         egui::ScrollArea::vertical()
-            .auto_shrink(false)
+            .auto_shrink([false, false])
             .show(ui, |ui| {
-                let items = history.undo_history();
+                let items = &self.cached_entries;
                 if items.is_empty() {
-                    ui.weak("No history yet");
+                    ui.add_space(5.0);
+                    ui.label(
+                        egui::RichText::new("History will appear here as you edit.")
+                            .size(11.0)
+                            .color(theme.text_muted),
+                    );
+                    ui.add_space(10.0);
+                    let placeholder_height =
+                        ((ui.available_height() - 2.0 * ui.spacing().item_spacing.y) / 3.0)
+                            .clamp(32.0, 46.0);
+                    for (i, icon) in [Icon::Brush, Icon::Fill, Icon::RectSelect]
+                        .into_iter()
+                        .enumerate()
+                    {
+                        Self::card(
+                            ui,
+                            assets,
+                            theme,
+                            &HistoryPresentation {
+                                title: String::new(),
+                                icon,
+                                detail: None,
+                            },
+                            false,
+                            Some(i),
+                            placeholder_height,
+                            1.0,
+                        );
+                    }
                 } else {
-                    let mut revert_to: Option<usize> = None;
-
-                    for (i, desc) in items.iter().enumerate() {
-                        let is_current = i == 0;
-                        let icon = Self::icon_for_action(desc);
-
-                        let response = ui.horizontal(|ui| {
-                            // Render actual tool icon (14x14)
-                            let icon_size = egui::Vec2::splat(14.0);
-                            if let Some(texture) = assets.get_texture(icon) {
-                                let sized = egui::load::SizedTexture::from_handle(texture);
-                                let img =
-                                    egui::Image::from_texture(sized).fit_to_exact_size(icon_size);
-                                ui.add(img);
-                            } else {
-                                ui.label(egui::RichText::new(icon.emoji()).size(12.0));
-                            }
-
-                            let text = if is_current {
-                                egui::RichText::new(desc).strong().size(11.0)
-                            } else {
-                                egui::RichText::new(desc).weak().size(11.0)
-                            };
-
-                            ui.add(egui::Label::new(text).sense(egui::Sense::click()))
-                        });
-
-                        let label_response = response.inner;
-                        if label_response.clicked() && i > 0 {
-                            revert_to = Some(i);
+                    let mut revert = None;
+                    let at_top = ui.cursor().min.y >= ui.clip_rect().top() - 1.0;
+                    let insertion = if at_top && theme.history_animations {
+                        progress
+                    } else {
+                        1.0
+                    };
+                    ui.add_space(-(1.0 - insertion) * (46.0 + ui.spacing().item_spacing.y));
+                    for (i, entry) in items.iter().enumerate() {
+                        let response = Self::card(
+                            ui,
+                            assets,
+                            theme,
+                            entry,
+                            i == 0,
+                            None,
+                            46.0,
+                            if i == 0 { insertion } else { 1.0 },
+                        );
+                        if i > 0 && response.clicked() {
+                            revert = Some(i);
                         }
-
-                        if label_response.hovered() && i > 0 {
-                            label_response.on_hover_text("Click to revert to this state");
+                        if i > 0 {
+                            response.on_hover_text("Click to revert to this state");
                         }
                     }
-
-                    // Process revert outside the iteration
-                    if let Some(index) = revert_to {
+                    if let Some(index) = revert {
                         history.undo_to(index, canvas);
                     }
                 }
             });
     }
 
-    fn icon_for_action(desc: &str) -> Icon {
-        let desc_lower = desc.to_lowercase();
-        if desc_lower.contains("brush") {
-            Icon::Brush
-        } else if desc_lower.contains("eraser") {
-            Icon::Eraser
-        } else if desc_lower.contains("line") {
-            Icon::Line
-        } else if desc_lower.contains("layer")
-            || desc_lower.contains("duplicate")
-            || desc_lower.contains("rename")
-        {
-            Icon::Layers
-        } else if desc_lower.contains("opacity")
-            || desc_lower.contains("visible")
-            || desc_lower.contains("hide")
-            || desc_lower.contains("show")
-        {
-            Icon::Visible
-        } else if desc_lower.contains("delete") {
-            Icon::Delete
-        } else if desc_lower.contains("flatten") {
-            Icon::Flatten
-        } else if desc_lower.contains("merge") {
-            Icon::MergeDown
-        } else {
-            Icon::Brush
+    fn card(
+        ui: &mut egui::Ui,
+        assets: &Assets,
+        theme: &crate::theme::Theme,
+        entry: &HistoryPresentation,
+        current: bool,
+        skeleton: Option<usize>,
+        height: f32,
+        visibility: f32,
+    ) -> egui::Response {
+        let empty = skeleton.is_some();
+        let (rect, response) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), height),
+            if empty {
+                egui::Sense::hover()
+            } else {
+                egui::Sense::click()
+            },
+        );
+        if !ui.is_rect_visible(rect) {
+            return response;
         }
+        let mut painter = ui.painter().clone();
+        painter.multiply_opacity(visibility);
+        let p = &painter;
+        let opacity = if empty {
+            theme.history_placeholder_opacity
+        } else {
+            1.0
+        };
+        let rail_x = rect.left() + 7.0;
+        p.line_segment(
+            [
+                egui::pos2(rail_x, rect.top()),
+                egui::pos2(rail_x, rect.bottom() + ui.spacing().item_spacing.y),
+            ],
+            egui::Stroke::new(
+                1.0,
+                theme.separator_color.gamma_multiply(if empty {
+                    (opacity * 2.5).min(1.0)
+                } else {
+                    1.0
+                }),
+            ),
+        );
+        let dot = egui::pos2(rail_x, rect.center().y);
+        p.circle_filled(
+            dot,
+            4.0,
+            if current {
+                theme.accent
+            } else {
+                theme.border_color.gamma_multiply(if empty {
+                    (opacity * 2.5).min(1.0)
+                } else {
+                    1.0
+                })
+            },
+        );
+        let card = egui::Rect::from_min_max(rect.min + egui::vec2(19.0, 0.0), rect.max);
+        let fill = if current {
+            theme.accent_faint
+        } else if response.hovered() && !empty {
+            theme.button_hover
+        } else {
+            theme.bg2
+        };
+        p.rect_filled(
+            card,
+            theme.history_rounding as u8,
+            fill.gamma_multiply(if empty {
+                (opacity * 2.0).min(1.0)
+            } else {
+                0.65
+            }),
+        );
+        let badge = egui::Rect::from_center_size(
+            egui::pos2(card.left() + 21.0, card.center().y),
+            egui::Vec2::splat((height - 12.0).min(28.0)),
+        );
+        p.rect_filled(
+            badge,
+            theme.badge_rounding as u8,
+            (if current || skeleton == Some(0) {
+                theme.accent_faint
+            } else {
+                theme.bg3
+            })
+            .gamma_multiply(if empty { (opacity * 3.0).min(1.0) } else { 1.0 }),
+        );
+        if let Some(texture) = assets.get_texture(entry.icon) {
+            p.image(
+                texture.id(),
+                badge.shrink(4.0),
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE.gamma_multiply(opacity),
+            );
+        }
+        let text_left = badge.right() + 9.0;
+        if empty {
+            for (dy, width) in [(-7.0, 0.8), (8.0, 0.43)] {
+                let bar = egui::Rect::from_min_size(
+                    egui::pos2(text_left, card.center().y + dy),
+                    egui::vec2(((card.right() - text_left - 10.0) * width).max(0.0), 7.0),
+                );
+                p.rect_filled(
+                    bar,
+                    theme.widget_rounding.min(4.0) as u8,
+                    theme.text_muted.gamma_multiply(opacity),
+                );
+            }
+        } else {
+            let width = (card.right() - text_left - 9.0).max(1.0);
+            let title_y = if entry.detail.is_some() {
+                card.center().y - 6.0
+            } else {
+                card.center().y
+            };
+            let mut job = egui::text::LayoutJob::simple(
+                entry.title.clone(),
+                egui::FontId::proportional(11.0),
+                theme.text_color,
+                width,
+            );
+            job.wrap.max_rows = 1;
+            job.wrap.break_anywhere = true;
+            let galley = p.layout_job(job);
+            p.galley(
+                egui::pos2(text_left, title_y - galley.size().y / 2.0),
+                galley,
+                theme.text_color,
+            );
+            if let Some(detail) = &entry.detail {
+                let mut job = egui::text::LayoutJob::simple(
+                    detail.clone(),
+                    egui::FontId::proportional(9.0),
+                    theme.text_muted,
+                    width,
+                );
+                job.wrap.max_rows = 1;
+                job.wrap.break_anywhere = true;
+                let galley = p.layout_job(job);
+                p.galley(
+                    egui::pos2(text_left, card.center().y + 1.0),
+                    galley,
+                    theme.text_muted,
+                );
+            }
+        }
+        if current {
+            p.rect_stroke(
+                card,
+                theme.history_rounding as u8,
+                egui::Stroke::new(0.8, theme.accent),
+                egui::StrokeKind::Inside,
+            );
+        }
+        response
+    }
+}
+
+#[cfg(test)]
+mod mega_pass_history_tests {
+    use super::*;
+
+    #[test]
+    fn identities_survive_pruning_undo_and_redo() {
+        let mut history = HistoryManager::new(2);
+        let mut canvas = CanvasState::new(2, 2);
+        for _ in 0..3 {
+            history.push(Box::new(MarkerCommand::new("Brush Stroke")));
+        }
+        assert_eq!(
+            history.undo_ids.iter().copied().collect::<Vec<_>>(),
+            vec![2, 3]
+        );
+        let revision = history.revision;
+        history.undo(&mut canvas);
+        assert_eq!(history.undo_ids.back(), Some(&2));
+        assert_eq!(history.redo_ids.back(), Some(&3));
+        history.redo(&mut canvas);
+        assert_eq!(history.undo_ids.back(), Some(&3));
+        assert!(history.revision > revision);
+        history.undo(&mut canvas);
+        history.push(Box::new(MarkerCommand::new("Fill")));
+        assert_eq!(history.undo_ids.back(), Some(&4));
+        assert!(history.redo_ids.is_empty());
+        history.clear();
+        assert!(history.undo_ids.is_empty());
+    }
+
+    #[test]
+    fn insertion_animation_runs_at_history_limit_and_then_stops() {
+        let ctx = egui::Context::default();
+        let mut panel = HistoryPanel::default();
+        let mut history = HistoryManager::new(2);
+        let mut canvas = CanvasState::new(2, 2);
+        let assets = Assets::default();
+        let theme = crate::theme::Theme::default();
+        let mut draw = |time, panel: &mut HistoryPanel, history: &mut HistoryManager| {
+            let _ = ctx.run_ui(
+                egui::RawInput {
+                    time: Some(time),
+                    ..Default::default()
+                },
+                |ui| {
+                    panel.show_interactive(ui, history, &mut canvas, &assets, &theme);
+                },
+            );
+        };
+        history.push(Box::new(MarkerCommand::new("Brush Stroke")));
+        history.push(Box::new(MarkerCommand::new("Fill")));
+        draw(0.0, &mut panel, &mut history);
+        assert!(panel.insertion_start.is_none());
+        history.push(Box::new(MarkerCommand::new("Brush Stroke")));
+        draw(0.1, &mut panel, &mut history);
+        assert!(panel.insertion_start.is_some());
+        assert_eq!(panel.cached_entries.len(), 2);
+        draw(0.3, &mut panel, &mut history);
+        assert!(panel.insertion_start.is_none());
+    }
+
+    #[test]
+    fn switching_documents_has_a_distinct_cache_identity() {
+        assert_ne!(
+            HistoryManager::new(2).identity,
+            HistoryManager::new(2).identity
+        );
     }
 }

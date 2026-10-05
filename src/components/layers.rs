@@ -123,6 +123,8 @@ pub struct LayersPanel {
     drag_state: DragState,
     selected_layers: HashSet<usize>,
     selected_folder: Option<u64>,
+    /// Thumbnail generations are document-local, so indices alone cannot identify them.
+    thumbnail_project_id: Option<uuid::Uuid>,
     thumbnail_cache: HashMap<usize, ThumbnailCache>,
     last_layer_count: usize,
     /// Layer index to remove from GPU texture cache.

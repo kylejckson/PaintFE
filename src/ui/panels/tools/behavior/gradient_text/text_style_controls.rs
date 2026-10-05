@@ -506,15 +506,16 @@ impl ToolsPanel {
         ui.label(t!("ctx.text.letter_spacing"));
         if ui
             .add(
-                egui::DragValue::new(&mut self.text_state.letter_spacing)
+                crate::ui::numeric::Numeric::new(&mut self.text_state.letter_spacing)
                     .speed(0.1)
                     .suffix("px"),
             )
             .changed()
         {
             self.text_state.preview_dirty = true;
-            self.text_state.pending_ctx_style_update =
-                Some(TextStyleUpdate::LetterSpacing(self.text_state.letter_spacing));
+            self.text_state.pending_ctx_style_update = Some(TextStyleUpdate::LetterSpacing(
+                self.text_state.letter_spacing,
+            ));
             self.text_state.ctx_bar_style_dirty = true;
         }
 
@@ -522,7 +523,7 @@ impl ToolsPanel {
         ui.label("Letter Width");
         if ui
             .add(
-                egui::DragValue::new(&mut self.text_state.width_scale)
+                crate::ui::numeric::Numeric::new(&mut self.text_state.width_scale)
                     .speed(0.01)
                     .range(0.01..=10.0)
                     .suffix("x"),
@@ -538,7 +539,7 @@ impl ToolsPanel {
         ui.label("Letter Height");
         if ui
             .add(
-                egui::DragValue::new(&mut self.text_state.height_scale)
+                crate::ui::numeric::Numeric::new(&mut self.text_state.height_scale)
                     .speed(0.01)
                     .range(0.01..=10.0)
                     .suffix("x"),
@@ -555,7 +556,7 @@ impl ToolsPanel {
         ui.label(t!("ctx.text.line_spacing"));
         if ui
             .add(
-                egui::DragValue::new(&mut self.text_state.line_spacing)
+                crate::ui::numeric::Numeric::new(&mut self.text_state.line_spacing)
                     .speed(0.01)
                     .range(0.5..=5.0)
                     .suffix("x"),
@@ -590,7 +591,4 @@ impl ToolsPanel {
                 }
             });
     }
-
-
 }
-

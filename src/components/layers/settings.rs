@@ -22,7 +22,7 @@ impl LayersPanel {
             };
             let win_width = if is_text { 340.0 } else { 280.0 };
 
-            let popup = egui::Window::new("layer_settings_popup_win")
+            let popup = crate::ui::polish::window(ui.ctx(), "layer_settings_popup_win")
                 .id(Id::new("layer_settings_popup"))
                 .title_bar(false)
                 .collapsible(false)
@@ -320,7 +320,7 @@ impl LayersPanel {
                 ui.label("Max nits");
                 if ui
                     .add(
-                        egui::DragValue::new(&mut max_nits)
+                        crate::ui::numeric::Numeric::new(&mut max_nits)
                             .range(80.0..=10000.0)
                             .speed(10.0),
                     )
@@ -455,7 +455,7 @@ impl LayersPanel {
                             let name = ["R", "G", "B", "A"][i];
                             changed |= ui
                                 .add(
-                                    egui::DragValue::new(coeff)
+                                    crate::ui::numeric::Numeric::new(coeff)
                                         .range(-2.0..=2.0)
                                         .speed(0.05)
                                         .prefix(name),
@@ -518,7 +518,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.outline.width"));
                         if ui
                             .add(
-                                egui::DragValue::new(&mut outline.width)
+                                crate::ui::numeric::Numeric::new(&mut outline.width)
                                     .speed(0.1)
                                     .range(0.5..=50.0)
                                     .suffix("px"),
@@ -596,7 +596,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.shadow.offset_x"));
                         if ui
                             .add(
-                                egui::DragValue::new(&mut shadow.offset_x)
+                                crate::ui::numeric::Numeric::new(&mut shadow.offset_x)
                                     .speed(0.5)
                                     .range(-100.0..=100.0)
                                     .suffix("px"),
@@ -608,7 +608,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.shadow.offset_y"));
                         if ui
                             .add(
-                                egui::DragValue::new(&mut shadow.offset_y)
+                                crate::ui::numeric::Numeric::new(&mut shadow.offset_y)
                                     .speed(0.5)
                                     .range(-100.0..=100.0)
                                     .suffix("px"),
@@ -631,7 +631,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.shadow.spread"));
                         if ui
                             .add(
-                                egui::DragValue::new(&mut shadow.spread)
+                                crate::ui::numeric::Numeric::new(&mut shadow.spread)
                                     .speed(0.2)
                                     .range(0.0..=30.0)
                                     .suffix("px"),
@@ -683,7 +683,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.inner_shadow.offset_x"));
                         if ui
                             .add(
-                                egui::DragValue::new(&mut inner.offset_x)
+                                crate::ui::numeric::Numeric::new(&mut inner.offset_x)
                                     .speed(0.5)
                                     .range(-100.0..=100.0)
                                     .suffix("px"),
@@ -695,7 +695,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.inner_shadow.offset_y"));
                         if ui
                             .add(
-                                egui::DragValue::new(&mut inner.offset_y)
+                                crate::ui::numeric::Numeric::new(&mut inner.offset_y)
                                     .speed(0.5)
                                     .range(-100.0..=100.0)
                                     .suffix("px"),
@@ -709,7 +709,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.inner_shadow.blur"));
                         if ui
                             .add(
-                                egui::DragValue::new(&mut inner.blur_radius)
+                                crate::ui::numeric::Numeric::new(&mut inner.blur_radius)
                                     .speed(0.2)
                                     .range(0.0..=50.0)
                                     .suffix("px"),
@@ -777,7 +777,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.gradient.angle"));
                         if ui
                             .add(
-                                egui::DragValue::new(&mut gradient.angle_degrees)
+                                crate::ui::numeric::Numeric::new(&mut gradient.angle_degrees)
                                     .speed(1.0)
                                     .range(-360.0..=360.0)
                                     .suffix("deg"),
@@ -789,7 +789,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.gradient.scale"));
                         if ui
                             .add(
-                                egui::DragValue::new(&mut gradient.scale)
+                                crate::ui::numeric::Numeric::new(&mut gradient.scale)
                                     .speed(1.0)
                                     .range(1.0..=5000.0)
                                     .suffix("px"),
@@ -803,7 +803,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.gradient.offset_x"));
                         if ui
                             .add(
-                                egui::DragValue::new(&mut gradient.offset[0])
+                                crate::ui::numeric::Numeric::new(&mut gradient.offset[0])
                                     .speed(0.5)
                                     .range(-5000.0..=5000.0),
                             )
@@ -814,7 +814,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.gradient.offset_y"));
                         if ui
                             .add(
-                                egui::DragValue::new(&mut gradient.offset[1])
+                                crate::ui::numeric::Numeric::new(&mut gradient.offset[1])
                                     .speed(0.5)
                                     .range(-5000.0..=5000.0),
                             )
@@ -870,8 +870,9 @@ impl LayersPanel {
             }
             // Poll for async texture load from the browser file picker.
             #[cfg(target_arch = "wasm32")]
-            if let Some((_name, data)) =
-                crate::web_bridge::drain_pending("texture_fill").into_iter().next()
+            if let Some((_name, data)) = crate::web_bridge::drain_pending("texture_fill")
+                .into_iter()
+                .next()
                 && let Ok(img) = image::load_from_memory(&data)
                 && let Some(ref mut tex) = self.settings_state.text_effects.texture_fill
             {
@@ -898,7 +899,7 @@ impl LayersPanel {
                             ui.label(t!("ctx.text.effects.texture.scale"));
                             if ui
                                 .add(
-                                    egui::DragValue::new(&mut tex.scale)
+                                    crate::ui::numeric::Numeric::new(&mut tex.scale)
                                         .speed(0.01)
                                         .range(0.1..=10.0),
                                 )
@@ -911,7 +912,7 @@ impl LayersPanel {
                             ui.label(t!("ctx.text.effects.texture.offset_x"));
                             if ui
                                 .add(
-                                    egui::DragValue::new(&mut tex.offset[0])
+                                    crate::ui::numeric::Numeric::new(&mut tex.offset[0])
                                         .speed(0.5)
                                         .range(-1000.0..=1000.0),
                                 )
@@ -922,7 +923,7 @@ impl LayersPanel {
                             ui.label(t!("ctx.text.effects.texture.offset_y"));
                             if ui
                                 .add(
-                                    egui::DragValue::new(&mut tex.offset[1])
+                                    crate::ui::numeric::Numeric::new(&mut tex.offset[1])
                                         .speed(0.5)
                                         .range(-1000.0..=1000.0),
                                 )
@@ -1017,7 +1018,7 @@ impl LayersPanel {
                     ui.label(t!("ctx.text.warp.arc.bend"));
                     if ui
                         .add(
-                            egui::DragValue::new(&mut arc.bend)
+                            crate::ui::numeric::Numeric::new(&mut arc.bend)
                                 .speed(0.01)
                                 .range(-1.0..=1.0),
                         )
@@ -1030,7 +1031,7 @@ impl LayersPanel {
                     ui.label(t!("ctx.text.warp.arc.hdist"));
                     if ui
                         .add(
-                            egui::DragValue::new(&mut arc.horizontal_distortion)
+                            crate::ui::numeric::Numeric::new(&mut arc.horizontal_distortion)
                                 .speed(0.01)
                                 .range(-1.0..=1.0),
                         )
@@ -1043,7 +1044,7 @@ impl LayersPanel {
                     ui.label(t!("ctx.text.warp.arc.vdist"));
                     if ui
                         .add(
-                            egui::DragValue::new(&mut arc.vertical_distortion)
+                            crate::ui::numeric::Numeric::new(&mut arc.vertical_distortion)
                                 .speed(0.01)
                                 .range(-1.0..=1.0),
                         )
@@ -1058,7 +1059,7 @@ impl LayersPanel {
                     ui.label(t!("ctx.text.warp.circular.radius"));
                     if ui
                         .add(
-                            egui::DragValue::new(&mut circ.radius)
+                            crate::ui::numeric::Numeric::new(&mut circ.radius)
                                 .speed(1.0)
                                 .range(20.0..=2000.0)
                                 .suffix("px"),
@@ -1073,7 +1074,7 @@ impl LayersPanel {
                     let mut degrees = circ.start_angle.to_degrees();
                     if ui
                         .add(
-                            egui::DragValue::new(&mut degrees)
+                            crate::ui::numeric::Numeric::new(&mut degrees)
                                 .speed(1.0)
                                 .range(-360.0..=360.0)
                                 .suffix("°"),
@@ -1101,13 +1102,21 @@ impl LayersPanel {
                     ui.horizontal(|ui| {
                         ui.label(format!("T{i}:"));
                         if ui
-                            .add(egui::DragValue::new(&mut pt[0]).speed(1.0).prefix("x: "))
+                            .add(
+                                crate::ui::numeric::Numeric::new(&mut pt[0])
+                                    .speed(1.0)
+                                    .prefix("x: "),
+                            )
                             .changed()
                         {
                             any_changed = true;
                         }
                         if ui
-                            .add(egui::DragValue::new(&mut pt[1]).speed(1.0).prefix("y: "))
+                            .add(
+                                crate::ui::numeric::Numeric::new(&mut pt[1])
+                                    .speed(1.0)
+                                    .prefix("y: "),
+                            )
                             .changed()
                         {
                             any_changed = true;
@@ -1120,13 +1129,21 @@ impl LayersPanel {
                     ui.horizontal(|ui| {
                         ui.label(format!("B{i}:"));
                         if ui
-                            .add(egui::DragValue::new(&mut pt[0]).speed(1.0).prefix("x: "))
+                            .add(
+                                crate::ui::numeric::Numeric::new(&mut pt[0])
+                                    .speed(1.0)
+                                    .prefix("x: "),
+                            )
                             .changed()
                         {
                             any_changed = true;
                         }
                         if ui
-                            .add(egui::DragValue::new(&mut pt[1]).speed(1.0).prefix("y: "))
+                            .add(
+                                crate::ui::numeric::Numeric::new(&mut pt[1])
+                                    .speed(1.0)
+                                    .prefix("y: "),
+                            )
                             .changed()
                         {
                             any_changed = true;

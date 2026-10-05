@@ -2,52 +2,62 @@
 
 Free, open-source raster image editor built in Rust. Single portable binary, no installer required.
 
+**[Download the latest release](https://github.com/kylejckson/PaintFE/releases/latest)** &nbsp;·&nbsp;
 **[Website](https://paintfe.com)** &nbsp;·&nbsp;
 **[Scripting Docs](https://paintfe.com/scripting.html)** &nbsp;·&nbsp;
 **[Troubleshooting](https://paintfe.com/troubleshooting.html)**
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Platform: Windows + Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue)
+![Platform: Windows + Linux + macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)
 ![Built in Rust](https://img.shields.io/badge/built%20in-Rust-orange)
 [![Version](https://img.shields.io/github/v/release/kylejckson/PaintFE?color=purple)](https://github.com/kylejckson/PaintFE/releases/latest)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/kylejckson/PaintFE/badge)](https://scorecard.dev/viewer/?uri=github.com/kylejckson/PaintFE)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12019/badge)](https://www.bestpractices.dev/projects/12019)
 
----
+24 tools · 25 blend modes · GPU compositing · Rhai scripting · CLI batch processing · local background removal · GIF/APNG/WebP animation · RAW camera support · 15 UI languages
 
-23 tools · 25 blend modes · wgpu GPU pipeline · Rhai scripting · CLI batch mode · local AI (BYOM) · GIF/APNG animation · RAW camera support · 15 UI languages · MIT licensed
+![PaintFE photo workspace in light mode with Luminous icons](screenshot/main_screenshot.png)
 
----
+## What's new in 1.4.0
 
-![PaintFE screenshot](screenshot/main_screenshot.png)
+- **A fresh look:** Luminous icons, a new app logo, and redesigned Color, Palette, and History panels. Classic icons remain available, and custom packs load from folders or ZIPs.
+- **A workspace that fits you:** panel snapping, faint alignment guides, saved layouts, configurable motion, and refined numeric controls.
+- **Better painting and pixel art:** corrected brush hardness, reliable soft-stroke overlap, a clearer pixel grid, raw Pencil input, and a Pixel Art preset.
+- **A faster feel:** improved painting, hover, click, and menu responsiveness, plus stepped zoom and improved Fit to Window.
+- **More editing control:** paste cropping and before/after effect comparison, alongside fixes for stale canvases, layer thumbnails, and icon-pack colors.
 
----
+See the [changelog](CHANGELOG.md) for the full release history.
 
-## Tools
+## Painting and Pixel Art
 
-**Paint** -- Brush, Pencil, Eraser, Line, Fill, Gradient. Brush tip library with variable spacing, soft/hard edges, Dodge/Burn/Sponge modes.
+- **Paint:** Brush, Pencil, Eraser, Line, Fill, and Gradient. Brush tips, spacing, hardness, flow, opacity, and stroke stabilization, with Normal, Uniform, Build Up, Dodge, Burn, and Sponge modes.
+- **Select:** Rectangle, Ellipse, Lasso, and Magic Wand, with Add/Subtract/Intersect modes. Move pixels or selections, select by color range, or select layer content bounds.
+- **Retouch and warp:** Smudge, Clone Stamp, Content-Aware Brush, Color Remover, Liquify, Mesh Warp, and Perspective Crop.
+- **Create and navigate:** system-font Text, shape primitives, Color Picker, Pan, and Zoom.
+- **Work pixel by pixel:** a Pixel Art preset, configurable pixel-grid appearance, stepped zoom, Fit to Window, and a rebindable 100% zoom action.
+- **Place pasted images:** crop handles, Commit & Crop, optional selection after paste, and edge and center alignment snapping.
 
-**Select** -- Rect, Ellipse, Lasso, Magic Wand, Move Pixels, Move Selection. Add/Subtract/Intersect modes. Color Range selection via Edit > Select Color Range.
+## Workspace
 
-**Warp and Retouch** -- Clone Stamp, Content-Aware Fill, Color Remover, Liquify (WGSL compute shader, CPU fallback), Mesh Warp (Catmull-Rom bicubic spline, GPU displacement pipeline, 2x2 to 6x6 grid), Perspective Crop.
+Light and dark themes, Luminous or Classic icons, and custom icon packs let you choose the look. Floating panels support remembered positions, optional edge and alignment snapping, named layouts, and an easy reset.
 
-**Utility** -- Color Picker, Text (system fonts), Zoom, Pan, 17 shape primitives.
+The Color panel offers compact Color and Advanced modes with collapsible HSV, RGB, and HSL controls. Palette swatches reflow as you resize the panel, with recent colors and favorites close at hand. The History timeline shows tool icons and compact action details.
 
-## Filters and Adjustments
+Preferences include theme colors, corner radii, spacing, motion, reduced-motion support, and numeric adjustment behavior. Motion can be subtle, expressive, or turned off.
 
-**Adjustments** -- Auto Levels, Desaturate, Invert, Sepia, Brightness/Contrast, Curves, Exposure, HSL, Levels, Color Temperature.
+## Layers, Filters, and Adjustments
 
-**Filters** -- Gaussian Blur, Box Blur, Motion Blur, Sharpen, Reduce Noise, Median, Pixelate, Unsharp Mask, Emboss, Edge Detect.
+Layer folders, visibility, opacity, masks, and 25 blend modes support layered editing, with undo and redo throughout the workflow.
 
-**Effects** -- Vignette, Glow, Halftone, Oil Painting, Crystallize, Ink, Perspective, Distort (Bulge/Twist/Wave/Ripple), Noise, Scanlines, Glitch, Drop Shadow, Outline, Contour.
+**Adjustments:** Auto Levels, Brightness/Contrast, Curves, Exposure, Highlights/Shadows, HSL, Levels, Color Temperature, Color Balance, Vibrance, Gradient Map, Desaturate, Invert, and Sepia.
 
-Gaussian Blur, HSL, and Median (at smaller radii) have GPU compute paths. CPU/GPU selection is automatic.
+**Filters and effects:** Gaussian, Box, Motion, and Bokeh blur; Sharpen, Reduce Noise, Median, Pixelate, Vignette, Glow, Halftone, Oil Painting, Crystallize, Ink, Distort, Noise, Glitch, Drop Shadow, Outline, and Contour.
 
----
+Recover Transparency helps remove flattened backgrounds, while Make Seamless Texture prepares tileable artwork. Pixel Art Retarget offers palette-aware and structure-preserving image resizing. Toggle live effect previews to compare the original and edited image.
 
-## Scripting
+## Scripting and Batch Processing
 
-Embedded [Rhai](https://rhai.rs/) engine with a sandboxed pixel API and live canvas preview. Scripts run from the built-in editor (View > Script Editor) or via the CLI.
+The embedded [Rhai](https://rhai.rs/) engine provides a sandboxed pixel API and live canvas preview. Run scripts in **View > Script Editor** or process files through the CLI.
 
 ```rhai
 apply_desaturate();
@@ -59,188 +69,169 @@ map_channels(|r, g, b, a| {
 });
 ```
 
-APIs: Canvas (`width`, `height`, `is_selected`), Pixel (`get/set_pixel`, `for_each_pixel`, `for_region`, `map_channels`), Effect (23 functions), Transform (`flip`, `rotate`, `resize_image`, `resize_canvas`), Utility (`rand_int/float`, `rgb_to_hsl`, `sleep`, `progress`, math). Scripts respect the active selection.
-
-Full reference: [paintfe.com/scripting.html](https://paintfe.com/scripting.html)
-
----
-
-## CLI Batch Mode
+The API includes pixel access, selections, effects, canvas transforms, color helpers, progress reporting, and math functions. Pixel edits and effects can respect the active selection. See the [scripting reference](https://paintfe.com/scripting.html) for individual API behavior.
 
 ```sh
-paintfe -i "shots/*.tif" --script process.rhai --format png --output-dir ./out
-paintfe -i photo.png --format jpeg --quality 90 -o out.jpg
+PaintFE -i "shots/*.tif" --script process.rhai --format png --output-dir ./out
+PaintFE -i photo.png --format jpeg --quality 90 -o out.jpg
 ```
+
+<details>
+<summary>CLI options</summary>
 
 | Flag | Description |
 |------|-------------|
-| `-i` / `--input` | Input file or glob pattern (required) |
+| `-i` / `--input` | Input files or glob patterns (required for CLI mode) |
 | `-s` / `--script` | Path to a `.rhai` script |
-| `-o` / `--output` | Output file path |
-| `--output-dir` | Output directory (for batch jobs) |
-| `-f` / `--format` | Output format: `png`, `jpeg`, `webp`, `tiff`, `bmp`, `tga`, `ico` |
-| `-q` / `--quality` | JPEG/WebP quality (1-100) |
-| `--tiff-compression` | TIFF compression mode |
-| `--flatten` | Flatten all layers before export |
-| `-v` / `--verbose` | Verbose output |
+| `-o` / `--output` | Output file path for a single input |
+| `--output-dir` | Output directory for batch jobs |
+| `-f` / `--format` | `png`, `jpeg`, `webp`, `tiff`, `bmp`, `tga`, `ico`, `gif` (static), or `pfe` |
+| `-q` / `--quality` | JPEG/lossy WebP quality (1-100, default 90) |
+| `--webp-lossy` | Use lossy WebP; WebP output defaults to lossless |
+| `--tiff-compression` | `none`, `lzw`, or `deflate` |
+| `--flatten` | Raster exports are flattened; PFE output preserves layers |
+| `-v` / `--verbose` | Script output and per-file timing information |
 
-Exit `0` = all succeeded. Exit `1` = at least one failed (remaining files still process).
+Exit `0` means all files succeeded. Exit `1` means at least one failed; remaining files still process. CLI mode is selected with `-i` or `--input` and does not open the editor. On Linux, use `./PaintFE` if the executable is not on your PATH.
 
----
+</details>
 
-## Paint.NET Legacy Plugins (Experimental)
+## More Screenshots
 
-PaintFE can run a limited profile of classic Paint.NET 3.5 CPU effect plugins in
-an optional out-of-process .NET host. Enable it under **Settings → Plugins**, then
-import the plugin DLL and explicitly trust it. Supported plugins use
-`PropertyBasedEffect` with standard numeric, boolean, or list properties.
+<details>
+<summary>Dark-mode photo editing and poster scripting</summary>
 
-This is not support for modern Paint.NET GPU effects, file-type plugins, or
-custom WinForms configuration dialogs. Plugin DLLs are executable programs: the
-host isolates crashes from PaintFE, but is not a security sandbox. Only import
-plugins from authors you trust. PaintFE does not contain or redistribute any
-Paint.NET binaries.
+Photo editing in dark mode, with layers and retouching history.
 
----
+![PaintFE photo workspace in dark mode](screenshot/photo-dark.png)
 
-## AI Background Removal
+Poster design with the built-in Rhai editor and a completed image-processing script.
 
-One AI feature: local background removal via ONNX. No cloud, no API calls, no data leaves the machine.
+![PaintFE poster workspace with scripting](screenshot/poster-scripting.png)
 
-Supported models (auto-detected): **BiRefNet**, **U2-Net**, **IS-Net (DIS)**.
+</details>
 
-Setup: Edit > Preferences > AI. Point it at your `onnxruntime.dll` / `libonnxruntime.so` and a model file. ONNX Runtime: [github.com/microsoft/onnxruntime/releases](https://github.com/microsoft/onnxruntime/releases). Model links are in the preferences window.
-
----
+Photo sources and artwork details are listed in [screenshot credits](screenshot/CREDITS.txt).
 
 ## File Formats
 
-**Read:** PNG, JPEG, WebP, BMP, TIFF, TGA, GIF (animated), APNG (animated), `.PFE`, `.PDN` (read-only, layers preserved), CR2/CR3/NEF/ARW/DNG/ORF/RW2/SRW/PEF/RAF (RAW via `rawloader`)
+| | Formats |
+|---|---|
+| **Read** | PNG, JPEG, WebP, BMP, TIFF, TGA, GIF, APNG, PFE, PDN, and supported camera RAW files |
+| **Write** | PNG, JPEG, WebP, BMP, TIFF, TGA, ICO, GIF, APNG, and PFE |
+| **Animation** | GIF, APNG, and WebP import and export |
 
-**Write:** PNG, JPEG, WebP, BMP, TIFF, TGA, ICO, GIF (static + animated), APNG (animated), `.PFE`
+PFE is PaintFE's layered project format. Animated export uses each visible layer as a frame, with frame rate, loop count, and format-specific compression options in the export dialog.
 
-Paint.NET `.PDN` projects are imported as raster layers with names, visibility,
-opacity, and supported blend modes. PaintFE never overwrites the source `.PDN`;
-Save opens Save As so the imported project can be stored as `.PFE` or exported.
+RAW decoding uses `rawloader` and `imagepipe`. Recognized extensions include CR2, CR3, NEF, ARW, DNG, ORF, RW2, SRW, PEF, and RAF; decoding depends on the camera and file variant.
 
-Animated export: each visible layer = one frame. FPS, loop count, and GIF palette are configurable in the export dialog.
+Paint.NET PDN import requires the compatibility host. Projects are imported as raster layers with names, visibility, opacity, and supported blend modes. Save opens Save As so the imported project can be stored as PFE or exported without overwriting the source PDN.
 
----
+## Optional Integrations
 
-## Performance Notes
+### Local Background Removal
 
-- **Dirty-rect GPU readback** -- only changed pixels read back. A brush stroke at 4K uploads ~6 KB, not ~33 MB.
-- **COW tile system** -- `TiledImage` uses `Arc<RgbaImage>` chunks. Canvas clone at 4K costs ~36 KB; undo only stores changed tiles.
-- **Tiered undo** -- `PixelPatch` for strokes, `SingleLayerSnapshotCommand` for most filter ops, full snapshot only for canvas-wide ops (resize, flatten).
-- **bytemuck zero-copy** -- GPU readback cast to `Color32` with no per-pixel loop.
-- **Async readback** -- double-buffered staging (ping-pong) during interactive strokes.
-- **rayon** -- compositing, filter cores, and chunk ops are parallelized on the CPU path.
+Background removal runs locally through ONNX Runtime. Images are processed on your machine without cloud uploads or API calls.
 
-More detail: [performance.html](https://paintfe.com/performance.html).
+Supported model families are **BiRefNet**, **U2-Net**, and **IS-Net (DIS)**. Open **Edit > Preferences > AI** and select an ONNX Runtime library and model file. Versioned Linux runtime libraries are also accepted. Model links are available in Preferences; runtime downloads are available from [ONNX Runtime releases](https://github.com/microsoft/onnxruntime/releases).
 
----
+### Paint.NET Legacy Plugins (Experimental)
 
-## Localization
+PaintFE supports a limited profile of classic Paint.NET 3.5 CPU effect plugins through an optional out-of-process .NET host. Open **Edit > Preferences > Plugins**, import a DLL, and explicitly trust it. Supported plugins use `PropertyBasedEffect` with standard numeric, boolean, or list properties.
 
-15 languages ship built in (View > Language, no restart needed): English, Deutsch, Francais, Espanol, Portugues, Italiano, Russkiy, Polski, Nederlands, Turkce, Nihongo, Simplified/Traditional Chinese, Belarusian, and a Fandom (FE) locale.
+Modern Paint.NET GPU effects, file-type plugins, and custom WinForms dialogs are unsupported. Plugin DLLs are executable programs: the host isolates crashes but is not a security sandbox. Only import plugins from authors you trust. PaintFE does not contain or redistribute Paint.NET binaries.
 
-To add a language: copy `locales/en.txt`, translate the values (keep key names unchanged), name it with the BCP-47 code (e.g. `ko.txt`), and open a PR.
+## Responsiveness
 
----
+PaintFE uses GPU compositing, incremental texture updates, shared image tiles, and lightweight undo records to reduce unnecessary work. CPU filters and image operations use Rayon where appropriate, while larger brush dabs can process independent chunks in parallel.
+
+Interaction improvements include reduced UI layout work, cached icon rendering, fewer settings writes, and configurable low-latency presentation. Performance depends on image size, layer count, brush settings, effects, and hardware.
 
 ## Building from Source
 
-PaintFE requires a recent stable Rust toolchain (edition 2024).
+The repository's [rust-toolchain.toml](rust-toolchain.toml) pins the Rust toolchain. Install Rust through rustup and the platform requirements below.
 
 ```sh
-# Clone the repository
-git clone https://github.com/kylejckson/paintfe
-cd paintfe
+git clone https://github.com/kylejckson/PaintFE.git
+cd PaintFE
 
 # Debug build
 cargo build
 
-# Release build (optimized, much smaller binary)
+# Optimized build
 cargo build --release
 
-# Run directly
+# Run the editor
 cargo run --release
 ```
 
-The release binary ends up in `target/release/PaintFE` (Linux) or `target/release/PaintFE.exe` (Windows).
+The release executable is `target/release/PaintFE` on Linux and macOS, or `target/release/PaintFE.exe` on Windows.
 
-On Windows, `build.rs` uses `winresource` to embed the application icon into the executable. You need the Windows SDK installed for this; it is skipped gracefully on Linux.
+**Windows:** use the MSVC Rust toolchain with Visual Studio C++ Build Tools and the Windows SDK. The build script embeds the application icon using `winresource`.
 
-**Dependencies (selected)**
+**Linux:** source builds require development libraries for GTK, X11/Wayland, graphics, and OpenSSL. The Ubuntu packages used by release CI are listed below. These are build requirements; packaged downloads have different runtime requirements.
+
+<details>
+<summary>Ubuntu build dependencies</summary>
+
+```sh
+sudo apt-get install -y \
+  libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+  libxkbcommon-dev libvulkan-dev libwayland-dev libegl1-mesa-dev \
+  libssl-dev pkg-config
+```
+
+</details>
+
+**macOS:** install the Xcode command-line tools and the matching Rust toolchain for your architecture.
+
+The optional Paint.NET compatibility host is built separately with the .NET 8 SDK. See [its README](paintdotnet-host/README.md) for instructions.
+
+<details>
+<summary>Main dependencies</summary>
 
 | Crate | Purpose |
 |-------|---------|
-| `eframe` / `egui` 0.24 | Immediate-mode GUI framework |
-| `wgpu` 0.20 | GPU rendering via WebGPU API (DX12, Vulkan, Metal) |
-| `rayon` 1.7 | CPU parallelism |
-| `rhai` 1.24 | Embedded scripting engine |
-| `image` 0.24 | Image codec support |
-| `rawloader` + `imagepipe` | RAW camera format decoding |
+| `eframe` / `egui` | Immediate-mode GUI framework |
+| `wgpu` | GPU rendering and compute |
+| `rayon` | CPU parallelism |
+| `rhai` | Embedded scripting engine |
+| `image` | Image codecs |
+| `rawloader` / `imagepipe` | Camera RAW decoding and processing |
 | `arboard` | System clipboard |
 | `libloading` | Dynamic ONNX Runtime loading |
-| `clap` 4 | CLI argument parsing |
-| `bytemuck` | Zero-copy GPU buffer casting |
-| `serde` + `bincode` | Project file serialization |
+| `clap` | CLI argument parsing |
+| `bytemuck` | GPU buffer casting |
+| `serde` / `bincode` | Project serialization |
 
-There are no required system dependencies beyond a working GPU driver that supports Vulkan (Linux) or DirectX 12 (Windows). A CPU software fallback is available when no compatible GPU is found.
+See [Cargo.toml](Cargo.toml) for versions and the complete dependency list.
 
----
+</details>
 
-## Contributing
+## Contributing and Translations
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for full details on setting up a dev build, code style, commit conventions, and how to submit a pull request or translation.
+Bug reports, feature requests, translations, and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution guidelines.
 
-Bug reports, feature requests, translations, and pull requests are all welcome.
+15 locales ship built in and can be switched through **View > Language**: English, German, French, Spanish, Portuguese, Italian, Russian, Polish, Dutch, Turkish, Japanese, Simplified Chinese, Traditional Chinese, Belarusian, and Fandom (FE). New controls may fall back to English where translations are incomplete.
 
----
+To add a translation, copy `locales/en.txt`, translate the values without changing keys, and name the file with its BCP-47 code, such as `ko.txt`.
 
 ## FAQ
 
-**Was AI used to build this?**
-Yes. GitHub Copilot was used during development to help with boilerplate and Rust syntax. All generated code was reviewed, tested, and understood before it was committed. The architecture and design decisions were driven by humans. We mention it because it's worth being transparent about.
-
 **Is it really free?**
-MIT licensed. No subscription, no account, no telemetry, no feature gates. Use it commercially, fork it, redistribute it.
+
+Yes. PaintFE is MIT licensed, with no subscription, account requirement, telemetry, or feature gates. Use it commercially, fork it, or redistribute it.
 
 **Does it work on macOS?**
-Yes — macOS builds are available on the releases page. They are unsigned and not notarized, so Gatekeeper will block the first launch. To open it: right-click the app in Finder and choose **Open**, then click **Open** in the dialog. You only need to do this once. After that it opens normally.
+
+macOS builds are available on the [releases page](https://github.com/kylejckson/PaintFE/releases/latest). They are unsigned and not notarized, so Gatekeeper may require you to approve the first launch. See [troubleshooting](https://paintfe.com/troubleshooting.html) for help.
 
 **Why is it called PaintFE?**
-FE is the periodic table symbol for Iron. It's built in Rust. That's the joke. Call it whatever acronym you want.
 
----
+FE is the periodic table symbol for iron. It's built in Rust. That's the joke. Call it whatever acronym you want.
 
 ## License
 
-MIT License. See [LICENSE](LICENSE.md) for details.
-
-```
-Copyright (c) PaintFE Contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
----
+[MIT](LICENSE.md). Bundled font licenses and screenshot credits accompany their respective assets.
 
 *Built in Rust. Free forever. Made by Kyle and contributors.*

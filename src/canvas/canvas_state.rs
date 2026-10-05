@@ -101,6 +101,9 @@ pub struct CanvasState {
     pub preview_premul_cache: Vec<Color32>,
     /// The (rx, ry, rw, rh) rectangle that `preview_premul_cache` covers.
     pub preview_cache_rect: Option<(u32, u32, u32, u32)>,
+    /// Fixed-size brush preview textures; one-pixel gutters preserve filtering
+    /// across tile boundaries without resizing a stroke-wide texture.
+    pub preview_tile_textures: std::collections::BTreeMap<(u32, u32), egui::TextureHandle>,
 
     // -- Selection overlay GPU cache ----------------------
     /// Cached selection overlay texture (crosshatch pattern + border glow).
@@ -189,6 +192,7 @@ impl CanvasState {
             composite_above_buffer: Vec::new(),
             preview_premul_cache: Vec::new(),
             preview_cache_rect: None,
+            preview_tile_textures: std::collections::BTreeMap::new(),
             selection_overlay_texture: None,
             selection_overlay_generation: 0,
             selection_overlay_built_generation: 0,
@@ -243,6 +247,7 @@ impl CanvasState {
         self.preview_downscale = 1;
         self.preview_premul_cache.clear();
         self.preview_cache_rect = None;
+        self.preview_tile_textures.clear();
         self.preview_force_composite = false;
         self.preview_is_eraser = false;
         self.preview_replaces_layer = false;

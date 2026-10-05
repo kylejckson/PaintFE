@@ -13,14 +13,16 @@ impl GridDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_grid")
+        crate::ui::polish::window(ctx, "dialog_grid")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(370.0);
-                if paint_dialog_header(ui, &colors, "\u{1F4D0}", &t!("dialog.grid")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F4D0}", &t!("dialog.grid")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "GRID SETTINGS");
 
@@ -152,14 +154,16 @@ impl DropShadowDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_drop_shadow")
+        crate::ui::polish::window(ctx, "dialog_drop_shadow")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(380.0);
-                if paint_dialog_header(ui, &colors, "\u{1F4A4}", &t!("dialog.drop_shadow")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F4A4}", &t!("dialog.drop_shadow")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "SHADOW SETTINGS");
 
@@ -268,14 +272,16 @@ impl OutlineDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_outline")
+        crate::ui::polish::window(ctx, "dialog_outline")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(360.0);
-                if paint_dialog_header(ui, &colors, "\u{1F58A}", &t!("dialog.outline")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F58A}", &t!("dialog.outline")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "OUTLINE SETTINGS");
 
@@ -394,65 +400,106 @@ impl SeamlessTextureDialog {
     pub fn show(&mut self, ctx: &egui::Context) -> DialogResult<()> {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
-        egui::Window::new("dialog_seamless_texture")
+        crate::ui::polish::window(ctx, "dialog_seamless_texture")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 195.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(390.0);
-                if paint_dialog_header(ui, &colors, "\u{1F9F6}", &t!("dialog.seamless")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F9F6}", &t!("dialog.seamless")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.small("Tiled preview is enabled while this dialog is open.");
                 ui.add_space(4.0);
                 section_label(ui, &colors, "SEAM REPAIR");
                 let mut changed = false;
-                egui::Grid::new("seamless_texture_params").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                    ui.label("Blend width");
-                    changed |= numeric_field_with_buttons(ui, &mut self.blend_px, 1.0, 1.0..=512.0, " px", 8.0);
-                    ui.end_row();
-                    ui.label("Strength");
-                    changed |= dialog_slider(ui, &mut self.strength, 0.0..=1.0, 0.01, "", 2);
-                    ui.end_row();
-                    ui.label("Directions");
-                    ui.horizontal(|ui| {
-                        changed |= ui.checkbox(&mut self.horizontal, "Horizontal").changed();
-                        changed |= ui.checkbox(&mut self.vertical, "Vertical").changed();
+                egui::Grid::new("seamless_texture_params")
+                    .num_columns(2)
+                    .spacing([8.0, 6.0])
+                    .show(ui, |ui| {
+                        ui.label("Blend width");
+                        changed |= numeric_field_with_buttons(
+                            ui,
+                            &mut self.blend_px,
+                            1.0,
+                            1.0..=512.0,
+                            " px",
+                            8.0,
+                        );
+                        ui.end_row();
+                        ui.label("Strength");
+                        changed |= dialog_slider(ui, &mut self.strength, 0.0..=1.0, 0.01, "", 2);
+                        ui.end_row();
+                        ui.label("Directions");
+                        ui.horizontal(|ui| {
+                            changed |= ui.checkbox(&mut self.horizontal, "Horizontal").changed();
+                            changed |= ui.checkbox(&mut self.vertical, "Vertical").changed();
+                        });
+                        ui.end_row();
+                        ui.label("Fade");
+                        egui::ComboBox::from_id_salt("seamless_profile")
+                            .selected_text(["Linear", "Smooth"][self.profile_idx])
+                            .show_ui(ui, |ui| {
+                                for (idx, label) in ["Linear", "Smooth"].iter().enumerate() {
+                                    changed |= ui
+                                        .selectable_value(&mut self.profile_idx, idx, *label)
+                                        .changed();
+                                }
+                            });
+                        ui.end_row();
                     });
-                    ui.end_row();
-                    ui.label("Fade");
-                    egui::ComboBox::from_id_salt("seamless_profile").selected_text(["Linear", "Smooth"][self.profile_idx]).show_ui(ui, |ui| {
-                        for (idx, label) in ["Linear", "Smooth"].iter().enumerate() {
-                            changed |= ui.selectable_value(&mut self.profile_idx, idx, *label).changed();
-                        }
-                    });
-                    ui.end_row();
-                });
                 section_label(ui, &colors, "ORGANIC VARIATION");
-                egui::Grid::new("seamless_organic_params").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                    ui.label("Organic amount");
-                    changed |= dialog_slider(ui, &mut self.organicity, 0.0..=1.0, 0.01, "", 2);
-                    ui.end_row();
-                    ui.label("Dent size");
-                    changed |= numeric_field_with_buttons(ui, &mut self.dent_size, 1.0, 2.0..=512.0, " px", 24.0);
-                    ui.end_row();
-                    ui.label("Seed");
-                    let mut seed = self.seed as f32;
-                    if numeric_field_with_buttons(ui, &mut seed, 1.0, 0.0..=999_999.0, "", 42.0) {
-                        self.seed = seed as u32;
-                        changed = true;
-                    }
-                    ui.end_row();
-                });
+                egui::Grid::new("seamless_organic_params")
+                    .num_columns(2)
+                    .spacing([8.0, 6.0])
+                    .show(ui, |ui| {
+                        ui.label("Organic amount");
+                        changed |= dialog_slider(ui, &mut self.organicity, 0.0..=1.0, 0.01, "", 2);
+                        ui.end_row();
+                        ui.label("Dent size");
+                        changed |= numeric_field_with_buttons(
+                            ui,
+                            &mut self.dent_size,
+                            1.0,
+                            2.0..=512.0,
+                            " px",
+                            24.0,
+                        );
+                        ui.end_row();
+                        ui.label("Seed");
+                        let mut seed = self.seed as f32;
+                        if numeric_field_with_buttons(ui, &mut seed, 1.0, 0.0..=999_999.0, "", 42.0)
+                        {
+                            self.seed = seed as u32;
+                            changed = true;
+                        }
+                        ui.end_row();
+                    });
                 accent_separator(ui, &colors);
                 let manual = preview_controls(ui, &colors, &mut self.live_preview);
-                if (changed && self.live_preview) || manual { result = DialogResult::Changed; }
+                if (changed && self.live_preview) || manual {
+                    result = DialogResult::Changed;
+                }
                 let (ok, cancel, reset) = dialog_footer_with_reset(ui, &colors);
-                if ok { result = DialogResult::Ok(()); }
-                if cancel { result = DialogResult::Cancel; }
+                if ok {
+                    result = DialogResult::Ok(());
+                }
+                if cancel {
+                    result = DialogResult::Cancel;
+                }
                 if reset {
-                    self.blend_px = 8.0; self.strength = 1.0; self.horizontal = true; self.vertical = true;
-                    self.profile_idx = 1; self.organicity = 0.25; self.dent_size = 24.0; self.seed = 42;
-                    if self.live_preview { result = DialogResult::Changed; }
+                    self.blend_px = 8.0;
+                    self.strength = 1.0;
+                    self.horizontal = true;
+                    self.vertical = true;
+                    self.profile_idx = 1;
+                    self.organicity = 0.25;
+                    self.dent_size = 24.0;
+                    self.seed = 42;
+                    if self.live_preview {
+                        result = DialogResult::Changed;
+                    }
                 }
             });
         result
@@ -464,14 +511,16 @@ impl CanvasBorderDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_canvas_border")
+        crate::ui::polish::window(ctx, "dialog_canvas_border")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 70.0))
             .show(ctx, |ui| {
                 ui.set_min_width(360.0);
-                if paint_dialog_header(ui, &colors, "\u{25A3}", &t!("dialog.canvas_border")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{25A3}", &t!("dialog.canvas_border")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "BORDER SETTINGS");
 
@@ -540,14 +589,16 @@ impl PixelDragDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_pixel_drag")
+        crate::ui::polish::window(ctx, "dialog_pixel_drag")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 175.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(370.0);
-                if paint_dialog_header(ui, &colors, "\u{1F4A2}", &t!("dialog.pixel_drag")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F4A2}", &t!("dialog.pixel_drag")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "GLITCH SETTINGS");
 
@@ -594,7 +645,7 @@ impl PixelDragDialog {
                             let mut seed_f = self.seed as f32;
                             if ui
                                 .add(
-                                    egui::DragValue::new(&mut seed_f)
+                                    crate::ui::numeric::Numeric::new(&mut seed_f)
                                         .speed(1.0)
                                         .range(0.0..=9999.0),
                                 )
@@ -656,14 +707,16 @@ impl RgbDisplaceDialog {
         let mut result = DialogResult::Open;
         let colors = DialogColors::from_ctx(ctx);
 
-        egui::Window::new("dialog_rgb_displace")
+        crate::ui::polish::window(ctx, "dialog_rgb_displace")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .default_pos(egui::pos2(ctx.content_rect().center().x - 200.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(420.0);
-                if paint_dialog_header(ui, &colors, "\u{1F308}", &t!("dialog.rgb_displace")) { result = DialogResult::Cancel; }
+                if paint_dialog_header(ui, &colors, "\u{1F308}", &t!("dialog.rgb_displace")) {
+                    result = DialogResult::Cancel;
+                }
                 ui.add_space(4.0);
                 section_label(ui, &colors, "CHANNEL OFFSETS");
 
@@ -854,5 +907,3 @@ effect_dialog_base!(InkDialog {
     threshold: f32 = 0.3,
     first_open: bool = true
 });
-
-

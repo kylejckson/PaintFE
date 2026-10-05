@@ -15,7 +15,6 @@ fn rgba_image_to_color_image(img: &RgbaImage) -> ColorImage {
     }
 }
 
-
 // ============================================================================
 // CMYK Soft Proof — display-only gamut-compressed preview
 // ============================================================================
@@ -133,4 +132,76 @@ fn cmyk_soft_proof_pixel(c: Color32) -> Color32 {
 /// Apply CMYK soft proof to a buffer of Color32 pixels (rayon-parallelised).
 fn apply_cmyk_soft_proof(src: &[Color32]) -> Vec<Color32> {
     src.par_iter().map(|&c| cmyk_soft_proof_pixel(c)).collect()
+}
+
+/// Preserve button endpoints even when a full gesture arrives in one frame.
+fn collect_stroke_motion(events: &[egui::Event], image_rect: Rect, zoom: f32) -> Vec<(f32, f32)> {
+    let first_press = events
+        .iter()
+        .position(|e| {
+            matches!(
+                e,
+                egui::Event::PointerButton {
+                    button: egui::PointerButton::Primary | egui::PointerButton::Secondary,
+                    pressed: true,
+                    ..
+                } | egui::Event::Touch {
+                    phase: egui::TouchPhase::Start,
+                    ..
+                }
+            )
+        })
+        .unwrap_or(0);
+    events[first_press..]
+        .iter()
+        .filter_map(|e| {
+            let pos = match e {
+                egui::Event::PointerMoved(pos)
+                | egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary | egui::PointerButton::Secondary,
+                    ..
+                }
+                | egui::Event::Touch {
+                    pos,
+                    phase: egui::TouchPhase::Start | egui::TouchPhase::Move | egui::TouchPhase::End,
+                    ..
+                } => *pos,
+                _ => return None,
+            };
+            Some((
+                (pos.x - image_rect.left()) / zoom,
+                (pos.y - image_rect.top()) / zoom,
+            ))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod mega_pass_motion_tests {
+    use super::*;
+    #[test]
+    fn coalesced_drag_keeps_press_and_release_and_skips_prepress_hover() {
+        let events = vec![
+            egui::Event::PointerMoved(egui::pos2(0.0, 0.0)),
+            egui::Event::PointerButton {
+                pos: egui::pos2(110.0, 220.0),
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
+            egui::Event::PointerMoved(egui::pos2(150.0, 220.0)),
+            egui::Event::PointerButton {
+                pos: egui::pos2(160.0, 220.0),
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ];
+        let rect = Rect::from_min_size(egui::pos2(100.0, 200.0), egui::vec2(200.0, 200.0));
+        assert_eq!(
+            collect_stroke_motion(&events, rect, 2.0),
+            vec![(5.0, 10.0), (25.0, 10.0), (30.0, 10.0)]
+        );
+    }
 }

@@ -101,6 +101,7 @@ impl Default for SettingsWindow {
 impl SettingsWindow {
     /// Sync staged state from current settings (call when opening)
     fn sync_from_settings(&mut self, settings: &AppSettings) {
+        let _scope = crate::ui::perf::Scope::new(17);
         self.staged_mode = settings.theme_mode;
         self.staged_preset = settings.theme_preset;
         self.staged_accent = if settings.theme_preset == ThemePreset::Custom {
@@ -115,6 +116,7 @@ impl SettingsWindow {
         self.rebinding_action = None;
         #[cfg(not(target_arch = "wasm32"))]
         {
+            let _scope = crate::ui::perf::Scope::new(18);
             self.plugin_manager = crate::paintdotnet_plugins::PluginManager::load();
             self.plugin_status = None;
             self.pending_trust_plugin = None;
@@ -147,17 +149,20 @@ impl SettingsWindow {
         let show = self.open;
         let mut should_close = false;
 
-        let window_response = egui::Window::new("settings_window_internal")
+        let preferences_scope = crate::ui::perf::Scope::new(19);
+        let window_response = crate::ui::polish::window(ctx, "settings_window_internal")
             .title_bar(false)
             .resizable(true)
             .collapsible(false)
             .default_width(680.0)
             .default_height(540.0)
+            .default_pos(ctx.content_rect().center() - egui::vec2(340.0, 270.0))
             .min_width(600.0)
             .min_height(400.0)
             .max_width(ctx.content_rect().width() * 0.9)
             .max_height(ctx.content_rect().height() * 0.9)
             .show(ctx, |ui| {
+                let header_scope = crate::ui::perf::Scope::new(20);
                 // ── Custom header strip ─────────────────────────────────────
                 {
                     let available_width = ui.available_width();
@@ -198,24 +203,25 @@ impl SettingsWindow {
                     );
                     let btn_response =
                         ui.interact(btn_rect, ui.id().with("hdr_close"), Sense::click());
-                    if btn_response.hovered() {
-                        painter.rect_filled(
-                            btn_rect,
-                            egui::CornerRadius::ZERO,
-                            Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 55),
-                        );
-                    }
-                    painter.text(
-                        btn_rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        "×",
-                        egui::FontId::proportional(14.0),
-                        accent,
+                    btn_response.widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::WidgetType::Button,
+                            ui.is_enabled(),
+                            "Close Preferences",
+                        )
+                    });
+                    crate::ui::polish::control(
+                        ui,
+                        &btn_response,
+                        false,
+                        theme.widget_rounding.min(6.0),
                     );
+                    crate::signal_widgets::paint_close_cross(ui, btn_rect, theme.text_muted);
                     if btn_response.clicked() {
                         should_close = true;
                     }
                 }
+                drop(header_scope);
                 // Force the window body to use the full allocated height so the
                 // sidebar doesn't collapse the window to just ~165 px.
                 let available_h = ui.available_height();
@@ -223,6 +229,7 @@ impl SettingsWindow {
                 ui.horizontal(|ui| {
                     // -- Left Sidebar --
                     ui.vertical(|ui| {
+                        let _scope = crate::ui::perf::Scope::new(21);
                         ui.set_min_width(132.0);
                         ui.set_max_width(132.0);
                         ui.set_min_height(available_h);
@@ -275,17 +282,20 @@ impl SettingsWindow {
                             if response.clicked() {
                                 self.active_tab = *tab;
                             }
-                            // Draw selection background
-                            if selected {
-                                ui.painter()
-                                    .rect_filled(rect, 2.0, ui.visuals().selection.bg_fill);
-                            } else if response.hovered() {
-                                ui.painter().rect_filled(
-                                    rect,
-                                    2.0,
-                                    ui.visuals().widgets.hovered.bg_fill,
-                                );
-                            }
+                            response.widget_info(|| {
+                                egui::WidgetInfo::selected(
+                                    egui::WidgetType::Button,
+                                    ui.is_enabled(),
+                                    selected,
+                                    label,
+                                )
+                            });
+                            crate::ui::polish::control(
+                                ui,
+                                &response,
+                                selected,
+                                theme.widget_rounding.min(6.0),
+                            );
                             // Draw icon
                             let icon_rect = egui::Rect::from_min_size(
                                 egui::pos2(rect.left() + 6.0, rect.center().y - icon_size.y / 2.0),
@@ -304,17 +314,19 @@ impl SettingsWindow {
                                         egui::pos2(0.0, 0.0),
                                         egui::pos2(1.0, 1.0),
                                     ),
-                                    text_color,
+                                    assets.icon_tint(*icon, text_color),
                                 );
                             }
                             // Draw label
-                            let text_pos =
-                                egui::pos2(icon_rect.right() + 6.0, rect.center().y - 6.0);
+                            let text_pos = egui::pos2(
+                                icon_rect.right() + theme.polish.icon_gap,
+                                rect.center().y,
+                            );
                             ui.painter().text(
                                 text_pos,
-                                egui::Align2::LEFT_TOP,
+                                egui::Align2::LEFT_CENTER,
                                 label,
-                                egui::FontId::proportional(12.0),
+                                egui::FontId::proportional(12.0 * theme.polish.text_scale),
                                 text_color,
                             );
                         }
@@ -333,9 +345,9 @@ impl SettingsWindow {
                         egui::ScrollArea::vertical()
                             .id_salt(scroll_id)
                             .auto_shrink([false; 2])
-                            .max_height(1000.0)
+                            .max_height(available_h.max(120.0))
                             .show(ui, |ui| {
-                                ui.set_min_height(1000.0);
+                                let _scope = crate::ui::perf::Scope::new(22);
                                 ui.add_space(4.0);
                                 match self.active_tab {
                                     SettingsTab::General => {
@@ -367,6 +379,7 @@ impl SettingsWindow {
                 });
             });
 
+        drop(preferences_scope);
         #[cfg(not(target_arch = "wasm32"))]
         let trust_rect = self.show_plugin_trust_modal(ctx);
         #[cfg(target_arch = "wasm32")]
@@ -508,9 +521,7 @@ impl SettingsWindow {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn show_plugin_trust_modal(&mut self, ctx: &egui::Context) -> Option<egui::Rect> {
-        let Some(hash) = self.pending_trust_plugin.clone() else {
-            return None;
-        };
+        let hash = self.pending_trust_plugin.clone()?;
         let Some(plugin) = self
             .plugin_manager
             .plugins
@@ -522,7 +533,7 @@ impl SettingsWindow {
             return None;
         };
 
-        let window_response = egui::Window::new("paintdotnet_plugin_trust_confirm")
+        let window_response = crate::ui::polish::window(ctx, "paintdotnet_plugin_trust_confirm")
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
@@ -856,6 +867,7 @@ impl SettingsWindow {
         ui.add_space(4.0);
         if ui.button(t!("settings.general.reset_defaults")).clicked() {
             *settings = AppSettings::default();
+            self.pending_icon_pack_clear = true;
         }
         settings.save();
     }
@@ -1113,42 +1125,60 @@ impl SettingsWindow {
 
         // -- Icon Pack -------------------------------------------------
         Self::section_header(ui, &t!("settings.interface.icon_pack"));
-        ui.label(format!(
-            "{}: {}",
-            t!("settings.interface.icon_pack_current"),
-            assets
+        ui.horizontal(|ui| {
+            use crate::config::icon_packs::BundledIconStyle;
+            ui.label("Icon style:");
+            let selected = assets
                 .icon_pack_name()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| t!("settings.interface.icon_pack_none"))
-        ));
+                .map(|name| format!("Custom: {name}"))
+                .unwrap_or_else(|| settings.bundled_icon_style.label().to_string());
+            egui::ComboBox::from_id_salt("bundled_icon_style")
+                .selected_text(selected)
+                .show_ui(ui, |ui| {
+                    for style in [BundledIconStyle::Luminous, BundledIconStyle::Classic] {
+                        let selected = assets.icon_pack_name().is_none()
+                            && settings.bundled_icon_style == style;
+                        if ui.selectable_label(selected, style.label()).clicked() {
+                            settings.bundled_icon_style = style;
+                            self.pending_icon_pack_clear = true;
+                        }
+                    }
+                    if let Some(name) = assets.icon_pack_name() {
+                        let _ = ui.selectable_label(true, format!("Custom: {name}"));
+                    }
+                });
+        });
         ui.horizontal(|ui| {
             #[cfg(not(target_arch = "wasm32"))]
-            if ui
-                .button(t!("settings.interface.icon_pack_browse"))
-                .on_hover_text(t!("settings.interface.icon_pack_browse_hint"))
-                .clicked()
-            {
-                if let Some(dir) = rfd::FileDialog::new().pick_folder() {
-                    self.pending_icon_pack_load = Some(dir);
-                }
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            if ui
-                .button(t!("settings.interface.icon_pack_zip"))
-                .on_hover_text(t!("settings.interface.icon_pack_zip_hint"))
-                .clicked()
-            {
-                if let Some(file) = rfd::FileDialog::new()
-                    .add_filter("Icon pack", &["zip"])
-                    .pick_file()
+            ui.menu_button(t!("settings.interface.icon_pack_browse"), |ui| {
+                if ui
+                    .button(t!("settings.interface.icon_pack_folder"))
+                    .clicked()
                 {
-                    self.pending_icon_pack_load = Some(file);
+                    ui.close();
+                    if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                        self.pending_icon_pack_load = Some(dir);
+                    }
                 }
-            }
+                if ui
+                    .button(t!("settings.interface.icon_pack_archive"))
+                    .clicked()
+                {
+                    ui.close();
+                    if let Some(file) = rfd::FileDialog::new()
+                        .add_filter("Icon pack", &["zip"])
+                        .pick_file()
+                    {
+                        self.pending_icon_pack_load = Some(file);
+                    }
+                }
+            })
+            .response
+            .on_hover_text(t!("settings.interface.icon_pack_browse_hint"));
             if ui
                 .add_enabled(
                     assets.icon_pack_name().is_some(),
-                    egui::Button::new(t!("settings.interface.icon_pack_clear")),
+                    egui::Button::new("Use Bundled Style"),
                 )
                 .clicked()
             {
@@ -1159,62 +1189,24 @@ impl SettingsWindow {
                 .button(t!("settings.interface.icon_pack_export"))
                 .on_hover_text(t!("settings.interface.icon_pack_export_hint"))
                 .clicked()
+                && let Some(dir) = rfd::FileDialog::new().pick_folder()
+                && let Err(e) = assets.export_icon_template(&dir)
             {
-                if let Some(dir) = rfd::FileDialog::new().pick_folder()
-                    && let Err(e) = assets.export_icon_template(&dir)
-                {
-                    crate::log_info!("Icon pack export failed: {e}");
-                }
+                crate::log_info!("Icon pack export failed: {e}");
             }
         });
-        if ui
-            .checkbox(
-                &mut settings.icon_pack_invert_mismatch,
-                t!("settings.interface.icon_pack_invert"),
-            )
-            .on_hover_text(t!("settings.interface.icon_pack_invert_hint"))
-            .changed()
+        if assets.icon_pack_name().is_some()
+            && ui
+                .checkbox(
+                    &mut settings.icon_pack_invert_mismatch,
+                    t!("settings.interface.icon_pack_invert"),
+                )
+                .on_hover_text(t!("settings.interface.icon_pack_invert_hint"))
+                .changed()
         {
             settings.save();
             self.pending_icon_pack_reload = true;
         }
-
-        // Preview: every icon and shape with its canonical id and the source
-        // it currently resolves to (helps pack authors name their files).
-        let mut tiles: Vec<(String, egui::TextureHandle, &'static str)> = Vec::new();
-        for icon in assets.icon_list() {
-            if let Some(tex) = assets.icon_texture(icon) {
-                tiles.push((
-                    icon.pack_id(),
-                    tex.clone(),
-                    assets.icon_source(icon).label(),
-                ));
-            }
-        }
-        for kind in assets.shape_list() {
-            if let Some(tex) = assets.shape_texture(kind) {
-                tiles.push((
-                    crate::config::icon_packs::shape_pack_id(kind),
-                    tex.clone(),
-                    assets.shape_source(kind).label(),
-                ));
-            }
-        }
-        egui::Grid::new("icon_pack_preview")
-            .num_columns(8)
-            .spacing([10.0, 8.0])
-            .show(ui, |ui| {
-                for (i, (id, tex, src)) in tiles.iter().take(48).enumerate() {
-                    ui.vertical(|ui| {
-                        ui.add(egui::Image::new((tex.id(), egui::vec2(22.0, 22.0))));
-                        ui.label(egui::RichText::new(id).small());
-                        ui.label(egui::RichText::new(*src).small().weak());
-                    });
-                    if i % 8 == 7 {
-                        ui.end_row();
-                    }
-                }
-            });
 
         // -- Canvas Rendering -----------------------------------------
         Self::section_header(ui, &t!("settings.interface.canvas_rendering"));
@@ -1223,8 +1215,11 @@ impl SettingsWindow {
         if ui
             .add(
                 egui::Button::new(
-                    egui::RichText::new(format!("⚡ {}", t!("settings.interface.pixel_art_preset_apply")))
-                        .strong(),
+                    egui::RichText::new(format!(
+                        "⚡ {}",
+                        t!("settings.interface.pixel_art_preset_apply")
+                    ))
+                    .strong(),
                 )
                 .min_size(egui::vec2(ui.available_width(), 28.0)),
             )
@@ -1324,13 +1319,8 @@ impl SettingsWindow {
                 ui.end_row();
 
                 ui.label(t!("settings.interface.pixel_grid_opacity"));
-                if Self::settings_slider(
-                    ui,
-                    &mut settings.pixel_grid_opacity,
-                    0.0..=1.0,
-                    0.05,
-                    0.5,
-                ) {
+                if Self::settings_slider(ui, &mut settings.pixel_grid_opacity, 0.0..=1.0, 0.05, 0.5)
+                {
                     settings.save();
                 }
                 ui.end_row();
@@ -1416,6 +1406,24 @@ impl SettingsWindow {
         }
         if ui.button("Reset Folder Colors").clicked() {
             settings.folder_color_palette = AppSettings::default_folder_color_palette();
+            settings.save();
+        }
+
+        Self::section_header(ui, "Motion and Interaction");
+        if crate::ui::polish::preferences(ui, &mut settings.ui_polish) {
+            settings.history_animations = Some(settings.ui_polish.row_motion);
+            theme.history_animations = settings.ui_polish.row_motion;
+            theme.polish = settings.ui_polish.clone();
+            theme.density = settings.ui_density;
+            theme.apply(ctx);
+            settings.save();
+        }
+        Self::section_header(ui, "Workspace");
+        if crate::ui::workspace::preferences(
+            ui,
+            &mut settings.workspace,
+            &mut settings.workspace_profiles,
+        ) {
             settings.save();
         }
 
@@ -1687,6 +1695,23 @@ impl SettingsWindow {
                     ui.strong("Geometry & Shape");
                 })
                 .body(|ui| {
+                    ui.weak("History motion is configured in Motion and Interaction.");
+                    Self::opt_f32_row(
+                        ui,
+                        "History Card CornerRadius",
+                        &mut settings.history_rounding,
+                        0.0,
+                        24.0,
+                        &mut self.dirty,
+                    );
+                    Self::opt_f32_row(
+                        ui,
+                        "History Placeholder Opacity",
+                        &mut settings.history_placeholder_opacity,
+                        0.0,
+                        1.0,
+                        &mut self.dirty,
+                    );
                     Self::opt_f32_row(
                         ui,
                         "Widget CornerRadius",
@@ -1806,6 +1831,9 @@ impl SettingsWindow {
                 settings.ov_glow_accent = None;
                 settings.ov_accent3 = None;
                 settings.ov_accent4 = None;
+                settings.history_rounding = None;
+                settings.history_placeholder_opacity = None;
+                settings.history_animations = None;
                 settings.widget_rounding = None;
                 settings.window_rounding = None;
                 settings.menu_rounding = None;
@@ -1941,7 +1969,11 @@ impl SettingsWindow {
             // Alpha DragValue
             let mut alpha = color.a() as u16;
             if ui
-                .add(egui::DragValue::new(&mut alpha).range(0..=255).speed(1))
+                .add(
+                    crate::ui::numeric::Numeric::new(&mut alpha)
+                        .range(0..=255)
+                        .speed(1),
+                )
                 .changed()
             {
                 *color =
@@ -1981,7 +2013,11 @@ impl SettingsWindow {
                 // Alpha DragValue
                 let mut alpha = color.a() as u16;
                 if ui
-                    .add(egui::DragValue::new(&mut alpha).range(0..=255).speed(1))
+                    .add(
+                        crate::ui::numeric::Numeric::new(&mut alpha)
+                            .range(0..=255)
+                            .speed(1),
+                    )
                     .changed()
                 {
                     *color = Color32::from_rgba_premultiplied(
@@ -2024,7 +2060,13 @@ impl SettingsWindow {
             ui.label(format!("{label}:"));
             if let Some(val) = opt {
                 if ui
-                    .add(egui::Slider::new(val, min..=max).step_by(0.5_f64))
+                    .add(
+                        egui::Slider::new(val, min..=max).step_by(if max - min <= 1.0 {
+                            0.01
+                        } else {
+                            0.5
+                        }),
+                    )
                     .changed()
                 {
                     *dirty = true;
@@ -2071,7 +2113,7 @@ impl SettingsWindow {
                 if ui
                     .add_sized(
                         [58.0, 16.0],
-                        egui::DragValue::new(value)
+                        crate::ui::numeric::Numeric::new(value)
                             .range(min..=max)
                             .speed(step_f.max(0.001) as f64)
                             .max_decimals(3),
@@ -2116,7 +2158,7 @@ impl SettingsWindow {
             }
             if ui
                 .add(
-                    egui::DragValue::new(value)
+                    crate::ui::numeric::Numeric::new(value)
                         .range(range)
                         .speed(1.0)
                         .suffix(suffix),
@@ -2158,7 +2200,7 @@ impl SettingsWindow {
             }
             if ui
                 .add(
-                    egui::DragValue::new(value)
+                    crate::ui::numeric::Numeric::new(value)
                         .range(range)
                         .speed(1.0)
                         .suffix(suffix),
@@ -2224,6 +2266,8 @@ impl SettingsWindow {
         // Apply user overrides
         let ov = settings.build_theme_overrides();
         theme.apply_overrides(&ov);
+        theme.polish = settings.ui_polish.clone();
+        theme.density = settings.ui_density;
         theme.apply(ctx);
         self.dirty = false;
         settings.save();

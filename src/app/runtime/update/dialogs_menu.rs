@@ -2,6 +2,7 @@ include!("dialogs_menu/modal_flow.rs");
 
 impl PaintFEApp {
     fn show_runtime_dialogs_menu(&mut self, ctx: &egui::Context, root_ui: &mut egui::Ui) {
+        let popup_was_open = egui::Popup::is_any_open(ctx);
         self.reset_ui_cursor_blocking_rects();
         let modal_open = self.handle_runtime_modal_flow(ctx);
 
@@ -239,7 +240,7 @@ impl PaintFEApp {
                             .active_project()
                             .is_some_and(|p| p.canvas_state.has_selection());
                         let can_copy = has_sel || self.paste_overlay.is_some();
-                        let has_clip = crate::ops::clipboard::has_clipboard_image();
+                        let has_clip = crate::ops::clipboard::has_clipboard_image(ctx);
 
                         if self
                             .assets
@@ -2263,33 +2264,12 @@ impl PaintFEApp {
                                                 // Previously gated on `is_active || was_hovered` which caused the
                                                 // button to flicker on non-active tabs because the outer frame's
                                                 // `hovered()` goes false when the child close-button steals hover.
-                                                let close_text = egui::RichText::new("x")
-                                                    .size(11.0)
-                                                    .color(match self.theme.mode {
-                                                        crate::theme::ThemeMode::Dark => {
-                                                            egui::Color32::from_gray(100)
-                                                        }
-                                                        crate::theme::ThemeMode::Light => {
-                                                            egui::Color32::from_gray(140)
-                                                        }
-                                                    });
-                                                let close_btn = egui::Button::new(close_text)
-                                                    .frame(false)
-                                                    .min_size(egui::vec2(16.0, 16.0));
                                                 let close_resp =
-                                                    ui.add(close_btn).on_hover_text("Close");
-                                                close_rect = Some(close_resp.rect);
-                                                // Red-ish highlight on close button hover
-                                                if close_resp.hovered() {
-                                                    let cr = close_resp.rect.expand(2.0);
-                                                    ui.painter().rect_filled(
-                                                        cr,
-                                                        egui::CornerRadius::same(3),
-                                                        egui::Color32::from_rgba_unmultiplied(
-                                                            255, 80, 80, 30,
-                                                        ),
+                                                    crate::signal_widgets::close_button(
+                                                        ui,
+                                                        &self.theme,
                                                     );
-                                                }
+                                                close_rect = Some(close_resp.rect);
                                                 if close_resp.clicked() {
                                                     tab_to_close = Some(idx);
                                                 }
@@ -2526,23 +2506,12 @@ impl PaintFEApp {
             }
         }
 
-        if let Some(project) = self.active_project() {
-            let switched_project = self.recent_color_project_id != Some(project.id);
-            let undo_count = project.history.undo_count();
-
-            if switched_project {
-                self.recent_color_project_id = Some(project.id);
-                self.recent_color_undo_count = undo_count;
-            } else {
-                if undo_count > self.recent_color_undo_count {
-                    self.palette_panel
-                        .observe_color(self.colors_panel.get_primary_color());
-                }
-                self.recent_color_undo_count = undo_count;
-            }
+        for color in self.tools_panel.completed_paint_colors.drain(..) {
+            self.palette_panel.observe_color(color);
         }
 
         self.persist_tool_settings_if_changed();
+        crate::ui::polish::remember_popup_input(ctx, popup_was_open);
 
         // Thin bottom border on toolbar -- subtle divider (lighter than border_color)
         {

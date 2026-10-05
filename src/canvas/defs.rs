@@ -5,6 +5,7 @@ const LOD_MAX_EDGE: u32 = 1024;
 const LARGE_SELECTION_STATIC_THRESHOLD: u32 = 1_048_576;
 
 pub const CHUNK_SIZE: u32 = 64;
+pub const BRUSH_PREVIEW_TILE_SIZE: u32 = 256;
 
 /// A pixel with zero alpha, returned by reference for missing chunks.
 static TRANSPARENT_PIXEL: Rgba<u8> = Rgba([0, 0, 0, 0]);

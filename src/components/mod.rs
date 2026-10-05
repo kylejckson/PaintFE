@@ -1,4 +1,5 @@
 pub mod adjustments;
+pub(crate) mod color_widgets;
 pub mod colors;
 pub mod dialogs;
 pub mod history;

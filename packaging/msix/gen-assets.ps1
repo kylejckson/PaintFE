@@ -1,4 +1,4 @@
-# gen-assets.ps1 — Generate all required Microsoft Store icon assets from app_icon.png
+# gen-assets.ps1 — Generate Store assets from the authored application icon sizes
 # Run from the repo root: powershell -File packaging\msix\gen-assets.ps1
 #
 # Requires: Windows PowerShell / PowerShell 5.1+ (uses System.Drawing)
@@ -6,7 +6,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 param(
-    [string]$SourceIcon = "assets\icons\app_icon.png",
+    [string]$SourceIcon = "assets\icons\app_icon_msx.png",
     [string]$OutDir     = "packaging\msix\assets"
 )
 
@@ -34,13 +34,34 @@ $assets = @{
     "SplashScreen.png"        = @(620, 300)
     # Scaled variants the Store validator may also expect
     "Square44x44Logo.targetsize-16.png"  = @(16,  16)
+    "Square44x44Logo.targetsize-24.png"  = @(24,  24)
     "Square44x44Logo.targetsize-32.png"  = @(32,  32)
     "Square44x44Logo.targetsize-48.png"  = @(48,  48)
+    "Square44x44Logo.targetsize-64.png"  = @(64,  64)
+    "Square44x44Logo.targetsize-128.png" = @(128, 128)
     "Square44x44Logo.targetsize-256.png" = @(256, 256)
 }
 
 function Resize-Image {
     param([string]$InPath, [string]$OutPath, [int]$W, [int]$H)
+
+    # Preserve the hand-tuned small artwork instead of shrinking the large logo.
+    # A caller-supplied SourceIcon continues to override all authored variants.
+    if ($SourceIcon -eq "assets\icons\app_icon_msx.png") {
+        $requestedSize = [Math]::Min($W, $H)
+        if ($OutPath -like "*SplashScreen*") { $requestedSize = 256 }
+        foreach ($variantSize in @(32, 64, 128, 256, 512, 1000)) {
+            if ($variantSize -ge $requestedSize) {
+                $variant = Join-Path $repo "assets\icons\app_icon_$variantSize.png"
+                if (Test-Path $variant) { $InPath = $variant }
+                break
+            }
+        }
+        if ($W -eq $H -and $variantSize -eq $W) {
+            Copy-Item -LiteralPath $InPath -Destination $OutPath -Force
+            return
+        }
+    }
 
     $orig   = [System.Drawing.Image]::FromFile($InPath)
     $bitmap = New-Object System.Drawing.Bitmap($W, $H)
@@ -64,7 +85,9 @@ function Resize-Image {
         $y = ($H - $iconSize) / 2
         $g.DrawImage($orig, $x, $y, $iconSize, $iconSize)
     } else {
-        $g.DrawImage($orig, 0, 0, $W, $H)
+        # Centre square artwork on wide tiles without distorting its proportions.
+        $iconSize = [Math]::Min($W, $H)
+        $g.DrawImage($orig, [int](($W - $iconSize) / 2), [int](($H - $iconSize) / 2), $iconSize, $iconSize)
     }
 
     $g.Dispose()
@@ -82,6 +105,11 @@ foreach ($name in $assets.Keys | Sort-Object) {
     $size    = $assets[$name]
     $outPath = Join-Path $out $name
     Resize-Image -InPath $src -OutPath $outPath -W $size[0] -H $size[1]
+    if ($name -like "*.targetsize-*.png") {
+        # Unplated variants retain the artwork on transparent taskbar surfaces.
+        $unplated = $outPath -replace '\.png$', '_altform-unplated.png'
+        Copy-Item -LiteralPath $outPath -Destination $unplated -Force
+    }
     Write-Host "  $name  ($($size[0])x$($size[1]))"
 }
 
