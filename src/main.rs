@@ -236,6 +236,8 @@ fn main_inner() -> Result<(), eframe::Error> {
         }
     }
 
+    paintfe::services::storage::initialize();
+
     // Initialize session log (overwrites previous session log)
     logger::init();
 
@@ -370,21 +372,9 @@ fn configure_event_loop(builder: &mut eframe::EventLoopBuilder<eframe::UserEvent
         // without altering message dispatch behavior.
         paintfe::windows_key_probe::observe_windows_message(msg.message, msg.wParam);
 
-        // Suppress only Ctrl+letter WM_CHAR control codes (1..=26), while
-        // preserving essential control keys used by dialog navigation/editing.
-        //
-        // Keep these intact:
-        // - 0x08 Backspace
-        // - 0x09 Tab
-        // - 0x0D Enter
-        // - 0x1B Escape
-        if msg.message == WM_CHAR {
-            let ch = msg.wParam as u32;
-            let suppress_ctrl_letter =
-                (1..=26).contains(&ch) && ch != 0x08 && ch != 0x09 && ch != 0x0D && ch != 0x1B;
-            if suppress_ctrl_letter {
-                return true;
-            }
+        // Key events handle navigation; control-character text must never reach egui.
+        if msg.message == WM_CHAR && msg.wParam < 0x20 {
+            return true;
         }
 
         // Suppress ALL WM_SYSCHAR messages.  winit 0.28 calls DefWindowProcW

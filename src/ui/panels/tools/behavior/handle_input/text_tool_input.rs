@@ -1191,11 +1191,7 @@ impl ToolsPanel {
                             visible_bounds
                         };
                         canvas_state.preview_stroke_bounds = combined_bounds;
-                        if canvas_state.preview_texture_cache.is_some() {
-                            canvas_state.preview_dirty_rect = combined_bounds;
-                        } else {
-                            canvas_state.preview_texture_cache = None;
-                        }
+                        canvas_state.preview_dirty_rect = combined_bounds;
                         // Use targeted dirty rect instead of full-canvas dirty
                         if let Some(bounds) = combined_bounds {
                             canvas_state.mark_dirty(Some(bounds));
@@ -1258,12 +1254,13 @@ impl ToolsPanel {
                             canvas_state.preview_flat_ready = false;
                             let visible_bounds =
                                 Self::clip_preview_bounds(canvas_state, off_x, off_y, buf_w, buf_h);
+                            let dirty_bounds =
+                                match (canvas_state.preview_stroke_bounds, visible_bounds) {
+                                    (Some(old), Some(new)) => Some(old.union(new)),
+                                    (old, new) => old.or(new),
+                                };
                             canvas_state.preview_stroke_bounds = visible_bounds;
-                            if canvas_state.preview_texture_cache.is_some() {
-                                canvas_state.preview_dirty_rect = visible_bounds;
-                            } else {
-                                canvas_state.preview_texture_cache = None;
-                            }
+                            canvas_state.preview_dirty_rect = dirty_bounds;
                             canvas_state.mark_dirty(None);
                             self.text_state.preview_dirty = false;
                         } else {

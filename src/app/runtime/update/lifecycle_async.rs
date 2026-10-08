@@ -152,13 +152,16 @@ impl PaintFEApp {
                 self.filter_ops_start_time = None;
                 self.filter_status_description.clear();
             }
+            if result.description == "Remove Background" { self.background_removal_pending = false; }
+            if let Some(error) = result.error {
+                self.filter_error = Some(format!("{}: {}", result.description, error));
+                continue;
+            }
             // Discard stale live-preview results (token mismatch = superseded by newer job)
             if result.preview_token != 0 && result.preview_token != self.preview_job_token {
                 continue;
             }
-            if result.project_index < self.projects.len()
-                && let Some(project) = self.projects.get_mut(result.project_index)
-            {
+            if let Some(project) = self.projects.iter_mut().find(|project| project.id == result.project_id) {
                 let idx = result.layer_idx;
                 if idx < project.canvas_state.layers.len() {
                     if result.preview_token != 0 {
@@ -665,7 +668,7 @@ impl PaintFEApp {
         self.handle_file_uri_paste_events(ctx);
 
         // Determine if a modal dialog is open — block all shortcuts and canvas interaction.
-        let modal_open = self.save_file_dialog.open
+        let modal_open = self.filter_error.is_some() || self.save_file_dialog.open
             || self.new_file_dialog.open
             || !matches!(self.active_dialog, ActiveDialog::None)
             || self.pending_paste_request.is_some()

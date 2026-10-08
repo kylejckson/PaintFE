@@ -10,6 +10,7 @@ impl PaintFEApp {
             ActiveDialog::RemoveBackground(dlg) => match dlg.show(ctx) {
                 DialogResult::Ok(settings) => {
                     self.active_dialog = ActiveDialog::None;
+                    if self.background_removal_pending { return true; }
                     if let Some(project) = self.active_project() {
                         let layer_idx = project.canvas_state.active_layer_index;
                         let original_pixels = project.canvas_state.layers[layer_idx].pixels.clone();
@@ -17,27 +18,21 @@ impl PaintFEApp {
                         let dll_path = self.settings.onnx_runtime_path.clone();
                         let model_path = self.settings.birefnet_model_path.clone();
 
+                        let options = crate::ops::ai::InferenceOptions {
+                            graph_optimization: self.settings.onnx_graph_optimization,
+                            cpu_memory_arena: self.settings.onnx_cpu_memory_arena,
+                        };
+                        self.background_removal_pending = true;
                         self.filter_status_description = t!("status.remove_background");
-                        self.spawn_filter_job(
+                        self.spawn_fallible_filter_job(
                             ctx.input(|i| i.time),
                             "Remove Background".to_string(),
                             layer_idx,
                             original_pixels,
                             original_flat,
-                            move |input_img| {
-                                match crate::ops::ai::remove_background(
-                                    &dll_path,
-                                    &model_path,
-                                    input_img,
-                                    &settings,
-                                ) {
-                                    Ok(result) => result,
-                                    Err(e) => {
-                                        eprintln!("Remove Background failed: {}", e);
-                                        input_img.clone()
-                                    }
-                                }
-                            },
+                            move |input_img| crate::ops::ai::remove_background_with_options(
+                                &dll_path, &model_path, input_img, &settings, &options,
+                            ).map_err(|error| error.to_string()),
                         );
                     }
                     return true;

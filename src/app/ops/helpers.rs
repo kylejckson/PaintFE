@@ -1,4 +1,32 @@
 impl PaintFEApp {
+    pub(crate) fn perform_undo(&mut self) {
+        if let Some(overlay) = self.paste_overlay.as_mut() {
+            if let Some(prev) = self.paste_transform_undo.pop() {
+                let current = overlay.transform();
+                overlay.set_transform(prev);
+                self.paste_transform_redo.push(current);
+                if let Some(project) = self.active_project_mut() {
+                    project.history.undo(&mut project.canvas_state);
+                }
+            } else {
+                self.cancel_paste_overlay();
+                if let Some(project) = self.active_project_mut() {
+                    project.canvas_state.clear_selection();
+                }
+            }
+        } else if self.tools_panel.has_active_tool_preview() {
+            // Cancel in-progress tool operation instead of undoing
+            if let Some(project) = self.projects.get_mut(self.active_project_index) {
+                self.tools_panel
+                    .cancel_active_tool(&mut project.canvas_state);
+            }
+        } else {
+            self.commit_pending_tool_history();
+            if let Some(project) = self.active_project_mut() {
+                project.history.undo(&mut project.canvas_state);
+            }
+        }
+    }
     /// Spawn a filter job on a background thread.
     ///
     /// `description`: undo entry label (e.g. "Gaussian Blur").
@@ -26,7 +54,7 @@ impl PaintFEApp {
             original_flat,
             0,
             None,
-            filter_fn,
+            move |image| Ok(filter_fn(image)),
         );
     }
 
@@ -56,7 +84,7 @@ impl PaintFEApp {
             original_flat,
             token,
             Some(cancel),
-            filter_fn,
+            move |image| Ok(filter_fn(image)),
         );
     }
 
@@ -78,6 +106,27 @@ impl PaintFEApp {
             original_flat,
             preview_token,
             None,
+            move |image| Ok(filter_fn(image)),
+        );
+    }
+
+    fn spawn_fallible_filter_job(
+        &mut self,
+        current_time: f64,
+        description: String,
+        layer_idx: usize,
+        original_pixels: TiledImage,
+        original_flat: image::RgbaImage,
+        filter_fn: impl FnOnce(&image::RgbaImage) -> Result<image::RgbaImage, String> + Send + 'static,
+    ) {
+        self.spawn_filter_job_internal(
+            current_time,
+            description,
+            layer_idx,
+            original_pixels,
+            original_flat,
+            0,
+            None,
             filter_fn,
         );
     }
@@ -91,10 +140,12 @@ impl PaintFEApp {
         original_flat: image::RgbaImage,
         preview_token: u64,
         cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
-        filter_fn: impl FnOnce(&image::RgbaImage) -> image::RgbaImage + Send + 'static,
+        filter_fn: impl FnOnce(&image::RgbaImage) -> Result<image::RgbaImage, String> + Send + 'static,
     ) {
         let sender = self.filter_sender.clone();
-        let project_index = self.active_project_index;
+        let Some(project_id) = self.active_project().map(|project| project.id) else {
+            return;
+        };
         if self.pending_filter_jobs == 0 {
             self.filter_ops_start_time = Some(current_time);
         }
@@ -107,20 +158,32 @@ impl PaintFEApp {
                     .as_ref()
                     .is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed))
                 {
-                    return original_flat.clone();
+                    return Ok(original_flat.clone());
                 }
                 filter_fn(&original_flat)
             }));
             match result_flat {
-                Ok(processed) => {
+                Ok(Ok(processed)) => {
                     let result_tiled = TiledImage::from_rgba_image(&processed);
                     let _ = sender.send(FilterResult {
-                        project_index,
+                        project_id,
                         layer_idx,
                         original_pixels,
                         result_pixels: result_tiled,
+                        error: None,
                         description,
                         preview_token,
+                    });
+                }
+                Ok(Err(error)) => {
+                    let _ = sender.send(FilterResult {
+                        project_id,
+                        layer_idx,
+                        original_pixels: original_pixels.clone(),
+                        result_pixels: original_pixels,
+                        description,
+                        preview_token,
+                        error: Some(error),
                     });
                 }
                 Err(panic_info) => {
@@ -134,10 +197,11 @@ impl PaintFEApp {
                     };
                     eprintln!("Filter '{}' panicked: {}", description, msg);
                     let _ = sender.send(FilterResult {
-                        project_index,
+                        project_id,
                         layer_idx,
                         original_pixels: original_pixels.clone(),
                         result_pixels: original_pixels,
+                        error: Some(msg),
                         description,
                         preview_token,
                     });
@@ -210,9 +274,8 @@ impl PaintFEApp {
             } else {
                 "Paste"
             };
-            let keep_selection = leave_selected
-                && !self.is_move_pixels_active
-                && self.settings.select_after_paste;
+            let keep_selection =
+                leave_selected && !self.is_move_pixels_active && self.settings.select_after_paste;
             let move_before = if self.is_move_pixels_active {
                 self.move_pixels_before.take()
             } else {
@@ -221,8 +284,8 @@ impl PaintFEApp {
             let mut reassert: Option<image::GrayImage> = None;
             if let Some(project) = self.active_project_mut() {
                 let (cw, ch) = (project.canvas_state.width, project.canvas_state.height);
-                let select_mask = keep_selection
-                    .then(|| overlay.solid_bounds_selection_mask(cw, ch));
+                let select_mask =
+                    keep_selection.then(|| overlay.solid_bounds_selection_mask(cw, ch));
                 let select_bounds = if keep_selection {
                     overlay.transformed_bounds(cw, ch)
                 } else {

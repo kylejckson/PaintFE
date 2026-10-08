@@ -542,6 +542,7 @@ impl Canvas {
             .unwrap_or(false);
         if !ui.ctx().memory(|m| m.focused().is_some())
             || response.clicked()
+            || response.is_pointer_button_down_on()
             || force_canvas_focus_for_text
         {
             response.request_focus();
@@ -1899,6 +1900,9 @@ impl Canvas {
 
         // Handle tool input - Call every frame while mouse button is held
         if let Some(tools) = tools {
+            if !modal_open && paste_overlay.is_none() {
+                tools.advance_magic_wand_preview(ui.ctx(), state);
+            }
             // `is_pointer_over_egui` includes the root/central canvas panel in egui 0.35.
             // Canvas tools must only be blocked by explicit floating/top UI capture.
             let pointer_over_egui = false;

@@ -18,6 +18,8 @@ pub struct SettingsWindow {
     /// Set when icon display options changed and textures must be re-uploaded.
     pub pending_icon_pack_reload: bool,
     active_tab: SettingsTab,
+    #[cfg(not(target_arch = "wasm32"))]
+    storage_error: Option<(bool, String)>,
     /// Staging copy of accent colors for the "Interface" tab (applied on "Apply")
     staged_accent: AccentColors,
     staged_preset: ThemePreset,
@@ -74,6 +76,8 @@ impl Default for SettingsWindow {
             pending_icon_pack_clear: false,
             pending_icon_pack_reload: false,
             active_tab: SettingsTab::General,
+            #[cfg(not(target_arch = "wasm32"))]
+            storage_error: None,
             staged_accent: preset.accent_colors(),
             staged_preset: preset,
             staged_mode: ThemeMode::Light,
@@ -569,6 +573,41 @@ impl SettingsWindow {
 
     // -- General Tab -------------------------------------------
     fn show_general_tab(&mut self, ui: &mut egui::Ui, settings: &mut AppSettings) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let storage = crate::services::storage::initialize();
+            Self::section_header(ui, &t!("settings.storage.heading"));
+            let mut portable = crate::services::storage::requested_portable();
+            if ui
+                .checkbox(&mut portable, t!("settings.storage.portable"))
+                .changed()
+            {
+                settings.save();
+                self.storage_error = crate::services::storage::request_mode(portable, false)
+                    .err()
+                    .map(|error| (portable, error));
+            }
+            ui.label(format!(
+                "{}: {}",
+                t!("settings.storage.location"),
+                storage.settings_path().parent().unwrap().display()
+            ));
+            if crate::services::storage::requested_portable() != storage.portable {
+                ui.label(t!("settings.storage.restart"));
+            }
+            if let Some(warning) = &storage.warning {
+                ui.label(warning);
+            }
+            if let Some((target, error)) = self.storage_error.clone() {
+                ui.colored_label(egui::Color32::RED, error);
+                if ui.button(t!("settings.storage.replace")).clicked() {
+                    self.storage_error = crate::services::storage::request_mode(target, true)
+                        .err()
+                        .map(|error| (target, error));
+                }
+            }
+            ui.add_space(8.0);
+        }
         // -- Language -------------------------------------------
         Self::section_header(ui, "Language");
         ui.horizontal(|ui| {
@@ -1008,6 +1047,17 @@ impl SettingsWindow {
                 }
             }
         }
+
+        if ui
+            .checkbox(
+                &mut settings.middle_click_close_tabs,
+                t!("settings.interface.middle_click_close_tabs"),
+            )
+            .changed()
+        {
+            settings.save();
+        }
+        ui.add_space(8.0);
 
         // -- Theme ----------------------------------------------------
         Self::section_header(ui, &t!("settings.interface.theme_mode"));
@@ -2275,6 +2325,42 @@ impl SettingsWindow {
 
     // -- AI Tab -------------------------------------------------------
     fn show_ai_tab(&mut self, ui: &mut egui::Ui, settings: &mut AppSettings) {
+        let old = settings.onnx_graph_optimization;
+        egui::ComboBox::from_label(t!("settings.ai.graph_optimization"))
+            .selected_text(format!("{:?}", old))
+            .show_ui(ui, |ui| {
+                for (value, label) in [
+                    (
+                        crate::ops::ai::GraphOptimization::All,
+                        t!("settings.ai.graph_all"),
+                    ),
+                    (
+                        crate::ops::ai::GraphOptimization::Basic,
+                        t!("settings.ai.graph_basic"),
+                    ),
+                    (
+                        crate::ops::ai::GraphOptimization::Disabled,
+                        t!("settings.ai.graph_disabled"),
+                    ),
+                ] {
+                    ui.selectable_value(&mut settings.onnx_graph_optimization, value, label);
+                }
+            });
+        let arena_changed = ui
+            .checkbox(
+                &mut settings.onnx_cpu_memory_arena,
+                t!("settings.ai.cpu_arena"),
+            )
+            .changed();
+        if old != settings.onnx_graph_optimization || arena_changed {
+            settings.save();
+        }
+        ui.label(
+            egui::RichText::new(t!("settings.ai.memory_hint"))
+                .small()
+                .weak(),
+        );
+        ui.add_space(8.0);
         // -- ONNX Runtime ----------------------------------------------
         Self::section_header(ui, &t!("settings.ai.onnx_runtime"));
 

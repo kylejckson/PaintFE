@@ -808,17 +808,7 @@ fn scripts_directory() -> std::path::PathBuf {
 }
 
 fn app_data_directory() -> std::path::PathBuf {
-    // Windows: %APPDATA%/PaintFE
-    if let Some(appdata) = std::env::var_os("APPDATA") {
-        return std::path::PathBuf::from(appdata).join("PaintFE");
-    }
-    // Linux/macOS: ~/.local/share/PaintFE or ~/.config/PaintFE
-    if let Some(home) = std::env::var_os("HOME") {
-        let local_share = std::path::PathBuf::from(&home).join(".local/share/PaintFE");
-        return local_share;
-    }
-    // Absolute fallback
-    std::path::PathBuf::from("PaintFE_data")
+    crate::services::storage::data_dir()
 }
 
 fn sanitize_filename(name: &str) -> String {

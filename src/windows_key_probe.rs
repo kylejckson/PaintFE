@@ -43,6 +43,22 @@ mod imp {
     static VK_DOWN: LazyLock<Vec<AtomicBool>> =
         LazyLock::new(|| (0..=255).map(|_| AtomicBool::new(false)).collect());
 
+    // Store the press serial and its modifiers together. A quick tap may be
+    // released before egui processes a frame, so current key state is insufficient.
+    static VK_PRESS_STATE: LazyLock<Vec<AtomicU64>> =
+        LazyLock::new(|| (0..=255).map(|_| AtomicU64::new(0)).collect());
+
+    pub fn vk_press_count(vk: usize) -> u64 {
+        vk_press_state(vk).0
+    }
+
+    pub fn vk_press_state(vk: usize) -> (u64, bool, bool, bool) {
+        let state = VK_PRESS_STATE
+            .get(vk)
+            .map_or(0, |state| state.load(Ordering::Relaxed));
+        (state >> 3, state & 1 != 0, state & 2 != 0, state & 4 != 0)
+    }
+
     #[derive(Clone, Copy, Debug, Default)]
     pub struct KeyProbeSnapshot {
         pub ctrl_down: bool,
@@ -61,8 +77,20 @@ mod imp {
     pub fn observe_windows_message(message: u32, wparam: usize) {
         match message {
             WM_KEYDOWN | WM_SYSKEYDOWN => {
-                if wparam <= 255 {
-                    VK_DOWN[wparam].store(true, Ordering::Relaxed);
+                if wparam <= 255 && !VK_DOWN[wparam].swap(true, Ordering::Relaxed) {
+                    let any_down = |keys: [usize; 3]| {
+                        keys.into_iter()
+                            .any(|vk| VK_DOWN[vk].load(Ordering::Relaxed))
+                    };
+                    let modifiers = u64::from(any_down([VK_CONTROL, VK_LCONTROL, VK_RCONTROL]))
+                        | (u64::from(any_down([0x10, 0xA0, 0xA1])) << 1)
+                        | (u64::from(any_down([VK_MENU, VK_LMENU, VK_RMENU])) << 2);
+                    let state = &VK_PRESS_STATE[wparam];
+                    let previous = state.load(Ordering::Relaxed);
+                    state.store(
+                        (previous.wrapping_add(8) & !7) | modifiers,
+                        Ordering::Relaxed,
+                    );
                 }
                 match wparam {
                     VK_CONTROL | VK_LCONTROL | VK_RCONTROL => {
@@ -110,6 +138,22 @@ mod imp {
                         ESCAPE_DOWN.store(false, Ordering::Relaxed);
                     }
                     _ => {}
+                }
+            }
+            0x0008 => {
+                // Focus loss may prevent winit receiving the matching releases.
+                for down in VK_DOWN.iter() {
+                    down.store(false, Ordering::Relaxed);
+                }
+                for down in [
+                    &CTRL_DOWN,
+                    &C_DOWN,
+                    &X_DOWN,
+                    &V_DOWN,
+                    &ENTER_DOWN,
+                    &ESCAPE_DOWN,
+                ] {
+                    down.store(false, Ordering::Relaxed);
                 }
             }
             WM_ENTERSIZEMOVE => {
@@ -201,6 +245,14 @@ mod imp {
 
     pub fn observe_windows_message(_message: u32, _wparam: usize) {}
 
+    pub fn vk_press_count(_vk: usize) -> u64 {
+        0
+    }
+
+    pub fn vk_press_state(_vk: usize) -> (u64, bool, bool, bool) {
+        (0, false, false, false)
+    }
+
     pub fn is_vk_down(_vk: usize) -> bool {
         false
     }
@@ -228,5 +280,5 @@ mod imp {
 
 pub use imp::{
     KeyProbeSnapshot, alt_down_realtime, ctrl_down_realtime, enter_down_realtime, is_live_resize,
-    is_vk_down, observe_windows_message, snapshot,
+    is_vk_down, observe_windows_message, snapshot, vk_press_count, vk_press_state,
 };

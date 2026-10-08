@@ -57,6 +57,7 @@ pub struct AppSettings {
     pub folder_color_palette: [Color32; 8],
     /// Maximum number of undo steps
     pub max_undo_steps: usize,
+    pub middle_click_close_tabs: bool,
     /// Auto-save interval in minutes (0 = disabled)
     pub auto_save_minutes: u32,
     /// Neon glow mode – accent-colored shadows in dark theme
@@ -87,6 +88,8 @@ pub struct AppSettings {
     pub onnx_runtime_path: String,
     /// Path to BiRefNet .onnx model file
     pub birefnet_model_path: String,
+    pub onnx_graph_optimization: crate::ops::ai::GraphOptimization,
+    pub onnx_cpu_memory_arena: bool,
 
     // Experimental Paint.NET legacy plugin compatibility.
     pub paintdotnet_plugins_enabled: bool,
@@ -305,8 +308,11 @@ impl Default for AppSettings {
             bundled_icon_style: crate::config::icon_packs::BundledIconStyle::Luminous,
             icon_pack_invert_mismatch: true,
             select_after_paste: false,
+            middle_click_close_tabs: true,
             onnx_runtime_path: String::new(),
             birefnet_model_path: String::new(),
+            onnx_graph_optimization: Default::default(),
+            onnx_cpu_memory_arena: false,
             paintdotnet_plugins_enabled: false,
 
             show_debug_panel: true,
@@ -461,56 +467,9 @@ impl AppSettings {
         ]
     }
 
-    /// Path to the settings file.
-    /// On Linux:   ~/.config/paintfe/paintfe_settings.cfg  (XDG_CONFIG_HOME respected)
-    /// On Windows: %APPDATA%\PaintFE\paintfe_settings.cfg
-    /// On macOS:   ~/Library/Application Support/PaintFE/paintfe_settings.cfg
-    /// Fallback:   same directory as the executable.
+    /// Shared portable/profile path, resolved before startup logging.
     pub(crate) fn settings_path() -> Option<PathBuf> {
-        #[cfg(target_os = "linux")]
-        {
-            let config_dir = std::env::var("XDG_CONFIG_HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|_| {
-                    let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
-                    PathBuf::from(home).join(".config")
-                })
-                .join("paintfe");
-            let _ = std::fs::create_dir_all(&config_dir);
-            Some(config_dir.join("paintfe_settings.cfg"))
-        }
-        #[cfg(target_os = "windows")]
-        {
-            // Use %APPDATA% so the settings are stored in the user profile and isolated
-            // from other users — avoids the security issue of a world-writable EXE directory.
-            let appdata = std::env::var("APPDATA")
-                .or_else(|_| std::env::var("USERPROFILE"))
-                .unwrap_or_else(|_| {
-                    std::env::current_exe()
-                        .ok()
-                        .and_then(|p| p.parent().map(|d| d.to_string_lossy().into_owned()))
-                        .unwrap_or_default()
-                });
-            let config_dir = PathBuf::from(appdata).join("PaintFE");
-            let _ = std::fs::create_dir_all(&config_dir);
-            Some(config_dir.join("paintfe_settings.cfg"))
-        }
-        #[cfg(target_os = "macos")]
-        {
-            let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
-            let config_dir = PathBuf::from(home)
-                .join("Library")
-                .join("Application Support")
-                .join("PaintFE");
-            let _ = std::fs::create_dir_all(&config_dir);
-            Some(config_dir.join("paintfe_settings.cfg"))
-        }
-        #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-        {
-            std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|d| d.join("paintfe_settings.cfg")))
-        }
+        Some(crate::services::storage::settings_path())
     }
 
     /// Serialize a Color32 as "r,g,b,a"
@@ -1022,12 +981,12 @@ impl AppSettings {
             self.checkerboard_brightness,
             self.low_latency_present,
             self.animated_selection_ants,
-            self.icon_pack_path,
+            crate::services::storage::encode_resource_path(&self.icon_pack_path),
             self.bundled_icon_style.key(),
             self.icon_pack_invert_mismatch,
             self.select_after_paste,
-            self.onnx_runtime_path,
-            self.birefnet_model_path,
+            crate::services::storage::encode_resource_path(&self.onnx_runtime_path),
+            crate::services::storage::encode_resource_path(&self.birefnet_model_path),
             self.paintdotnet_plugins_enabled,
             self.language,
             self.default_canvas_width,
@@ -1037,6 +996,15 @@ impl AppSettings {
         );
         // Append keybinding lines
         let mut content = content;
+        content.push_str(&format!(
+            "onnx_cpu_memory_arena={}\nonnx_graph_optimization={}\n",
+            self.onnx_cpu_memory_arena,
+            serde_json::to_string(&self.onnx_graph_optimization).unwrap()
+        ));
+        content.push_str(&format!(
+            "middle_click_close_tabs={}\n",
+            self.middle_click_close_tabs
+        ));
         for (key, value) in [
             ("ui_polish", serde_json::to_string(&self.ui_polish)),
             ("workspace", serde_json::to_string(&self.workspace)),
@@ -1404,7 +1372,9 @@ impl AppSettings {
             }
         }
         #[cfg(not(target_arch = "wasm32"))]
-        if let Err(e) = std::fs::write(&path, &content) {
+        if let Err(e) = std::fs::create_dir_all(path.parent().unwrap())
+            .and_then(|_| std::fs::write(&path, &content))
+        {
             eprintln!(
                 "[PaintFE] Failed to save settings to {}: {}",
                 path.display(),
@@ -1602,11 +1572,20 @@ impl AppSettings {
                 "icon_pack_invert_mismatch" => {
                     s.icon_pack_invert_mismatch = val == "true";
                 }
+                "middle_click_close_tabs" => {
+                    s.middle_click_close_tabs = val == "true";
+                }
                 "select_after_paste" => {
                     s.select_after_paste = val == "true";
                 }
                 "onnx_runtime_path" => {
                     s.onnx_runtime_path = val.to_string();
+                }
+                "onnx_cpu_memory_arena" => {
+                    s.onnx_cpu_memory_arena = val == "true";
+                }
+                "onnx_graph_optimization" => {
+                    s.onnx_graph_optimization = serde_json::from_str(val).unwrap_or_default();
                 }
                 "birefnet_model_path" => {
                     s.birefnet_model_path = val.to_string();
@@ -2006,6 +1985,14 @@ impl AppSettings {
             s.custom_accent = s.theme_preset.accent_colors();
         }
 
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            s.icon_pack_path = crate::services::storage::decode_resource_path(&s.icon_pack_path);
+            s.onnx_runtime_path =
+                crate::services::storage::decode_resource_path(&s.onnx_runtime_path);
+            s.birefnet_model_path =
+                crate::services::storage::decode_resource_path(&s.birefnet_model_path);
+        }
         s
     }
 }
@@ -2013,6 +2000,26 @@ impl AppSettings {
 #[cfg(test)]
 mod refinement_tests {
     use super::*;
+
+    #[test]
+    fn preferences_roundtrip_preserves_tab_and_onnx_options() {
+        let settings = AppSettings {
+            middle_click_close_tabs: false,
+            onnx_graph_optimization: crate::ops::ai::GraphOptimization::Basic,
+            onnx_cpu_memory_arena: true,
+            ..Default::default()
+        };
+        settings.save();
+        let restored = AppSettings::load();
+        assert!(!restored.middle_click_close_tabs);
+        assert!(restored.onnx_cpu_memory_arena);
+        assert_eq!(
+            restored.onnx_graph_optimization,
+            crate::ops::ai::GraphOptimization::Basic
+        );
+        AppSettings::default().save();
+    }
+
     #[test]
     fn theme_roundtrip_retains_new_widget_geometry_and_history_opacity() {
         let original = AppSettings {

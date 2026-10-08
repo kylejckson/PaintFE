@@ -233,6 +233,12 @@ impl PluginManager {
             let Ok(data) = fs::read(&path) else { continue };
             match serde_json::from_slice::<PluginManifest>(&data) {
                 Ok(mut plugin) => {
+                    // Installed plugins belong to this package; resolve against
+                    // its current location after moving a portable installation.
+                    if let Some(filename) = Path::new(&plugin.source_file).file_name() {
+                        plugin.source_file =
+                            entry.path().join(filename).to_string_lossy().into_owned();
+                    }
                     if plugin.trusted || plugin.enabled {
                         match file_sha256(Path::new(&plugin.source_file)) {
                             Ok(hash) if hash == plugin.sha256 => {}
@@ -421,9 +427,7 @@ impl PluginManager {
 }
 
 pub fn plugin_root() -> PathBuf {
-    crate::assets::AppSettings::settings_path()
-        .and_then(|path| path.parent().map(Path::to_path_buf))
-        .unwrap_or_else(|| PathBuf::from("."))
+    crate::services::storage::data_dir()
         .join("plugins")
         .join("paintdotnet")
         .join("Effects")

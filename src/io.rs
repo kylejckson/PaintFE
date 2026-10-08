@@ -519,13 +519,9 @@ pub fn validate_open_dimensions(width: u32, height: u32) -> Result<(), String> {
 // SYNCHRONOUS IMAGE LOADER (CLI / headless mode)
 // ============================================================================
 
-/// Returns the platform-specific directory used for auto-save files.
-///
-/// `%APPDATA%\PaintFE\autosave\`       (Windows)  
-/// `~/.local/share/PaintFE/autosave/`  (Linux)  
-/// `~/Library/Application Support/PaintFE/autosave/`  (macOS)
+/// Autosave directory within the active portable or user-profile data root.
 pub fn autosave_dir() -> Option<std::path::PathBuf> {
-    crate::assets::AppSettings::settings_path().and_then(|p| p.parent().map(|d| d.join("autosave")))
+    Some(crate::services::storage::data_dir().join("autosave"))
 }
 
 // ============================================================================

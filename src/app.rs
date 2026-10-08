@@ -28,3 +28,6 @@ include!("app/runtime.rs");
 include!("app/project_io.rs");
 include!("app/ops.rs");
 include!("app/panels.rs");
+
+#[cfg(test)]
+mod issue_tests;

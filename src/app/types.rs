@@ -1,6 +1,7 @@
 pub struct FilterResult {
-    /// Index of the project that spawned this job.
-    pub project_index: usize,
+    pub error: Option<String>,
+    /// Stable identity, so closing/reordering tabs cannot redirect this result.
+    pub project_id: uuid::Uuid,
     /// Index of the layer that was processed.
     pub layer_idx: usize,
     /// The original pixels before the filter (for undo snapshot).
@@ -220,6 +221,8 @@ pub struct PaintFEApp {
     filter_receiver: mpsc::Receiver<FilterResult>,
     /// When > 0, a background filter job is in progress; show spinner.
     pending_filter_jobs: usize,
+    background_removal_pending: bool,
+    filter_error: Option<String>,
     /// Time when filter operations started (for elapsed time display)
     filter_ops_start_time: Option<f64>,
     /// Human-readable description of the currently running filter operation.

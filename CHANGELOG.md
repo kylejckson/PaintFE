@@ -6,6 +6,28 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.1] - 2026-10-08
+
+- Fixed text previews and missed Ctrl+Z presses.
+- Added optional middle-click tab closing and fixed Magic Wand preview updates.
+- Windows and Linux builds now use portable storage by default, with new AI memory settings.
+
+### Fixed
+
+- Fixed text previews showing only the first letter or leaving old text behind. #137.
+- Fixed missed Ctrl+Z presses after using tools and controls, including quick key taps. #138.
+- Fixed Magic Wand previews not updating when changing tolerance or anti-aliasing. #140.
+- Improved background-removal memory cleanup and error handling. Failed jobs leave the document unchanged. #141.
+- Kept background filter results attached to the correct document when tabs are moved or closed. #139.
+
+### Added
+
+- Added middle-click tab closing, enabled by default and configurable in Preferences. Unsaved documents still prompt before closing. #139.
+- Added AI graph optimization and CPU memory arena settings. The memory arena is off by default. #141.
+- Made Windows EXE and Linux builds portable by default. Preferences can switch to profile storage after restart, with data migration and a fallback for unwritable folders. #142.
+
+---
+
 ## [1.4.0] - 2026-10-05
 
 - A fresh look with Luminous icons and redesigned Color, Palette, and History panels. Classic icons are still available.

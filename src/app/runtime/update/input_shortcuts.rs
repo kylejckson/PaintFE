@@ -4,7 +4,7 @@ impl PaintFEApp {
         // Keep editing/navigation keys with focused panel text and numeric fields.
         let panel_keyboard_focus = (self.window_visibility.colors
             && self.colors_panel.is_hex_editing())
-            || (ctx.egui_wants_keyboard_input()
+            || (ctx.text_edit_focused()
                 && ctx
                     .memory(|m| m.focused())
                     .is_some_and(|id| Some(id) != self.canvas.canvas_widget_id));
@@ -14,7 +14,7 @@ impl PaintFEApp {
         let welcome_open = self.show_welcome_popup;
         #[cfg(not(target_arch = "wasm32"))]
         let welcome_open = false;
-        let modal_open = welcome_open
+        let modal_open = self.filter_error.is_some() || welcome_open
             || self.save_file_dialog.open
             || self.new_file_dialog.open
             || !matches!(self.active_dialog, ActiveDialog::None)
@@ -184,6 +184,9 @@ impl PaintFEApp {
         // Skip all shortcut processing while the settings window is waiting
         // for a keybind combo, so the rebinding handler sees the raw events.
         let is_rebinding = self.settings_window.rebinding_action.is_some();
+        if modal_open || is_rebinding || panel_keyboard_focus {
+            self.settings.keybindings.discard_pending_presses(ctx);
+        }
         if !modal_open && !is_rebinding && !panel_keyboard_focus {
             self.tools_panel.brush_resize_drag_binding = self
                 .settings
@@ -350,32 +353,7 @@ impl PaintFEApp {
 
             // Ctrl+Z — Undo
             if kb.is_pressed(ctx, BindableAction::Undo) {
-                if let Some(overlay) = self.paste_overlay.as_mut() {
-                    if let Some(prev) = self.paste_transform_undo.pop() {
-                        let current = overlay.transform();
-                        overlay.set_transform(prev);
-                        self.paste_transform_redo.push(current);
-                        if let Some(project) = self.active_project_mut() {
-                            project.history.undo(&mut project.canvas_state);
-                        }
-                    } else {
-                        self.cancel_paste_overlay();
-                        if let Some(project) = self.active_project_mut() {
-                            project.canvas_state.clear_selection();
-                        }
-                    }
-                } else if self.tools_panel.has_active_tool_preview() {
-                    // Cancel in-progress tool operation instead of undoing
-                    if let Some(project) = self.projects.get_mut(self.active_project_index) {
-                        self.tools_panel
-                            .cancel_active_tool(&mut project.canvas_state);
-                    }
-                } else {
-                    self.commit_pending_tool_history();
-                    if let Some(project) = self.active_project_mut() {
-                        project.history.undo(&mut project.canvas_state);
-                    }
-                }
+                self.perform_undo();
             }
 
             // Ctrl+Y — Redo (also Ctrl+Shift+Z for Linux muscle memory)
@@ -1433,7 +1411,7 @@ impl PaintFEApp {
                     );
                 }
                 // Filter — AI (requires ONNX runtime)
-                if kb.is_pressed(ctx, BindableAction::FilterRemoveBackground) && self.onnx_available
+                if kb.is_pressed(ctx, BindableAction::FilterRemoveBackground) && self.onnx_available && !self.background_removal_pending
                 {
                     self.active_dialog = ActiveDialog::RemoveBackground(
                         crate::ops::effect_dialogs::RemoveBackgroundDialog::new(),

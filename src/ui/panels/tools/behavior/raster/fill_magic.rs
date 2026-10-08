@@ -1,4 +1,69 @@
 impl ToolsPanel {
+    /// Advance pending selections independently of canvas pointer ownership.
+    pub(crate) fn advance_magic_wand_preview(
+        &mut self,
+        ctx: &egui::Context,
+        canvas_state: &mut CanvasState,
+    ) {
+        if self.active_tool != Tool::MagicWand {
+            return;
+        }
+        if let Some(receiver) = &self.magic_wand_state.async_rx {
+            match receiver.try_recv() {
+                Ok(MagicWandAsyncResult::Ready { request_id, index }) => {
+                    if self
+                        .magic_wand_state
+                        .pending_operation
+                        .as_ref()
+                        .is_some_and(|pending| pending.request_id == request_id)
+                    {
+                        let pending = self.magic_wand_state.pending_operation.take().unwrap();
+                        self.magic_wand_state.operations.push(MagicWandOperation {
+                            start_x: pending.start_x,
+                            start_y: pending.start_y,
+                            target_color: pending.target_color,
+                            combine_mode: pending.combine_mode,
+                            scope: pending.scope,
+                            distance_mode: pending.distance_mode,
+                            connectivity: pending.connectivity,
+                            region_index: index,
+                        });
+                        self.magic_wand_state.async_rx = None;
+                        self.magic_wand_state.computing = false;
+                        self.magic_wand_state.last_applied_tolerance = -1.0;
+                        self.magic_wand_state.last_applied_aa = !self.magic_wand_state.anti_aliased;
+                        self.magic_wand_state.preview_pending = true;
+                        self.magic_wand_state.tolerance_changed_at = None;
+                    }
+                    ctx.request_repaint();
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    ctx.request_repaint_after(std::time::Duration::from_millis(10))
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.magic_wand_state.async_rx = None;
+                    self.magic_wand_state.pending_operation = None;
+                    self.magic_wand_state.computing = false;
+                }
+            }
+        }
+
+        // Re-threshold the distance map only when tolerance or anti-alias changed
+        let has_map = !self.magic_wand_state.operations.is_empty();
+        if has_map
+            && self.active_tool == Tool::MagicWand
+            && (self.magic_wand_state.preview_pending
+                || (self.magic_wand_state.tolerance - self.magic_wand_state.last_applied_tolerance)
+                    .abs()
+                    > 0.001
+                || self.magic_wand_state.anti_aliased != self.magic_wand_state.last_applied_aa)
+        {
+            self.magic_wand_state.preview_pending = true;
+            self.maybe_spawn_magic_wand_preview(canvas_state, None);
+            ctx.request_repaint_after(std::time::Duration::from_millis(20));
+        }
+    }
+
     fn reset_fill_preview_state(&mut self, clear_pending_clicks: bool) {
         self.fill_state.active_fill = None;
         self.fill_state.fill_color_u8 = None;
@@ -437,7 +502,11 @@ impl ToolsPanel {
     ) where
         F: FnMut(usize, u8),
     {
-        let aa_band = if old_anti_aliased || new_anti_aliased { 1u8 } else { 0u8 };
+        let aa_band = if old_anti_aliased || new_anti_aliased {
+            1u8
+        } else {
+            0u8
+        };
         let (start_distance, end_distance) = match old_threshold {
             Some(previous) => (
                 previous.min(new_threshold),
@@ -1378,17 +1447,11 @@ impl ToolsPanel {
                 let y0 = bounds.min.y.floor().max(0.0) as u32;
                 let x1 = bounds.max.x.ceil().max(0.0) as u32;
                 let y1 = bounds.max.y.ceil().max(0.0) as u32;
-                (
-                    x0,
-                    y0,
-                    x1.saturating_sub(1),
-                    y1.saturating_sub(1),
-                )
+                (x0, y0, x1.saturating_sub(1), y1.saturating_sub(1))
             })
         });
-        let commit_overlay =
-            if let (Some(preview), Some((x0, y0, x1, y1))) =
-                (canvas_state.preview_layer.as_ref(), overlay_bounds)
+        let commit_overlay = if let (Some(preview), Some((x0, y0, x1, y1))) =
+            (canvas_state.preview_layer.as_ref(), overlay_bounds)
         {
             let width = x1.saturating_sub(x0) + 1;
             let height = y1.saturating_sub(y0) + 1;
@@ -1457,9 +1520,8 @@ impl ToolsPanel {
 
         // Mark dirty and clear preview (optional for reseed click path)
         if clear_preview_overlay {
-            self.fill_state.preview_clear_at = Some(
-                crate::time_compat::Instant::now() + std::time::Duration::from_millis(200),
-            );
+            self.fill_state.preview_clear_at =
+                Some(crate::time_compat::Instant::now() + std::time::Duration::from_millis(200));
         }
         canvas_state.mark_dirty(dirty_rect);
 
@@ -1659,4 +1721,3 @@ impl ToolsPanel {
     // Lasso: scanline polygon rasterization into selection mask
     // ================================================================
 }
-

@@ -813,107 +813,63 @@ impl KeyBindings {
                 found
             })
         } else if let Some(key) = combo.key {
-            #[cfg(target_os = "windows")]
-            {
-                if let Some(vk) = egui_key_to_windows_vk(key) {
-                    let win_mod_match = ctx.input(|i| {
-                        let event_ctrl = i.modifiers.command || i.modifiers.ctrl;
-                        combo.ctrl == event_ctrl
-                            && combo.shift == i.modifiers.shift
-                            && combo.alt == i.modifiers.alt
-                    });
-                    let is_down_now = win_mod_match && crate::windows_key_probe::is_vk_down(vk);
-                    let edge_id = egui::Id::new(format!("kb_win_edge_{:?}", action));
-                    let was_down = ctx.data_mut(|d| d.get_temp::<bool>(edge_id).unwrap_or(false));
-                    ctx.data_mut(|d| d.insert_temp(edge_id, is_down_now));
-                    if is_down_now && !was_down {
-                        return true;
-                    }
-                }
-            }
-
-            // Primary path: state-based edge detection. This is resilient when
-            // backend event streams are inconsistent but key-down state is valid.
-            let is_down_now = ctx.input(|i| {
-                let event_ctrl = i.modifiers.command || i.modifiers.ctrl;
-                i.key_down(key)
-                    && combo.ctrl == event_ctrl
-                    && combo.shift == i.modifiers.shift
-                    && combo.alt == i.modifiers.alt
-            });
-            let edge_id = egui::Id::new(format!("kb_edge_{:?}", action));
-            let was_down = ctx.data_mut(|d| d.get_temp::<bool>(edge_id).unwrap_or(false));
-            ctx.data_mut(|d| d.insert_temp(edge_id, is_down_now));
-            if is_down_now && !was_down {
-                return true;
-            }
-
-            ctx.input_mut(|i| {
-                // Prefer event-level matching so we can normalize Ctrl/Command
-                // consistently across backends and keyboard layouts.
+            let matched = ctx.input_mut(|i| {
                 let mut found = false;
-                i.events.retain(|ev| {
-                    if found {
-                        return true;
-                    }
+                i.events.retain(|event| {
                     if let egui::Event::Key {
                         key: pressed_key,
-                        pressed,
+                        pressed: true,
+                        repeat,
                         modifiers,
                         ..
-                    } = ev
+                    } = event
+                        && *pressed_key == key
+                        && combo.ctrl == (modifiers.command || modifiers.ctrl)
+                        && combo.shift == modifiers.shift
+                        && combo.alt == modifiers.alt
                     {
-                        let event_ctrl = modifiers.command || modifiers.ctrl;
-                        if *pressed
-                            && *pressed_key == key
-                            && combo.ctrl == event_ctrl
-                            && combo.shift == modifiers.shift
-                            && combo.alt == modifiers.alt
-                        {
-                            found = true;
-                            return false; // consume the matched key event
-                        }
+                        found |= !repeat;
+                        return false;
                     }
                     true
                 });
-                if found {
-                    return true;
-                }
-
-                // Fallback to egui consume_key for platforms/backends that don't
-                // emit the expected key event shape.
-                let mods = egui::Modifiers {
-                    alt: combo.alt,
-                    ctrl: if cfg!(target_os = "macos") {
-                        false
-                    } else {
-                        combo.ctrl
-                    },
-                    shift: combo.shift,
-                    mac_cmd: if cfg!(target_os = "macos") {
-                        combo.ctrl
-                    } else {
-                        false
-                    },
-                    command: combo.ctrl,
-                };
-                i.consume_key(mods, key)
-                    || (!cfg!(target_os = "macos")
-                        && combo.ctrl
-                        && i.consume_key(
-                            egui::Modifiers {
-                                alt: combo.alt,
-                                ctrl: true,
-                                shift: combo.shift,
-                                mac_cmd: false,
-                                command: false,
-                            },
-                            key,
-                        ))
-            })
+                found
+            });
+            #[cfg(target_os = "windows")]
+            if let Some(vk) = egui_key_to_windows_vk(key) {
+                // Message counters observe releases even while a dialog owns keyboard focus.
+                let (count, ctrl, shift, alt) = crate::windows_key_probe::vk_press_state(vk);
+                let id = egui::Id::new(("shortcut_press", action));
+                let previous = ctx.data_mut(|d| {
+                    let previous = d.get_temp::<u64>(id).unwrap_or(0);
+                    d.insert_temp(id, count);
+                    previous
+                });
+                let modifiers_match =
+                    combo.ctrl == ctrl && combo.shift == shift && combo.alt == alt;
+                return matched || (count != previous && modifiers_match);
+            }
+            matched
         } else {
             false
         }
+    }
+
+    /// Observe native edges while dialogs or text fields own the keyboard.
+    pub fn discard_pending_presses(&self, ctx: &egui::Context) {
+        #[cfg(target_os = "windows")]
+        for (action, combo) in &self.bindings {
+            if let Some(vk) = combo.key.and_then(egui_key_to_windows_vk) {
+                ctx.data_mut(|data| {
+                    data.insert_temp(
+                        egui::Id::new(("shortcut_press", action)),
+                        crate::windows_key_probe::vk_press_count(vk),
+                    )
+                });
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        let _ = ctx;
     }
 
     /// Check whether a binding is continuously held, including modifier-only actions.

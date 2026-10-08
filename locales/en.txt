@@ -697,3 +697,17 @@ script.pixels_modified=Modified {0} pixels
 menu.view.script_editor=Script Editor
 menu.filter.scripts=Scripts
 menu.filter.scripts.run_last=Run Last Script
+
+settings.interface.middle_click_close_tabs=Close document tabs with middle mouse button
+settings.ai.graph_optimization=Graph optimization
+settings.ai.graph_all=All
+settings.ai.graph_basic=Basic
+settings.ai.graph_disabled=Disabled
+settings.ai.cpu_arena=Enable CPU memory arena
+settings.ai.memory_hint=Disabling the arena reduces retained memory. Older BiRefNet exports can still require several GB during inference.
+settings.storage.heading=Storage
+settings.storage.portable=Portable storage beside the executable
+settings.storage.location=Current settings location
+settings.storage.restart=Storage change takes effect after restart. Source data is retained.
+settings.storage.replace=Replace conflicting destination files (keep backups)
+common.error=Error

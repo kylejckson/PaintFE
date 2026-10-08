@@ -220,40 +220,7 @@ impl ToolsPanel {
                     self.selection_state.mode
                 };
 
-                // Poll async distance map computation
-                if let Some(rx) = &self.magic_wand_state.async_rx {
-                    if let Ok(result) = rx.try_recv() {
-                        match result {
-                            MagicWandAsyncResult::Ready { request_id, index } => {
-                                if let Some(pending) =
-                                    self.magic_wand_state.pending_operation.take()
-                                    && pending.request_id == request_id
-                                {
-                                    self.magic_wand_state.operations.push(MagicWandOperation {
-                                        start_x: pending.start_x,
-                                        start_y: pending.start_y,
-                                        target_color: pending.target_color,
-                                        combine_mode: pending.combine_mode,
-                                        scope: pending.scope,
-                                        distance_mode: pending.distance_mode,
-                                        connectivity: pending.connectivity,
-                                        region_index: index,
-                                    });
-                                }
-                            }
-                        }
-                        self.magic_wand_state.async_rx = None;
-                        self.magic_wand_state.computing = false;
-                        self.magic_wand_state.last_applied_tolerance = -1.0;
-                        self.magic_wand_state.last_applied_aa = !self.magic_wand_state.anti_aliased;
-                        self.magic_wand_state.preview_pending = true;
-                        self.magic_wand_state.tolerance_changed_at = None;
-                        ui.ctx().request_repaint();
-                    } else {
-                        // Still computing - keep repainting to poll
-                        ui.ctx().request_repaint();
-                    }
-                }
+                self.advance_magic_wand_preview(ui.ctx(), canvas_state);
 
                 // Commit on Enter or clear selection on Escape.
                 // Escape should behave like deselect for selection tools and
@@ -294,23 +261,6 @@ impl ToolsPanel {
                         click_scope,
                         gpu_renderer.as_deref_mut(),
                     );
-                    ui.ctx().request_repaint();
-                }
-
-                // Re-threshold the distance map only when tolerance or anti-alias changed
-                let has_map = !self.magic_wand_state.operations.is_empty();
-                if has_map
-                    && self.active_tool == Tool::MagicWand
-                    && (self.magic_wand_state.preview_pending
-                        || (self.magic_wand_state.tolerance
-                            - self.magic_wand_state.last_applied_tolerance)
-                            .abs()
-                            > 0.001
-                        || self.magic_wand_state.anti_aliased
-                            != self.magic_wand_state.last_applied_aa)
-                {
-                    self.magic_wand_state.preview_pending = true;
-                    self.maybe_spawn_magic_wand_preview(canvas_state, gpu_renderer.as_deref_mut());
                     ui.ctx().request_repaint();
                 }
             }

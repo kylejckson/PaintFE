@@ -129,11 +129,19 @@ Paint.NET PDN import requires the compatibility host. Projects are imported as r
 
 ## Optional Integrations
 
+### Portable Storage
+
+Windows EXE and Linux builds store preferences and `paintfe.log` beside the executable by default. Autosaves, scripts, effects and imported plugins live in `paintfe_data/`. Keep that folder and `paintfe_storage.cfg` with the executable when moving the installation.
+
+**Edit > Preferences > General > Storage** switches between portable and user-profile storage after restart. Migration retains the source data; conflicting destination files require an explicit replacement choice and receive backups. Existing profile preferences are imported on the first portable startup. Unwritable installation directories, such as `/usr/bin`, fall back to the user profile with an explanation. Resources selected inside a portable installation are saved as relative paths; external resources retain absolute paths.
+
+**Preferences > Interface** also controls whether middle-click closes document tabs. It is enabled by default and uses the usual save/discard/cancel prompt for unsaved documents.
+
 ### Local Background Removal
 
 Background removal runs locally through ONNX Runtime. Images are processed on your machine without cloud uploads or API calls.
 
-Supported model families are **BiRefNet**, **U2-Net**, and **IS-Net (DIS)**. Open **Edit > Preferences > AI** and select an ONNX Runtime library and model file. Versioned Linux runtime libraries are also accepted. Model links are available in Preferences; runtime downloads are available from [ONNX Runtime releases](https://github.com/microsoft/onnxruntime/releases).
+Supported model families are **BiRefNet**, **U2-Net**, and **IS-Net (DIS)**. Open **Edit > Preferences > AI** and select an ONNX Runtime library and model file. Versioned Linux runtime libraries are also accepted. Graph optimization can be All (default), Basic or Disabled. The CPU memory arena is disabled by default to reduce retained intermediate allocations. Older BiRefNet exports can still need several GB during inference even for a small source image, because their model input is fixed at 1024 × 1024. Prefer newer official exports when compatible with your runtime; PaintFE does not substitute models or change fixed input dimensions. Model links are available in Preferences; runtime downloads are available from [ONNX Runtime releases](https://github.com/microsoft/onnxruntime/releases).
 
 ### Paint.NET Legacy Plugins (Experimental)
 

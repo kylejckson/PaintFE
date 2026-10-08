@@ -1003,6 +1003,39 @@ pub fn remove_background(
     ))
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum GraphOptimization {
+    #[default]
+    All,
+    Basic,
+    Disabled,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct InferenceOptions {
+    pub graph_optimization: GraphOptimization,
+    /// Disabled by default to avoid retaining large intermediate allocations.
+    pub cpu_memory_arena: bool,
+}
+
+pub fn remove_background_with_options(
+    dll_path: &str,
+    model_path: &str,
+    input: &RgbaImage,
+    settings: &RemoveBgSettings,
+    options: &InferenceOptions,
+) -> Result<RgbaImage, OnnxError> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = options;
+        remove_background(dll_path, model_path, input, settings)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        remove_background_native(dll_path, model_path, input, settings, options)
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn remove_background(
     dll_path: &str,
@@ -1010,6 +1043,77 @@ pub fn remove_background(
     input: &RgbaImage,
     settings: &RemoveBgSettings,
 ) -> Result<RgbaImage, OnnxError> {
+    remove_background_with_options(
+        dll_path,
+        model_path,
+        input,
+        settings,
+        &InferenceOptions::default(),
+    )
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct OrtGuard<T> {
+    ptr: *mut T,
+    release: unsafe extern "C" fn(*mut T),
+}
+#[cfg(not(target_arch = "wasm32"))]
+impl<T> Drop for OrtGuard<T> {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            unsafe {
+                (self.release)(self.ptr);
+            }
+        }
+    }
+}
+#[cfg(not(target_arch = "wasm32"))]
+unsafe fn ort_owned<T>(
+    api: &OrtApi,
+    release: unsafe extern "C" fn(*mut T),
+    create: impl FnOnce(&mut *mut T) -> *mut OrtStatus,
+) -> Result<OrtGuard<T>, String> {
+    let mut ptr = std::ptr::null_mut();
+    let status = create(&mut ptr);
+    let guard = OrtGuard { ptr, release };
+    status_to_result(api, status)?;
+    Ok(guard)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct OrtValuesGuard<'a> {
+    api: &'a OrtApi,
+    values: Vec<*mut OrtValue>,
+}
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for OrtValuesGuard<'_> {
+    fn drop(&mut self) {
+        for &ptr in &self.values {
+            if !ptr.is_null() {
+                unsafe {
+                    (self.api.release_value())(ptr);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn remove_background_native(
+    dll_path: &str,
+    model_path: &str,
+    input: &RgbaImage,
+    settings: &RemoveBgSettings,
+    options: &InferenceOptions,
+) -> Result<RgbaImage, OnnxError> {
+    let started = std::time::Instant::now();
+    crate::log_info!(
+        "AI phase=start source={}x{} graph={:?} CPU_arena={}",
+        input.width(),
+        input.height(),
+        options.graph_optimization,
+        options.cpu_memory_arena
+    );
     eprintln!("[AI] remove_background: starting");
     eprintln!("[AI]   dll_path:   {}", dll_path);
     eprintln!("[AI]   model_path: {}", model_path);
@@ -1058,36 +1162,57 @@ pub fn remove_background(
             )));
         }
         let api = OrtApi { raw: api_ptr };
-        eprintln!("[AI] OrtApi loaded successfully");
+        eprintln!(
+            "[AI] Runtime version: {}",
+            std::ffi::CStr::from_ptr(((*api_base).get_version_string)()).to_string_lossy()
+        );
+        let disable_telemetry: unsafe extern "C" fn(*const OrtEnv) -> *mut OrtStatus =
+            api.get_fn(6);
+        let disable_arena: unsafe extern "C" fn(*mut OrtSessionOptions) -> *mut OrtStatus =
+            api.get_fn(19);
 
         // -- Create environment --
         eprintln!("[AI] Creating environment...");
-        let mut env: *mut OrtEnv = std::ptr::null_mut();
         let log_id = std::ffi::CString::new("PaintFE").unwrap();
-        status_to_result(
-            &api,
-            (api.create_env())(OrtLoggingLevel::Warning, log_id.as_ptr(), &mut env),
-        )
+        let _env_guard = ort_owned(&api, api.release_env(), |out| {
+            (api.create_env())(OrtLoggingLevel::Warning, log_id.as_ptr(), out)
+        })
         .map_err(OnnxError::ApiInitFailed)?;
-        eprintln!("[AI] Environment created");
+        let env = _env_guard.ptr;
+        status_to_result(&api, disable_telemetry(env)).map_err(OnnxError::ApiInitFailed)?;
 
         // -- Create session options --
         eprintln!("[AI] Creating session options...");
-        let mut session_options: *mut OrtSessionOptions = std::ptr::null_mut();
-        status_to_result(&api, (api.create_session_options())(&mut session_options))
-            .map_err(OnnxError::SessionCreateFailed)?;
-
-        // Use all available cores and enable graph optimizations
+        let _options_guard = ort_owned(&api, api.release_session_options(), |out| {
+            (api.create_session_options())(out)
+        })
+        .map_err(OnnxError::SessionCreateFailed)?;
+        let session_options = _options_guard.ptr;
+        // Use available CPU cores with the configured memory policy.
         let num_threads = num_cpus().max(1) as i32;
         eprintln!("[AI] Setting intra_op_num_threads={}", num_threads);
-        let _ = status_to_result(
+        status_to_result(
             &api,
             (api.set_intra_op_num_threads())(session_options, num_threads),
-        );
-        // ORT_ENABLE_ALL = 99
-        let _ = status_to_result(
+        )
+        .map_err(OnnxError::SessionCreateFailed)?;
+        let optimization = match options.graph_optimization {
+            GraphOptimization::All => 99,
+            GraphOptimization::Basic => 1,
+            GraphOptimization::Disabled => 0,
+        };
+        status_to_result(
             &api,
-            (api.set_session_graph_optimization_level())(session_options, 99),
+            (api.set_session_graph_optimization_level())(session_options, optimization),
+        )
+        .map_err(OnnxError::SessionCreateFailed)?;
+        if !options.cpu_memory_arena {
+            status_to_result(&api, disable_arena(session_options))
+                .map_err(OnnxError::SessionCreateFailed)?;
+        }
+        eprintln!(
+            "[AI] graph={:?}, CPU arena={}",
+            options.graph_optimization, options.cpu_memory_arena
         );
         eprintln!("[AI] Session options configured");
 
@@ -1098,18 +1223,22 @@ pub fn remove_background(
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect();
-        let mut session: *mut OrtSession = std::ptr::null_mut();
-        #[cfg(target_os = "windows")]
-        let create_status =
-            (api.create_session())(env, model_wide.as_ptr(), session_options, &mut session);
-        #[cfg(not(target_os = "windows"))]
-        let create_status =
-            (api.create_session())(env, model_path_c.as_ptr(), session_options, &mut session);
-        if let Err(e) = status_to_result(&api, create_status) {
-            (api.release_session_options())(session_options);
-            (api.release_env())(env);
-            return Err(OnnxError::ModelLoadFailed(e));
-        }
+        let _session_guard = ort_owned(&api, api.release_session(), |out| {
+            #[cfg(target_os = "windows")]
+            {
+                (api.create_session())(env, model_wide.as_ptr(), session_options, out)
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                (api.create_session())(env, model_path_c.as_ptr(), session_options, out)
+            }
+        })
+        .map_err(OnnxError::ModelLoadFailed)?;
+        let session = _session_guard.ptr;
+        crate::log_info!(
+            "AI phase=model_loaded elapsed={:.3}s",
+            started.elapsed().as_secs_f64()
+        );
         eprintln!("[AI] Model loaded successfully");
 
         // -- Get allocator --
@@ -1123,16 +1252,13 @@ pub fn remove_background(
         // -- Auto-detect model input dimensions --
         eprintln!("[AI] Querying model input shape...");
         let (model_input_h, model_input_w) = {
-            let mut type_info: *mut OrtTypeInfo = std::ptr::null_mut();
-            let detected = if status_to_result(
-                &api,
-                (api.session_get_input_type_info())(session as *const _, 0, &mut type_info),
-            )
-            .is_ok()
-                && !type_info.is_null()
-            {
+            let info = ort_owned(&api, api.release_type_info(), |out| {
+                (api.session_get_input_type_info())(session as *const _, 0, out)
+            });
+            let detected = if let Ok(info) = info {
+                let type_info = info.ptr;
                 let mut tensor_info: *const OrtTensorTypeAndShapeInfo = std::ptr::null();
-                let size = if status_to_result(
+                if status_to_result(
                     &api,
                     (api.cast_type_info_to_tensor_info())(type_info as *const _, &mut tensor_info),
                 )
@@ -1175,9 +1301,7 @@ pub fn remove_background(
                     // NOTE: tensor_info is owned by type_info — do NOT release separately
                 } else {
                     None
-                };
-                (api.release_type_info())(type_info);
-                size
+                }
             } else {
                 None
             };
@@ -1249,22 +1373,17 @@ pub fn remove_background(
 
         // -- Create memory info --
         eprintln!("[AI] Creating memory info and input tensor...");
-        let mut memory_info: *mut OrtMemoryInfo = std::ptr::null_mut();
-        status_to_result(
-            &api,
+        let _memory_guard = ort_owned(&api, api.release_memory_info(), |out| {
             (api.create_cpu_memory_info())(
                 OrtAllocatorType::ArenaAllocator,
                 OrtMemType::Default,
-                &mut memory_info,
-            ),
-        )
-        .map_err(|e| OnnxError::InferenceFailed(format!("Create memory info: {}", e)))?;
-
-        // -- Create input tensor --
-        let mut input_tensor: *mut OrtValue = std::ptr::null_mut();
+                out,
+            )
+        })
+        .map_err(|error| OnnxError::InferenceFailed(format!("Create memory info: {error}")))?;
+        let memory_info = _memory_guard.ptr;
         let data_len = tensor_data.len() * std::mem::size_of::<f32>();
-        status_to_result(
-            &api,
+        let _input_guard = ort_owned(&api, api.release_value(), |out| {
             (api.create_tensor_with_data())(
                 memory_info,
                 tensor_data.as_mut_ptr() as *mut std::ffi::c_void,
@@ -1272,11 +1391,11 @@ pub fn remove_background(
                 tensor_shape.as_ptr(),
                 4,
                 ONNXTensorElementDataType::Float,
-                &mut input_tensor,
-            ),
-        )
-        .map_err(|e| OnnxError::InferenceFailed(format!("Create input tensor: {}", e)))?;
-
+                out,
+            )
+        })
+        .map_err(|error| OnnxError::InferenceFailed(format!("Create input tensor: {error}")))?;
+        let input_tensor = _input_guard.ptr;
         // -- Run inference requesting ALL outputs --
         eprintln!(
             "[AI] Running inference (requesting {} output(s))...",
@@ -1285,8 +1404,16 @@ pub fn remove_background(
         let input_name_c = std::ffi::CString::new(input_name.clone()).unwrap();
         let input_names = [input_name_c.as_ptr()];
         let input_tensors = [input_tensor as *const OrtValue];
-        let mut output_tensors: Vec<*mut OrtValue> = vec![std::ptr::null_mut(); output_count];
+        let mut output_tensors = OrtValuesGuard {
+            api: &api,
+            values: vec![std::ptr::null_mut(); output_count],
+        };
 
+        crate::log_info!(
+            "AI phase=inference input={}x{}",
+            model_input_h,
+            model_input_w
+        );
         let run_status = (api.run())(
             session,
             std::ptr::null(), // run_options
@@ -1295,17 +1422,13 @@ pub fn remove_background(
             1,
             output_name_ptrs.as_ptr(),
             output_count,
-            output_tensors.as_mut_ptr(),
+            output_tensors.values.as_mut_ptr(),
         );
 
         if let Err(e) = status_to_result(&api, run_status) {
+            crate::log_err!("AI phase=inference error={e}");
             eprintln!("[AI] Inference FAILED: {}", e);
             // Cleanup before returning error
-            (api.release_value())(input_tensor);
-            (api.release_memory_info())(memory_info);
-            (api.release_session())(session);
-            (api.release_session_options())(session_options);
-            (api.release_env())(env);
             return Err(OnnxError::InferenceFailed(e));
         }
 
@@ -1326,26 +1449,22 @@ pub fn remove_background(
         }
 
         let mut output_infos: Vec<OutputInfo> = Vec::new();
-        for (i, &ot) in output_tensors.iter().enumerate() {
+        for (i, &ot) in output_tensors.values.iter().enumerate() {
             if ot.is_null() {
                 continue;
             }
 
-            let mut ti: *mut OrtTensorTypeAndShapeInfo = std::ptr::null_mut();
-            if status_to_result(
-                &api,
-                (api.get_tensor_type_and_shape())(ot as *const _, &mut ti),
-            )
-            .is_err()
-            {
+            let Ok(info) = ort_owned(&api, api.release_tensor_type_and_shape_info(), |out| {
+                (api.get_tensor_type_and_shape())(ot as *const _, out)
+            }) else {
                 continue;
-            }
-
+            };
+            let ti = info.ptr;
             let mut dc: usize = 0;
             let _ = status_to_result(&api, (api.get_dimensions_count())(ti, &mut dc));
             let mut ds = vec![0i64; dc];
             let _ = status_to_result(&api, (api.get_dimensions())(ti, ds.as_mut_ptr(), dc));
-            (api.release_tensor_type_and_shape_info())(ti);
+            drop(info);
 
             // Parse spatial dims
             let (oh, ow) = match ds.len() {
@@ -1424,7 +1543,7 @@ pub fn remove_background(
         );
 
         // Get pointer to best output's data
-        let output_tensor = output_tensors[best_output_idx];
+        let output_tensor = output_tensors.values[best_output_idx];
         let mut out_data_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
         status_to_result(
             &api,
@@ -1483,16 +1602,11 @@ pub fn remove_background(
 
         // -- Cleanup --
         eprintln!("[AI] Cleaning up ONNX resources...");
-        for &ot in &output_tensors {
-            if !ot.is_null() {
-                (api.release_value())(ot);
-            }
-        }
-        (api.release_value())(input_tensor);
-        (api.release_memory_info())(memory_info);
-        (api.release_session())(session);
-        (api.release_session_options())(session_options);
-        (api.release_env())(env);
+        drop(output_tensors);
+        crate::log_info!(
+            "AI phase=complete elapsed={:.3}s",
+            started.elapsed().as_secs_f64()
+        );
 
         // If the original was smaller and we want to preserve size
         if result.dimensions() != (orig_w, orig_h) {

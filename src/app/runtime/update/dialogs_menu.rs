@@ -181,7 +181,8 @@ impl PaintFEApp {
                     });
 
                     ui.menu_button(t!("menu.edit"), |ui| {
-                        let can_undo = self.active_project().is_some_and(|p| p.history.can_undo());
+                        let can_undo = self.active_project().is_some_and(|p| p.history.can_undo())
+                            || self.paste_overlay.is_some() || self.tools_panel.has_active_tool_preview();
                         let can_redo = self.active_project().is_some_and(|p| p.history.can_redo());
 
                         if self
@@ -196,24 +197,7 @@ impl PaintFEApp {
                             )
                             .clicked()
                         {
-                            if self.paste_overlay.is_some() {
-                                self.cancel_paste_overlay();
-                                if let Some(project) = self.active_project_mut() {
-                                    project.canvas_state.clear_selection();
-                                }
-                            } else if self.tools_panel.has_active_tool_preview() {
-                                if let Some(project) =
-                                    self.projects.get_mut(self.active_project_index)
-                                {
-                                    self.tools_panel
-                                        .cancel_active_tool(&mut project.canvas_state);
-                                }
-                            } else {
-                                self.commit_pending_tool_history();
-                                if let Some(project) = self.active_project_mut() {
-                                    project.history.undo(&mut project.canvas_state);
-                                }
-                            }
+                            self.perform_undo();
                             ui.close();
                         }
                         if self
@@ -1548,7 +1532,7 @@ impl PaintFEApp {
                             ui,
                             Icon::MenuFilterRemoveBg,
                             &t!("menu.filter.remove_background"),
-                            no_dialog && self.onnx_available,
+                            no_dialog && self.onnx_available && !self.background_removal_pending,
                         );
                         if !self.onnx_available {
                             remove_bg_resp.clone().on_disabled_hover_text(
@@ -2283,6 +2267,10 @@ impl PaintFEApp {
                                         ui.id().with(("project_tab_full", idx)),
                                         egui::Sense::click_and_drag(),
                                     );
+                                    if self.settings.middle_click_close_tabs
+                                        && full_tab_resp.clicked_by(egui::PointerButton::Middle) {
+                                        tab_to_close = Some(idx);
+                                    }
                                     if full_tab_resp.clicked() {
                                         let click_pos = ui.input(|i| i.pointer.interact_pos());
                                         if close_rect

@@ -164,6 +164,7 @@ impl ToolsPanel {
             let preview_height = metrics.line_height * visual_line_count as f32;
             self.text_state.cached_line_advances = metrics.line_advances;
             self.text_state.cached_line_height = metrics.line_height;
+            let previous_bounds = canvas_state.preview_stroke_bounds;
             canvas_state.clear_preview_state();
             self.sync_text_layer_run_style(canvas_state);
             let idx = canvas_state.active_layer_index;
@@ -181,9 +182,7 @@ impl ToolsPanel {
                 egui::pos2(min_x - pad, origin[1] - pad),
                 egui::vec2(preview_width + pad * 2.0, preview_height + pad * 2.0),
             );
-            let dirty = canvas_state
-                .preview_stroke_bounds
-                .map_or(current_bounds, |old| old.union(current_bounds));
+            let dirty = previous_bounds.map_or(current_bounds, |old| old.union(current_bounds));
             canvas_state.preview_stroke_bounds = Some(current_bounds);
             canvas_state.mark_dirty(Some(dirty));
             self.text_state.preview_dirty = false;
@@ -286,16 +285,15 @@ impl ToolsPanel {
         canvas_state.preview_flat_ready = false;
         // Opt 2: Limit composite/extraction to the visible portion of the text region.
         let visible_bounds = Self::clip_preview_bounds(canvas_state, off_x, off_y, buf_w, buf_h);
+        let dirty_bounds = match (canvas_state.preview_stroke_bounds, visible_bounds) {
+            (Some(old), Some(new)) => Some(old.union(new)),
+            (old, new) => old.or(new),
+        };
         canvas_state.preview_stroke_bounds = visible_bounds;
         // Opt 3: Use dirty_rect to signal texture update needed instead of
         // full cache invalidation. This lets the display path do a set()
         // instead of creating a brand new texture handle.
-        if canvas_state.preview_texture_cache.is_some() {
-            canvas_state.preview_dirty_rect = visible_bounds;
-        } else {
-            // First time: force texture creation
-            canvas_state.preview_texture_cache = None;
-        }
+        canvas_state.preview_dirty_rect = dirty_bounds;
         canvas_state.mark_dirty(None);
         self.text_state.preview_dirty = false;
     }
@@ -958,8 +956,7 @@ impl ToolsPanel {
             for (idx, run) in block.runs.iter().enumerate() {
                 let run_end = offset + run.text.len();
                 let at_run = cursor < run_end
-                    || (cursor == run_end
-                        && (idx + 1 == block.runs.len() || cursor > offset));
+                    || (cursor == run_end && (idx + 1 == block.runs.len() || cursor > offset));
                 if at_run {
                     first_style = Some(run.style.clone());
                     all_bold = run.style.font_weight >= 700;
@@ -1082,26 +1079,20 @@ impl ToolsPanel {
         // Also capture flat byte offsets for anchor/cursor BEFORE apply_style_to_range
         // splits runs, so we can refresh the RunPosition values afterward.
         let (start, end, anchor_flat, cursor_flat) = if self.text_state.selection.has_selection() {
-            if let Some(layer) =
-                canvas_state.layers.get(canvas_state.active_layer_index)
+            if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
                 && let crate::canvas::LayerContent::Text(ref td) = layer.content
                 && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
             {
                 let a = block.run_pos_to_flat_offset(self.text_state.selection.anchor);
                 let c = block.run_pos_to_flat_offset(self.text_state.selection.cursor);
-                if a <= c {
-                    (a, c, a, c)
-                } else {
-                    (c, a, a, c)
-                }
+                if a <= c { (a, c, a, c) } else { (c, a, a, c) }
             } else {
                 return;
             }
         } else {
             // No selection: apply to the run at cursor position
             let cursor = self.text_state.cursor_pos;
-            if let Some(layer) =
-                canvas_state.layers.get(canvas_state.active_layer_index)
+            if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
                 && let crate::canvas::LayerContent::Text(ref td) = layer.content
                 && let Some(block) = td.blocks.iter().find(|b| b.id == bid)
             {
@@ -1133,10 +1124,8 @@ impl ToolsPanel {
             // runs, the old RunPosition{run_index, byte_offset} values are stale and
             // would produce wrong flat offsets on the next call. Convert the flat byte
             // offsets we captured before the split back to fresh RunPosition values.
-            self.text_state.selection.anchor =
-                td.blocks[idx].flat_offset_to_run_pos(anchor_flat);
-            self.text_state.selection.cursor =
-                td.blocks[idx].flat_offset_to_run_pos(cursor_flat);
+            self.text_state.selection.anchor = td.blocks[idx].flat_offset_to_run_pos(anchor_flat);
+            self.text_state.selection.cursor = td.blocks[idx].flat_offset_to_run_pos(cursor_flat);
         }
         self.sync_text_toolbar_to_selection(canvas_state);
 
@@ -1328,6 +1317,4 @@ impl ToolsPanel {
         canvas_state.clear_preview_state();
         canvas_state.mark_dirty(None);
     }
-
 }
-

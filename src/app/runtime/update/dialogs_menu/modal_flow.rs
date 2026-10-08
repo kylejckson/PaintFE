@@ -1,5 +1,12 @@
 impl PaintFEApp {
     fn handle_runtime_modal_flow(&mut self, ctx: &egui::Context) -> bool {
+        if let Some(error) = self.filter_error.clone() {
+            egui::Modal::new(egui::Id::new("filter_error")).show(ctx, |ui| {
+                ui.heading(t!("common.error"));
+                ui.label(error);
+                if ui.button(t!("common.ok")).clicked() { self.filter_error = None; }
+            });
+        }
         #[cfg(target_arch = "wasm32")]
         self.show_welcome_popup_window(ctx);
 
@@ -709,7 +716,7 @@ impl PaintFEApp {
         #[cfg(not(target_arch = "wasm32"))]
         let welcome_open = false;
 
-        welcome_open
+        self.filter_error.is_some() || welcome_open
             || self.save_file_dialog.open
             || self.new_file_dialog.open
             || !matches!(self.active_dialog, ActiveDialog::None)

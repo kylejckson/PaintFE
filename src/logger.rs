@@ -117,35 +117,7 @@ pub fn init() {
 }
 
 fn log_file_path() -> PathBuf {
-    let base = data_dir();
-    base.join("PaintFE").join("paintfe.log")
-}
-
-/// Platform data directory (without the app sub-folder).
-fn data_dir() -> PathBuf {
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            return PathBuf::from(appdata);
-        }
-    }
-    #[cfg(target_os = "macos")]
-    {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home)
-                .join("Library")
-                .join("Application Support");
-        }
-    }
-    // Linux / fallback
-    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-        return PathBuf::from(xdg);
-    }
-    if let Ok(home) = std::env::var("HOME") {
-        return PathBuf::from(home).join(".local").join("share");
-    }
-    // Last resort: current working directory
-    PathBuf::from(".")
+    crate::services::storage::log_path()
 }
 
 /// Simple seconds-since-epoch timestamp string.

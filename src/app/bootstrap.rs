@@ -268,6 +268,8 @@ impl PaintFEApp {
             filter_sender,
             filter_receiver,
             pending_filter_jobs: 0,
+            background_removal_pending: false,
+            filter_error: crate::services::storage::initialize().warning.clone(),
             filter_ops_start_time: None,
             filter_status_description: String::new(),
             preview_job_token: 1,
