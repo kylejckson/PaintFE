@@ -206,17 +206,17 @@ jobs:
       - name: Publish Paint.NET plugin host
         run: bash paintdotnet-host/publish.sh osx-arm64
 
-      - name: Create .dmg
+      - name: Create app bundle and DMG
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ vars.MACOS_SIGNING_IDENTITY }}
+          MACOS_APPLE_ID: ${{ secrets.MACOS_APPLE_ID }}
+          MACOS_APP_PASSWORD: ${{ secrets.MACOS_APP_PASSWORD }}
+          MACOS_TEAM_ID: ${{ vars.MACOS_TEAM_ID }}
         run: |
-          mkdir -p dmg_staging
-          cp target/release/PaintFE dmg_staging/
-          cp -R target/pdn-host/osx-arm64 dmg_staging/paintdotnet-host
-          chmod +x dmg_staging/PaintFE
-          chmod +x dmg_staging/paintdotnet-host/PaintFE.PaintDotNetHost
-          hdiutil create -volname "PaintFE" \
-            -srcfolder dmg_staging \
-            -ov -format UDZO \
-            PaintFE-macOS-arm64.dmg
+          source packaging/macos/signing-env.sh
+          bash packaging/macos/package.sh target/release/PaintFE target/pdn-host/osx-arm64 arm64 "${GITHUB_REF_NAME#v}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -258,17 +258,17 @@ jobs:
       - name: Publish Paint.NET plugin host
         run: bash paintdotnet-host/publish.sh osx-x64
 
-      - name: Create .dmg
+      - name: Create app bundle and DMG
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ vars.MACOS_SIGNING_IDENTITY }}
+          MACOS_APPLE_ID: ${{ secrets.MACOS_APPLE_ID }}
+          MACOS_APP_PASSWORD: ${{ secrets.MACOS_APP_PASSWORD }}
+          MACOS_TEAM_ID: ${{ vars.MACOS_TEAM_ID }}
         run: |
-          mkdir -p dmg_staging
-          cp target/x86_64-apple-darwin/release/PaintFE dmg_staging/
-          cp -R target/pdn-host/osx-x64 dmg_staging/paintdotnet-host
-          chmod +x dmg_staging/PaintFE
-          chmod +x dmg_staging/paintdotnet-host/PaintFE.PaintDotNetHost
-          hdiutil create -volname "PaintFE" \
-            -srcfolder dmg_staging \
-            -ov -format UDZO \
-            PaintFE-macOS-x86_64.dmg
+          source packaging/macos/signing-env.sh
+          bash packaging/macos/package.sh target/x86_64-apple-darwin/release/PaintFE target/pdn-host/osx-x64 x86_64 "${GITHUB_REF_NAME#v}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -487,6 +487,11 @@ jobs:
           zip -r PaintFE-windows-x64.zip PaintFE-windows-x64
           tar -czf PaintFE-linux-x64.tar.gz PaintFE-linux-x64
 
+      - name: Generate Homebrew cask
+        run: |
+          cd dist/macos
+          bash ../../packaging/macos/generate-cask.sh "${GITHUB_REF_NAME#v}" > paintfe.rb
+
       - name: Generate SHA-256 checksums
         run: |
           cd dist
@@ -517,4 +522,5 @@ jobs:
             dist/PaintFE-linux-x64.tar.gz
             dist/macos/PaintFE-macOS-arm64.dmg
             dist/macos/PaintFE-macOS-x86_64.dmg
+            dist/macos/paintfe.rb
             dist/checksums-SHA256.txt

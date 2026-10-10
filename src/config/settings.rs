@@ -58,6 +58,10 @@ pub struct AppSettings {
     /// Maximum number of undo steps
     pub max_undo_steps: usize,
     pub middle_click_close_tabs: bool,
+    pub tooltip_delay: f32,
+    pub last_export_format: String,
+    pub last_export_directory: String,
+    pub recent_files: Vec<String>,
     /// Auto-save interval in minutes (0 = disabled)
     pub auto_save_minutes: u32,
     /// Neon glow mode – accent-colored shadows in dark theme
@@ -141,6 +145,7 @@ pub struct AppSettings {
     pub persist_history_panel_size: Option<(f32, f32)>,
     pub persist_colors_panel_left_offset: Option<(f32, f32)>,
     pub persist_colors_panel_pos: Option<(f32, f32)>,
+    pub persist_colors_panel_size: Option<(f32, f32)>,
     pub persist_palette_panel_size: Option<(f32, f32)>,
     pub persist_palette_panel_pos: Option<(f32, f32)>,
     pub persist_palette_panel_left_offset: Option<(f32, f32)>,
@@ -309,6 +314,10 @@ impl Default for AppSettings {
             icon_pack_invert_mismatch: true,
             select_after_paste: false,
             middle_click_close_tabs: true,
+            tooltip_delay: 0.5,
+            last_export_format: "png".into(),
+            last_export_directory: String::new(),
+            recent_files: Vec::new(),
             onnx_runtime_path: String::new(),
             birefnet_model_path: String::new(),
             onnx_graph_optimization: Default::default(),
@@ -350,6 +359,7 @@ impl Default for AppSettings {
             persist_history_panel_size: None,
             persist_colors_panel_left_offset: None,
             persist_colors_panel_pos: None,
+            persist_colors_panel_size: None,
             persist_palette_panel_size: None,
             persist_palette_panel_pos: None,
             persist_palette_panel_left_offset: None,
@@ -1007,6 +1017,20 @@ impl AppSettings {
         ));
         for (key, value) in [
             ("ui_polish", serde_json::to_string(&self.ui_polish)),
+            ("tooltip_delay", serde_json::to_string(&self.tooltip_delay)),
+            (
+                "last_export_format",
+                serde_json::to_string(&self.last_export_format),
+            ),
+            (
+                "last_export_directory",
+                serde_json::to_string(&self.last_export_directory),
+            ),
+            ("recent_files", serde_json::to_string(&self.recent_files)),
+            (
+                "persist_colors_panel_size",
+                serde_json::to_string(&self.persist_colors_panel_size),
+            ),
             ("workspace", serde_json::to_string(&self.workspace)),
             (
                 "workspace_profiles",
@@ -1575,6 +1599,28 @@ impl AppSettings {
                 "middle_click_close_tabs" => {
                     s.middle_click_close_tabs = val == "true";
                 }
+                "tooltip_delay" => {
+                    if let Ok(delay) = val.parse::<f32>()
+                        && delay.is_finite()
+                    {
+                        s.tooltip_delay = delay.clamp(0.0, 3.0);
+                    }
+                }
+                "last_export_format" => {
+                    if let Ok(value) = serde_json::from_str(val) {
+                        s.last_export_format = value;
+                    }
+                }
+                "last_export_directory" => {
+                    if let Ok(value) = serde_json::from_str(val) {
+                        s.last_export_directory = value;
+                    }
+                }
+                "recent_files" => {
+                    if let Ok(value) = serde_json::from_str::<Vec<String>>(val) {
+                        s.recent_files = value.into_iter().take(20).collect();
+                    }
+                }
                 "select_after_paste" => {
                     s.select_after_paste = val == "true";
                 }
@@ -1664,6 +1710,14 @@ impl AppSettings {
                 }
                 "persist_colors_panel_pos" => {
                     s.persist_colors_panel_pos = Self::str_to_opt_pair(val);
+                }
+                "persist_colors_panel_size" => {
+                    s.persist_colors_panel_size = serde_json::from_str::<Option<(f32, f32)>>(val)
+                        .ok()
+                        .flatten()
+                        .filter(|(w, h)| {
+                            w.is_finite() && h.is_finite() && *w >= 190.0 && *h >= 180.0
+                        });
                 }
                 "persist_colors_section_mask" => {
                     s.persist_colors_section_mask = val.parse::<u8>().unwrap_or(1) & 7;
@@ -2005,6 +2059,11 @@ mod refinement_tests {
     fn preferences_roundtrip_preserves_tab_and_onnx_options() {
         let settings = AppSettings {
             middle_click_close_tabs: false,
+            tooltip_delay: 0.0,
+            last_export_format: "webp".into(),
+            last_export_directory: "saved exports".into(),
+            recent_files: vec!["first.png".into(), "second.pfe".into()],
+            persist_colors_panel_size: Some((240.0, 400.0)),
             onnx_graph_optimization: crate::ops::ai::GraphOptimization::Basic,
             onnx_cpu_memory_arena: true,
             ..Default::default()
@@ -2012,6 +2071,11 @@ mod refinement_tests {
         settings.save();
         let restored = AppSettings::load();
         assert!(!restored.middle_click_close_tabs);
+        assert_eq!(restored.tooltip_delay, 0.0);
+        assert_eq!(restored.last_export_format, "webp");
+        assert_eq!(restored.last_export_directory, "saved exports");
+        assert_eq!(restored.recent_files, ["first.png", "second.pfe"]);
+        assert_eq!(restored.persist_colors_panel_size, Some((240.0, 400.0)));
         assert!(restored.onnx_cpu_memory_arena);
         assert_eq!(
             restored.onnx_graph_optimization,

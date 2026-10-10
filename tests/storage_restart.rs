@@ -85,7 +85,7 @@ fn storage_child() {
         }
         "fallback" => {
             assert!(!active.portable);
-            assert!(active.warning.is_some());
+            assert!(active.warning.is_none());
             assert!(!settings.middle_click_close_tabs);
         }
         _ => panic!("Unknown test phase"),
@@ -116,13 +116,14 @@ fn defaults_migrate_legacy_data_and_mode_changes_survive_restart_and_relocation(
 }
 
 #[test]
-fn unwritable_portable_location_falls_back_with_a_visible_reason() {
+fn unwritable_portable_location_remembers_profile_without_repeated_warning() {
     let fixture = Fixture::new();
     fixture.write("portable", "this path cannot be a directory");
     fixture.write(
         "profile/paintfe_settings.cfg",
         "middle_click_close_tabs=false\n",
     );
+    child(&fixture.0, "fallback");
     child(&fixture.0, "fallback");
     assert_eq!(
         std::fs::read_to_string(fixture.0.join("portable")).unwrap(),

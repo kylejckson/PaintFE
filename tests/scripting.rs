@@ -40,6 +40,72 @@ fn script_width_height() {
     assert_eq!(console.last().unwrap(), "64x64");
 }
 
+#[test]
+fn script_crop_preserves_exact_pixels_and_supports_chained_operations() {
+    let input = create_test_gradient(64, 64);
+    let (actual, _) = run_script("crop_canvas(7, 9, 20, 15); crop_canvas(2, 3, 5, 4);").unwrap();
+    assert_eq!(
+        actual,
+        image::imageops::crop_imm(&input, 9, 12, 5, 4).to_image()
+    );
+    for script in [
+        "crop_canvas(-1, 0, 4, 4);",
+        "crop_canvas(0, 0, 0, 4);",
+        "crop_canvas(60, 0, 5, 4);",
+        "crop_canvas(9223372036854775807, 0, 4, 4);",
+    ] {
+        assert!(run_script(script).is_err(), "{script}");
+    }
+}
+
+#[test]
+fn script_crop_updates_other_layers_masks_selection_and_text_geometry() {
+    use paintfe::canvas::{CanvasState, Layer, LayerContent, TiledImage};
+    use paintfe::ops::scripting::{CanvasOpRequest, apply_canvas_ops};
+    let mut state = CanvasState::new(64, 64);
+    let gradient = create_test_gradient(64, 64);
+    state.layers.push(Layer::new(
+        "Other".into(),
+        64,
+        64,
+        image::Rgba([0, 0, 0, 0]),
+    ));
+    state.layers[1].pixels = TiledImage::from_rgba_image(&gradient);
+    state.layers[1].mask = Some(TiledImage::from_rgba_image(&gradient));
+    let mut text = paintfe::ops::text_layer::TextLayerData::default();
+    text.blocks[0].position = [12.0, 20.0];
+    state.layers[1].content = LayerContent::Text(text);
+    state.selection_mask = Some(image::GrayImage::from_fn(64, 64, |x, y| {
+        image::Luma([(x + y) as u8])
+    }));
+    let original_mask = state.selection_mask.clone().unwrap();
+    apply_canvas_ops(
+        &mut state,
+        0,
+        &[CanvasOpRequest::CropCanvas {
+            x: 7,
+            y: 9,
+            w: 20,
+            h: 15,
+        }],
+    );
+    assert_eq!((state.width, state.height), (20, 15));
+    let expected = image::imageops::crop_imm(&gradient, 7, 9, 20, 15).to_image();
+    assert_eq!(state.layers[1].pixels.to_rgba_image(), expected);
+    assert_eq!(
+        state.layers[1].mask.as_ref().unwrap().to_rgba_image(),
+        expected
+    );
+    assert_eq!(
+        state.selection_mask.unwrap(),
+        image::imageops::crop_imm(&original_mask, 7, 9, 20, 15).to_image()
+    );
+    let LayerContent::Text(text) = &state.layers[1].content else {
+        panic!("text was rasterized");
+    };
+    assert_eq!(text.blocks[0].position, [5.0, 11.0]);
+}
+
 // =============================================================================
 // Pixel API — get/set
 // =============================================================================

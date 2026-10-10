@@ -274,6 +274,8 @@ fn paint_dialog_header_impl(
     title: &str,
     texture_icon: Option<&egui::TextureHandle>,
 ) -> bool {
+    // Keep keyboard traversal in the active dialog and its popups.
+    ui.memory_mut(|memory| memory.set_modal_layer(ui.layer_id()));
     let available_width = ui.available_width();
     let header_height = 32.0 * crate::ui::polish::settings(ui.ctx()).spacing_scale;
     // Leave dragging to the containing movable Window while keeping the close
@@ -749,18 +751,25 @@ fn evaluate_dimension_expression(input: &str) -> Option<f32> {
     Some(value)
 }
 
+pub(crate) fn dialog_footer_keys(ctx: &egui::Context) -> (bool, bool) {
+    // A popup may have opened while laying out the dialog body this frame.
+    if egui::Popup::is_any_open(ctx) {
+        return (false, false);
+    }
+    ctx.data(|d| d.get_temp::<(bool, bool)>(egui::Id::new("dialog_footer_keys")))
+        .unwrap_or_else(|| {
+            ctx.input(|i| {
+                (
+                    i.key_pressed(egui::Key::Enter),
+                    i.key_pressed(egui::Key::Escape),
+                )
+            })
+        })
+}
+
 /// Styled OK / Cancel footer. Returns (ok_clicked, cancel_clicked).
 pub(crate) fn dialog_footer(ui: &mut egui::Ui, colors: &DialogColors) -> (bool, bool) {
-    let mut ok = false;
-    let mut cancel = false;
-
-    // Global footer keyboard behavior for all dialogs that use this helper.
-    if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-        ok = true;
-    }
-    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        cancel = true;
-    }
+    let (mut ok, mut cancel) = dialog_footer_keys(ui.ctx());
 
     ui.add_space(4.0);
     accent_separator(ui, colors);
@@ -792,17 +801,8 @@ pub(crate) fn dialog_footer_with_reset(
     ui: &mut egui::Ui,
     colors: &DialogColors,
 ) -> (bool, bool, bool) {
-    let mut ok = false;
-    let mut cancel = false;
+    let (mut ok, mut cancel) = dialog_footer_keys(ui.ctx());
     let mut reset = false;
-
-    // Global footer keyboard behavior for all dialogs that use this helper.
-    if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-        ok = true;
-    }
-    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        cancel = true;
-    }
 
     ui.add_space(4.0);
     accent_separator(ui, colors);
@@ -911,3 +911,122 @@ mod selection {
     include!("core/selection.rs");
 }
 pub use selection::*;
+
+#[cfg(test)]
+mod footer_keyboard_tests {
+    use super::*;
+
+    fn raw(key: Option<egui::Key>) -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0))),
+            events: key
+                .map(|key| egui::Event::Key {
+                    key,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                })
+                .into_iter()
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn dropdown_enter_and_escape_do_not_activate_dialog_footer() {
+        let ctx = egui::Context::default();
+        let mut footer = (false, false);
+        for frame in 0..4 {
+            let key = match frame {
+                2 => Some(egui::Key::Enter),
+                3 => Some(egui::Key::Escape),
+                _ => None,
+            };
+            let _ = ctx.run_ui(raw(key), |_| {
+                crate::ui::polish::window(&ctx, "Keyboard test").show(&ctx, |ui| {
+                    let combo = egui::ComboBox::from_id_salt("preset")
+                        .selected_text("Custom")
+                        .show_ui(ui, |ui| {
+                            let _ = ui.selectable_label(false, "HD");
+                        });
+                    if frame == 1 {
+                        combo.response.request_focus();
+                    }
+                    footer = dialog_footer(ui, &DialogColors::from_ctx(&ctx));
+                });
+            });
+            assert_eq!(footer, (false, false), "frame {frame}");
+            if frame == 2 {
+                assert!(egui::Popup::is_any_open(&ctx));
+            }
+        }
+        assert!(!egui::Popup::is_any_open(&ctx));
+    }
+
+    #[test]
+    fn resize_dialog_preserves_keyboard_dropdown_navigation() {
+        let ctx = egui::Context::default();
+        let mut fonts = egui::FontDefinitions::default();
+        let proportional = fonts.families[&egui::FontFamily::Proportional].clone();
+        fonts
+            .families
+            .insert(egui::FontFamily::Name("WidgetTitle".into()), proportional);
+        ctx.set_fonts(fonts);
+        let mut dialog = ResizeImageDialog::new(&CanvasState::new(800, 600));
+        for frame in 0..7 {
+            let key = match frame {
+                2 => Some(egui::Key::Tab),
+                3 => Some(egui::Key::Enter),
+                4 => Some(egui::Key::ArrowDown),
+                5 => Some(egui::Key::Enter),
+                6 => Some(egui::Key::Escape),
+                _ => None,
+            };
+            let mut input = raw(key);
+            if frame == 2 {
+                input.modifiers.shift = true;
+                if let Some(egui::Event::Key { modifiers, .. }) = input.events.first_mut() {
+                    modifiers.shift = true;
+                }
+            }
+            let mut result = DialogResult::Open;
+            let _ = ctx.run_ui(input, |ui| {
+                let _ = ui.button("Background control");
+                result = dialog.show(&ctx);
+            });
+            if frame < 6 {
+                assert!(matches!(result, DialogResult::Open), "frame {frame}");
+            }
+            if frame == 3 {
+                assert!(egui::Popup::is_any_open(&ctx));
+            }
+            if frame == 5 {
+                assert_eq!(dialog.preset, ResizePreset::Hd1920x1080);
+                assert!(!egui::Popup::is_any_open(&ctx));
+            }
+            if frame == 6 {
+                assert!(matches!(result, DialogResult::Cancel));
+            }
+        }
+    }
+
+    #[test]
+    fn escape_in_focused_text_field_still_cancels_dialog() {
+        let ctx = egui::Context::default();
+        let mut text = "800".to_string();
+        let mut footer = (false, false);
+        for frame in 0..3 {
+            let _ = ctx.run_ui(raw((frame == 2).then_some(egui::Key::Escape)), |_| {
+                crate::ui::polish::window(&ctx, "Keyboard test").show(&ctx, |ui| {
+                    let response = ui.text_edit_singleline(&mut text);
+                    if frame == 1 {
+                        response.request_focus();
+                    }
+                    footer = dialog_footer(ui, &DialogColors::from_ctx(&ctx));
+                });
+            });
+        }
+        assert_eq!(footer, (false, true));
+    }
+}

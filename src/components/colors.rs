@@ -474,7 +474,7 @@ impl ColorsPanel {
 
     fn draw_hue_ring_and_sv_triangle(&mut self, ui: &mut egui::Ui) {
         // -- geometry --
-        let outer_r: f32 = 78.0;
+        let outer_r: f32 = ((ui.available_width().min(168.0) - 12.0) * 0.5).max(48.0);
         let ring_w: f32 = 16.0;
         let inner_r = outer_r - ring_w;
         let tri_r = inner_r - 3.0; // small gap between ring & triangle

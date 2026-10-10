@@ -1,4 +1,46 @@
 impl PaintFEApp {
+    fn duplicate_project(&mut self, id: uuid::Uuid) {
+        let Some(source) = self.projects.iter().find(|p| p.id == id) else {
+            return;
+        };
+        let snapshot = crate::components::history::CanvasSnapshot::capture(&source.canvas_state);
+        let mut copy = Project::new_untitled(0, snapshot.width, snapshot.height);
+        snapshot.restore_into(&mut copy.canvas_state);
+        copy.name = format!("{} (copy)", source.name);
+        copy.was_animated = source.was_animated;
+        copy.animation_fps = source.animation_fps;
+        copy.view_zoom = source.view_zoom;
+        copy.view_pan_offset = source.view_pan_offset;
+        copy.history =
+            crate::components::history::HistoryManager::new(self.settings.max_undo_steps);
+        copy.mark_dirty();
+        self.persist_active_project_view();
+        self.projects.push(copy);
+        self.switch_to_project(self.projects.len() - 1);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn reveal_document(path: &std::path::Path) -> std::io::Result<()> {
+        #[cfg(target_os = "windows")]
+        let mut command = {
+            let mut c = std::process::Command::new("explorer.exe");
+            c.arg("/select,").arg(path);
+            c
+        };
+        #[cfg(target_os = "macos")]
+        let mut command = {
+            let mut c = std::process::Command::new("open");
+            c.arg("-R").arg(path);
+            c
+        };
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        let mut command = {
+            let mut c = std::process::Command::new("xdg-open");
+            c.arg(path.parent().unwrap_or(path));
+            c
+        };
+        command.spawn().map(|_| ())
+    }
     fn normalize_open_path(path: &std::path::Path) -> PathBuf {
         std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
     }
@@ -775,7 +817,23 @@ impl PaintFEApp {
             None
         };
         self.save_file_dialog.reset();
+        // A document's directory wins over the last successful export. Model
+        // pickers and other native dialogs never influence this choice.
+        self.save_file_dialog.set_from_path(&PathBuf::from(format!(
+            "Untitled.{}",
+            self.settings.last_export_format
+        )));
+        self.save_file_dialog.target_directory = if self.settings.last_export_directory.is_empty() {
+            std::env::var_os("USERPROFILE")
+                .or_else(|| std::env::var_os("HOME"))
+                .map(PathBuf::from)
+        } else {
+            Some(PathBuf::from(&self.settings.last_export_directory))
+        };
         self.save_file_dialog.set_source_image(&composite);
+        if let Some(path) = project.path.as_ref() {
+            self.save_file_dialog.set_from_path(path);
+        }
         if let Some(frames) = frame_images.as_ref() {
             self.save_file_dialog
                 .set_source_animated(frames, was_animated, animation_fps);

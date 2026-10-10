@@ -255,6 +255,16 @@ impl<'a> PolishedWindow<'a> {
     ) -> Option<egui::InnerResponse<Option<R>>> {
         let fixed_size = self.1;
         self.0.show(ctx, |ui| {
+            let popup_open = egui::Popup::is_any_open(ctx);
+            let keys = ui.input(|i| {
+                (
+                    !popup_open && i.key_pressed(egui::Key::Enter),
+                    !popup_open && i.key_pressed(egui::Key::Escape),
+                )
+            });
+            ui.ctx().data_mut(|d| {
+                d.insert_temp(Id::new("dialog_footer_keys"), keys);
+            });
             // egui 0.35's non-resizable Window measures only content at the end
             // of layout. Fill its requested body so fixed outer sizes survive.
             if fixed_size {
@@ -560,7 +570,14 @@ pub fn preferences(ui: &mut Ui, config: &mut PolishSettings) -> bool {
             (MotionMode::Subtle, "Subtle"),
             (MotionMode::Expressive, "Expressive"),
         ] {
-            ui.selectable_value(&mut config.mode, mode, label);
+            ui.selectable_value(&mut config.mode, mode, label)
+                .on_hover_text(match mode {
+                    MotionMode::Off => "Show state changes immediately without animations.",
+                    MotionMode::Subtle => "Use short, gentle transitions for controls and panels.",
+                    MotionMode::Expressive => {
+                        "Use stronger transitions for hover, selection, menus and panels."
+                    }
+                });
         }
     });
     ui.checkbox(

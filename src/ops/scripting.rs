@@ -40,6 +40,12 @@ impl ScriptFilterType {
 /// A canvas-wide transform requested from script — replayed on all other layers by app.rs.
 #[derive(Clone, Debug)]
 pub enum CanvasOpRequest {
+    CropCanvas {
+        x: u32,
+        y: u32,
+        w: u32,
+        h: u32,
+    },
     FlipHorizontal,
     FlipVertical,
     Rotate90CW,
@@ -321,6 +327,38 @@ fn create_engine(ctx: SharedContext) -> Engine {
 // ============================================================================
 
 fn register_canvas_api(engine: &mut Engine, ctx: SharedContext) {
+    let c = ctx.clone();
+    engine.register_fn(
+        "crop_canvas",
+        move |x: i64, y: i64, w: i64, h: i64| -> Result<(), Box<rhai::EvalAltResult>> {
+            let mut lock = c.lock().unwrap_or_else(|e| e.into_inner());
+            if x < 0
+                || y < 0
+                || w <= 0
+                || h <= 0
+                || x.checked_add(w)
+                    .is_none_or(|right| right > i64::from(lock.width))
+                || y.checked_add(h)
+                    .is_none_or(|bottom| bottom > i64::from(lock.height))
+            {
+                return Err("crop_canvas requires a non-empty rectangle inside the canvas".into());
+            }
+            let (x, y, w, h) = (x as u32, y as u32, w as u32, h as u32);
+            let image = RgbaImage::from_raw(lock.width, lock.height, lock.pixels.clone())
+                .ok_or_else(|| Box::<rhai::EvalAltResult>::from("Invalid canvas pixel buffer"))?;
+            lock.pixels = imageops::crop_imm(&image, x, y, w, h).to_image().into_raw();
+            if let Some(mask) = lock.mask.take()
+                && let Some(mask) = image::GrayImage::from_raw(lock.width, lock.height, mask)
+            {
+                lock.mask = Some(imageops::crop_imm(&mask, x, y, w, h).to_image().into_raw());
+            }
+            lock.width = w;
+            lock.height = h;
+            lock.canvas_ops
+                .push(CanvasOpRequest::CropCanvas { x, y, w, h });
+            Ok(())
+        },
+    );
     let c = ctx.clone();
     engine.register_fn("width", move || -> i64 {
         let lock = c.lock().unwrap_or_else(|e| e.into_inner());
@@ -1646,6 +1684,29 @@ pub fn apply_canvas_ops(
     let mut cur_h = state.height;
 
     for op in canvas_ops {
+        if let CanvasOpRequest::CropCanvas { x, y, w, h } = op {
+            for layer in &mut state.layers {
+                if let Some(mask) = layer.mask.as_mut() {
+                    let image = mask.to_rgba_image();
+                    *mask = crate::canvas::TiledImage::from_rgba_image(
+                        &imageops::crop_imm(&image, *x, *y, *w, *h).to_image(),
+                    );
+                }
+                if let crate::canvas::LayerContent::Text(text) = &mut layer.content {
+                    for block in &mut text.blocks {
+                        block.position[0] -= *x as f32;
+                        block.position[1] -= *y as f32;
+                    }
+                    text.mark_position_dirty();
+                }
+                layer.lod_cache = None;
+                layer.gpu_generation = layer.gpu_generation.wrapping_add(1);
+            }
+            if let Some(mask) = state.selection_mask.take() {
+                state.selection_mask = Some(imageops::crop_imm(&mask, *x, *y, *w, *h).to_image());
+            }
+            state.invalidate_selection_overlay();
+        }
         let n = state.layers.len();
         for i in 0..n {
             if i == active_layer_idx {
@@ -1656,6 +1717,9 @@ pub fn apply_canvas_ops(
                 .extract_region_rgba(0, 0, cur_w, cur_h);
             if let Some(img) = RgbaImage::from_raw(cur_w, cur_h, flat) {
                 let new_img: RgbaImage = match op {
+                    CanvasOpRequest::CropCanvas { x, y, w, h } => {
+                        imageops::crop_imm(&img, *x, *y, *w, *h).to_image()
+                    }
                     CanvasOpRequest::FlipHorizontal => imageops::flip_horizontal(&img),
                     CanvasOpRequest::FlipVertical => imageops::flip_vertical(&img),
                     CanvasOpRequest::Rotate90CW => imageops::rotate90(&img),
@@ -1706,6 +1770,10 @@ pub fn apply_canvas_ops(
                 std::mem::swap(&mut cur_w, &mut cur_h)
             }
             CanvasOpRequest::ResizeImage { w, h, .. } => {
+                cur_w = *w;
+                cur_h = *h;
+            }
+            CanvasOpRequest::CropCanvas { w, h, .. } => {
                 cur_w = *w;
                 cur_h = *h;
             }

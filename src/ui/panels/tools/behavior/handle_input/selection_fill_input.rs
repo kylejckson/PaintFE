@@ -314,6 +314,11 @@ impl ToolsPanel {
                 {
                     self.pick_color_at_position(canvas_state, pos, false);
                 }
+                if (is_secondary_clicked || (is_secondary_down && pointer_moved_at_least_one_pixel))
+                    && let Some(pos) = canvas_pos
+                {
+                    self.pick_color_at_position(canvas_state, pos, true);
+                }
             }
 
             // ================================================================

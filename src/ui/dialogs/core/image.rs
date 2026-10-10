@@ -218,16 +218,41 @@ impl ResizeImageDialog {
                     .spacing([8.0, 4.0])
                     .show(ui, |ui| {
                         ui.label(t!("dialog.resize_image.preset"));
+                        let preset_was_open = egui::ComboBox::is_open(ctx, ui.make_persistent_id(egui::IdSalt::new("resize_preset")));
                         egui::ComboBox::from_id_salt("resize_preset")
                             .width(210.0)
                             .selected_text(self.preset.label())
                             .show_ui(ui, |ui| {
-                                for p in ResizePreset::all() {
-                                    if ui
-                                        .selectable_value(&mut self.preset, *p, p.label())
-                                        .clicked()
-                                        && let Some((w, h)) = p.dims()
-                                    {
+                                let choices = ResizePreset::all();
+                                let choice_id = ui.id().with("keyboard_choice");
+                                let mut choice = ctx.data(|d| d.get_temp::<usize>(choice_id))
+                                    .filter(|_| preset_was_open)
+                                    .unwrap_or_else(|| choices.iter().position(|p| *p == self.preset).unwrap_or(0));
+                                let (down, up, enter) = if preset_was_open {
+                                    ui.input_mut(|i| (
+                                        i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown),
+                                        i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp),
+                                        i.consume_key(egui::Modifiers::NONE, egui::Key::Enter),
+                                    ))
+                                } else { (false, false, false) };
+                                if down { choice = (choice + 1).min(choices.len() - 1); }
+                                if up { choice = choice.saturating_sub(1); }
+                                if down || up {
+                                    ui.memory_mut(|memory| memory.move_focus(egui::FocusDirection::None));
+                                }
+                                let mut picked = enter.then_some(choice);
+                                for (index, p) in choices.iter().enumerate() {
+                                    let response = ui.selectable_label(index == choice, p.label());
+                                    if index == choice && (!preset_was_open || down || up) {
+                                        response.request_focus();
+                                    }
+                                    if response.clicked() { picked = Some(index); }
+                                }
+                                ctx.data_mut(|d| d.insert_temp(choice_id, choice));
+                                if let Some(index) = picked {
+                                    self.preset = choices[index];
+                                    ui.close();
+                                    if let Some((w, h)) = self.preset.dims() {
                                         self.width = w as f32;
                                         self.height = h as f32;
                                         self.scale_percent =
@@ -259,7 +284,15 @@ impl ResizeImageDialog {
                             );
                             if self.focus_width_on_open {
                                 width_response.request_focus();
+                                if let Some(mut state) = egui::TextEdit::load_state(ctx, width_response.id) {
+                                    state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                                        egui::text::CCursor::new(0),
+                                        egui::text::CCursor::new(self.width_input.chars().count()),
+                                    )));
+                                    state.store(ctx, width_response.id);
+                                }
                                 self.focus_width_on_open = false;
+                                self.replace_width_on_first_edit = false;
                             }
                             if self.replace_width_on_first_edit && width_response.changed() {
                                 if self.width_input.starts_with(&previous_input)
@@ -282,7 +315,12 @@ impl ResizeImageDialog {
                             if width_commit {
                                 self.commit_width_input();
                             }
-                            ui.label("px");
+                            let drag = ui.add(egui::Label::new("px ↔").sense(egui::Sense::DRAG))
+                                .on_hover_text("Drag to change width; click the number to enter a value or expression.");
+                            if drag.dragged() {
+                                self.width_input = (self.width + drag.drag_delta().x).round().clamp(1.0, 32768.0).to_string();
+                                self.commit_width_input();
+                            }
                         });
                         ui.end_row();
 
@@ -294,13 +332,25 @@ impl ResizeImageDialog {
                                 egui::TextEdit::singleline(&mut self.height_input)
                                     .desired_width(96.0),
                             );
+                            if height_response.gained_focus()
+                                && let Some(mut state) = egui::TextEdit::load_state(ctx, height_response.id)
+                            {
+                                state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                                    egui::text::CCursor::new(0), egui::text::CCursor::new(self.height_input.chars().count()))));
+                                state.store(ctx, height_response.id);
+                            }
                             let height_commit = height_response.lost_focus()
                                 || (height_response.has_focus()
                                     && ui.input(|i| i.key_pressed(egui::Key::Tab)));
                             if height_commit {
                                 self.commit_height_input();
                             }
-                            ui.label("px");
+                            let drag = ui.add(egui::Label::new("px ↔").sense(egui::Sense::DRAG))
+                                .on_hover_text("Drag to change height; click the number to enter a value or expression.");
+                            if drag.dragged() {
+                                self.height_input = (self.height + drag.drag_delta().x).round().clamp(1.0, 32768.0).to_string();
+                                self.commit_height_input();
+                            }
                         });
                         ui.end_row();
 
@@ -511,17 +561,8 @@ impl ResizeImageDialog {
                 }
             });
 
-        // Keyboard shortcuts
-        if matches!(result, DialogResult::Open) {
-            if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-                self.commit_inputs();
-                ok_pressed = true;
-            }
-            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-                result = DialogResult::Cancel;
-            }
-        }
         if ok_pressed && matches!(result, DialogResult::Open) {
+            self.commit_inputs();
             let w = (self.width.round() as u32).max(1);
             let h = (self.height.round() as u32).max(1);
             result = DialogResult::Ok((
@@ -805,17 +846,8 @@ impl ResizeCanvasDialog {
                 }
             });
 
-        // Keyboard shortcuts
-        if matches!(result, DialogResult::Open) {
-            if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-                self.commit_inputs();
-                ok_pressed = true;
-            }
-            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-                result = DialogResult::Cancel;
-            }
-        }
         if ok_pressed && matches!(result, DialogResult::Open) {
+            self.commit_inputs();
             let w = (self.width.round() as u32).max(1);
             let h = (self.height.round() as u32).max(1);
             let fill = if self.fill_transparent {

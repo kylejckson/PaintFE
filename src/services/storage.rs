@@ -322,10 +322,35 @@ fn profile_selector(storage: &Storage) -> PathBuf {
         .join(format!("paintfe_storage_{:x}.cfg", hash.finish()))
 }
 
+fn appimage_storage_directory(path: &Path) -> PathBuf {
+    let config = PathBuf::from(format!("{}.config", path.display()));
+    let home = PathBuf::from(format!("{}.home", path.display()));
+    if config.is_dir() {
+        config.join("paintfe")
+    } else if home.is_dir() {
+        home.join(".config/paintfe")
+    } else {
+        path.parent().unwrap_or(Path::new(".")).to_owned()
+    }
+}
+
 fn resolve() -> Storage {
-    let executable_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(Path::to_owned))
+    // APPIMAGE identifies the original file; current_exe is inside a temporary,
+    // read-only mount whose name changes on each launch.
+    let executable = if cfg!(target_os = "linux") {
+        std::env::var_os("APPIMAGE")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+    } else {
+        None
+    };
+    let appimage_directory = executable.as_deref().map(appimage_storage_directory);
+    let executable_dir = appimage_directory
+        .or_else(|| {
+            executable
+                .or_else(|| std::env::current_exe().ok())
+                .and_then(|p| p.parent().map(Path::to_owned))
+        })
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
@@ -386,7 +411,11 @@ fn resolve() -> Storage {
     }
     if storage.portable && !writable(&storage.executable_dir) {
         storage.portable = false;
-        storage.warning = Some("Portable storage unavailable: executable directory is not writable. Using the user profile.".into());
+        // Persist a safe fallback so protected installations do not prompt on
+        // every launch. Settings still shows the effective storage location.
+        if let Err(error) = write_with_backup(&profile_selector(&storage), b"profile") {
+            storage.warning = Some(format!("Cannot remember profile storage: {error}"));
+        }
     }
     if let Ok(selection) = &selector
         && let Some(previous) = selection
@@ -439,6 +468,21 @@ fn resolve() -> Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn appimage_storage_uses_original_path_and_standard_portable_directories() {
+        let fixture = Fixture::new();
+        let image = fixture.root.join("PaintFE.AppImage");
+        assert_eq!(appimage_storage_directory(&image), fixture.root);
+        let home = fixture.root.join("PaintFE.AppImage.home");
+        std::fs::create_dir_all(&home).unwrap();
+        assert_eq!(
+            appimage_storage_directory(&image),
+            home.join(".config/paintfe")
+        );
+        let config = fixture.root.join("PaintFE.AppImage.config");
+        std::fs::create_dir_all(&config).unwrap();
+        assert_eq!(appimage_storage_directory(&image), config.join("paintfe"));
+    }
     struct Fixture {
         root: PathBuf,
         storage: Storage,

@@ -86,6 +86,10 @@ pub struct CliArgs {
     /// Print script console output and per-file timing information.
     #[arg(short, long)]
     pub verbose: bool,
+    /// Allow replacing an existing output file. Batch filename collisions are
+    /// always rejected before processing.
+    #[arg(long)]
+    pub overwrite: bool,
 }
 
 impl CliArgs {
@@ -139,6 +143,42 @@ pub fn run(args: CliArgs) -> ExitCode {
         },
         None => None,
     };
+
+    // Validate the entire batch before writing anything. Two source directories
+    // may contain the same stem, or an output may be another input file.
+    let mut destinations = std::collections::HashSet::new();
+    for input in &inputs {
+        let Some(output) = build_output_path(
+            input,
+            args.output.as_deref(),
+            args.output_dir.as_deref(),
+            save_format,
+        ) else {
+            eprintln!("error: input has no usable filename: {}", input.display());
+            return ExitCode::FAILURE;
+        };
+        let absolute = std::path::absolute(&output).unwrap_or(output.clone());
+        let key = if cfg!(target_os = "windows") {
+            absolute.to_string_lossy().to_lowercase()
+        } else {
+            absolute.to_string_lossy().into_owned()
+        };
+        if !destinations.insert(key)
+            || inputs.iter().any(|source| {
+                std::fs::canonicalize(source)
+                    .ok()
+                    .zip(std::fs::canonicalize(&output).ok())
+                    .is_some_and(|(a, b)| a == b)
+            })
+            || (!args.overwrite && output.exists())
+        {
+            eprintln!(
+                "error: output collision or existing file: {} (use --overwrite only for existing outputs)",
+                output.display()
+            );
+            return ExitCode::FAILURE;
+        }
+    }
 
     // Create output directory if specified
     if let Some(dir) = &args.output_dir

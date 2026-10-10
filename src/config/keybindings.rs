@@ -847,7 +847,10 @@ impl KeyBindings {
                 });
                 let modifiers_match =
                     combo.ctrl == ctrl && combo.shift == shift && combo.alt == alt;
-                return matched || (count != previous && modifiers_match);
+                let bridge_active = ctx
+                    .data(|d| d.get_temp::<bool>(egui::Id::new("native_keyboard_bridge")))
+                    .unwrap_or(false);
+                return matched || (!bridge_active && count != previous && modifiers_match);
             }
             matched
         } else {

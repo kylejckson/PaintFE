@@ -368,18 +368,16 @@ fn configure_event_loop(builder: &mut eframe::EventLoopBuilder<eframe::UserEvent
         const WM_SYSCHAR: u32 = 0x0106;
         let msg = unsafe { &*(msg_ptr as *const MSG) };
 
-        // Temporary low-level keyboard diagnostics: capture WM_* key state
-        // without altering message dispatch behavior.
-        paintfe::windows_key_probe::observe_windows_message(msg.message, msg.wParam);
+        // Preserve native key/text ordering before winit defers control-key
+        // presses to the WM_CHAR messages suppressed below.
+        paintfe::windows_key_probe::observe_native_message(msg.message, msg.wParam, msg.lParam);
 
         // Key events handle navigation; control-character text must never reach egui.
         if msg.message == WM_CHAR && msg.wParam < 0x20 {
             return true;
         }
 
-        // Suppress ALL WM_SYSCHAR messages.  winit 0.28 calls DefWindowProcW
-        // unconditionally for WM_SYSCHAR; with no Win32 menu bar that always
-        // triggers MessageBeep(0) for every Alt+key the user presses.
+        // Without a native menu, WM_SYSCHAR can trigger MessageBeep(0).
         if msg.message == WM_SYSCHAR {
             return true;
         }

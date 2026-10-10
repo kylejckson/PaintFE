@@ -14,7 +14,9 @@ impl PaintFEApp {
         let welcome_open = self.show_welcome_popup;
         #[cfg(not(target_arch = "wasm32"))]
         let welcome_open = false;
-        let modal_open = self.filter_error.is_some() || welcome_open
+        let modal_open = self.filter_error.is_some()
+            || welcome_open
+            || self.settings_window.open
             || self.save_file_dialog.open
             || self.new_file_dialog.open
             || !matches!(self.active_dialog, ActiveDialog::None)
@@ -188,6 +190,22 @@ impl PaintFEApp {
             self.settings.keybindings.discard_pending_presses(ctx);
         }
         if !modal_open && !is_rebinding && !panel_keyboard_focus {
+            if ctx.input_mut(|i| {
+                i.consume_key(
+                    egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
+                    egui::Key::Tab,
+                )
+            }) {
+                if !self.projects.is_empty() {
+                    self.switch_to_project(
+                        (self.active_project_index + self.projects.len() - 1) % self.projects.len(),
+                    );
+                }
+            } else if ctx.input_mut(|i| i.consume_key(egui::Modifiers::CTRL, egui::Key::Tab))
+                && !self.projects.is_empty()
+            {
+                self.switch_to_project((self.active_project_index + 1) % self.projects.len());
+            }
             self.tools_panel.brush_resize_drag_binding = self
                 .settings
                 .keybindings
@@ -203,48 +221,7 @@ impl PaintFEApp {
 
             // Ctrl+Shift+S — Save As
             if kb.is_pressed(ctx, BindableAction::SaveAs) {
-                // Trigger Save As dialog (mirrors File > Save As menu logic)
-                let save_as_data = if self.active_project_index < self.projects.len() {
-                    let project = &mut self.projects[self.active_project_index];
-                    project.canvas_state.ensure_all_text_layers_rasterized();
-                    let composite = project.canvas_state.composite();
-                    let frame_images: Option<Vec<image::RgbaImage>> =
-                        if project.canvas_state.layers.len() > 1 {
-                            Some(
-                                project
-                                    .canvas_state
-                                    .layers
-                                    .iter()
-                                    .map(|l| l.pixels.to_rgba_image())
-                                    .collect(),
-                            )
-                        } else {
-                            None
-                        };
-                    let was_animated = project.was_animated;
-                    let animation_fps = project.animation_fps;
-                    let path = project.path.clone();
-                    Some((composite, frame_images, was_animated, animation_fps, path))
-                } else {
-                    None
-                };
-                self.save_file_dialog.reset();
-                if let Some((composite, frame_images, was_animated, animation_fps, path)) =
-                    save_as_data
-                {
-                    self.save_file_dialog.set_source_image(&composite);
-                    if let Some(frames) = frame_images.as_ref() {
-                        self.save_file_dialog.set_source_animated(
-                            frames,
-                            was_animated,
-                            animation_fps,
-                        );
-                    }
-                    if let Some(ref p) = path {
-                        self.save_file_dialog.set_from_path(p);
-                    }
-                }
-                self.save_file_dialog.open = true;
+                self.open_save_as_for_project(self.active_project_index);
             }
 
             // Ctrl+Shift+F — Flatten All Layers
@@ -1411,7 +1388,9 @@ impl PaintFEApp {
                     );
                 }
                 // Filter — AI (requires ONNX runtime)
-                if kb.is_pressed(ctx, BindableAction::FilterRemoveBackground) && self.onnx_available && !self.background_removal_pending
+                if kb.is_pressed(ctx, BindableAction::FilterRemoveBackground)
+                    && self.onnx_available
+                    && !self.background_removal_pending
                 {
                     self.active_dialog = ActiveDialog::RemoveBackground(
                         crate::ops::effect_dialogs::RemoveBackgroundDialog::new(),

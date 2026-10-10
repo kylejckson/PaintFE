@@ -6,6 +6,51 @@ fn app() -> PaintFEApp {
     app.active_project_index = 0;
     app
 }
+
+#[test]
+fn duplicate_document_has_independent_pixels_identity_path_and_history() {
+    let mut app = app();
+    app.projects[0].path = Some(PathBuf::from("original.png"));
+    let id = app.projects[0].id;
+    app.duplicate_project(id);
+    assert_eq!(app.projects.len(), 2);
+    assert_ne!(app.projects[1].id, id);
+    assert!(app.projects[1].path.is_none());
+    assert!(!app.projects[1].file_handler.has_current_path());
+    assert!(app.projects[1].is_dirty);
+    assert!(!app.projects[1].history.can_undo());
+    app.projects[1].canvas_state.layers[0]
+        .pixels
+        .put_pixel(0, 0, image::Rgba([10, 20, 30, 255]));
+    assert_ne!(
+        app.projects[0].canvas_state.layers[0]
+            .pixels
+            .get_pixel(0, 0),
+        app.projects[1].canvas_state.layers[0]
+            .pixels
+            .get_pixel(0, 0)
+    );
+}
+
+#[test]
+fn save_as_prefers_document_path_and_restores_export_preference_for_new_files() {
+    let mut app = app();
+    app.settings.last_export_format = "jpg".into();
+    app.settings.last_export_directory = "export-directory".into();
+    app.open_save_as_for_project(0);
+    assert_eq!(app.save_file_dialog.format(), SaveFormat::Jpeg);
+    assert_eq!(
+        app.save_file_dialog.target_directory,
+        Some(PathBuf::from("export-directory"))
+    );
+    app.projects[0].path = Some(PathBuf::from("document-directory/original.pfe"));
+    app.open_save_as_for_project(0);
+    assert_eq!(app.save_file_dialog.format(), SaveFormat::Pfe);
+    assert_eq!(
+        app.save_file_dialog.target_directory,
+        Some(PathBuf::from("document-directory"))
+    );
+}
 #[test]
 fn failed_ai_job_preserves_pixels_history_and_clean_state() {
     let mut app = app();

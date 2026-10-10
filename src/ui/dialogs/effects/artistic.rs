@@ -561,7 +561,9 @@ impl RecoverTransparencyDialog {
         crate::ui::polish::window(ctx, "dialog_recover_transparency")
             .title_bar(false)
             .collapsible(false)
-            .resizable(false)
+            .resizable(true)
+            .default_size(egui::vec2(460.0, 600.0))
+            .max_size(ctx.content_rect().size() - egui::vec2(24.0, 24.0))
             .default_pos(egui::pos2(ctx.content_rect().center().x - 220.0, 48.0))
             .show(ctx, |ui| {
                 ui.set_min_width(440.0);
@@ -584,6 +586,10 @@ impl RecoverTransparencyDialog {
                     result = DialogResult::Cancel;
                 }
 
+                egui::ScrollArea::vertical()
+                    .id_salt("recover_transparency_body")
+                    .max_height((ui.available_height() - 52.0).max(100.0))
+                    .show(ui, |ui| {
                 let mut changed = false;
                 ui.add_space(4.0);
                 ui.label("Recover alpha and edge colors from artwork flattened over a noisy solid background.");
@@ -813,6 +819,7 @@ impl RecoverTransparencyDialog {
                 if (changed && self.live_preview) || manual {
                     result = DialogResult::Changed;
                 }
+                    });
                 let (ok, cancel) = dialog_footer(ui, &colors);
                 if ok {
                     result = DialogResult::Ok(self.settings());

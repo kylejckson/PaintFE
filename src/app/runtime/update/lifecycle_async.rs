@@ -152,7 +152,9 @@ impl PaintFEApp {
                 self.filter_ops_start_time = None;
                 self.filter_status_description.clear();
             }
-            if result.description == "Remove Background" { self.background_removal_pending = false; }
+            if result.description == "Remove Background" {
+                self.background_removal_pending = false;
+            }
             if let Some(error) = result.error {
                 self.filter_error = Some(format!("{}: {}", result.description, error));
                 continue;
@@ -161,7 +163,11 @@ impl PaintFEApp {
             if result.preview_token != 0 && result.preview_token != self.preview_job_token {
                 continue;
             }
-            if let Some(project) = self.projects.iter_mut().find(|project| project.id == result.project_id) {
+            if let Some(project) = self
+                .projects
+                .iter_mut()
+                .find(|project| project.id == result.project_id)
+            {
                 let idx = result.layer_idx;
                 if idx < project.canvas_state.layers.len() {
                     if result.preview_token != 0 {
@@ -382,6 +388,24 @@ impl PaintFEApp {
             if self.pending_io_ops == 0 {
                 self.io_ops_start_time = None;
             }
+            let recent_path = match &result {
+                IoResult::ImageLoaded { path, .. }
+                | IoResult::AnimatedLoaded { path, .. }
+                | IoResult::AnimatedFramesLoaded { path, .. }
+                | IoResult::PfeLoaded { path, .. }
+                | IoResult::PdnLoaded { path, .. }
+                | IoResult::SaveComplete { path, .. } => Some(path.clone()),
+                _ => None,
+            };
+            if let Some(path) = recent_path {
+                let path = Self::normalize_open_path(&path)
+                    .to_string_lossy()
+                    .into_owned();
+                self.settings.recent_files.retain(|old| old != &path);
+                self.settings.recent_files.insert(0, path);
+                self.settings.recent_files.truncate(20);
+                self.settings.save();
+            }
             match result {
                 IoResult::ImageLoaded {
                     tiled,
@@ -440,6 +464,12 @@ impl PaintFEApp {
                         path,
                         format
                     );
+                    self.settings.last_export_format = format.extension().into();
+                    self.settings.last_export_directory = path
+                        .parent()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    self.settings.save();
                     if let Some(project) = self.projects.get_mut(project_index) {
                         project.file_handler.current_path = Some(path.clone());
                         project.file_handler.last_format = format;
@@ -668,7 +698,8 @@ impl PaintFEApp {
         self.handle_file_uri_paste_events(ctx);
 
         // Determine if a modal dialog is open — block all shortcuts and canvas interaction.
-        let modal_open = self.filter_error.is_some() || self.save_file_dialog.open
+        let modal_open = self.filter_error.is_some()
+            || self.save_file_dialog.open
             || self.new_file_dialog.open
             || !matches!(self.active_dialog, ActiveDialog::None)
             || self.pending_paste_request.is_some()

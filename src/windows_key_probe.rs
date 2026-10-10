@@ -48,6 +48,216 @@ mod imp {
     static VK_PRESS_STATE: LazyLock<Vec<AtomicU64>> =
         LazyLock::new(|| (0..=255).map(|_| AtomicU64::new(0)).collect());
 
+    static INPUT_EVENTS: std::sync::Mutex<Vec<egui::Event>> = std::sync::Mutex::new(Vec::new());
+    static PENDING_SURROGATE: std::sync::Mutex<Option<u16>> = std::sync::Mutex::new(None);
+
+    /// Preserve presses whose WM_CHAR completion is consumed by our hook.
+    /// Never dispatch a native window message twice.
+    pub fn observe_native_message(message: u32, wparam: usize, lparam: isize) {
+        use winapi::um::winuser::GetKeyState;
+        if message == 0x0102 && (0x20..=0xFFFF).contains(&wparam) && wparam != 0x7F {
+            let unit = wparam as u16;
+            let mut pending = PENDING_SURROGATE.lock().unwrap_or_else(|e| e.into_inner());
+            if (0xD800..=0xDBFF).contains(&unit) {
+                *pending = Some(unit);
+            } else {
+                let units = pending
+                    .take()
+                    .map_or_else(|| vec![unit], |first| vec![first, unit]);
+                let text = String::from_utf16_lossy(&units);
+                INPUT_EVENTS
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(egui::Event::Text(text));
+            }
+        }
+        if matches!(message, WM_KEYDOWN | WM_KEYUP | WM_SYSKEYDOWN | WM_SYSKEYUP) {
+            let down = |vk| unsafe { (GetKeyState(vk) as u16 & 0x8000) != 0 };
+            for vk in [0x10, 0xA0, 0xA1, 0x11, 0xA2, 0xA3, 0x12, 0xA4, 0xA5] {
+                VK_DOWN[vk].store(down(vk as i32), Ordering::Relaxed);
+            }
+            CTRL_DOWN.store(down(0x11), Ordering::Relaxed);
+            let modifiers = egui::Modifiers {
+                ctrl: down(0x11),
+                shift: down(0x10),
+                alt: down(0x12),
+                command: down(0x11),
+                mac_cmd: false,
+            };
+            let key = match wparam {
+                0x08 => Some(egui::Key::Backspace),
+                0x09 => Some(egui::Key::Tab),
+                0x0D => Some(egui::Key::Enter),
+                0x1B => Some(egui::Key::Escape),
+                0x20 => Some(egui::Key::Space),
+                0x21 => Some(egui::Key::PageUp),
+                0x22 => Some(egui::Key::PageDown),
+                0x23 => Some(egui::Key::End),
+                0x24 => Some(egui::Key::Home),
+                0x25 => Some(egui::Key::ArrowLeft),
+                0x26 => Some(egui::Key::ArrowUp),
+                0x27 => Some(egui::Key::ArrowRight),
+                0x28 => Some(egui::Key::ArrowDown),
+                0x2D => Some(egui::Key::Insert),
+                0x2E => Some(egui::Key::Delete),
+                0x30..=0x39 => egui::Key::from_name(&char::from(wparam as u8).to_string()),
+                0x41..=0x5A => egui::Key::from_name(&char::from(wparam as u8).to_string()),
+                _ => None,
+            };
+            // Capture matching releases even when Ctrl has already been released.
+            if let Some(key) = key {
+                INPUT_EVENTS
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(egui::Event::Key {
+                        key,
+                        physical_key: Some(key),
+                        pressed: matches!(message, WM_KEYDOWN | WM_SYSKEYDOWN),
+                        repeat: lparam & (1 << 30) != 0
+                            && matches!(message, WM_KEYDOWN | WM_SYSKEYDOWN),
+                        modifiers,
+                    });
+            }
+        }
+        observe_windows_message(message, wparam);
+    }
+
+    pub fn bridge_raw_input(input: &mut egui::RawInput) {
+        let events = std::mem::take(&mut *INPUT_EVENTS.lock().unwrap_or_else(|e| e.into_inner()));
+        if !input.focused {
+            observe_windows_message(0x0008, 0);
+            *PENDING_SURROGATE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            return;
+        }
+        merge_native_events(input, events);
+    }
+
+    fn merge_native_events(input: &mut egui::RawInput, events: Vec<egui::Event>) {
+        input
+            .events
+            .retain(|event| !matches!(event, egui::Event::Key { key, .. } if bridged_key(*key)));
+        // Match individual text events so IME commits that do not use WM_CHAR
+        // remain intact. Text and editing keys must retain their native order.
+        for native in &events {
+            if let egui::Event::Text(text) = native
+                && let Some(index) = input
+                    .events
+                    .iter()
+                    .position(|event| matches!(event, egui::Event::Text(other) if other == text))
+            {
+                input.events.remove(index);
+            }
+        }
+        for event in &events {
+            if let egui::Event::Key {
+                key,
+                pressed: true,
+                repeat: false,
+                modifiers,
+                ..
+            } = event
+                && modifiers.ctrl
+                && !modifiers.alt
+            {
+                match key {
+                    egui::Key::C
+                        if !input.events.iter().any(|e| matches!(e, egui::Event::Copy)) =>
+                    {
+                        input.events.push(egui::Event::Copy)
+                    }
+                    egui::Key::X if !input.events.iter().any(|e| matches!(e, egui::Event::Cut)) => {
+                        input.events.push(egui::Event::Cut)
+                    }
+                    egui::Key::V
+                        if !input
+                            .events
+                            .iter()
+                            .any(|e| matches!(e, egui::Event::Paste(_))) =>
+                    {
+                        if let Ok(mut clipboard) = arboard::Clipboard::new()
+                            && let Ok(text) = clipboard.get_text()
+                        {
+                            input.events.push(egui::Event::Paste(text));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        input.events.extend(events);
+    }
+
+    fn bridged_key(key: egui::Key) -> bool {
+        matches!(
+            key,
+            egui::Key::Backspace
+                | egui::Key::Tab
+                | egui::Key::Enter
+                | egui::Key::Escape
+                | egui::Key::Space
+                | egui::Key::PageUp
+                | egui::Key::PageDown
+                | egui::Key::End
+                | egui::Key::Home
+                | egui::Key::ArrowLeft
+                | egui::Key::ArrowUp
+                | egui::Key::ArrowRight
+                | egui::Key::ArrowDown
+                | egui::Key::Insert
+                | egui::Key::Delete
+        ) || (key.name().len() == 1 && key.name().as_bytes()[0].is_ascii_alphanumeric())
+    }
+
+    #[cfg(test)]
+    mod bridge_tests {
+        use super::*;
+
+        fn key(key: egui::Key, pressed: bool) -> egui::Event {
+            egui::Event::Key {
+                key,
+                physical_key: Some(key),
+                pressed,
+                repeat: false,
+                modifiers: egui::Modifiers::CTRL,
+            }
+        }
+
+        #[test]
+        fn backend_duplicates_are_replaced_and_quick_taps_keep_order() {
+            let native = vec![
+                key(egui::Key::Z, true),
+                key(egui::Key::Z, false),
+                key(egui::Key::Z, true),
+                key(egui::Key::Z, false),
+            ];
+            let mut input = egui::RawInput {
+                events: vec![key(egui::Key::Z, true), key(egui::Key::Z, false)],
+                ..Default::default()
+            };
+            merge_native_events(&mut input, native.clone());
+            assert_eq!(input.events, native);
+        }
+
+        #[test]
+        fn text_and_backspace_keep_order_without_losing_ime_commits() {
+            let native = vec![
+                key(egui::Key::Backspace, true),
+                egui::Event::Text("a".into()),
+                key(egui::Key::Backspace, false),
+            ];
+            let mut input = egui::RawInput {
+                events: vec![
+                    egui::Event::Text("a".into()),
+                    egui::Event::Text("日本語".into()),
+                ],
+                ..Default::default()
+            };
+            merge_native_events(&mut input, native.clone());
+            assert_eq!(input.events[0], egui::Event::Text("日本語".into()));
+            assert_eq!(&input.events[1..], native.as_slice());
+        }
+    }
+
     pub fn vk_press_count(vk: usize) -> u64 {
         vk_press_state(vk).0
     }
@@ -282,3 +492,6 @@ pub use imp::{
     KeyProbeSnapshot, alt_down_realtime, ctrl_down_realtime, enter_down_realtime, is_live_resize,
     is_vk_down, observe_windows_message, snapshot, vk_press_count, vk_press_state,
 };
+
+#[cfg(target_os = "windows")]
+pub use imp::{bridge_raw_input, observe_native_message};

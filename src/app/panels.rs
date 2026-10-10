@@ -740,7 +740,11 @@ impl PaintFEApp {
         let screen_rect = ctx.content_rect();
         let screen_h = screen_rect.max.y;
 
-        let panel_size = egui::vec2(220.0, 310.0);
+        let (width, height) = self
+            .settings
+            .persist_colors_panel_size
+            .unwrap_or((220.0, 310.0));
+        let panel_size = egui::vec2(width, height);
         let first_show = self.colors_panel_pos.is_none();
         let (mut x_off, mut pos_y) = self.colors_panel_pos.unwrap_or_else(|| {
             let (x, bottom) = self
@@ -760,14 +764,21 @@ impl PaintFEApp {
             .movable(false)
             // Our top-left clamp and body scroll bounds own positioning. egui's
             // size-based constraint otherwise moves the header when Advanced grows.
-            .constrain(false)
-            .resizable(false)
+            .constrain(true)
+            .resizable(true)
             .collapsible(false)
-            .auto_sized()
+            .default_size(panel_size)
+            .min_size(egui::vec2(190.0, 180.0))
+            .max_size(screen_rect.size() - egui::vec2(24.0, 24.0))
             .title_bar(false)
             .frame(self.theme.floating_window_frame_animated(hover_t));
 
         let clamped = Self::clamp_floating_pos(x_off, pos_y, panel_size, screen_rect);
+        if let Some(size) =
+            ctx.data_mut(|d| d.remove_temp::<egui::Vec2>(egui::Id::new("colors_resize_request")))
+        {
+            window = window.fixed_size(size);
+        }
         window = window.default_pos(clamped);
         if first_show || screen_size_changed || drag_delta != egui::Vec2::ZERO {
             window = window.current_pos(clamped);
@@ -787,7 +798,7 @@ impl PaintFEApp {
         let resp = window.show(ctx, |ui| {
             // Reserve the body width before the header; fixed-size windows can
             // otherwise grow later when the color controls are laid out.
-            ui.set_width(panel_size.x);
+            ui.set_min_width(180.0);
             // Signal Grid panel header
             if signal_widgets::panel_header(
                 ui,
@@ -800,7 +811,7 @@ impl PaintFEApp {
             ui.style_mut().override_text_style = Some(egui::TextStyle::Small);
             egui::ScrollArea::vertical()
                 .id_salt("color_panel_scroll")
-                .max_height((screen_rect.max.y - clamped.y - 50.0).max(100.0))
+                .max_height(ui.available_height().max(100.0))
                 .show(ui, |ui| {
                     self.colors_panel.show(ui, &self.assets);
                 });
@@ -809,6 +820,23 @@ impl PaintFEApp {
         if let Some(inner_resp) = resp {
             let win_rect = inner_resp.response.rect;
             crate::ui::workspace::register(ctx, "Colors", win_rect);
+            self.settings.persist_colors_panel_size = Some((win_rect.width(), win_rect.height()));
+            if let Some(size) = signal_widgets::floating_resize(
+                ctx,
+                &inner_resp.response,
+                "Colors",
+                egui::vec2(190.0, 180.0),
+            ) {
+                let size = size.min(screen_rect.size() - egui::vec2(24.0, 24.0));
+                self.settings.persist_colors_panel_size = Some((size.x, size.y));
+                ctx.data_mut(|d| {
+                    d.insert_temp(egui::Id::new("colors_resize_request"), size);
+                });
+                if !ctx.input(|i| i.pointer.primary_down()) {
+                    self.settings.save();
+                }
+                ctx.request_repaint();
+            }
             self.remember_ui_cursor_rect(win_rect);
             self.colors_panel_pos = Some((win_rect.min.x, win_rect.min.y));
             let hovered =

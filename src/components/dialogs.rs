@@ -312,18 +312,6 @@ impl NewFileDialog {
                 }
             }
 
-            // Keyboard: Enter = Create, Esc = Cancel
-            let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
-            let esc = ctx.input(|i| i.key_pressed(egui::Key::Escape));
-            if enter {
-                self.commit_inputs();
-                result = Some(self.to_pixels());
-                should_close = true;
-            }
-            if esc {
-                should_close = true;
-            }
-
             let select_all_requested = self.select_all_shortcut_pressed(ctx);
 
             crate::ui::polish::window(ctx, "new_file_dialog_internal")
@@ -568,6 +556,8 @@ impl NewFileDialog {
                     });
 
                     // ── Footer ───────────────────────────────────────────────
+                    let (enter, esc) = crate::ui::dialogs::core::dialog_footer_keys(ctx);
+                    should_close |= esc;
                     ui.add_space(4.0);
                     accent_separator(ui, &colors);
                     ui.add_space(6.0);
@@ -582,7 +572,7 @@ impl NewFileDialog {
                                     .strong(),
                             )
                             .fill(colors.accent);
-                            if ui.add(create_btn).clicked() {
+                            if ui.add(create_btn).clicked() || enter {
                                 self.commit_inputs();
                                 result = Some(self.to_pixels());
                                 should_close = true;
@@ -1207,13 +1197,14 @@ fn clipped_preview_rects(
 }
 
 pub struct SaveFileDialog {
+    encoded_preview: Option<ColorImage>,
     pub open: bool,
     filename: String,
     format: SaveFormat,
     quality: u8,
     webp_lossless: bool,
     tiff_compression: TiffCompression,
-    target_directory: Option<PathBuf>,
+    pub target_directory: Option<PathBuf>,
 
     // Preview state
     source_thumbnail: Option<RgbaImage>,
@@ -1255,6 +1246,7 @@ pub struct SaveFileDialog {
 impl Default for SaveFileDialog {
     fn default() -> Self {
         Self {
+            encoded_preview: None,
             open: false,
             filename: "untitled".to_string(),
             format: SaveFormat::Png,
@@ -1292,8 +1284,12 @@ impl Default for SaveFileDialog {
 }
 
 impl SaveFileDialog {
+    pub fn format(&self) -> SaveFormat {
+        self.format
+    }
     /// Reset dialog state for a fresh "Save As"
     pub fn reset(&mut self) {
+        self.encoded_preview = None;
         self.filename = "untitled".to_string();
         self.target_directory = None;
         self.source_thumbnail = None;
@@ -1375,6 +1371,7 @@ impl SaveFileDialog {
                 "ico" => SaveFormat::Ico,
                 "tiff" | "tif" => SaveFormat::Tiff,
                 "gif" => SaveFormat::Gif,
+                "pfe" => SaveFormat::Pfe,
                 _ => SaveFormat::Png,
             };
         }
@@ -1402,6 +1399,7 @@ impl SaveFileDialog {
             {
                 // Update texture
                 let color_image = rgba_to_color_image(&preview_result.preview_image);
+                self.encoded_preview = Some(color_image.clone());
                 self.preview_texture =
                     Some(ctx.load_texture("save_preview", color_image, TextureOptions::LINEAR));
                 self.preview_file_size = preview_result.file_size;
@@ -1465,27 +1463,26 @@ impl SaveFileDialog {
                 ctx.request_repaint();
             }
 
-            // Keyboard: Enter = Save (opens native picker), Esc = Cancel
-            let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
-            let esc = ctx.input(|i| i.key_pressed(egui::Key::Escape));
-            if esc {
-                should_close = true;
-            }
-
             crate::ui::polish::window(ctx, "save_file_dialog_internal")
                 .title_bar(false)
                 .collapsible(false)
-                .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .resizable(true)
+                .default_size(egui::vec2(660.0, 520.0))
+                .default_pos(ctx.content_rect().center() - egui::vec2(330.0, 230.0))
+                .max_size(ctx.content_rect().size() - egui::vec2(24.0, 24.0))
                 .show(ctx, |ui| {
                     let colors = DialogColors::from_ctx(ctx);
                     ui.set_min_width(640.0);
 
                     // ── Header ──────────────────────────────────────────────
-                    paint_dialog_header(ui, &colors, "\u{1F4BE}", "Save As");
+                    should_close |= paint_dialog_header(ui, &colors, "\u{1F4BE}", "Save As");
                     ui.add_space(8.0);
 
                     // ── Two-column layout ────────────────────────────────────
+                    egui::ScrollArea::vertical()
+                        .id_salt("save_as_body")
+                        .max_height((ui.available_height() - 56.0).max(120.0))
+                        .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         // ── LEFT: Preview ────────────────────────────────────
                         ui.vertical(|ui| {
@@ -1500,8 +1497,12 @@ impl SaveFileDialog {
 
                             // Reload textures if filter changed
                             if use_nearest != self.preview_texture_is_nearest {
-                                self.preview_texture = None;
-                                self.frame_textures.iter_mut().for_each(|t| *t = None);
+                                if let (Some(texture), Some(encoded)) = (self.preview_texture.as_mut(), self.encoded_preview.as_ref()) {
+                                    texture.set(encoded.clone(), tex_opts);
+                                }
+                                for (texture, thumbnail) in self.frame_textures.iter_mut().zip(&self.frame_thumbnails) {
+                                    if let Some(texture) = texture { texture.set(rgba_to_color_image(thumbnail), tex_opts); }
+                                }
                                 self.preview_texture_is_nearest = use_nearest;
                             }
 
@@ -1559,7 +1560,7 @@ impl SaveFileDialog {
                             let hover_pos = ctx.input(|i| i.pointer.hover_pos());
                             if rect.contains(hover_pos.unwrap_or(egui::Pos2::ZERO)) && scroll_dy != 0.0 {
                                 let old_zoom = self.preview_zoom;
-                                let factor = if scroll_dy > 0.0 { 1.15_f32 } else { 1.0 / 1.15 };
+                                let factor = (scroll_dy * 0.002).exp();
                                 self.preview_zoom = (self.preview_zoom * factor).clamp(0.05, 64.0);
                                 if let Some(cursor) = hover_pos {
                                     let off = cursor - rect.min;
@@ -1575,7 +1576,10 @@ impl SaveFileDialog {
 
                             // Double-click: reset to auto-fit
                             if response.double_clicked() {
-                                self.preview_zoom = 0.0;
+                                if let Some(texture) = display_texture {
+                                    let size = texture.size_vec2();
+                                    self.preview_zoom = (PREVIEW_PANEL_SIZE / size.x.max(size.y)).clamp(0.05, 32.0);
+                                }
                                 self.preview_pan = egui::Vec2::ZERO;
                             }
 
@@ -1683,6 +1687,7 @@ impl SaveFileDialog {
                                 if ui.small_button("\u{229E} Fit").clicked() {
                                     self.preview_zoom = 0.0;
                                     self.preview_pan = egui::Vec2::ZERO;
+                                    ctx.request_repaint();
                                 }
                             });
 
@@ -1862,7 +1867,10 @@ impl SaveFileDialog {
                         });
                     });
 
+                        });
                     // ── Footer (full-width, below both columns) ───────────────
+                    let (enter, esc) = crate::ui::dialogs::core::dialog_footer_keys(ctx);
+                    should_close |= esc;
                     accent_separator(ui, &colors);
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {

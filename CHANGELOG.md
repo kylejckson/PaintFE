@@ -6,6 +6,35 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.2] - 2026-10-10
+
+- Fixed keyboard input, dialog controls and Save As previews.
+- Made document tabs easier to manage, with recent files, scrolling and more right-click actions.
+- Added a resizable Colors panel, tooltip timing and script cropping with batch export.
+
+### Fixed
+
+- Reworked Windows keyboard handling to prevent missed keys and stale modifiers after switching apps. Addresses #138; the reported long-held Alt+Tab case still needs confirmation.
+- Improved Tab and Shift+Tab navigation, selected Resize field contents on focus, and added keyboard selection in its preset menu. Closes #143.
+- Kept Recover Transparency within the available screen space, with scrolling and visible action buttons. Closes #144.
+- Added Enter and Escape handling to dialogs without interfering with open dropdowns. Closes #145.
+- Restored Backspace input in editable controls and added draggable Resize values. Closes #146.
+- Fixed Save As movement, resizing, closing, preview fitting and wheel zoom. It now remembers the export format and uses the current file's folder first. Closes #147.
+- Remembered user-profile fallback for unwritable portable folders and made both storage choices selectable in Preferences. Addresses #142.
+- Resolved AppImage storage against the original image rather than its read-only mount. Addresses #155; native Linux verification is pending.
+
+### Added
+
+- Added scrolling document tabs, shorter labels and Ctrl+Tab / Ctrl+Shift+Tab switching. Closes #149.
+- Added Recent Files, Close, tab preview thumbnails and right-click actions for saving, duplicating, viewing information and opening the containing folder. Closes #150.
+- Added a tooltip delay setting, including instant tooltips, and explanations for Motion settings. Closes #151.
+- Made the Colors panel resizable and remembered its size. Closes #152.
+- Added right-click Color Picker support for the secondary color. Closes #153.
+- Added `crop_canvas(...)` and documented CLI crop/save and batch processing, with protection against accidental overwrites. Closes #154.
+- Added macOS app-bundle and DMG packaging, optional signing/notarization, and release-generated Homebrew cask files. Addresses #148; signed distribution and native installation testing are pending.
+
+---
+
 ## [1.4.1] - 2026-10-08
 
 - Fixed text previews and missed Ctrl+Z presses.

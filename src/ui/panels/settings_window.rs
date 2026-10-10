@@ -151,6 +151,7 @@ impl SettingsWindow {
         }
 
         let show = self.open;
+        let was_rebinding = self.rebinding_action.is_some();
         let mut should_close = false;
 
         let preferences_scope = crate::ui::perf::Scope::new(19);
@@ -166,6 +167,7 @@ impl SettingsWindow {
             .max_width(ctx.content_rect().width() * 0.9)
             .max_height(ctx.content_rect().height() * 0.9)
             .show(ctx, |ui| {
+                ui.memory_mut(|memory| memory.set_modal_layer(ui.layer_id()));
                 let header_scope = crate::ui::perf::Scope::new(20);
                 // ── Custom header strip ─────────────────────────────────────
                 {
@@ -389,6 +391,8 @@ impl SettingsWindow {
         #[cfg(target_arch = "wasm32")]
         let trust_rect: Option<egui::Rect> = None;
 
+        let (enter, escape) = crate::ui::dialogs::core::dialog_footer_keys(ctx);
+        should_close |= !was_rebinding && self.rebinding_action.is_none() && (enter || escape);
         self.open = show && !should_close;
         if !self.open {
             // Persist any staged interface/theme edits when closing settings.
@@ -578,10 +582,16 @@ impl SettingsWindow {
             let storage = crate::services::storage::initialize();
             Self::section_header(ui, &t!("settings.storage.heading"));
             let mut portable = crate::services::storage::requested_portable();
-            if ui
-                .checkbox(&mut portable, t!("settings.storage.portable"))
-                .changed()
-            {
+            let changed = ui
+                .horizontal(|ui| {
+                    let profile = ui
+                        .radio_value(&mut portable, false, "User profile")
+                        .changed();
+                    let portable = ui.radio_value(&mut portable, true, "Portable").changed();
+                    profile || portable
+                })
+                .inner;
+            if changed {
                 settings.save();
                 self.storage_error = crate::services::storage::request_mode(portable, false)
                     .err()
@@ -1460,6 +1470,20 @@ impl SettingsWindow {
         }
 
         Self::section_header(ui, "Motion and Interaction");
+        ui.horizontal(|ui| {
+            ui.label("Tooltip delay (seconds)")
+                .on_hover_text("Time before tooltips appear. Set to 0 for immediate tooltips.");
+            if ui
+                .add(
+                    egui::DragValue::new(&mut settings.tooltip_delay)
+                        .range(0.0..=3.0)
+                        .speed(0.05),
+                )
+                .changed()
+            {
+                settings.save();
+            }
+        });
         if crate::ui::polish::preferences(ui, &mut settings.ui_polish) {
             settings.history_animations = Some(settings.ui_polish.row_motion);
             theme.history_animations = settings.ui_polish.row_motion;

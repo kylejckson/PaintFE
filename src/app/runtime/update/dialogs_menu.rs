@@ -16,6 +16,26 @@ impl PaintFEApp {
             .show(root_ui, |ui| {
                 egui::MenuBar::new().ui(ui, |ui| {
                     ui.menu_button(t!("menu.file"), |ui| {
+                        ui.menu_button("Recent Files", |ui| {
+                            let recent = self.settings.recent_files.clone();
+                            if recent.is_empty() { ui.weak("No recent files"); }
+                            for path in recent {
+                                if ui.button(&path).clicked() {
+                                    self.open_file_by_path(PathBuf::from(path), ctx.input(|i| i.time));
+                                    ui.close();
+                                }
+                            }
+                            if ui.button("Clear Recent Files").clicked() {
+                                self.settings.recent_files.clear();
+                                self.settings.save();
+                                ui.close();
+                            }
+                        });
+                        if self.assets.menu_item_shortcut_enabled(ui, Icon::Close,
+                            "Close", has_project, &menu_kb, BindableAction::CloseProject).clicked() {
+                            self.close_project(self.active_project_index);
+                            ui.close();
+                        }
                         if self
                             .assets
                             .menu_item_shortcut(
@@ -94,54 +114,7 @@ impl PaintFEApp {
                             )
                             .clicked()
                         {
-                            // Extract data from project before mutating save_file_dialog
-                            let save_as_data = if self.active_project_index < self.projects.len() {
-                                let project = &mut self.projects[self.active_project_index];
-                                project.canvas_state.ensure_all_text_layers_rasterized();
-                                let composite = project.canvas_state.composite();
-                                let frame_images: Option<Vec<image::RgbaImage>> =
-                                    if project.canvas_state.layers.len() > 1 {
-                                        Some(
-                                            project
-                                                .canvas_state
-                                                .layers
-                                                .iter()
-                                                .map(|l| l.pixels.to_rgba_image())
-                                                .collect(),
-                                        )
-                                    } else {
-                                        None
-                                    };
-                                let was_animated = project.was_animated;
-                                let animation_fps = project.animation_fps;
-                                let path = project.path.clone();
-                                Some((composite, frame_images, was_animated, animation_fps, path))
-                            } else {
-                                None
-                            };
-
-                            self.save_file_dialog.reset();
-                            if let Some((
-                                composite,
-                                frame_images,
-                                was_animated,
-                                animation_fps,
-                                path,
-                            )) = save_as_data
-                            {
-                                self.save_file_dialog.set_source_image(&composite);
-                                if let Some(frames) = frame_images.as_ref() {
-                                    self.save_file_dialog.set_source_animated(
-                                        frames,
-                                        was_animated,
-                                        animation_fps,
-                                    );
-                                }
-                                if let Some(ref p) = path {
-                                    self.save_file_dialog.set_from_path(p);
-                                }
-                            }
-                            self.save_file_dialog.open = true;
+                            self.open_save_as_for_project(self.active_project_index);
                             ui.close();
                         }
                         ui.separator();
@@ -1894,7 +1867,7 @@ impl PaintFEApp {
                         .icon_button_enabled(ui, Icon::Save, is_dirty)
                         .clicked()
                     {
-                        self.save_file_dialog.open = true;
+                        self.open_save_as_for_project(self.active_project_index);
                     }
 
                     ui.separator();
@@ -2068,6 +2041,7 @@ impl PaintFEApp {
 
                     let mut tab_to_switch: Option<usize> = None;
                     let mut tab_to_close: Option<usize> = None;
+                    let mut document_action: Option<(uuid::Uuid, &str)> = None;
                     let mut tab_reorder: Option<(usize, usize)> = None; // (from, to)
                     let _tab_count = project_infos.len();
 
@@ -2079,9 +2053,26 @@ impl PaintFEApp {
                     // Collect tab rects for drop target computation
                     let mut tab_rects: Vec<egui::Rect> = Vec::new();
 
-                    // Scrollable area for tabs -- full remaining width, no arrows by default
+                    let offset_id = egui::Id::new("project_tabs_offset");
+                    let mut offset = ctx.data(|d| d.get_temp::<f32>(offset_id)).unwrap_or(0.0);
+                    if ui
+                        .small_button("◀")
+                        .on_hover_text("Scroll tabs left")
+                        .clicked()
+                    {
+                        offset = (offset - 240.0).max(0.0);
+                    }
+                    if ui
+                        .small_button("▶")
+                        .on_hover_text("Scroll tabs right")
+                        .clicked()
+                    {
+                        offset += 240.0;
+                    }
                     let scroll_out = egui::ScrollArea::horizontal()
                         .id_salt("project_tabs_scroll")
+                        .horizontal_scroll_offset(offset)
+                        .max_width(ui.available_width())
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 2.0;
@@ -2171,7 +2162,11 @@ impl PaintFEApp {
                                     };
 
                                     // --- Build tab text ---
-                                    let tab_label = name.clone();
+                                    let tab_label = if name.chars().count() > 24 {
+                                        format!("{}…", name.chars().take(23).collect::<String>())
+                                    } else {
+                                        name.clone()
+                                    };
                                     let text = egui::RichText::new(&tab_label).color(text_color);
                                     let text = if is_active { text.strong() } else { text };
 
@@ -2262,13 +2257,122 @@ impl PaintFEApp {
 
                                     // Track tab rect for drag-drop (use the frame response rect)
                                     tab_rects.push(tab_resp.response.rect);
+                                    let document_id = self.projects[idx].id;
+                                    let last_active_id = egui::Id::new("project_tabs_last_active");
+                                    if is_active
+                                        && ctx.data(|d| d.get_temp::<uuid::Uuid>(last_active_id))
+                                            != Some(document_id)
+                                    {
+                                        ui.scroll_to_rect(tab_resp.response.rect, None);
+                                        ctx.data_mut(|d| {
+                                            d.insert_temp(last_active_id, document_id)
+                                        });
+                                    }
                                     let full_tab_resp = ui.interact(
                                         tab_resp.response.rect,
                                         ui.id().with(("project_tab_full", idx)),
                                         egui::Sense::click_and_drag(),
                                     );
+                                    full_tab_resp.context_menu(|ui| {
+                                        ui.label(name);
+                                        for action in [
+                                            "Save",
+                                            "Save As",
+                                            "Duplicate",
+                                            "Info",
+                                            "Reveal in Folder",
+                                            "Close",
+                                        ] {
+                                            let enabled = action != "Reveal in Folder"
+                                                || self.projects[idx].path.is_some();
+                                            if ui
+                                                .add_enabled(enabled, egui::Button::new(action))
+                                                .clicked()
+                                            {
+                                                document_action = Some((document_id, action));
+                                                ui.close();
+                                            }
+                                        }
+                                    });
+                                    full_tab_resp.clone().on_hover_ui(|ui| {
+                                        ui.label(name);
+                                        ui.label(format!(
+                                            "{cw} × {ch} · {} layers",
+                                            self.projects[idx].canvas_state.layers.len()
+                                        ));
+                                        let state = &self.projects[idx].canvas_state;
+                                        // Compositing changes can leave pixel generations unchanged.
+                                        // Include layer order, visibility and blend settings as well.
+                                        let generation = egui::Id::new((
+                                            cw,
+                                            ch,
+                                            state.dirty_generation,
+                                            state
+                                                .layers
+                                                .iter()
+                                                .enumerate()
+                                                .map(|(i, l)| {
+                                                    (
+                                                        l.gpu_generation,
+                                                        state.layer_effectively_visible(i),
+                                                        l.opacity.to_bits(),
+                                                        l.blend_mode as u8,
+                                                        l.mask_enabled,
+                                                    )
+                                                })
+                                                .collect::<Vec<_>>(),
+                                        ))
+                                        .value();
+                                        let cache_id =
+                                            egui::Id::new(("tab_thumbnail", document_id));
+                                        let cached = ctx.data(|d| {
+                                            d.get_temp::<(u64, egui::TextureHandle)>(cache_id)
+                                        });
+                                        let texture = if let Some((old, texture)) =
+                                            cached.filter(|(old, _)| *old == generation)
+                                        {
+                                            let _ = old;
+                                            texture
+                                        } else {
+                                            let project = &mut self.projects[idx];
+                                            project
+                                                .canvas_state
+                                                .ensure_all_text_layers_rasterized();
+                                            let state = &project.canvas_state;
+                                            let scale = state
+                                                .width
+                                                .div_ceil(160)
+                                                .max(state.height.div_ceil(120))
+                                                .max(1);
+                                            let (thumbnail, _) = state
+                                                .composite_partial_downscaled(
+                                                    egui::Rect::from_min_size(
+                                                        egui::Pos2::ZERO,
+                                                        egui::vec2(
+                                                            state.width as f32,
+                                                            state.height as f32,
+                                                        ),
+                                                    ),
+                                                    scale,
+                                                );
+                                            let texture = ctx.load_texture(
+                                                format!("tab_{document_id}"),
+                                                thumbnail,
+                                                egui::TextureOptions::LINEAR,
+                                            );
+                                            ctx.data_mut(|d| {
+                                                d.insert_temp(
+                                                    cache_id,
+                                                    (generation, texture.clone()),
+                                                )
+                                            });
+                                            texture
+                                        };
+                                        ui.image((texture.id(), texture.size_vec2()));
+                                    });
                                     if self.settings.middle_click_close_tabs
-                                        && full_tab_resp.clicked_by(egui::PointerButton::Middle) {
+                                        && full_tab_resp.clicked_by(egui::PointerButton::Middle)
+                                    {
                                         tab_to_close = Some(idx);
                                     }
                                     if full_tab_resp.clicked() {
@@ -2444,7 +2548,44 @@ impl PaintFEApp {
                                 }
                             });
                         });
-                    let _ = scroll_out;
+                    let mut next_offset = scroll_out.state.offset.x;
+                    if scroll_out.inner_rect.contains(
+                        ctx.input(|i| i.pointer.hover_pos())
+                            .unwrap_or(egui::Pos2::ZERO),
+                    ) {
+                        let wheel = ctx.input_mut(|i| {
+                            let y = i.smooth_scroll_delta.y;
+                            i.smooth_scroll_delta.y = 0.0;
+                            y
+                        });
+                        next_offset = (next_offset - wheel).max(0.0);
+                    }
+                    ctx.data_mut(|d| d.insert_temp(offset_id, next_offset));
+                    if let Some((id, action)) = document_action
+                        && let Some(idx) = self.projects.iter().position(|p| p.id == id)
+                    {
+                        match action {
+                            "Close" => self.close_project(idx),
+                            "Save As" => self.open_save_as_for_project(idx),
+                            "Save" => {
+                                self.switch_to_project(idx);
+                                self.handle_save(ctx.input(|i| i.time));
+                            }
+                            "Duplicate" => self.duplicate_project(id),
+                            "Info" => {
+                                ctx.data_mut(|d| d.insert_temp(egui::Id::new("document_info"), id));
+                            }
+                            "Reveal in Folder" => {
+                                #[cfg(not(target_arch = "wasm32"))]
+                                if let Some(path) = self.projects[idx].path.as_ref()
+                                    && let Err(error) = Self::reveal_document(path)
+                                {
+                                    self.filter_error = Some(error.to_string());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
 
                     // Process tab actions after iteration
                     if let Some(idx) = tab_to_switch {
@@ -2480,6 +2621,35 @@ impl PaintFEApp {
             });
 
         self.persist_active_project_view();
+
+        let info_id = egui::Id::new("document_info");
+        if let Some(id) = ctx.data(|d| d.get_temp::<uuid::Uuid>(info_id)) {
+            let mut open = true;
+            if let Some(project) = self.projects.iter().find(|p| p.id == id) {
+                egui::Window::new("Document Info")
+                    .open(&mut open)
+                    .show(ctx, |ui| {
+                        ui.label(&project.name);
+                        ui.label(format!(
+                            "{} × {} pixels",
+                            project.canvas_state.width, project.canvas_state.height
+                        ));
+                        ui.label(format!("{} layers", project.canvas_state.layers.len()));
+                        ui.label(
+                            project
+                                .path
+                                .as_ref()
+                                .map(|p| p.display().to_string())
+                                .unwrap_or_else(|| "Unsaved document".into()),
+                        );
+                    });
+            } else {
+                open = false;
+            }
+            if !open {
+                ctx.data_mut(|d| d.remove::<uuid::Uuid>(info_id));
+            }
+        }
 
         // Sync primary color from colors panel to tools
         self.tools_panel.properties.color = self.colors_panel.get_primary_color();
