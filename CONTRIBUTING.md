@@ -106,6 +106,7 @@ To add a new language:
 3. Open a PR with the new file.
 
 If you are updating an existing translation, check whether any keys in `en.txt` are missing from the file you are editing -- new features sometimes add new strings.
+Run `python locales/sync_locales.py --check --hidemissinglist --hideextralist` and then `python locales/sync_locales.py` before opening a PR to sort all locale files, align them with `en.txt`, and report any missing or extra keys.
 
 ---
 
