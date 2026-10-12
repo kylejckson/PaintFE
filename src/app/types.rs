@@ -67,6 +67,8 @@ struct PendingPasteRequest {
 struct PendingImport {
     bytes: std::sync::Arc<Vec<u8>>,
     name: String,
+    /// Native source, retained for normal document opening and Save As defaults.
+    source_path: Option<PathBuf>,
     /// Image dimensions when known (0 × 0 = not decoded yet).
     width: u32,
     height: u32,

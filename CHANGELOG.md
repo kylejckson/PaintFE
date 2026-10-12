@@ -6,6 +6,19 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.4] - 2026-10-12
+
+- Save As now uses the remembered export format for opened images too.
+- Made the Colors panel more compact at smaller sizes.
+- Fixed Save As folders after drag-and-drop and Windows command-line text.
+
+### Fixed
+
+- Kept the original folder when opening an image by drag-and-drop, so Save As starts in the right place. Closes #159.
+- Fixed garbled non-English text in the Windows command line and kept redirected output and errors working. Closes #160.
+- Applied the remembered export format to existing documents while keeping their name and folder.
+- Shrunk Colors controls to fit smaller panels, moved hex editing and copying into a popup when needed, and removed scrolling from the basic view. Small panel sizes are remembered after restarting.
+
 ## [1.4.3] - 2026-10-12
 
 - Fixed Contours preview overload when dragging sliders quickly.

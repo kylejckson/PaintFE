@@ -820,12 +820,16 @@ impl PaintFEApp {
                 close_clicked = true;
             }
             ui.style_mut().override_text_style = Some(egui::TextStyle::Small);
-            egui::ScrollArea::vertical()
-                .id_salt("color_panel_scroll")
-                .max_height(ui.available_height().max(100.0))
-                .show(ui, |ui| {
-                    self.colors_panel.show(ui, &self.assets);
-                });
+            if self.colors_panel.is_expanded() {
+                egui::ScrollArea::vertical()
+                    .id_salt("color_panel_scroll")
+                    .max_height(ui.available_height().max(100.0))
+                    .show(ui, |ui| {
+                        self.colors_panel.show(ui, &self.assets);
+                    });
+            } else {
+                self.colors_panel.show(ui, &self.assets);
+            }
         });
 
         if let Some(inner_resp) = resp {

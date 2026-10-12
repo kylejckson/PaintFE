@@ -1741,7 +1741,7 @@ impl AppSettings {
                         .ok()
                         .flatten()
                         .filter(|(w, h)| {
-                            w.is_finite() && h.is_finite() && *w >= 190.0 && *h >= 180.0
+                            w.is_finite() && h.is_finite() && *w >= 150.0 && *h >= 210.0
                         });
                 }
                 "persist_colors_section_mask" => {
@@ -2088,7 +2088,7 @@ mod refinement_tests {
             last_export_format: "webp".into(),
             last_export_directory: "saved exports".into(),
             recent_files: vec!["first.png".into(), "second.pfe".into()],
-            persist_colors_panel_size: Some((240.0, 400.0)),
+            persist_colors_panel_size: Some((150.0, 210.0)),
             onnx_graph_optimization: crate::ops::ai::GraphOptimization::Basic,
             onnx_cpu_memory_arena: true,
             ..Default::default()
@@ -2100,7 +2100,7 @@ mod refinement_tests {
         assert_eq!(restored.last_export_format, "webp");
         assert_eq!(restored.last_export_directory, "saved exports");
         assert_eq!(restored.recent_files, ["first.png", "second.pfe"]);
-        assert_eq!(restored.persist_colors_panel_size, Some((240.0, 400.0)));
+        assert_eq!(restored.persist_colors_panel_size, Some((150.0, 210.0)));
         assert!(restored.onnx_cpu_memory_arena);
         assert_eq!(
             restored.onnx_graph_optimization,

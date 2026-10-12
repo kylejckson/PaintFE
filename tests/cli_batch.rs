@@ -37,6 +37,38 @@ fn arg(s: &str) -> &std::ffi::OsStr {
 }
 
 #[test]
+fn cli_redirected_unicode_output_and_errors_remain_separate_utf8_streams() {
+    let fixture = Fixture::new();
+    let source = fixture.image("пример image.png");
+    let output = fixture.0.join("результат.png");
+    let result = fixture.run(&[
+        arg("--input"),
+        source.as_os_str(),
+        arg("--output"),
+        output.as_os_str(),
+        arg("--verbose"),
+    ]);
+    assert!(result.status.success());
+    let stdout = String::from_utf8(result.stdout).unwrap();
+    assert!(stdout.contains("пример image.png"), "{stdout}");
+    assert!(result.stderr.is_empty());
+    let missing_script = fixture.0.join("нет скрипта.rhai");
+    let result = fixture.run(&[
+        arg("--input"),
+        source.as_os_str(),
+        arg("--script"),
+        missing_script.as_os_str(),
+        arg("--output"),
+        output.as_os_str(),
+    ]);
+    assert!(!result.status.success());
+    assert!(result.stdout.is_empty());
+    let stderr = String::from_utf8(result.stderr).unwrap();
+    assert!(stderr.contains("нет скрипта.rhai"), "{stderr}");
+    assert!(stderr.contains("could not read script"), "{stderr}");
+}
+
+#[test]
 fn cli_crops_a_glob_batch_and_protects_existing_outputs() {
     let fixture = Fixture::new();
     let source = fixture.image("in/a.png");

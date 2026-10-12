@@ -117,13 +117,16 @@ fn sanitize_window_position(pos: (f32, f32)) -> Option<[f32; 2]> {
 fn main_inner() -> Result<(), eframe::Error> {
     // -- Windows console management ------------------------------------
     // The binary is SUBSYSTEM:WINDOWS so Windows never allocates a console.
-    // In CLI mode we attach to the parent terminal and reconnect stdio handles
-    // so that Rust's println!/eprintln! write to the correct console buffers.
+    // In CLI mode preserve inherited redirection and connect missing handles
+    // to the parent terminal for Rust's Unicode console output.
     #[cfg(target_os = "windows")]
     if cli::CliArgs::is_cli_mode() {
         unsafe extern "system" {
             fn AttachConsole(dwProcessId: u32) -> i32;
             fn SetStdHandle(nStdHandle: u32, hHandle: isize) -> i32;
+            fn GetStdHandle(nStdHandle: u32) -> isize;
+            fn GetFileType(hFile: isize) -> u32;
+            fn CloseHandle(hObject: isize) -> i32;
             fn CreateFileW(
                 lpFileName: *const u16,
                 dwDesiredAccess: u32,
@@ -144,34 +147,44 @@ fn main_inner() -> Result<(), eframe::Error> {
         const STD_ERROR_HANDLE: u32 = 0xFFFF_FFF4_u32; // -12
         const INVALID_HANDLE_VALUE: isize = -1;
         unsafe {
+            // AttachConsole can replace inherited standard handles. Retain valid
+            // ones first, including pipes, redirected files and NUL, per stream.
+            let inherited = [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE].map(|kind| {
+                let handle = GetStdHandle(kind);
+                (
+                    kind,
+                    handle,
+                    handle != 0 && handle != INVALID_HANDLE_VALUE && GetFileType(handle) != 0,
+                )
+            });
             AttachConsole(ATTACH_PARENT_PROCESS);
-            // Reopen CONOUT$ / CONIN$ so the process's std handles are valid.
             let conout: Vec<u16> = "CONOUT$\0".encode_utf16().collect();
             let conin: Vec<u16> = "CONIN$\0".encode_utf16().collect();
-            let hout = CreateFileW(
-                conout.as_ptr(),
-                GENERIC_WRITE,
-                FILE_SHARE_READ_WRITE,
-                std::ptr::null(),
-                OPEN_EXISTING,
-                0,
-                0,
-            );
-            if hout != INVALID_HANDLE_VALUE {
-                SetStdHandle(STD_OUTPUT_HANDLE, hout);
-                SetStdHandle(STD_ERROR_HANDLE, hout);
-            }
-            let hin = CreateFileW(
-                conin.as_ptr(),
-                GENERIC_READ,
-                FILE_SHARE_READ_WRITE,
-                std::ptr::null(),
-                OPEN_EXISTING,
-                0,
-                0,
-            );
-            if hin != INVALID_HANDLE_VALUE {
-                SetStdHandle(STD_INPUT_HANDLE, hin);
+            for (kind, handle, valid) in inherited {
+                if valid {
+                    SetStdHandle(kind, handle);
+                    continue;
+                }
+                // Rust uses GetConsoleMode to select Unicode console output.
+                // It needs GENERIC_READ even on the output buffer; write-only
+                // access makes UTF-8 bytes fall through to the legacy codepage.
+                let name = if kind == STD_INPUT_HANDLE {
+                    &conin
+                } else {
+                    &conout
+                };
+                let replacement = CreateFileW(
+                    name.as_ptr(),
+                    GENERIC_READ | GENERIC_WRITE,
+                    FILE_SHARE_READ_WRITE,
+                    std::ptr::null(),
+                    OPEN_EXISTING,
+                    0,
+                    0,
+                );
+                if replacement != INVALID_HANDLE_VALUE && SetStdHandle(kind, replacement) == 0 {
+                    CloseHandle(replacement);
+                }
             }
         }
     }

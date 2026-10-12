@@ -296,6 +296,7 @@ impl PaintFEApp {
             self.pending_import_queue.push(PendingImport {
                 bytes: std::sync::Arc::new(bytes),
                 name,
+                source_path: Some(path),
                 width: 0,
                 height: 0,
             });
@@ -306,9 +307,15 @@ impl PaintFEApp {
 
     /// Apply one import-dialog choice to a dropped image.
     /// 0 = Open in a new document, 1 = Add as Layer, anything else = Cancel.
-    fn apply_import_choice(&mut self, item: &PendingImport, choice: usize) {
+    fn apply_import_choice(&mut self, item: &PendingImport, choice: usize, current_time: f64) {
         match choice {
-            0 => self.open_image_from_bytes(&item.bytes, Some(item.name.clone())),
+            0 => {
+                if let Some(path) = &item.source_path {
+                    self.open_file_by_path(path.clone(), current_time);
+                } else {
+                    self.open_image_from_bytes(&item.bytes, Some(item.name.clone()));
+                }
+            }
             1 => {
                 let Ok(img) = image::load_from_memory(&item.bytes) else {
                     return; // undecodable — nothing to import
@@ -336,13 +343,13 @@ impl PaintFEApp {
     }
 
     /// Apply the retained batch choice until a size decision is required.
-    fn process_import_batch(&mut self) {
+    fn process_import_batch(&mut self, current_time: f64) {
         let Some(choice) = self.import_batch_choice else {
             return;
         };
         while self.pending_oversized_import.is_none() && !self.pending_import_queue.is_empty() {
             let item = self.pending_import_queue.remove(0);
-            self.apply_import_choice(&item, choice);
+            self.apply_import_choice(&item, choice, current_time);
         }
         if self.pending_import_queue.is_empty() {
             self.import_batch_choice = None;
@@ -832,7 +839,10 @@ impl PaintFEApp {
         };
         self.save_file_dialog.set_source_image(&composite);
         if let Some(path) = project.path.as_ref() {
-            self.save_file_dialog.set_from_path(path);
+            // Preserve the document name and folder while using the last export
+            // format, even when the source has a different extension.
+            self.save_file_dialog
+                .set_from_path(&path.with_extension(&self.settings.last_export_format));
         }
         if let Some(frames) = frame_images.as_ref() {
             self.save_file_dialog

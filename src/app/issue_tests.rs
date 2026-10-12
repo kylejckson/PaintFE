@@ -231,7 +231,7 @@ fn duplicate_document_has_independent_pixels_identity_path_and_history() {
 }
 
 #[test]
-fn save_as_prefers_document_path_and_restores_export_preference_for_new_files() {
+fn save_as_prefers_document_directory_and_remembered_format_for_all_files() {
     let mut app = app();
     app.settings.last_export_format = "jpg".into();
     app.settings.last_export_directory = "export-directory".into();
@@ -243,12 +243,94 @@ fn save_as_prefers_document_path_and_restores_export_preference_for_new_files() 
     );
     app.projects[0].path = Some(PathBuf::from("document-directory/original.pfe"));
     app.open_save_as_for_project(0);
-    assert_eq!(app.save_file_dialog.format(), SaveFormat::Pfe);
+    assert_eq!(app.save_file_dialog.format(), SaveFormat::Jpeg);
     assert_eq!(
         app.save_file_dialog.target_directory,
         Some(PathBuf::from("document-directory"))
     );
+    app.projects[0].path = Some(PathBuf::from("document-directory/photo.png"));
+    app.settings.last_export_format = "webp".into();
+    app.open_save_as_for_project(0);
+    assert_eq!(app.save_file_dialog.format(), SaveFormat::Webp);
 }
+#[test]
+fn dropped_native_image_retains_path_and_save_as_defaults() {
+    let mut app = app();
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target/drop-tests")
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(&root).unwrap();
+    let source = root.join("пример image.png");
+    image::RgbaImage::from_pixel(8, 6, image::Rgba([12, 34, 56, 255]))
+        .save(&source)
+        .unwrap();
+    app.queue_import_or_open(source.clone(), 1.0);
+    let item = app.pending_import_queue.remove(0);
+    assert_eq!(item.source_path.as_ref(), Some(&source));
+    app.apply_import_choice(&item, 0, 2.0);
+    assert_eq!(app.io_ops_start_time, Some(2.0));
+    let result = app
+        .io_receiver
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .unwrap();
+    app.io_sender.send(result).unwrap();
+    let ctx = egui::Context::default();
+    let _ = ctx.run_ui(egui::RawInput::default(), |_| {
+        app.update_runtime_lifecycle_async(&ctx);
+    });
+    let index = app.active_project_index;
+    assert_eq!(app.projects[index].path.as_ref(), Some(&source));
+    assert_eq!(
+        app.projects[index].file_handler.current_path.as_ref(),
+        Some(&source)
+    );
+    assert!(!app.projects[index].is_dirty);
+    assert_eq!(app.projects[index].canvas_state.width, 8);
+    app.settings.last_export_format = "webp".into();
+    app.open_save_as_for_project(index);
+    assert_eq!(app.save_file_dialog.target_directory.as_ref(), Some(&root));
+    assert_eq!(app.save_file_dialog.format(), SaveFormat::Webp);
+    let count = app.projects.len();
+    app.apply_import_choice(&item, 0, 3.0);
+    assert_eq!(app.projects.len(), count);
+    assert!(app.pending_open_paths.is_empty());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn dropped_layer_cancel_and_pathless_bytes_preserve_document_identity() {
+    let mut app = app();
+    let original = PathBuf::from("original/document.pfe");
+    app.projects[0].path = Some(original.clone());
+    let mut encoded = std::io::Cursor::new(Vec::new());
+    image::RgbaImage::from_pixel(4, 4, image::Rgba([12, 34, 56, 255]))
+        .write_to(&mut encoded, image::ImageFormat::Png)
+        .unwrap();
+    let item = PendingImport {
+        bytes: std::sync::Arc::new(encoded.into_inner()),
+        name: "Dropped Image.png".into(),
+        source_path: Some(PathBuf::from("different/source.png")),
+        width: 4,
+        height: 4,
+    };
+    let layers = app.projects[0].canvas_state.layers.len();
+    app.apply_import_choice(&item, 2, 0.0);
+    assert_eq!(app.projects[0].canvas_state.layers.len(), layers);
+    app.apply_import_choice(&item, 1, 0.0);
+    assert_eq!(app.projects[0].canvas_state.layers.len(), layers + 1);
+    assert_eq!(app.projects[0].path.as_ref(), Some(&original));
+    app.apply_import_choice(
+        &PendingImport {
+            source_path: None,
+            ..item
+        },
+        0,
+        0.0,
+    );
+    assert!(app.projects[app.active_project_index].path.is_none());
+    assert_eq!(app.projects[app.active_project_index].canvas_state.width, 4);
+}
+
 #[test]
 fn failed_ai_job_preserves_pixels_history_and_clean_state() {
     let mut app = app();

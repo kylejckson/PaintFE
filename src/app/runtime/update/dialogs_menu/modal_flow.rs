@@ -97,7 +97,7 @@ impl PaintFEApp {
         // Enter on "Add as Layer" must not also accept "Expand Canvas".
         let oversized_at_frame_start = self.pending_oversized_import.is_some();
         if !oversized_at_frame_start {
-            self.process_import_batch();
+            self.process_import_batch(ctx.input(|i| i.time));
             if self.pending_oversized_import.is_some() {
                 ctx.request_repaint();
             }
@@ -179,10 +179,10 @@ impl PaintFEApp {
             if let Some(choice) = import_choice {
                 if self.import_apply_to_all {
                     self.import_batch_choice = Some(choice);
-                    self.process_import_batch();
+                    self.process_import_batch(ctx.input(|i| i.time));
                 } else {
                     self.pending_import_queue.remove(0);
-                    self.apply_import_choice(&item, choice);
+                    self.apply_import_choice(&item, choice, ctx.input(|i| i.time));
                 }
                 self.import_apply_to_all = false;
                 ctx.request_repaint();

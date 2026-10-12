@@ -688,6 +688,7 @@ impl PaintFEApp {
                         self.pending_import_queue.push(PendingImport {
                             bytes: std::sync::Arc::new(bytes.to_vec()),
                             name: name_hint,
+                            source_path: None,
                             width: 0,
                             height: 0,
                         });

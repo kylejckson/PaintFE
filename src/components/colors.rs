@@ -5,8 +5,28 @@ use egui::{Color32, Pos2, Stroke, Vec2};
 
 const TAU: f32 = std::f32::consts::TAU;
 
-fn color_wheel_diameter(width: f32, height: f32) -> f32 {
-    width.min((height - 125.0).max(64.0)).clamp(64.0, 168.0)
+#[derive(Clone, Copy)]
+struct ColorLayout {
+    full: bool,
+    inline_hex: bool,
+    swatch: f32,
+    wheel: f32,
+}
+
+impl ColorLayout {
+    fn new(width: f32, height: f32, spacing: f32) -> Self {
+        let full = width >= 210.0 && height >= 245.0;
+        let inline_hex = width >= 175.0 && height >= 195.0;
+        let swatch = if full { 29.0 } else { 24.0 };
+        // Tabs, opacity, swatches and the gaps between rows own their space.
+        let controls = 24.0 + 2.0 + 22.0 + swatch + if full { 17.0 } else { 0.0 } + spacing * 4.0;
+        Self {
+            full,
+            inline_hex,
+            swatch,
+            wheel: width.min((height - controls).max(64.0)).clamp(64.0, 168.0),
+        }
+    }
 }
 
 // ============================================================================
@@ -36,6 +56,8 @@ pub struct ColorsPanel {
     hex_buffer: String,
     hex_editing: bool,
     hex_invalid: bool,
+    hex_draft: bool,
+    hex_field_id: Option<egui::Id>,
     sections: [bool; 3],
 }
 
@@ -52,6 +74,8 @@ impl Default for ColorsPanel {
             hex_buffer: String::new(),
             hex_editing: false,
             hex_invalid: false,
+            hex_draft: false,
+            hex_field_id: None,
             sections: [true, false, false],
         }
     }
@@ -187,11 +211,16 @@ impl ColorsPanel {
             egui::vec2(5.0, 5.0) * crate::ui::polish::settings(ui.ctx()).spacing_scale;
         ui.style_mut().animation_time =
             crate::ui::polish::duration(ui.ctx(), crate::ui::polish::MotionKind::Expansion);
+        let layout = ColorLayout::new(
+            ui.available_width(),
+            ui.available_height().min(ui.clip_rect().height()),
+            ui.spacing().item_spacing.y,
+        );
         let mut mode = usize::from(self.expanded);
         cw::tabs(ui, "color_modes", &["Color", "Advanced"], &mut mode);
         self.expanded = mode == 1;
         ui.add_space(2.0);
-        let diameter = color_wheel_diameter(ui.available_width(), ui.clip_rect().height());
+        let diameter = layout.wheel;
         ui.horizontal(|ui| {
             ui.add_space((ui.available_width() - diameter).max(0.0) * 0.5);
             self.draw_hue_ring_and_sv_triangle(ui, diameter);
@@ -209,44 +238,73 @@ impl ColorsPanel {
         ) {
             self.apply_hsv([h, s, v], alpha.round() as u8);
         }
-        let compact = ui.available_width() < 180.0;
+        let mut hex_shown = false;
         ui.horizontal(|ui| {
             for (primary, title) in [(true, "Primary"), (false, "Secondary")] {
                 ui.vertical(|ui| {
-                    ui.label(
-                        egui::RichText::new(title)
-                            .size(9.0)
-                            .color(ui.visuals().weak_text_color()),
-                    );
+                    if layout.full {
+                        ui.label(
+                            egui::RichText::new(title)
+                                .size(9.0)
+                                .color(ui.visuals().weak_text_color()),
+                        );
+                    }
                     let color = if primary {
                         self.primary_color
                     } else {
                         self.secondary_color
                     };
-                    if cw::swatch(ui, title, color, 29.0, self.editing_primary == primary).clicked()
+                    if cw::swatch(
+                        ui,
+                        title,
+                        color,
+                        layout.swatch,
+                        self.editing_primary == primary,
+                    )
+                    .on_hover_text(title)
+                    .clicked()
                     {
                         self.editing_primary = primary;
                         self.hex_editing = false;
+                        self.hex_draft = false;
+                        self.hex_invalid = false;
                     }
                 });
                 if primary {
                     ui.vertical(|ui| {
-                        ui.add_space(17.0);
+                        if layout.full {
+                            ui.add_space(17.0);
+                        }
                         if cw::icon_button(ui, "Swap Primary and Secondary", false).clicked() {
                             self.swap_colors();
                         }
                     });
                 }
             }
-            if !compact {
+            if layout.inline_hex {
                 ui.vertical(|ui| {
-                    ui.add_space(17.0);
-                    self.draw_hex_row(ui);
+                    if layout.full {
+                        ui.add_space(17.0);
+                    }
+                    self.draw_hex_row(ui, layout.full);
+                    hex_shown = true;
                 });
+            } else {
+                let menu = ui.menu_button("...", |ui| {
+                    ui.set_min_width(120.0);
+                    ui.label("Hex color");
+                    self.draw_hex_row(ui, true);
+                    hex_shown = true;
+                });
+                menu.response.on_hover_text("Edit or copy hex color");
             }
         });
-        if compact {
-            self.draw_hex_row(ui);
+        // A hidden hex field must not keep suppressing canvas shortcuts.
+        if !hex_shown {
+            if let Some(id) = self.hex_field_id {
+                ui.memory_mut(|m| m.surrender_focus(id));
+            }
+            self.hex_editing = false;
         }
         let id = ui.id().with("advanced_rollout");
         let mut rollout =
@@ -284,10 +342,10 @@ impl ColorsPanel {
             self.secondary_color = color;
         }
     }
-    fn draw_hex_row(&mut self, ui: &mut egui::Ui) {
+    fn draw_hex_row(&mut self, ui: &mut egui::Ui, show_copy: bool) {
         let [h, s, v] = self.active_hsv();
         let current = cw::hex(hsv_to_color(h, s, v, 255));
-        if !self.hex_editing {
+        if !self.hex_editing && !self.hex_draft {
             self.hex_buffer.clone_from(&current);
         }
         egui::Frame::new()
@@ -313,12 +371,15 @@ impl ColorsPanel {
                             .frame(egui::Frame::NONE),
                     );
                     let was_editing = self.hex_editing;
+                    self.hex_field_id = Some(response.id);
+                    self.hex_draft |= response.changed();
                     self.hex_editing = response.has_focus();
                     if (was_editing || response.has_focus() || response.lost_focus())
                         && escape_pressed
                     {
                         self.hex_buffer.clone_from(&current);
                         self.hex_invalid = false;
+                        self.hex_draft = false;
                         response.surrender_focus();
                         self.hex_editing = false;
                     } else if response.lost_focus() || (response.has_focus() && enter_pressed) {
@@ -326,6 +387,7 @@ impl ColorsPanel {
                             let hsv = preserve_hue(cw::rgba(r, g, b, 255), self.active_hsv());
                             self.apply_hsv(hsv, self.active_color().a());
                             self.hex_invalid = false;
+                            self.hex_draft = false;
                             response.surrender_focus();
                             self.hex_editing = false;
                         } else {
@@ -334,7 +396,7 @@ impl ColorsPanel {
                             self.hex_editing = true;
                         }
                     }
-                    if cw::icon_button(ui, "Copy hex color", true).clicked() {
+                    if show_copy && cw::icon_button(ui, "Copy hex color", true).clicked() {
                         ui.ctx().copy_text(current);
                     }
                 });
@@ -841,10 +903,70 @@ mod redesign_tests {
     use super::*;
     #[test]
     fn wheel_scales_to_both_dimensions_and_stops_growing() {
-        assert_eq!(color_wheel_diameter(220., 400.), 168.);
-        assert_eq!(color_wheel_diameter(120., 400.), 120.);
-        assert_eq!(color_wheel_diameter(220., 220.), 95.);
-        assert_eq!(color_wheel_diameter(120., 180.), 64.);
+        assert_eq!(ColorLayout::new(220., 400., 5.).wheel, 168.);
+        assert_eq!(ColorLayout::new(120., 400., 5.).wheel, 120.);
+        assert!(ColorLayout::new(220., 180., 5.).wheel < 100.);
+        assert!(!ColorLayout::new(120., 180., 5.).inline_hex);
+        assert!(!ColorLayout::new(190., 220., 5.).full);
+        assert!(ColorLayout::new(190., 220., 5.).inline_hex);
+    }
+    #[test]
+    fn basic_layout_fits_small_and_large_bodies_in_both_themes() {
+        let assets = Assets::new();
+        for dark in [false, true] {
+            for width in [120.0, 150.0, 180.0, 196.0, 216.0] {
+                for height in [150.0, 180.0, 220.0, 270.0] {
+                    let ctx = egui::Context::default();
+                    ctx.set_visuals(if dark {
+                        egui::Visuals::dark()
+                    } else {
+                        egui::Visuals::light()
+                    });
+                    let mut panel = ColorsPanel::default();
+                    let bounds = egui::Rect::from_min_size(
+                        egui::pos2(20.0, 20.0),
+                        egui::vec2(width, height),
+                    );
+                    let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                        let mut body = ui.new_child(egui::UiBuilder::new().max_rect(bounds));
+                        body.set_clip_rect(bounds);
+                        panel.show(&mut body, &assets);
+                        let used = body.min_rect();
+                        assert!(
+                            used.right() <= bounds.right() + 1.0,
+                            "width overflow at {width} x {height}: {used:?}"
+                        );
+                        assert!(
+                            used.bottom() <= bounds.bottom() + 1.0,
+                            "height overflow at {width} x {height}: {used:?}"
+                        );
+                    });
+                }
+            }
+        }
+    }
+    #[test]
+    fn hiding_hex_releases_focus_and_preserves_the_draft() {
+        let ctx = egui::Context::default();
+        let assets = Assets::new();
+        let mut panel = ColorsPanel::default();
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            panel.draw_hex_row(ui, true);
+            ui.memory_mut(|m| m.request_focus(panel.hex_field_id.unwrap()));
+        });
+        panel.hex_buffer = "#12".into();
+        panel.hex_draft = true;
+        panel.hex_editing = true;
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let bounds = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(120., 150.));
+            let mut body = ui.new_child(egui::UiBuilder::new().max_rect(bounds));
+            body.set_clip_rect(bounds);
+            panel.show(&mut body, &assets);
+        });
+        assert!(!panel.is_hex_editing());
+        assert!(!ctx.memory(|m| m.has_focus(panel.hex_field_id.unwrap())));
+        assert_eq!(panel.hex_buffer, "#12");
+        assert!(panel.hex_draft);
     }
     #[test]
     fn escape_restores_invalid_hex_even_after_focus_is_cleared() {
@@ -865,7 +987,7 @@ mod redesign_tests {
             }],
             ..Default::default()
         };
-        let _ = ctx.run_ui(input, |ui| panel.draw_hex_row(ui));
+        let _ = ctx.run_ui(input, |ui| panel.draw_hex_row(ui, true));
         assert_eq!(panel.hex_buffer, "#000000");
         assert!(!panel.hex_invalid && !panel.hex_editing);
     }
