@@ -2054,25 +2054,25 @@ impl PaintFEApp {
                     let mut tab_rects: Vec<egui::Rect> = Vec::new();
 
                     let offset_id = egui::Id::new("project_tabs_offset");
-                    let mut offset = ctx.data(|d| d.get_temp::<f32>(offset_id)).unwrap_or(0.0);
-                    if ui
-                        .small_button("◀")
-                        .on_hover_text("Scroll tabs left")
-                        .clicked()
-                    {
-                        offset = (offset - 240.0).max(0.0);
-                    }
-                    if ui
-                        .small_button("▶")
-                        .on_hover_text("Scroll tabs right")
-                        .clicked()
-                    {
-                        offset += 240.0;
+                    let offset = ctx.data(|d| d.get_temp::<f32>(offset_id)).unwrap_or(0.0);
+                    let width_id = egui::Id::new("project_tabs_content_width");
+                    let previous_width = ctx.data(|d| d.get_temp::<f32>(width_id)).unwrap_or(0.0);
+                    let strip = egui::Rect::from_min_size(
+                        ui.cursor().min,
+                        egui::vec2(ui.available_width(), ui.available_height()),
+                    );
+                    let overflowing = previous_width > strip.width() + 1.0;
+                    // Keep both gutters stable while scrolling; only paint arrows
+                    // for the directions that still have hidden tabs.
+                    let gutter = if overflowing { 22.0 } else { 0.0 };
+                    if overflowing {
+                        ui.add_space(gutter);
                     }
                     let scroll_out = egui::ScrollArea::horizontal()
                         .id_salt("project_tabs_scroll")
                         .horizontal_scroll_offset(offset)
-                        .max_width(ui.available_width())
+                        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                        .max_width((strip.width() - 2.0 * gutter).max(1.0))
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 2.0;
@@ -2549,6 +2549,60 @@ impl PaintFEApp {
                             });
                         });
                     let mut next_offset = scroll_out.state.offset.x;
+                    let max_offset =
+                        (scroll_out.content_size.x - scroll_out.inner_rect.width()).max(0.0);
+                    if overflowing {
+                        for (right, visible) in [
+                            (false, next_offset > 1.0),
+                            (true, next_offset < max_offset - 1.0),
+                        ] {
+                            if !visible {
+                                continue;
+                            }
+                            let center = egui::pos2(
+                                if right {
+                                    strip.right() - 11.0
+                                } else {
+                                    strip.left() + 11.0
+                                },
+                                scroll_out.inner_rect.center().y,
+                            );
+                            let response = ui
+                                .interact(
+                                    egui::Rect::from_center_size(center, egui::vec2(20.0, 24.0)),
+                                    egui::Id::new(("project_tabs_arrow", right)),
+                                    egui::Sense::click(),
+                                )
+                                .on_hover_text(if right {
+                                    "Scroll tabs right"
+                                } else {
+                                    "Scroll tabs left"
+                                });
+                            let color = if response.hovered() {
+                                self.theme.accent
+                            } else {
+                                ui.visuals().weak_text_color().gamma_multiply(0.6)
+                            };
+                            let direction = if right { 1.0 } else { -1.0 };
+                            ui.painter().add(egui::Shape::line(
+                                vec![
+                                    center + egui::vec2(-direction * 2.0, -4.0),
+                                    center + egui::vec2(direction * 2.0, 0.0),
+                                    center + egui::vec2(-direction * 2.0, 4.0),
+                                ],
+                                egui::Stroke::new(1.5, color),
+                            ));
+                            if response.clicked() {
+                                next_offset =
+                                    (next_offset + direction * 240.0).clamp(0.0, max_offset);
+                                ctx.request_repaint();
+                            }
+                        }
+                    }
+                    if (previous_width - scroll_out.content_size.x).abs() > 1.0 {
+                        ctx.request_repaint();
+                    }
+                    ctx.data_mut(|d| d.insert_temp(width_id, scroll_out.content_size.x));
                     if scroll_out.inner_rect.contains(
                         ctx.input(|i| i.pointer.hover_pos())
                             .unwrap_or(egui::Pos2::ZERO),
@@ -2560,7 +2614,7 @@ impl PaintFEApp {
                         });
                         next_offset = (next_offset - wheel).max(0.0);
                     }
-                    ctx.data_mut(|d| d.insert_temp(offset_id, next_offset));
+                    ctx.data_mut(|d| d.insert_temp(offset_id, next_offset.clamp(0.0, max_offset)));
                     if let Some((id, action)) = document_action
                         && let Some(idx) = self.projects.iter().position(|p| p.id == id)
                     {

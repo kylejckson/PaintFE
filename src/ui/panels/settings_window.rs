@@ -1069,6 +1069,49 @@ impl SettingsWindow {
         }
         ui.add_space(8.0);
 
+        Self::section_header(ui, &t!("settings.interface.resize_grip"));
+        let mut grip_changed = false;
+        ui.horizontal(|ui| {
+            let mut automatic = settings.resize_grip_color.is_none();
+            if ui
+                .checkbox(&mut automatic, t!("settings.interface.resize_grip_auto"))
+                .changed()
+            {
+                settings.resize_grip_color = if automatic {
+                    None
+                } else {
+                    Some(ctx.global_style().visuals.weak_text_color().to_opaque())
+                };
+                grip_changed = true;
+            }
+            if let Some(color) = settings.resize_grip_color.as_mut() {
+                grip_changed |= egui::color_picker::color_edit_button_srgba(
+                    ui,
+                    color,
+                    egui::color_picker::Alpha::Opaque,
+                )
+                .changed();
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label(t!("settings.interface.resize_grip_opacity"));
+            grip_changed |= ui
+                .add(
+                    egui::Slider::new(&mut settings.resize_grip_opacity, 0.0..=1.0)
+                        .custom_formatter(|value, _| format!("{:.0}%", value * 100.0)),
+                )
+                .changed();
+            if ui.button("↺").clicked() {
+                settings.resize_grip_color = None;
+                settings.resize_grip_opacity = 0.5;
+                grip_changed = true;
+            }
+        });
+        if grip_changed {
+            settings.save();
+        }
+        ui.add_space(8.0);
+
         // -- Theme ----------------------------------------------------
         Self::section_header(ui, &t!("settings.interface.theme_mode"));
         egui::Grid::new("interface_theme_grid")

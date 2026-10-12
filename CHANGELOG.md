@@ -6,18 +6,25 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
-## [Unreleased]
+## [1.4.3] - 2026-10-12
 
-- Kept effect previews responsive during rapid slider changes.
-- Fixed jumping floating-panel resize gestures and improved compact Colors layouts.
-- Made logs quieter and easier to use when investigating crashes.
+- Fixed Contours preview overload when dragging sliders quickly.
+- Made panel resizing steadier, with smaller Colors layouts and subtler resize grips.
+- Tidied tab scrolling and improved crash logs.
 
 ### Fixed
 
-- Bounded live-preview work to one running calculation and the latest queued request; Contours now stops superseded calculations between rows. References #156.
-- Logged dialog openings once, used local dates and times, and included panic backtraces and filter errors in the log file. References #156.
-- Removed competing native/custom resize handling for Colors, Layers, History and Palette; resize gestures keep the top-left anchored and stop at the screen edge. References #157.
-- Scaled the color ring and triangle to the available width and height, adapted narrow controls, and capped oversized Colors windows. References #152.
+- Limited queued effect previews and stopped outdated Contours calculations. Cancel and disabling live preview restore the original image. Closes #156.
+- Fixed jumping resize gestures for Colors, Layers, History and Palette. Panels keep their top-left corner in place and stop at the screen edge. Closes #157.
+- Made the Colors ring and triangle shrink with the panel and limited oversized layouts. Follow-up to #152.
+- Moved tab scroll arrows to opposite ends of the tab strip. They appear only when tabs are hidden in that direction, with no button background and an accent color on hover. Follow-up to #149.
+- Stopped repeated dialog-opening log entries, used local timestamps and added panic backtraces and filter errors to the log file.
+
+### Added
+
+- Added resize-grip color and opacity controls in Preferences > Interface. Grips now use two stripes at half the previous opacity by default.
+
+Further testing is continuing.
 
 ## [1.4.2] - 2026-10-10
 

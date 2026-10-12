@@ -59,6 +59,9 @@ pub struct AppSettings {
     pub max_undo_steps: usize,
     pub middle_click_close_tabs: bool,
     pub tooltip_delay: f32,
+    /// None follows the current theme's subtle text color.
+    pub resize_grip_color: Option<Color32>,
+    pub resize_grip_opacity: f32,
     pub last_export_format: String,
     pub last_export_directory: String,
     pub recent_files: Vec<String>,
@@ -315,6 +318,8 @@ impl Default for AppSettings {
             select_after_paste: false,
             middle_click_close_tabs: true,
             tooltip_delay: 0.5,
+            resize_grip_color: None,
+            resize_grip_opacity: 0.5,
             last_export_format: "png".into(),
             last_export_directory: String::new(),
             recent_files: Vec::new(),
@@ -1019,6 +1024,14 @@ impl AppSettings {
             ("ui_polish", serde_json::to_string(&self.ui_polish)),
             ("tooltip_delay", serde_json::to_string(&self.tooltip_delay)),
             (
+                "resize_grip_color",
+                serde_json::to_string(&self.resize_grip_color.map(|c| [c.r(), c.g(), c.b()])),
+            ),
+            (
+                "resize_grip_opacity",
+                serde_json::to_string(&self.resize_grip_opacity),
+            ),
+            (
                 "last_export_format",
                 serde_json::to_string(&self.last_export_format),
             ),
@@ -1604,6 +1617,18 @@ impl AppSettings {
                         && delay.is_finite()
                     {
                         s.tooltip_delay = delay.clamp(0.0, 3.0);
+                    }
+                }
+                "resize_grip_color" => {
+                    if let Ok(value) = serde_json::from_str::<Option<[u8; 3]>>(val) {
+                        s.resize_grip_color = value.map(|[r, g, b]| Color32::from_rgb(r, g, b));
+                    }
+                }
+                "resize_grip_opacity" => {
+                    if let Ok(value) = val.parse::<f32>()
+                        && value.is_finite()
+                    {
+                        s.resize_grip_opacity = value.clamp(0.0, 1.0);
                     }
                 }
                 "last_export_format" => {

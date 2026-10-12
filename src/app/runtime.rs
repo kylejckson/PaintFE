@@ -3,8 +3,12 @@ impl eframe::App for PaintFEApp {
         #[cfg(target_os = "windows")]
         {
             crate::windows_key_probe::bridge_raw_input(input);
-            ctx.data_mut(|d| { d.insert_temp(egui::Id::new("native_keyboard_bridge"), true); });
-            if !input.focused { self.settings.keybindings.discard_pending_presses(ctx); }
+            ctx.data_mut(|d| {
+                d.insert_temp(egui::Id::new("native_keyboard_bridge"), true);
+            });
+            if !input.focused {
+                self.settings.keybindings.discard_pending_presses(ctx);
+            }
         }
         #[cfg(not(target_os = "windows"))]
         let _ = (ctx, input);
@@ -21,9 +25,20 @@ impl eframe::App for PaintFEApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        ctx.data_mut(|d| {
+            d.insert_temp(
+                egui::Id::new("resize_grip_appearance"),
+                (
+                    self.settings.resize_grip_color,
+                    self.settings.resize_grip_opacity,
+                ),
+            )
+        });
         for theme in [egui::Theme::Dark, egui::Theme::Light] {
             if ctx.style_of(theme).interaction.tooltip_delay != self.settings.tooltip_delay {
-                ctx.style_mut_of(theme, |style| style.interaction.tooltip_delay = self.settings.tooltip_delay);
+                ctx.style_mut_of(theme, |style| {
+                    style.interaction.tooltip_delay = self.settings.tooltip_delay
+                });
             }
         }
         let _profile = crate::ui::perf::Frame::begin(&ctx, frame.info().cpu_usage);

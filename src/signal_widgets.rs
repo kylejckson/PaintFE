@@ -594,8 +594,14 @@ pub(crate) fn floating_resize(
     let grip = egui::Rect::from_min_max(response.rect.max - Vec2::splat(18.0), response.rect.max);
     if response.enabled() {
         let painter = ctx.layer_painter(response.layer_id);
-        let color = ctx.global_style().visuals.weak_text_color();
-        for offset in [5.0, 9.0, 13.0] {
+        let (custom_color, opacity) = ctx.data_mut(|d| {
+            d.get_temp::<(Option<Color32>, f32)>(egui::Id::new("resize_grip_appearance"))
+                .unwrap_or((None, 0.5))
+        });
+        let color = custom_color
+            .unwrap_or_else(|| ctx.global_style().visuals.weak_text_color())
+            .gamma_multiply(opacity.clamp(0.0, 1.0));
+        for offset in [9.0, 13.0] {
             painter.line_segment(
                 [
                     response.rect.max - egui::vec2(offset, 3.0),
