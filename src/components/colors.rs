@@ -5,6 +5,10 @@ use egui::{Color32, Pos2, Stroke, Vec2};
 
 const TAU: f32 = std::f32::consts::TAU;
 
+fn color_wheel_diameter(width: f32, height: f32) -> f32 {
+    width.min((height - 125.0).max(64.0)).clamp(64.0, 168.0)
+}
+
 // ============================================================================
 // Interaction zone for the combined ring + triangle widget
 // ============================================================================
@@ -187,9 +191,10 @@ impl ColorsPanel {
         cw::tabs(ui, "color_modes", &["Color", "Advanced"], &mut mode);
         self.expanded = mode == 1;
         ui.add_space(2.0);
+        let diameter = color_wheel_diameter(ui.available_width(), ui.clip_rect().height());
         ui.horizontal(|ui| {
-            ui.add_space((ui.available_width() - 168.0).max(0.0) * 0.5);
-            self.draw_hue_ring_and_sv_triangle(ui);
+            ui.add_space((ui.available_width() - diameter).max(0.0) * 0.5);
+            self.draw_hue_ring_and_sv_triangle(ui, diameter);
         });
         let [h, s, v] = self.active_hsv();
         let mut alpha = self.active_color().a() as f32;
@@ -204,6 +209,7 @@ impl ColorsPanel {
         ) {
             self.apply_hsv([h, s, v], alpha.round() as u8);
         }
+        let compact = ui.available_width() < 180.0;
         ui.horizontal(|ui| {
             for (primary, title) in [(true, "Primary"), (false, "Secondary")] {
                 ui.vertical(|ui| {
@@ -232,11 +238,16 @@ impl ColorsPanel {
                     });
                 }
             }
-            ui.vertical(|ui| {
-                ui.add_space(17.0);
-                self.draw_hex_row(ui);
-            });
+            if !compact {
+                ui.vertical(|ui| {
+                    ui.add_space(17.0);
+                    self.draw_hex_row(ui);
+                });
+            }
         });
+        if compact {
+            self.draw_hex_row(ui);
+        }
         let id = ui.id().with("advanced_rollout");
         let mut rollout =
             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
@@ -472,12 +483,12 @@ impl ColorsPanel {
         }
     }
 
-    fn draw_hue_ring_and_sv_triangle(&mut self, ui: &mut egui::Ui) {
+    fn draw_hue_ring_and_sv_triangle(&mut self, ui: &mut egui::Ui, diameter: f32) {
         // -- geometry --
-        let outer_r: f32 = ((ui.available_width().min(168.0) - 12.0) * 0.5).max(48.0);
-        let ring_w: f32 = 16.0;
+        let outer_r: f32 = (diameter - 12.0) * 0.5;
+        let ring_w: f32 = 16.0 * diameter / 168.0;
         let inner_r = outer_r - ring_w;
-        let tri_r = inner_r - 3.0; // small gap between ring & triangle
+        let tri_r = inner_r - 3.0 * diameter / 168.0;
 
         let widget_size = Vec2::splat(outer_r * 2.0 + 12.0); // room for indicators
         let (rect, response) = ui.allocate_exact_size(widget_size, egui::Sense::click_and_drag());
@@ -828,6 +839,13 @@ fn hsl_to_hsv([h, s, l]: [f32; 3]) -> [f32; 3] {
 #[cfg(test)]
 mod redesign_tests {
     use super::*;
+    #[test]
+    fn wheel_scales_to_both_dimensions_and_stops_growing() {
+        assert_eq!(color_wheel_diameter(220., 400.), 168.);
+        assert_eq!(color_wheel_diameter(120., 400.), 120.);
+        assert_eq!(color_wheel_diameter(220., 220.), 95.);
+        assert_eq!(color_wheel_diameter(120., 180.), 64.);
+    }
     #[test]
     fn escape_restores_invalid_hex_even_after_focus_is_cleared() {
         let ctx = egui::Context::default();

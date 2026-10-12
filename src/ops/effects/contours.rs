@@ -64,6 +64,23 @@ pub fn contours_core(
     blend: f32,
     mask: Option<&GrayImage>,
 ) -> RgbaImage {
+    contours_core_cancellable(
+        flat, scale, frequency, line_width, line_color, seed, octaves, blend, mask, None,
+    )
+}
+
+pub fn contours_core_cancellable(
+    flat: &RgbaImage,
+    scale: f32,
+    frequency: f32,
+    line_width: f32,
+    line_color: [u8; 4],
+    seed: u32,
+    octaves: u32,
+    blend: f32,
+    mask: Option<&GrayImage>,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> RgbaImage {
     let w = flat.width() as usize;
     let h = flat.height() as usize;
     if w == 0 || h == 0 {
@@ -81,7 +98,7 @@ pub fn contours_core(
     // Frequency controls how many contour levels in the 0..1 noise range
     let freq = frequency.max(0.5);
 
-    apply_per_pixel(flat, mask, |x, y, r, g, b, a| {
+    apply_per_pixel_cancellable(flat, mask, cancel, |x, y, r, g, b, a| {
         // Sample noise field
         let sx = x as f32 * inv_scale;
         let sy = y as f32 * inv_scale;

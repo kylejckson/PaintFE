@@ -23,6 +23,7 @@ dependencies = [
  "imagepipe",
  "js-sys",
  "kurbo",
+ "libc",
  "libloading",
  "png 0.17.16",
  "pollster",

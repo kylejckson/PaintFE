@@ -12,8 +12,7 @@
 //! Usage — anywhere in the crate use the `log_info!` / `log_warn!` / `log_err!`
 //! macros, or call `crate::logger::write_line(...)` directly.  The standard
 //! `eprintln!` / `println!` calls you already have in the codebase continue to
-//! work normally (they are captured via a custom panic hook and mirrored to the
-//! log file).
+//! write to the console; use the logging macros for messages needed in the file.
 
 use crate::time_compat::{SystemTime, UNIX_EPOCH};
 use std::fs::{self, File, OpenOptions};
@@ -110,8 +109,17 @@ pub fn init() {
     let prev = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let msg = format!("PANIC: {}", info);
-        write_line(&format!("[{}] [PANIC] {}", timestamp(), msg));
-        // Flush by dropping the lock immediately (write_line already dropped it)
+        write_line(&format!(
+            "[{}] [PANIC] {}\n{}",
+            timestamp(),
+            msg,
+            std::backtrace::Backtrace::force_capture()
+        ));
+        if let Some(mutex) = LOG_FILE.get()
+            && let Ok(mut file) = mutex.lock()
+        {
+            let _ = file.flush();
+        }
         prev(info);
     }));
 }
@@ -122,6 +130,9 @@ fn log_file_path() -> PathBuf {
 
 /// Simple seconds-since-epoch timestamp string.
 fn timestamp() -> String {
+    if let Some(local) = local_timestamp() {
+        return local;
+    }
     match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(d) => {
             let secs = d.as_secs();
@@ -129,7 +140,7 @@ fn timestamp() -> String {
             let h = (secs % 86400) / 3600;
             let m = (secs % 3600) / 60;
             let s = secs % 60;
-            format!("{:02}:{:02}:{:02}", h, m, s)
+            format!("{:02}:{:02}:{:02} UTC", h, m, s)
         }
         Err(_) => "??:??:??".to_string(),
     }
@@ -137,6 +148,9 @@ fn timestamp() -> String {
 
 /// Human-readable date-time for the session header.
 fn human_timestamp() -> String {
+    if let Some(local) = local_timestamp() {
+        return local;
+    }
     match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(d) => {
             let secs = d.as_secs();
@@ -144,5 +158,49 @@ fn human_timestamp() -> String {
             format!("(unix {})", secs)
         }
         Err(_) => "(unknown time)".to_string(),
+    }
+}
+
+fn local_timestamp() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut time = std::mem::MaybeUninit::uninit();
+        // GetLocalTime always initializes the provided SYSTEMTIME.
+        unsafe {
+            winapi::um::sysinfoapi::GetLocalTime(time.as_mut_ptr());
+        }
+        let time = unsafe { time.assume_init() };
+        Some(format!(
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+            time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute, time.wSecond
+        ))
+    }
+    #[cfg(unix)]
+    {
+        let seconds: libc::time_t = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .ok()?
+            .as_secs()
+            .try_into()
+            .ok()?;
+        let mut time = std::mem::MaybeUninit::<libc::tm>::uninit();
+        // localtime_r writes caller-owned storage and does not use a shared tm buffer.
+        if unsafe { libc::localtime_r(&seconds, time.as_mut_ptr()) }.is_null() {
+            return None;
+        }
+        let time = unsafe { time.assume_init() };
+        Some(format!(
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+            time.tm_year + 1900,
+            time.tm_mon + 1,
+            time.tm_mday,
+            time.tm_hour,
+            time.tm_min,
+            time.tm_sec
+        ))
+    }
+    #[cfg(not(any(target_os = "windows", unix)))]
+    {
+        None
     }
 }

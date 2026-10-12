@@ -54,6 +54,18 @@ fn apply_per_pixel<F>(flat: &RgbaImage, mask: Option<&GrayImage>, transform: F) 
 where
     F: Fn(u32, u32, f32, f32, f32, f32) -> (f32, f32, f32, f32) + Sync,
 {
+    apply_per_pixel_cancellable(flat, mask, None, transform)
+}
+
+fn apply_per_pixel_cancellable<F>(
+    flat: &RgbaImage,
+    mask: Option<&GrayImage>,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+    transform: F,
+) -> RgbaImage
+where
+    F: Fn(u32, u32, f32, f32, f32, f32) -> (f32, f32, f32, f32) + Sync,
+{
     let w = flat.width() as usize;
     let h = flat.height() as usize;
     if w == 0 || h == 0 {
@@ -71,6 +83,9 @@ where
         .par_chunks_mut(stride)
         .enumerate()
         .for_each(|(y, row_out)| {
+            if cancel.is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed)) {
+                return;
+            }
             let row_in = &src_raw[y * stride..(y + 1) * stride];
             for x in 0..w {
                 let pi = x * 4;
@@ -168,3 +183,37 @@ include!("effects/render.rs");
 include!("effects/glitch.rs");
 include!("effects/artistic.rs");
 include!("effects/contours.rs");
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+
+    #[test]
+    fn cancelled_rows_skip_pixel_work_and_normal_contours_match() {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        let image = RgbaImage::from_pixel(64, 64, Rgba([180, 120, 70, 255]));
+        let cancel = AtomicBool::new(true);
+        let visits = AtomicUsize::new(0);
+        apply_per_pixel_cancellable(&image, None, Some(&cancel), |_, _, r, g, b, a| {
+            visits.fetch_add(1, Ordering::Relaxed);
+            (r, g, b, a)
+        });
+        assert_eq!(visits.load(Ordering::Relaxed), 0);
+        cancel.store(false, Ordering::Relaxed);
+        assert_eq!(
+            contours_core(&image, 30., 8., 1.5, [0, 0, 0, 255], 42, 3, 1., None),
+            contours_core_cancellable(
+                &image,
+                30.,
+                8.,
+                1.5,
+                [0, 0, 0, 255],
+                42,
+                3,
+                1.,
+                None,
+                Some(&cancel)
+            )
+        );
+    }
+}

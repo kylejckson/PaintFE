@@ -177,7 +177,10 @@ impl PaintFEApp {
                 }
             }
         }
-        assets.reload_icons(&cc.egui_ctx, matches!(theme.mode, crate::theme::ThemeMode::Dark));
+        assets.reload_icons(
+            &cc.egui_ctx,
+            matches!(theme.mode, crate::theme::ThemeMode::Dark),
+        );
 
         let (filter_sender, filter_receiver) = mpsc::channel();
         let (io_sender, io_receiver) = mpsc::channel();
@@ -273,6 +276,8 @@ impl PaintFEApp {
             filter_ops_start_time: None,
             filter_status_description: String::new(),
             preview_job_token: 1,
+            preview_job_running: false,
+            pending_preview: None,
             filter_cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             canvas_op_sender,
             canvas_op_receiver,

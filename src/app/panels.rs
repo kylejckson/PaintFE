@@ -333,11 +333,11 @@ impl PaintFEApp {
         let mut window = crate::ui::polish::window(ctx, "Layers")
             .open(&mut show)
             .movable(false)
-            .resizable(true)
+            .resizable(false)
             .collapsible(false)
-            .default_size(egui::vec2(panel_size.0, panel_size.1))
             .min_width(180.0)
             .min_height(200.0)
+            .fixed_size(egui::vec2(panel_size.0, panel_size.1).max(egui::vec2(180.0, 200.0)))
             .title_bar(false)
             .frame(self.theme.floating_window_frame_animated(hover_t));
 
@@ -642,13 +642,13 @@ impl PaintFEApp {
         let mut window = crate::ui::polish::window(ctx, "History")
             .open(&mut show)
             .movable(false)
-            .resizable(true)
+            .resizable(false)
             .collapsible(false)
             .min_width(200.0)
             .min_height(150.0)
             .max_width(screen_w * 0.5)
             .max_height(screen_h * 0.7)
-            .default_size(panel_size)
+            .fixed_size(panel_size)
             .title_bar(false)
             .frame(self.theme.floating_window_frame_animated(hover_t));
 
@@ -744,7 +744,18 @@ impl PaintFEApp {
             .settings
             .persist_colors_panel_size
             .unwrap_or((220.0, 310.0));
-        let panel_size = egui::vec2(width, height);
+        let panel_min = egui::vec2(150.0, 210.0);
+        let panel_max = egui::vec2(
+            240.0,
+            if self.colors_panel.is_expanded() {
+                580.0
+            } else {
+                340.0
+            },
+        )
+        .min(screen_rect.size() - egui::vec2(24.0, 24.0))
+        .max(panel_min);
+        let panel_size = egui::vec2(width, height).clamp(panel_min, panel_max);
         let first_show = self.colors_panel_pos.is_none();
         let (mut x_off, mut pos_y) = self.colors_panel_pos.unwrap_or_else(|| {
             let (x, bottom) = self
@@ -764,12 +775,12 @@ impl PaintFEApp {
             .movable(false)
             // Our top-left clamp and body scroll bounds own positioning. egui's
             // size-based constraint otherwise moves the header when Advanced grows.
-            .constrain(true)
-            .resizable(true)
+            .constrain(false)
+            .resizable(false)
             .collapsible(false)
-            .default_size(panel_size)
-            .min_size(egui::vec2(190.0, 180.0))
-            .max_size(screen_rect.size() - egui::vec2(24.0, 24.0))
+            .min_size(panel_min)
+            .max_size(panel_max)
+            .fixed_size(panel_size)
             .title_bar(false)
             .frame(self.theme.floating_window_frame_animated(hover_t));
 
@@ -777,7 +788,7 @@ impl PaintFEApp {
         if let Some(size) =
             ctx.data_mut(|d| d.remove_temp::<egui::Vec2>(egui::Id::new("colors_resize_request")))
         {
-            window = window.fixed_size(size);
+            window = window.fixed_size(size.clamp(panel_min, panel_max));
         }
         window = window.default_pos(clamped);
         if first_show || screen_size_changed || drag_delta != egui::Vec2::ZERO {
@@ -793,12 +804,12 @@ impl PaintFEApp {
         if let Some(size) = ctx.data_mut(|d| {
             d.remove_temp::<egui::Vec2>(egui::Id::new(("workspace_size_request", "Colors")))
         }) {
-            window = window.fixed_size(size);
+            window = window.fixed_size(size.clamp(panel_min, panel_max));
         }
         let resp = window.show(ctx, |ui| {
             // Reserve the body width before the header; fixed-size windows can
             // otherwise grow later when the color controls are laid out.
-            ui.set_min_width(180.0);
+            ui.set_min_width(120.0);
             // Signal Grid panel header
             if signal_widgets::panel_header(
                 ui,
@@ -821,13 +832,10 @@ impl PaintFEApp {
             let win_rect = inner_resp.response.rect;
             crate::ui::workspace::register(ctx, "Colors", win_rect);
             self.settings.persist_colors_panel_size = Some((win_rect.width(), win_rect.height()));
-            if let Some(size) = signal_widgets::floating_resize(
-                ctx,
-                &inner_resp.response,
-                "Colors",
-                egui::vec2(190.0, 180.0),
-            ) {
-                let size = size.min(screen_rect.size() - egui::vec2(24.0, 24.0));
+            if let Some(size) =
+                signal_widgets::floating_resize(ctx, &inner_resp.response, "Colors", panel_min)
+            {
+                let size = size.clamp(panel_min, panel_max);
                 self.settings.persist_colors_panel_size = Some((size.x, size.y));
                 ctx.data_mut(|d| {
                     d.insert_temp(egui::Id::new("colors_resize_request"), size);
@@ -881,10 +889,10 @@ impl PaintFEApp {
         let mut window = crate::ui::polish::window(ctx, "Palette")
             .open(&mut show)
             .movable(false)
-            .resizable(true)
+            .resizable(false)
             .collapsible(false)
             .min_size(egui::vec2(280.0, 108.0))
-            .default_size(panel_size)
+            .fixed_size(panel_size)
             .title_bar(false)
             .frame(self.theme.floating_window_frame_animated(hover_t));
 

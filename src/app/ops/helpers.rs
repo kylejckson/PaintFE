@@ -69,23 +69,87 @@ impl PaintFEApp {
         original_flat: image::RgbaImage,
         filter_fn: impl FnOnce(&image::RgbaImage) -> image::RgbaImage + Send + 'static,
     ) {
+        self.spawn_cancellable_preview_job(
+            current_time,
+            description,
+            layer_idx,
+            original_pixels,
+            original_flat,
+            move |image, _cancel| filter_fn(image),
+        );
+    }
+
+    fn spawn_cancellable_preview_job(
+        &mut self,
+        current_time: f64,
+        description: String,
+        layer_idx: usize,
+        original_pixels: TiledImage,
+        original_flat: image::RgbaImage,
+        filter_fn: impl FnOnce(&image::RgbaImage, &std::sync::atomic::AtomicBool) -> image::RgbaImage
+        + Send
+        + 'static,
+    ) {
+        let Some(project_id) = self.active_project().map(|p| p.id) else {
+            return;
+        };
         // Cancel any in-flight preview job before spawning the new one
         self.filter_cancel
             .store(true, std::sync::atomic::Ordering::Relaxed);
         self.filter_cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let cancel = std::sync::Arc::clone(&self.filter_cancel);
         self.preview_job_token = self.preview_job_token.wrapping_add(1);
-        let token = self.preview_job_token;
-        self.spawn_filter_job_internal(
+        let filter_cancel = cancel.clone();
+        let job = PreviewJob {
+            project_id,
             current_time,
             description,
             layer_idx,
             original_pixels,
             original_flat,
-            token,
-            Some(cancel),
-            move |image| Ok(filter_fn(image)),
+            token: self.preview_job_token,
+            cancel,
+            filter: Box::new(move |image| Ok(filter_fn(image, &filter_cancel))),
+        };
+        if self.preview_job_running {
+            // Replacing this slot drops the superseded image and closure immediately.
+            self.pending_preview = Some(job);
+        } else {
+            self.start_preview_job(job);
+        }
+    }
+
+    fn start_preview_job(&mut self, job: PreviewJob) {
+        self.preview_job_running = true;
+        self.spawn_filter_job_for_project(
+            job.project_id,
+            job.current_time,
+            job.description,
+            job.layer_idx,
+            job.original_pixels,
+            job.original_flat,
+            job.token,
+            Some(job.cancel),
+            job.filter,
         );
+    }
+
+    fn finish_preview_job(&mut self) {
+        self.preview_job_running = false;
+        if let Some(job) = self.pending_preview.take()
+            && job.token == self.preview_job_token
+            && !job.cancel.load(std::sync::atomic::Ordering::Relaxed)
+            && self.projects.iter().any(|p| p.id == job.project_id)
+        {
+            self.start_preview_job(job);
+        }
+    }
+
+    fn cancel_preview_jobs(&mut self) {
+        self.filter_cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.pending_preview = None;
+        self.preview_job_token = self.preview_job_token.wrapping_add(1).max(1);
     }
 
     fn spawn_filter_job_with_token(
@@ -142,10 +206,35 @@ impl PaintFEApp {
         cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
         filter_fn: impl FnOnce(&image::RgbaImage) -> Result<image::RgbaImage, String> + Send + 'static,
     ) {
-        let sender = self.filter_sender.clone();
         let Some(project_id) = self.active_project().map(|project| project.id) else {
             return;
         };
+        self.spawn_filter_job_for_project(
+            project_id,
+            current_time,
+            description,
+            layer_idx,
+            original_pixels,
+            original_flat,
+            preview_token,
+            cancel,
+            filter_fn,
+        );
+    }
+
+    fn spawn_filter_job_for_project(
+        &mut self,
+        project_id: uuid::Uuid,
+        current_time: f64,
+        description: String,
+        layer_idx: usize,
+        original_pixels: TiledImage,
+        original_flat: image::RgbaImage,
+        preview_token: u64,
+        cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+        filter_fn: impl FnOnce(&image::RgbaImage) -> Result<image::RgbaImage, String> + Send + 'static,
+    ) {
+        let sender = self.filter_sender.clone();
         if self.pending_filter_jobs == 0 {
             self.filter_ops_start_time = Some(current_time);
         }
@@ -158,24 +247,31 @@ impl PaintFEApp {
                     .as_ref()
                     .is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed))
                 {
-                    return Ok(original_flat.clone());
+                    return Ok(original_pixels.clone());
                 }
-                filter_fn(&original_flat)
+                let processed = filter_fn(&original_flat)?;
+                if cancel
+                    .as_ref()
+                    .is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed))
+                {
+                    return Ok(original_pixels.clone());
+                }
+                Ok(TiledImage::from_rgba_image(&processed))
             }));
             match result_flat {
                 Ok(Ok(processed)) => {
-                    let result_tiled = TiledImage::from_rgba_image(&processed);
                     let _ = sender.send(FilterResult {
                         project_id,
                         layer_idx,
                         original_pixels,
-                        result_pixels: result_tiled,
+                        result_pixels: processed,
                         error: None,
                         description,
                         preview_token,
                     });
                 }
                 Ok(Err(error)) => {
+                    crate::log_err!("Filter '{}': {}", description, error);
                     let _ = sender.send(FilterResult {
                         project_id,
                         layer_idx,
@@ -195,7 +291,7 @@ impl PaintFEApp {
                     } else {
                         "unknown panic payload".to_string()
                     };
-                    eprintln!("Filter '{}' panicked: {}", description, msg);
+                    crate::log_err!("Filter '{}' panicked: {}", description, msg);
                     let _ = sender.send(FilterResult {
                         project_id,
                         layer_idx,

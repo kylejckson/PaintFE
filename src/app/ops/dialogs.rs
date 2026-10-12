@@ -2,9 +2,15 @@ impl PaintFEApp {
     fn process_active_dialog(&mut self, ctx: &egui::Context) {
         let mut dialog = std::mem::take(&mut self.active_dialog);
 
-        // Log dialog open
-        if !dialog.is_none() {
-            log_info!("Dialog: open ({})", dialog.name());
+        let was_open = !dialog.is_none();
+        let name = dialog.name().to_owned();
+        let log_id = egui::Id::new("logged_active_dialog");
+        let previous = ctx.data_mut(|d| d.get_temp::<String>(log_id));
+        if previous.as_deref() != Some(&name) {
+            if was_open {
+                log_info!("Dialog: open ({})", name);
+            }
+            ctx.data_mut(|d| d.insert_temp(log_id, name));
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -17,6 +23,10 @@ impl PaintFEApp {
         // (or clear it on OK/Cancel); unmatched dialogs are put back here.
         if !matched {
             self.active_dialog = dialog;
+        }
+        if was_open && self.active_dialog.is_none() {
+            self.cancel_preview_jobs();
+            ctx.data_mut(|d| d.remove::<String>(log_id));
         }
 
         // "Live preview" was unchecked → put the original layer pixels back.
@@ -55,8 +65,7 @@ impl PaintFEApp {
 
         // Discard any in-flight async preview job so its result cannot repaint
         // the effect over the restored original (mirrors the Cancel path).
-        self.filter_cancel
-            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.cancel_preview_jobs();
 
         let Some((layer_idx, original)) = preview_restore_target(&self.active_dialog) else {
             return;

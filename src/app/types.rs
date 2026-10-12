@@ -1,3 +1,15 @@
+struct PreviewJob {
+    project_id: uuid::Uuid,
+    current_time: f64,
+    description: String,
+    layer_idx: usize,
+    original_pixels: TiledImage,
+    original_flat: image::RgbaImage,
+    token: u64,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    filter: Box<dyn FnOnce(&image::RgbaImage) -> Result<image::RgbaImage, String> + Send>,
+}
+
 pub struct FilterResult {
     pub error: Option<String>,
     /// Stable identity, so closing/reordering tabs cannot redirect this result.
@@ -231,6 +243,8 @@ pub struct PaintFEApp {
     preview_job_token: u64,
     /// Cancellation flag for the current preview job; set to true before spawning a new one.
     filter_cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    preview_job_running: bool,
+    pending_preview: Option<PreviewJob>,
 
     // Async canvas-wide operation pipeline (resize image/canvas)
     canvas_op_sender: mpsc::Sender<CanvasOpResult>,

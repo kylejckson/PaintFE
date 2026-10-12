@@ -148,6 +148,9 @@ impl PaintFEApp {
         // --- Poll async filter results ---
         while let Ok(result) = self.filter_receiver.try_recv() {
             self.pending_filter_jobs = self.pending_filter_jobs.saturating_sub(1);
+            if result.preview_token != 0 {
+                self.finish_preview_job();
+            }
             if self.pending_filter_jobs == 0 {
                 self.filter_ops_start_time = None;
                 self.filter_status_description.clear();
@@ -155,12 +158,12 @@ impl PaintFEApp {
             if result.description == "Remove Background" {
                 self.background_removal_pending = false;
             }
-            if let Some(error) = result.error {
-                self.filter_error = Some(format!("{}: {}", result.description, error));
-                continue;
-            }
             // Discard stale live-preview results (token mismatch = superseded by newer job)
             if result.preview_token != 0 && result.preview_token != self.preview_job_token {
+                continue;
+            }
+            if let Some(error) = result.error {
+                self.filter_error = Some(format!("{}: {}", result.description, error));
                 continue;
             }
             if let Some(project) = self

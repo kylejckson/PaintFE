@@ -1,12 +1,25 @@
 impl PaintFEApp {
-    fn process_glitch_and_artistic_dialog(&mut self, ctx: &egui::Context, dialog: &mut ActiveDialog) -> bool {
-        let matched = matches!(dialog, ActiveDialog::PixelDrag(_) | ActiveDialog::RgbDisplace(_) | ActiveDialog::Ink(_) | ActiveDialog::OilPainting(_) | ActiveDialog::ColorFilter(_) | ActiveDialog::ColorToAlpha(_) | ActiveDialog::RecoverTransparency(_) | ActiveDialog::Contours(_));
+    fn process_glitch_and_artistic_dialog(
+        &mut self,
+        ctx: &egui::Context,
+        dialog: &mut ActiveDialog,
+    ) -> bool {
+        let matched = matches!(
+            dialog,
+            ActiveDialog::PixelDrag(_)
+                | ActiveDialog::RgbDisplace(_)
+                | ActiveDialog::Ink(_)
+                | ActiveDialog::OilPainting(_)
+                | ActiveDialog::ColorFilter(_)
+                | ActiveDialog::ColorToAlpha(_)
+                | ActiveDialog::RecoverTransparency(_)
+                | ActiveDialog::Contours(_)
+        );
         if !matched {
             return false;
         }
 
         match dialog {
-
             ActiveDialog::PixelDrag(dlg) => match dlg.show(ctx) {
                 DialogResult::Changed => {
                     dlg.first_open = false;
@@ -590,18 +603,13 @@ impl PaintFEApp {
                     if let Some(flat) = &dlg.original_flat
                         && let Some(project) = self.active_project_mut()
                     {
-                        Self::apply_fullres_effect(
-                            &mut project.canvas_state,
-                            idx,
-                            flat,
-                            |img| {
-                                crate::ops::color_removal::color_to_alpha_core(
-                                    img,
-                                    &settings,
-                                    selection_mask.as_ref(),
-                                )
-                            },
-                        );
+                        Self::apply_fullres_effect(&mut project.canvas_state, idx, flat, |img| {
+                            crate::ops::color_removal::color_to_alpha_core(
+                                img,
+                                &settings,
+                                selection_mask.as_ref(),
+                            )
+                        });
                     }
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
@@ -712,18 +720,13 @@ impl PaintFEApp {
                     if let Some(flat) = &dlg.original_flat
                         && let Some(project) = self.active_project_mut()
                     {
-                        Self::apply_fullres_effect(
-                            &mut project.canvas_state,
-                            idx,
-                            flat,
-                            |img| {
-                                crate::ops::color_removal::recover_transparency_core(
-                                    img,
-                                    &settings,
-                                    selection_mask.as_ref(),
-                                )
-                            },
-                        );
+                        Self::apply_fullres_effect(&mut project.canvas_state, idx, flat, |img| {
+                            crate::ops::color_removal::recover_transparency_core(
+                                img,
+                                &settings,
+                                selection_mask.as_ref(),
+                            )
+                        });
                     }
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
@@ -810,14 +813,14 @@ impl PaintFEApp {
                             255u8,
                         ];
                         let (seed, octaves, blend) = (dlg.seed, dlg.octaves as u32, dlg.blend);
-                        self.spawn_preview_job(
+                        self.spawn_cancellable_preview_job(
                             ctx.input(|i| i.time),
                             "Contours".to_string(),
                             idx,
                             original.clone(),
                             flat.clone(),
-                            move |img| {
-                                crate::ops::effects::contours_core(
+                            move |img, cancel| {
+                                crate::ops::effects::contours_core_cancellable(
                                     img,
                                     contour_scale,
                                     frequency,
@@ -827,6 +830,7 @@ impl PaintFEApp {
                                     octaves,
                                     blend,
                                     None,
+                                    Some(cancel),
                                 )
                             },
                         );
@@ -945,7 +949,6 @@ impl PaintFEApp {
                 }
             },
 
-
             _ => unreachable!(),
         }
 
@@ -953,4 +956,3 @@ impl PaintFEApp {
         true
     }
 }
-

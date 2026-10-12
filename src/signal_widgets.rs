@@ -592,6 +592,24 @@ pub(crate) fn floating_resize(
     let id = egui::Id::new(("floating_resize_capture", id));
     let mut capture = ctx.data_mut(|d| d.get_temp::<(egui::Pos2, Vec2)>(id));
     let grip = egui::Rect::from_min_max(response.rect.max - Vec2::splat(18.0), response.rect.max);
+    if response.enabled() {
+        let painter = ctx.layer_painter(response.layer_id);
+        let color = ctx.global_style().visuals.weak_text_color();
+        for offset in [5.0, 9.0, 13.0] {
+            painter.line_segment(
+                [
+                    response.rect.max - egui::vec2(offset, 3.0),
+                    response.rect.max - egui::vec2(3.0, offset),
+                ],
+                egui::Stroke::new(1.0, color),
+            );
+        }
+        if capture.is_some()
+            || ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| grip.contains(p)))
+        {
+            ctx.set_cursor_icon(egui::CursorIcon::ResizeNwSe);
+        }
+    }
     let mut size = None;
     let events = ctx.input(|i| i.events.clone());
     for event in events {
@@ -620,7 +638,7 @@ pub(crate) fn floating_resize(
                 let (start, original) = capture.take().unwrap();
                 size = Some((original + (pos - start)).max(min));
             }
-            egui::Event::PointerGone => capture = None,
+            egui::Event::PointerGone | egui::Event::WindowFocused(false) => capture = None,
             _ => {}
         }
     }
@@ -631,7 +649,12 @@ pub(crate) fn floating_resize(
             d.remove::<(egui::Pos2, Vec2)>(id);
         }
     });
-    size.map(|size| crate::ui::workspace::resize(ctx, panel, response.rect, size, min))
+    size.map(|size| {
+        // Keep the top-left fixed: stop at the available space instead of letting
+        // window constraints relocate the panel as its bottom/right edge grows.
+        let max = (ctx.content_rect().max - response.rect.min - Vec2::splat(12.0)).max(min);
+        crate::ui::workspace::resize(ctx, panel, response.rect, size.min(max), min).min(max)
+    })
 }
 
 pub fn panel_header(

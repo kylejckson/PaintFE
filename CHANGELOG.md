@@ -6,6 +6,19 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [Unreleased]
+
+- Kept effect previews responsive during rapid slider changes.
+- Fixed jumping floating-panel resize gestures and improved compact Colors layouts.
+- Made logs quieter and easier to use when investigating crashes.
+
+### Fixed
+
+- Bounded live-preview work to one running calculation and the latest queued request; Contours now stops superseded calculations between rows. References #156.
+- Logged dialog openings once, used local dates and times, and included panic backtraces and filter errors in the log file. References #156.
+- Removed competing native/custom resize handling for Colors, Layers, History and Palette; resize gestures keep the top-left anchored and stop at the screen edge. References #157.
+- Scaled the color ring and triangle to the available width and height, adapted narrow controls, and capped oversized Colors windows. References #152.
+
 ## [1.4.2] - 2026-10-10
 
 - Fixed keyboard input, dialog controls and Save As previews.

@@ -37,7 +37,7 @@ kurbo = "0.13.1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-winapi = { version = "0.3", features = ["winuser", "windef", "shellapi", "dwmapi"] }
+winapi = { version = "0.3", features = ["winuser", "windef", "shellapi", "dwmapi", "sysinfoapi"] }
 winit = "0.30"                                   # Event loop hook for suppressing Windows keyboard dings
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -56,6 +56,9 @@ rawloader = "0.37"
 imagepipe = "0.5"
 clap = { version = "4", features = ["derive"] }
 glob = "0.3"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.3", features = ["wasm_js"] }
