@@ -92,6 +92,7 @@ pub(crate) fn tabs(ui: &mut Ui, id: &str, labels: &[&str], selected: &mut usize)
         .rect_filled(rect, theme(ui).tab_rounding as u8, field_fill(ui));
     let cell = width / labels.len() as f32;
     for (i, label) in labels.iter().enumerate() {
+        let label = crate::i18n::translate_english(label);
         let r = egui::Rect::from_min_size(
             rect.min + Vec2::new(i as f32 * cell, 0.0),
             Vec2::new(cell, 24.0),
@@ -102,7 +103,7 @@ pub(crate) fn tabs(ui: &mut Ui, id: &str, labels: &[&str], selected: &mut usize)
                 egui::WidgetType::SelectableLabel,
                 ui.is_enabled(),
                 *selected == i,
-                *label,
+                &label,
             )
         });
         if response.clicked() {
@@ -173,7 +174,7 @@ pub(crate) fn swatch(
         egui::WidgetInfo::labeled(
             egui::WidgetType::Button,
             ui.is_enabled(),
-            format!("Color {}", hex(color)),
+            crate::i18n::format_translation("ui.color_0", &[("0", hex(color).to_string())]),
         )
     });
     if ui.is_rect_visible(rect) {
@@ -205,10 +206,12 @@ pub(crate) fn swatch(
         );
     }
     crate::ui::polish::focus(ui, &response, theme(ui).widget_rounding);
-    response.on_hover_text(format!(
-        "{} · opacity {}\nClick: selected slot · Right: Secondary",
-        hex(color),
-        color.a()
+    response.on_hover_text(crate::i18n::format_translation(
+        "ui.0_opacity_1_click_selected_slot_right_secondary",
+        &[
+            ("0", hex(color).to_string()),
+            ("1", format!("{}", color.a())),
+        ],
     ))
 }
 

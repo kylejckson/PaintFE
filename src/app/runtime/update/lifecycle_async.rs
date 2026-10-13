@@ -444,11 +444,20 @@ impl PaintFEApp {
                     self.restore_active_project_view();
                     self.maybe_close_initial_blank();
                 }
+                IoResult::ImportReady { bytes, path, width, height } => {
+                    self.pending_import_queue.push(PendingImport {
+                        bytes: std::sync::Arc::new(bytes),
+                        name: path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+                        source_path: Some(path), width, height,
+                    });
+                }
                 IoResult::LoadFailed { path, error } => {
+                    let name = path.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "Image".into());
                     if let Some(path) = path {
                         self.pending_open_paths
                             .remove(&Self::normalize_open_path(&path));
                     }
+                    self.report_open_error(&name, &error);
                     log_info!("FileIO: load failed — {}", error);
                     eprintln!("Failed to open image: {}", error);
                 }

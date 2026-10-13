@@ -331,7 +331,7 @@ impl ToolsPanel {
                                                     preview_rect.center().y,
                                                 ),
                                                 egui::Align2::LEFT_CENTER,
-                                                "No preview",
+                                                crate::t!("ui.no_preview"),
                                                 egui::FontId::default(),
                                                 ui.visuals().weak_text_color(),
                                             );
@@ -344,7 +344,7 @@ impl ToolsPanel {
                                                 preview_rect.center().y,
                                             ),
                                             egui::Align2::LEFT_CENTER,
-                                            "No preview",
+                                            crate::t!("ui.no_preview"),
                                             egui::FontId::default(),
                                             ui.visuals().weak_text_color(),
                                         );
@@ -360,7 +360,7 @@ impl ToolsPanel {
                                                 preview_rect.center().y,
                                             ),
                                             egui::Align2::LEFT_CENTER,
-                                            if pending { "Loading" } else { "Queued" },
+                                            if pending { crate::t!("ui.loading") } else { crate::t!("ui.queued") },
                                             egui::FontId::default(),
                                             ui.visuals().weak_text_color(),
                                         );
@@ -489,7 +489,7 @@ impl ToolsPanel {
 
         ui.separator();
         // Alignment: single cycle-toggle button
-        let align_label = self.text_state.alignment.label();
+        let align_label = crate::i18n::translate_english(&self.text_state.alignment.label());
         if ui
             .add(egui::Button::new(align_label).min_size(egui::vec2(50.0, 0.0)))
             .clicked()
@@ -520,7 +520,7 @@ impl ToolsPanel {
         }
 
         ui.separator();
-        ui.label("Letter Width");
+        ui.label(crate::t!("ui.letter_width"));
         if ui
             .add(
                 crate::ui::numeric::Numeric::new(&mut self.text_state.width_scale)
@@ -536,7 +536,7 @@ impl ToolsPanel {
             self.text_state.ctx_bar_style_dirty = true;
         }
 
-        ui.label("Letter Height");
+        ui.label(crate::t!("ui.letter_height"));
         if ui
             .add(
                 crate::ui::numeric::Numeric::new(&mut self.text_state.height_scale)

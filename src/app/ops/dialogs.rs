@@ -6,7 +6,9 @@ impl PaintFEApp {
         let name = dialog.name().to_owned();
         let log_id = egui::Id::new("logged_active_dialog");
         let previous = ctx.data_mut(|d| d.get_temp::<String>(log_id));
-        if previous.as_deref() != Some(&name) {
+        let opening = previous.as_deref() != Some(&name);
+        crate::ui::dialogs::remember::begin(ctx, &mut dialog, &self.settings.dialog_preferences, opening);
+        if opening {
             if was_open {
                 log_info!("Dialog: open ({})", name);
             }
@@ -18,6 +20,10 @@ impl PaintFEApp {
             || self.process_paintdotnet_plugin_dialog(ctx, &mut dialog);
         #[cfg(target_arch = "wasm32")]
         let matched = self.process_dialog_dispatch(ctx, &mut dialog);
+
+        if crate::ui::dialogs::remember::finish(ctx, &dialog, &mut self.settings.dialog_preferences) {
+            self.settings.save();
+        }
 
         // Matched handlers store the dialog back into `self.active_dialog`
         // (or clear it on OK/Cancel); unmatched dialogs are put back here.

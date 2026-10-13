@@ -1595,7 +1595,7 @@ pub fn contract_selection(state: &mut CanvasState, radius: i32) {
 // ============================================================================
 
 /// Adjustment values for a single hue band.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct HueBandAdjust {
     pub hue: f32,        // -180..180 degrees
     pub saturation: f32, // -100..100

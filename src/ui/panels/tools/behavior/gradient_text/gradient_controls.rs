@@ -235,12 +235,12 @@ impl ToolsPanel {
         ui.label(t!("ctx.shapes.shape"));
         let current_shape = self.gradient_state.shape;
         egui::ComboBox::from_id_salt("gradient_shape")
-            .selected_text(current_shape.label())
+            .selected_text(crate::i18n::translate_english(&current_shape.label()))
             .width(120.0)
             .show_ui(ui, |ui| {
                 for &shape in GradientShape::all() {
                     if ui
-                        .selectable_label(shape == current_shape, shape.label())
+                        .selectable_label(shape == current_shape, crate::i18n::translate_english(&shape.label()))
                         .clicked()
                     {
                         self.gradient_state.shape = shape;
@@ -255,7 +255,7 @@ impl ToolsPanel {
         ui.label(t!("ctx.mode"));
         let mode = self.gradient_state.mode;
         if ui
-            .selectable_label(mode == GradientMode::Color, GradientMode::Color.label())
+            .selectable_label(mode == GradientMode::Color, crate::i18n::translate_english(&GradientMode::Color.label()))
             .clicked()
         {
             self.gradient_state.mode = GradientMode::Color;
@@ -265,7 +265,7 @@ impl ToolsPanel {
         if ui
             .selectable_label(
                 mode == GradientMode::Transparency,
-                GradientMode::Transparency.label(),
+                crate::i18n::translate_english(&GradientMode::Transparency.label()),
             )
             .clicked()
         {
@@ -292,12 +292,12 @@ impl ToolsPanel {
             secondary_color.a(),
         ];
         egui::ComboBox::from_id_salt("gradient_preset")
-            .selected_text(current_preset.label())
+            .selected_text(crate::i18n::translate_english(&current_preset.label()))
             .width(150.0)
             .show_ui(ui, |ui| {
                 for &preset in GradientPreset::all() {
                     if ui
-                        .selectable_label(preset == current_preset, preset.label())
+                        .selectable_label(preset == current_preset, crate::i18n::translate_english(&preset.label()))
                         .clicked()
                     {
                         self.gradient_state

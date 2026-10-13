@@ -340,14 +340,14 @@ impl NewFileDialog {
                             ui.label(t!("common.preset"));
                             egui::ComboBox::from_id_salt("preset_combo")
                                 .width(224.0)
-                                .selected_text(self.preset.label())
+                                .selected_text(crate::i18n::translate_english(&self.preset.label()))
                                 .show_ui(ui, |ui| {
                                     for preset in SizePreset::all() {
                                         if ui
                                             .selectable_value(
                                                 &mut self.preset,
                                                 *preset,
-                                                preset.label(),
+                                                crate::i18n::translate_english(&preset.label()),
                                             )
                                             .clicked()
                                             && let Some((w, h, ppi)) = preset.dimensions()
@@ -423,7 +423,7 @@ impl NewFileDialog {
                                 if width_commit {
                                     self.commit_width_input();
                                 }
-                                ui.label(self.unit.label());
+                                ui.label(crate::i18n::translate_english(&self.unit.label()));
                             });
                             ui.end_row();
 
@@ -456,7 +456,7 @@ impl NewFileDialog {
                                 if height_commit {
                                     self.commit_height_input();
                                 }
-                                ui.label(self.unit.label());
+                                ui.label(crate::i18n::translate_english(&self.unit.label()));
                             });
                             ui.end_row();
 
@@ -1475,7 +1475,7 @@ impl SaveFileDialog {
                     ui.set_min_width(640.0);
 
                     // ── Header ──────────────────────────────────────────────
-                    should_close |= paint_dialog_header(ui, &colors, "\u{1F4BE}", "Save As");
+                    should_close |= paint_dialog_header(ui, &colors, "\u{1F4BE}", &crate::t!("keybind.save_as"));
                     ui.add_space(8.0);
 
                     // ── Two-column layout ────────────────────────────────────
@@ -1684,7 +1684,7 @@ impl SaveFileDialog {
                                 if ui.small_button("\u{2B}").clicked() {
                                     self.preview_zoom = (self.preview_zoom * 1.25).min(64.0);
                                 }
-                                if ui.small_button("\u{229E} Fit").clicked() {
+                                if ui.small_button(crate::t!("ui.fit")).clicked() {
                                     self.preview_zoom = 0.0;
                                     self.preview_pan = egui::Vec2::ZERO;
                                     ctx.request_repaint();
@@ -1723,7 +1723,7 @@ impl SaveFileDialog {
                                         self.anim_playing = false;
                                     }
                                 });
-                                ui.small(format!("Frame {} / {}", self.anim_current_frame + 1, self.frame_thumbnails.len()));
+                                ui.small(crate::i18n::format_translation("ui.frame_0_1", &[("0", format!("{}", self.anim_current_frame + 1)), ("1", format!("{}", self.frame_thumbnails.len()))]));
                             } else {
                                 let size_text = format!("Est. {}", Self::format_file_size(self.estimated_full_size));
                                 ui.label(egui::RichText::new(size_text).size(11.0).color(colors.text_muted));
@@ -1742,13 +1742,13 @@ impl SaveFileDialog {
                             ui.set_width(240.0);
 
                             // ── FORMAT ────────────────────────────────────────
-                            section_label(ui, &colors, "FORMAT");
+                            section_label(ui, &colors, &crate::t!("ui.format"));
                             egui::ComboBox::from_id_salt("format_combo")
                                 .width(220.0)
-                                .selected_text(self.format.label())
+                                .selected_text(crate::i18n::translate_english(&self.format.label()))
                                 .show_ui(ui, |ui| {
                                     for format in SaveFormat::all() {
-                                        ui.selectable_value(&mut self.format, *format, format.label());
+                                        ui.selectable_value(&mut self.format, *format, crate::i18n::translate_english(&format.label()));
                                     }
                                 });
 
@@ -1756,14 +1756,14 @@ impl SaveFileDialog {
                             if self.format.supports_quality() {
                                 accent_separator(ui, &colors);
                                 if self.format == SaveFormat::Webp {
-                                    section_label(ui, &colors, "WEBP");
-                                    if ui.checkbox(&mut self.webp_lossless, "Lossless").changed() {
+                                    section_label(ui, &colors, &crate::t!("ui.webp"));
+                                    if ui.checkbox(&mut self.webp_lossless, crate::t!("ui.lossless")).changed() {
                                         self.needs_preview_update = true;
                                         ctx.request_repaint();
                                     }
                                 }
                                 if self.format != SaveFormat::Webp || !self.webp_lossless {
-                                    section_label(ui, &colors, "QUALITY");
+                                    section_label(ui, &colors, &crate::t!("dialog.resize_image.quality"));
                                     if ui.add(egui::Slider::new(&mut self.quality, 1..=100).suffix("%")).changed() {
                                         ctx.request_repaint();
                                     }
@@ -1779,26 +1779,26 @@ impl SaveFileDialog {
                                     };
                                     ui.label(egui::RichText::new(hint).size(11.0).color(colors.text_muted));
                                 } else {
-                                    ui.label(egui::RichText::new("Exact pixels, larger than lossy").size(11.0).color(colors.text_muted));
+                                    ui.label(egui::RichText::new(crate::t!("ui.exact_pixels_larger_than_lossy")).size(11.0).color(colors.text_muted));
                                 }
                                 if self.format == SaveFormat::Webp && self.animated {
-                                    ui.label(egui::RichText::new("Animated WebP can use per-frame layer options.").size(11.0).color(colors.text_muted));
+                                    ui.label(egui::RichText::new(crate::t!("ui.animated_webp_can_use_per_frame_layer_options")).size(11.0).color(colors.text_muted));
                                 }
                             }
 
                             // ── COMPRESSION (TIFF) ────────────────────────────
                             if self.format == SaveFormat::Tiff {
                                 accent_separator(ui, &colors);
-                                section_label(ui, &colors, "COMPRESSION");
+                                section_label(ui, &colors, &crate::t!("ui.compression"));
                                 egui::ComboBox::from_id_salt("tiff_compression_combo")
                                     .width(160.0)
                                     .selected_text(match self.tiff_compression {
-                                        TiffCompression::None    => "None",
-                                        TiffCompression::Lzw     => "LZW",
-                                        TiffCompression::Deflate => "Deflate",
+                                        TiffCompression::None    => crate::t!("line_end.none"),
+                                        TiffCompression::Lzw     => "LZW".to_string(),
+                                        TiffCompression::Deflate => "Deflate".to_string(),
                                     })
                                     .show_ui(ui, |ui| {
-                                        ui.selectable_value(&mut self.tiff_compression, TiffCompression::None,    "None");
+                                        ui.selectable_value(&mut self.tiff_compression, TiffCompression::None,    crate::t!("line_end.none"));
                                         ui.selectable_value(&mut self.tiff_compression, TiffCompression::Lzw,     "LZW");
                                         ui.selectable_value(&mut self.tiff_compression, TiffCompression::Deflate, "Deflate");
                                     });
@@ -1812,18 +1812,18 @@ impl SaveFileDialog {
                                 if w > 256 || h > 256 {
                                     ui.colored_label(
                                         Color32::from_rgb(255, 180, 50),
-                                        format!("\u{26A0} {}×{} exceeds 256×256 and will be scaled down.", w, h),
+                                        crate::i18n::format_translation("ui.0_1_exceeds_256_256_and_will_be_scaled_down", &[("0", format!("{}", w)), ("1", format!("{}", h))]),
                                     );
                                 } else {
-                                    ui.label(egui::RichText::new("ICO supports up to 256×256 per entry.").size(11.0).color(colors.text_muted));
+                                    ui.label(egui::RichText::new(crate::t!("ui.ico_supports_up_to_256_256_per_entry")).size(11.0).color(colors.text_muted));
                                 }
                             }
 
                             // ── ANIMATION (PNG / GIF with multiple layers) ────
                             if self.format.supports_animation() && self.layer_count > 1 {
                                 accent_separator(ui, &colors);
-                                section_label(ui, &colors, "ANIMATION");
-                                ui.checkbox(&mut self.animated, "Animated");
+                                section_label(ui, &colors, &crate::t!("ui.animation"));
+                                ui.checkbox(&mut self.animated, crate::t!("ui.animated"));
 
                                 if self.animated {
                                     ui.add_space(4.0);
@@ -1832,14 +1832,14 @@ impl SaveFileDialog {
                                         .min_col_width(60.0)
                                         .spacing([8.0, 4.0])
                                         .show(ui, |ui| {
-                                            ui.label("FPS");
+                                            ui.label(crate::t!("ui.fps"));
                                             ui.add(egui::Slider::new(&mut self.animation_fps, 1.0..=60.0)
                                                 .step_by(1.0)
                                                 .suffix(" fps"));
                                             ui.end_row();
 
                                             if self.format == SaveFormat::Gif {
-                                                ui.label("Colors");
+                                                ui.label(crate::t!("ui.colors"));
                                                 let mut colors_f = self.gif_colors as f32;
                                                 if ui.add(egui::Slider::new(&mut colors_f, 2.0..=256.0)
                                                     .step_by(1.0)
@@ -1849,7 +1849,7 @@ impl SaveFileDialog {
                                                 }
                                                 ui.end_row();
 
-                                                ui.label("Dither");
+                                                ui.label(crate::t!("ui.dither"));
                                                 ui.checkbox(&mut self.gif_dither, "");
                                                 ui.end_row();
                                             }
@@ -1857,9 +1857,7 @@ impl SaveFileDialog {
 
                                     if self.layer_count > 1 {
                                         ui.label(egui::RichText::new(
-                                            format!("{} frames × {:.0} fps = {:.1}s",
-                                                self.layer_count, self.animation_fps,
-                                                self.layer_count as f32 / self.animation_fps)
+                                            crate::i18n::format_translation("ui.0_frames_1_fps_2_s", &[("0", format!("{}", self.layer_count)), ("1", format!("{:.0}", self.animation_fps)), ("2", format!("{:.1}", self.layer_count as f32 / self.animation_fps))])
                                         ).size(11.0).color(colors.text_muted));
                                     }
                                 }
@@ -1875,11 +1873,11 @@ impl SaveFileDialog {
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button("  Cancel  ").clicked() {
+                            if ui.button(crate::t!("ui.cancel")).clicked() {
                                 should_close = true;
                             }
                             let save_btn = egui::Button::new(
-                                egui::RichText::new("  Save  ")
+                                egui::RichText::new(crate::t!("ui.save"))
                                     .color(contrast_text_color(colors.accent))
                                     .strong()
                             ).fill(colors.accent);
@@ -1895,7 +1893,7 @@ impl SaveFileDialog {
                                 let picked_path = {
                                     let mut dialog = rfd::FileDialog::new()
                                         .set_file_name(&full_filename)
-                                        .add_filter(self.format.label(), &[self.format.extension()]);
+                                        .add_filter(crate::i18n::translate_english(&self.format.label()), &[self.format.extension()]);
                                     if let Some(dir) = &self.target_directory {
                                         dialog = dialog.set_directory(dir);
                                     }

@@ -14,7 +14,7 @@ Free, open-source raster image editor built in Rust. Single portable binary, no 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/kylejckson/PaintFE/badge)](https://scorecard.dev/viewer/?uri=github.com/kylejckson/PaintFE)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12019/badge)](https://www.bestpractices.dev/projects/12019)
 
-24 tools · 25 blend modes · GPU compositing · Rhai scripting · CLI batch processing · local background removal · GIF/APNG/WebP animation · RAW camera support · 15 UI languages
+24 tools · 25 blend modes · GPU compositing · Rhai scripting · CLI batch processing · local background removal · GIF/APNG/WebP animation · RAW camera support · 25 UI languages
 
 ![PaintFE photo workspace in light mode with Luminous icons](screenshot/main_screenshot.png)
 
@@ -216,11 +216,19 @@ See [Cargo.toml](Cargo.toml) for versions and the complete dependency list.
 
 </details>
 
+## Project background
+
+PaintFE started with a free month of GitHub Copilot from a friend and a question: could I build an image editor inspired by Paint.NET with its help? As a software engineer, I was curious, but didn’t expect it to get very far. It gave me something worth continuing, and I’ve kept developing and refining it since.
+
+AI coding tools have become a substantial part of how I work on PaintFE. I spend a lot of time planning features, designing the interface, experimenting with different approaches, and refining the details through repeated iteration. That work includes hands-on coding and testing throughout development.
+
+I recognise that AI’s place in creative work is a sensitive subject. I want to be open about its role in the development process and respectful of the people who choose to use PaintFE.
+
 ## Contributing and Translations
 
 Bug reports, feature requests, translations, and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution guidelines.
 
-15 locales ship built in and can be switched through **View > Language**: English, German, French, Spanish, Portuguese, Italian, Russian, Polish, Dutch, Turkish, Japanese, Simplified Chinese, Traditional Chinese, Belarusian, and Fandom (FE). New controls may fall back to English where translations are incomplete.
+25 locales ship built in and can be switched through **Preferences > General > Language**: English, German, French, Spanish, Brazilian Portuguese, European Portuguese, Italian, Russian, Ukrainian, Czech, Romanian, Belarusian, Polish, Dutch, Turkish, Japanese, Simplified Chinese, Traditional Chinese, Korean, Indonesian, Vietnamese, Thai, Hungarian, Bogan English, and Fancy English (FE). All catalogs cover the current English interface keys. Chinese, Japanese, Korean and Thai font fallbacks are bundled for offline use. Translation improvements from fluent speakers are welcome.
 
 To add a translation, copy `locales/en.txt`, translate the values without changing keys, and name the file with its BCP-47 code, such as `ko.txt`.
 

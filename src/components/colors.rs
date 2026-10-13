@@ -292,11 +292,12 @@ impl ColorsPanel {
             } else {
                 let menu = ui.menu_button("...", |ui| {
                     ui.set_min_width(120.0);
-                    ui.label("Hex color");
+                    ui.label(crate::t!("ui.hex_color"));
                     self.draw_hex_row(ui, true);
                     hex_shown = true;
                 });
-                menu.response.on_hover_text("Edit or copy hex color");
+                menu.response
+                    .on_hover_text(crate::t!("ui.edit_or_copy_hex_color"));
             }
         });
         // A hidden hex field must not keep suppressing canvas shortcuts.
@@ -314,7 +315,7 @@ impl ColorsPanel {
             ui.add_space(5.0);
             self.section(ui, "HSV", true, 0);
             self.section(ui, "RGB", false, 1);
-            self.section(ui, "HSL", false, 2);
+            self.section(ui, &crate::t!("ui.hsl"), false, 2);
         });
     }
 
@@ -403,7 +404,7 @@ impl ColorsPanel {
             });
         if self.hex_invalid {
             ui.label(
-                egui::RichText::new("Use #RRGGBB")
+                egui::RichText::new(crate::t!("ui.use_rrggbb"))
                     .size(9.0)
                     .color(ui.visuals().error_fg_color),
             );

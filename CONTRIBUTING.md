@@ -105,6 +105,12 @@ To add a new language:
 2. Translate the values. Do not change the key names.
 3. Open a PR with the new file.
 
+New languages must also be registered in `src/i18n.rs`, both in `LANGUAGES` and in the embedded translation map. Use standard language tags: `uk` for Ukrainian, `cs` for Czech, `ro` for Romanian, and `be` for Belarusian. Bogan English uses the private variant `en-AU-x-bogan` and is never selected automatically.
+
+Run `python tools/check_locales.py` to check every supported translation against English. The check reports missing and extra keys, duplicates, empty values, placeholder mismatches, registration gaps and missing letter or combining-mark glyphs in the bundled UI fonts. Preserve placeholders such as `{0}` exactly, and keep product names, file extensions and keyboard shortcuts intact. Review terminology in the actual control's context, then check for clipping in light and dark themes. Fluent-speaker review is encouraged.
+
+Portuguese has separate `pt-BR` (Brasil) and `pt-PT` (Portugal) catalogs. The old saved `pt` preference migrates to Brazilian Portuguese, matching the original wording. Both catalogs must stay complete; review regional terminology independently. Generic Portuguese system locales default to `pt-BR`.
+
 If you are updating an existing translation, check whether any keys in `en.txt` are missing from the file you are editing -- new features sometimes add new strings.
 
 ---

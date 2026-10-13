@@ -7,7 +7,7 @@ impl PaintFEApp {
 
         match dialog {
 
-            ActiveDialog::AddNoise(dlg) => match dlg.show(ctx) {
+            ActiveDialog::AddNoise(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     dlg.first_open = false;
                     let idx = dlg.layer_idx;
@@ -44,6 +44,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.preview_job_token = self.preview_job_token.wrapping_add(1);
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat {
@@ -154,7 +155,7 @@ impl PaintFEApp {
                 }
             },
 
-            ActiveDialog::ReduceNoise(dlg) => match dlg.show(ctx) {
+            ActiveDialog::ReduceNoise(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     dlg.first_open = false;
                     let idx = dlg.layer_idx;
@@ -182,6 +183,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.preview_job_token = self.preview_job_token.wrapping_add(1);
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat {
@@ -276,7 +278,7 @@ impl PaintFEApp {
             },
 
             ActiveDialog::Median(dlg) => {
-                match dlg.show(ctx) {
+                match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                     DialogResult::Changed => {
                         // Spawn async preview job (token-tracked, interrupts stale previews)
                         let idx = dlg.layer_idx;
@@ -304,6 +306,7 @@ impl PaintFEApp {
                         }
                     }
                     DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                         self.preview_job_token = self.preview_job_token.wrapping_add(1);
                         // Use GPU-accelerated median at full resolution
                         let idx = dlg.layer_idx;

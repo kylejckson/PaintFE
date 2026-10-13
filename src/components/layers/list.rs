@@ -92,7 +92,7 @@ impl LayersPanel {
             ui.label("🔍");
             let resp = ui.add(
                 egui::TextEdit::singleline(&mut self.search_query)
-                    .hint_text("Filter layers…")
+                    .hint_text(crate::t!("ui.filter_layers"))
                     .desired_width(ui.available_width() - 20.0),
             );
             // Clear button — only show when there's text
@@ -177,7 +177,7 @@ impl LayersPanel {
         if display_rows.is_empty() {
             ui.vertical_centered(|ui| {
                 ui.add_space(20.0);
-                ui.label(egui::RichText::new("No layers match filter").weak());
+                ui.label(egui::RichText::new(crate::t!("ui.no_layers_match_filter")).weak());
             });
             return;
         }
@@ -1221,9 +1221,9 @@ impl LayersPanel {
                 ui.close();
             }
             ui.separator();
-            ui.label(egui::RichText::new("Folder color").strong());
+            ui.label(egui::RichText::new(crate::t!("ui.folder_color")).strong());
             ui.horizontal_wrapped(|ui| {
-                if ui.small_button("None").clicked() {
+                if ui.small_button(crate::t!("line_end.none")).clicked() {
                     action = Some(FolderAction::SetColor(folder_id, None));
                     ui.close();
                 }
@@ -1498,12 +1498,12 @@ impl LayersPanel {
                 }
             }
             if is_this_soloed {
-                eye_response.on_hover_text("Soloed - Ctrl-click or right-click to unsolo");
+                eye_response.on_hover_text(crate::t!("ui.soloed_ctrl_click_or_right_click_to_unsolo"));
             } else {
                 eye_response.on_hover_text(if layer_visible {
-                    "Hide layer - Ctrl-click to solo - Right-click hold to peek"
+                    crate::t!("ui.hide_layer_ctrl_click_to_solo_right_click_hold_to_peek")
                 } else {
-                    "Show layer - Ctrl-click to solo - Right-click hold to peek"
+                    crate::t!("ui.show_layer_ctrl_click_to_solo_right_click_hold_to_peek")
                 });
             }
 
@@ -1668,7 +1668,7 @@ impl LayersPanel {
             ui.separator();
             if !canvas_state.layer_folders.is_empty() {
                 ui.menu_button(
-                    format!("{} Move to Folder", Icon::MenuFileOpen.emoji()),
+                    crate::i18n::format_translation("ui.0_move_to_folder", &[("0", Icon::MenuFileOpen.emoji().to_string())]),
                     |ui| {
                         for folder in &canvas_state.layer_folders {
                             if assets
@@ -1694,7 +1694,7 @@ impl LayersPanel {
                 ui.separator();
             }
             ui.menu_button(
-                format!("{} Extract Channel", Icon::MenuColorLevels.emoji()),
+                crate::i18n::format_translation("ui.0_extract_channel", &[("0", Icon::MenuColorLevels.emoji().to_string())]),
                 |ui| {
                     for (label, icon, channel) in [
                         ("Red", Icon::MenuColorCurves, ImageChannel::Red),

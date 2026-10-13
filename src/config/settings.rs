@@ -28,6 +28,7 @@ impl ZoomFilterMode {
 /// Application settings that persist across sessions
 #[derive(Clone, Debug)]
 pub struct AppSettings {
+    pub dialog_preferences: crate::ui::dialogs::remember::DialogPreferences,
     pub ui_polish: crate::ui::polish::PolishSettings,
     pub workspace: crate::ui::workspace::WorkspaceSettings,
     pub workspace_profiles: Vec<crate::ui::workspace::WorkspaceLayout>,
@@ -282,6 +283,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         let preset = ThemePreset::Signal;
         Self {
+            dialog_preferences: Default::default(),
             ui_polish: crate::ui::polish::PolishSettings::default(),
             workspace: crate::ui::workspace::WorkspaceSettings::default(),
             workspace_profiles: Vec::new(),
@@ -972,6 +974,7 @@ impl AppSettings {
              birefnet_model_path={}\n\
              paintdotnet_plugins_enabled={}\n\
              language={}\n\
+             language_tag_version=2\n\
              default_canvas_width={}\n\
              default_canvas_height={}\n\
              create_canvas_on_startup={}\n\
@@ -1040,6 +1043,10 @@ impl AppSettings {
                 serde_json::to_string(&self.last_export_directory),
             ),
             ("recent_files", serde_json::to_string(&self.recent_files)),
+            (
+                "dialog_preferences",
+                serde_json::to_string(&self.dialog_preferences),
+            ),
             (
                 "persist_colors_panel_size",
                 serde_json::to_string(&self.persist_colors_panel_size),
@@ -1641,6 +1648,11 @@ impl AppSettings {
                         s.last_export_directory = value;
                     }
                 }
+                "dialog_preferences" => {
+                    if let Ok(value) = serde_json::from_str(val) {
+                        s.dialog_preferences = value;
+                    }
+                }
                 "recent_files" => {
                     if let Ok(value) = serde_json::from_str::<Vec<String>>(val) {
                         s.recent_files = value.into_iter().take(20).collect();
@@ -2051,6 +2063,14 @@ impl AppSettings {
         {
             s.ui_polish.row_motion = false;
         }
+
+        let language_tag_version = content
+            .lines()
+            .filter_map(|line| line.split_once('='))
+            .find(|(key, _)| key.trim() == "language_tag_version")
+            .and_then(|(_, value)| value.trim().parse::<u32>().ok())
+            .unwrap_or(1);
+        s.language = crate::i18n::migrate_saved_language(&s.language, language_tag_version);
 
         // Corruption detection: if language field looks like a number, the
         // settings file was saved with the old misaligned argument order.

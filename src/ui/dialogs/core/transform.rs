@@ -72,7 +72,7 @@ impl LayerTransformDialog {
                 ui.add_space(4.0);
 
                 // -- Interactive Rotation Gizmo --
-                section_label(ui, &colors, "ROTATION \u{2014} drag rings to rotate");
+                section_label(ui, &colors, &crate::t!("ui.rotation_drag_rings_to_rotate"));
                 ui.add_space(2.0);
 
                 let gizmo_changed = self.draw_rotation_gizmo(ui, &colors);
@@ -82,13 +82,13 @@ impl LayerTransformDialog {
 
                 // -- Precise numeric controls --
                 accent_separator(ui, &colors);
-                section_label(ui, &colors, "PRECISE VALUES");
+                section_label(ui, &colors, &crate::t!("ui.precise_values"));
 
                 egui::Grid::new("transform_values")
                     .num_columns(2)
                     .spacing([8.0, 4.0])
                     .show(ui, |ui| {
-                        ui.label("Rotation");
+                        ui.label(crate::t!("ui.rotation"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.rotation_z,
@@ -101,7 +101,7 @@ impl LayerTransformDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Tilt X");
+                        ui.label(crate::t!("ui.tilt_x"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.rotation_x,
@@ -114,7 +114,7 @@ impl LayerTransformDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Tilt Y");
+                        ui.label(crate::t!("ui.tilt_y"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.rotation_y,
@@ -127,7 +127,7 @@ impl LayerTransformDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Scale");
+                        ui.label(crate::t!("dialog.resize_image.scale"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.scale_percent,
@@ -143,7 +143,7 @@ impl LayerTransformDialog {
 
                 // -- Offset --
                 accent_separator(ui, &colors);
-                section_label(ui, &colors, "OFFSET");
+                section_label(ui, &colors, &crate::t!("ui.offset"));
 
                 egui::Grid::new("transform_offset")
                     .num_columns(4)
@@ -486,14 +486,14 @@ impl AlignLayerDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "ALIGN TO CANVAS");
-                ui.label("Moves the active raster layer using its non-transparent bounds.");
+                section_label(ui, &colors, &crate::t!("ui.align_to_canvas"));
+                ui.label(crate::t!("ui.moves_the_active_raster_layer_using_its_non_transparent_bounds"));
                 ui.add_space(4.0);
 
                 ui.horizontal(|ui| {
-                    ui.label("Target:");
+                    ui.label(crate::t!("ui.target"));
                     if ui
-                        .selectable_label(!self.align_to_selection, "Canvas")
+                        .selectable_label(!self.align_to_selection, crate::t!("keybind_category.canvas"))
                         .clicked()
                     {
                         self.align_to_selection = false;
@@ -501,7 +501,7 @@ impl AlignLayerDialog {
                     }
                     ui.add_enabled_ui(self.has_selection, |ui| {
                         if ui
-                            .selectable_label(self.align_to_selection, "Selection")
+                            .selectable_label(self.align_to_selection, crate::t!("ui.selection"))
                             .clicked()
                         {
                             self.align_to_selection = true;
@@ -509,7 +509,7 @@ impl AlignLayerDialog {
                         }
                     });
                     if !self.has_selection {
-                        ui.label(egui::RichText::new("(no selection)").weak());
+                        ui.label(egui::RichText::new(crate::t!("ui.no_selection")).weak());
                     }
                 });
                 ui.add_space(2.0);
@@ -529,7 +529,7 @@ impl AlignLayerDialog {
                                 let selected =
                                     self.anchor_x == x as u32 && self.anchor_y == y as u32;
                                 let mut btn = egui::Button::new(
-                                    egui::RichText::new(*label).size(18.0).strong(),
+                                    egui::RichText::new(crate::i18n::translate_english(label)).size(18.0).strong(),
                                 )
                                 .min_size(egui::vec2(42.0, 34.0));
                                 if selected {

@@ -69,18 +69,18 @@ impl PaintFEApp {
                         if let Some(session) = self.straighten_session.as_mut() {
                             crate::signal_widgets::tool_shelf_tag(
                                 ui,
-                                "STRAIGHTEN",
+                                &crate::t!("ui.straighten"),
                                 self.theme.accent,
                                 &self.theme,
                             );
-                            ui.label("Angle:");
+                            ui.label(crate::t!("ctx.text.effects.gradient.angle"));
                             ui.add(
                                 crate::ui::numeric::Numeric::new(&mut session.angle_degrees)
                                     .speed(0.1)
                                     .range(-180.0..=180.0)
                                     .suffix("°"),
                             );
-                            ui.label("Interpolation:");
+                            ui.label(crate::t!("ui.interpolation"));
                             egui::ComboBox::from_id_salt("straighten_interpolation")
                                 .selected_text(session.interpolation.label())
                                 .width(100.0)
@@ -97,27 +97,27 @@ impl PaintFEApp {
                                     }
                                 });
                             // Quick actions — inline with the rest of the controls.
-                            if ui.button("Reset").clicked() {
+                            if ui.button(crate::t!("common.reset")).clicked() {
                                 session.angle_degrees = 0.0;
                             }
-                            if ui.button("Apply").clicked() {
+                            if ui.button(crate::t!("settings.keybinds.apply")).clicked() {
                                 commit_straighten = true;
                             }
-                            if ui.button("Cancel").clicked() {
+                            if ui.button(crate::t!("common.cancel")).clicked() {
                                 cancel_straighten = true;
                             }
                         } else if let Some(ref mut overlay) = self.paste_overlay {
                             // --- Paste overlay context bar ---
                             crate::signal_widgets::tool_shelf_tag(
                                 ui,
-                                "PASTE",
+                                &crate::t!("ui.paste"),
                                 self.theme.accent,
                                 &self.theme,
                             );
                             ui.add_space(6.0);
 
                             // Filter mode
-                            ui.label("Filter:");
+                            ui.label(crate::t!("ui.filter_2"));
                             let current_interp = overlay.interpolation;
                             egui::ComboBox::from_id_salt("ctx_paste_filter")
                                 .selected_text(current_interp.label())
@@ -141,7 +141,7 @@ impl PaintFEApp {
 
                             // Anti-aliasing toggle
                             if ui
-                                .checkbox(&mut overlay.anti_aliasing, "Anti-aliasing")
+                                .checkbox(&mut overlay.anti_aliasing, crate::t!("ui.anti_aliasing"))
                                 .changed()
                             {
                                 self.tools_panel.move_anti_aliasing = overlay.anti_aliasing;
@@ -151,21 +151,14 @@ impl PaintFEApp {
 
                             // Position info
                             let (content_w, content_h) = overlay.content_size();
-                            ui.label(format!(
-                                "X: {:.0}  Y: {:.0}  W: {:.0}  H: {:.0}  Rot: {:.1}°",
-                                overlay.center.x - content_w as f32 * overlay.scale_x / 2.0,
-                                overlay.center.y - content_h as f32 * overlay.scale_y / 2.0,
-                                content_w as f32 * overlay.scale_x,
-                                content_h as f32 * overlay.scale_y,
-                                overlay.rotation.to_degrees(),
-                            ));
+                            ui.label(crate::i18n::format_translation("ui.x_0_y_1_w_2_h_3_rot_4", &[("0", format!("{:.0}", overlay.center.x - content_w as f32 * overlay.scale_x / 2.0)), ("1", format!("{:.0}", overlay.center.y - content_h as f32 * overlay.scale_y / 2.0)), ("2", format!("{:.0}", content_w as f32 * overlay.scale_x)), ("3", format!("{:.0}", content_h as f32 * overlay.scale_y)), ("4", format!("{:.1}", overlay.rotation.to_degrees()))]));
 
                             ui.add_space(4.0);
 
                             // Quick action — inline with the rest of the controls.
                             if ui
-                                .button("Reset")
-                                .on_hover_text("Reset all transforms and crop")
+                                .button(crate::t!("common.reset"))
+                                .on_hover_text(crate::t!("ui.reset_all_transforms_and_crop"))
                                 .clicked()
                             {
                                 overlay.rotation = 0.0;
@@ -192,7 +185,7 @@ impl PaintFEApp {
                                     crate::assets::Icon::UiStraighten,
                                     egui::Vec2::splat(20.0),
                                 )
-                                .on_hover_text("Straighten canvas")
+                                .on_hover_text(crate::t!("ui.straighten_canvas"))
                                 .clicked()
                             {
                                 start_straighten = true;

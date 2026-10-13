@@ -564,7 +564,7 @@ fn update_system_motion(_ctx: &Context) {}
 pub fn preferences(ui: &mut Ui, config: &mut PolishSettings) -> bool {
     let before = config.clone();
     ui.horizontal(|ui| {
-        ui.label("Motion");
+        ui.label(crate::t!("ui.motion"));
         for (mode, label) in [
             (MotionMode::Off, "Off"),
             (MotionMode::Subtle, "Subtle"),
@@ -572,21 +572,27 @@ pub fn preferences(ui: &mut Ui, config: &mut PolishSettings) -> bool {
         ] {
             ui.selectable_value(&mut config.mode, mode, label)
                 .on_hover_text(match mode {
-                    MotionMode::Off => "Show state changes immediately without animations.",
-                    MotionMode::Subtle => "Use short, gentle transitions for controls and panels.",
+                    MotionMode::Off => {
+                        crate::t!("ui.show_state_changes_immediately_without_animations")
+                    }
+                    MotionMode::Subtle => {
+                        crate::t!("ui.use_short_gentle_transitions_for_controls_and_panels")
+                    }
                     MotionMode::Expressive => {
-                        "Use stronger transitions for hover, selection, menus and panels."
+                        crate::t!(
+                            "ui.use_stronger_transitions_for_hover_selection_menus_and_panels"
+                        )
                     }
                 });
         }
     });
     ui.checkbox(
         &mut config.respect_reduced_motion,
-        "Respect system reduced motion",
+        crate::t!("ui.respect_system_reduced_motion"),
     );
     ui.add(
         egui::Slider::new(&mut config.speed, 0.5..=2.0)
-            .text("Motion speed")
+            .text(crate::t!("ui.motion_speed"))
             .suffix("×"),
     );
     Collapse::new("Motion and interaction details").show(ui, |ui| {
@@ -601,46 +607,54 @@ pub fn preferences(ui: &mut Ui, config: &mut PolishSettings) -> bool {
         ] {
             ui.checkbox(value, label);
         }
-        ui.add(egui::Slider::new(&mut config.spring_strength, 0.0..=0.15).text("Spring strength"));
+        ui.add(
+            egui::Slider::new(&mut config.spring_strength, 0.0..=0.15)
+                .text(crate::t!("ui.spring_strength")),
+        );
         ui.checkbox(
             &mut config.numeric_wheel,
-            "Adjust numeric controls with the wheel",
+            crate::t!("ui.adjust_numeric_controls_with_the_wheel"),
         );
         ui.add(
             egui::Slider::new(&mut config.fine_adjustment, 0.01..=0.5)
-                .text("Shift fine adjustment")
+                .text(crate::t!("ui.shift_fine_adjustment"))
                 .suffix("×"),
         );
-        ui.label("Shift adjusts precisely; Alt bypasses panel snapping.");
+        ui.label(crate::t!(
+            "ui.shift_adjusts_precisely_alt_bypasses_panel_snapping"
+        ));
     });
     Collapse::new("Shared spacing and typography").show(ui, |ui| {
         ui.add(
             egui::Slider::new(&mut config.spacing_scale, 0.8..=1.5)
-                .text("Spacing")
+                .text(crate::t!("ui.spacing"))
                 .suffix("×"),
         );
         ui.add(
             egui::Slider::new(&mut config.text_scale, 0.85..=1.35)
-                .text("Text size")
+                .text(crate::t!("ui.text_size"))
                 .suffix("×"),
         );
         ui.add(
             egui::Slider::new(&mut config.icon_gap, 2.0..=8.0)
-                .text("Icon spacing")
+                .text(crate::t!("ui.icon_spacing"))
                 .suffix(" px"),
         );
         ui.add(
             egui::Slider::new(&mut config.border_width, 0.5..=2.0)
-                .text("Control borders")
+                .text(crate::t!("ui.control_borders"))
                 .suffix(" px"),
         );
         ui.add(
             egui::Slider::new(&mut config.focus_width, 1.0..=3.0)
-                .text("Keyboard focus outline")
+                .text(crate::t!("ui.keyboard_focus_outline"))
                 .suffix(" px"),
         );
     });
-    if ui.button("Reset motion and interaction").clicked() {
+    if ui
+        .button(crate::t!("ui.reset_motion_and_interaction"))
+        .clicked()
+    {
         *config = PolishSettings::default();
     }
     config.sanitize();
@@ -745,7 +759,7 @@ mod polish_tests {
                         .default_pos(egui::pos2(100.0, 100.0))
                         .show(&ctx, |ui| {
                             assert_eq!(ui.style().animation_time, 0.0);
-                            ui.label("Body");
+                            ui.label(crate::t!("ui.body"));
                         })
                         .unwrap();
                     // egui's first sizing pass measures content before its Resize state exists.

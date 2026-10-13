@@ -474,7 +474,10 @@ impl<'a> PillTabBar<'a> {
                     egui::WidgetInfo::labeled(
                         egui::WidgetType::Button,
                         ui.is_enabled(),
-                        format!("Close {}", tab.label),
+                        crate::i18n::format_translation(
+                            "ui.close_0",
+                            &[("0", tab.label.to_string())],
+                        ),
                     )
                 });
                 crate::ui::polish::control(
@@ -676,15 +679,26 @@ pub fn panel_header(
         // Exact width: the close button must land on the panel's right edge.
         ui.set_width(header_width);
 
-        let label = badge.map_or(title, |(label, _)| label);
-        ui.label(
-            egui::RichText::new(label)
-                .font(egui::FontId::new(
-                    11.0 * theme.polish.text_scale,
-                    egui::FontFamily::Name("WidgetTitle".into()),
-                ))
-                .strong()
-                .color(theme.text_color),
+        // `title` is also a stable gesture identity; localize only the display.
+        let label = crate::i18n::translate_english(badge.map_or(title, |(label, _)| label));
+        // Reserve the close button before laying out longer translated titles.
+        ui.allocate_ui_with_layout(
+            egui::vec2((header_width - 32.0).max(0.0), 18.0),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(label)
+                            .font(egui::FontId::new(
+                                11.0 * theme.polish.text_scale,
+                                egui::FontFamily::Name("WidgetTitle".into()),
+                            ))
+                            .strong()
+                            .color(theme.text_color),
+                    )
+                    .truncate(),
+                );
+            },
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             close_clicked = close_button(ui, theme).clicked();
@@ -864,7 +878,11 @@ pub fn paint_close_cross(ui: &Ui, rect: Rect, color: Color32) {
 pub fn close_button(ui: &mut Ui, theme: &Theme) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::click());
     response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Close")
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::Button,
+            ui.is_enabled(),
+            crate::t!("ui.close"),
+        )
     });
     crate::ui::polish::control(ui, &response, false, theme.widget_rounding.min(6.0));
     let hover = crate::ui::polish::hover(
@@ -877,7 +895,7 @@ pub fn close_button(ui: &mut Ui, theme: &Theme) -> egui::Response {
         rect,
         Theme::lerp_color(theme.text_muted, theme.accent, hover),
     );
-    response.on_hover_text("Close")
+    response.on_hover_text(crate::t!("ui.close"))
 }
 
 #[cfg(test)]

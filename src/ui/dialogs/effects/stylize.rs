@@ -14,14 +14,14 @@ impl GlowDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "GLOW SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.glow_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("glow_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Radius");
+                        ui.label(crate::t!("ui.radius"));
                         let r =
                             ui.add(egui::Slider::new(&mut self.radius, 1.0..=30.0).max_decimals(1));
                         if track_slider(&r, &mut self.dragging) {
@@ -29,7 +29,7 @@ impl GlowDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Intensity");
+                        ui.label(crate::t!("ui.intensity"));
                         let r = ui
                             .add(egui::Slider::new(&mut self.intensity, 0.0..=2.0).max_decimals(2));
                         if track_slider(&r, &mut self.dragging) {
@@ -80,14 +80,14 @@ impl SharpenDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "SHARPEN SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.sharpen_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("sharpen_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Amount");
+                        ui.label(crate::t!("ui.amount"));
                         let r =
                             ui.add(egui::Slider::new(&mut self.amount, 0.1..=5.0).max_decimals(1));
                         if track_slider(&r, &mut self.dragging) {
@@ -95,7 +95,7 @@ impl SharpenDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Radius");
+                        ui.label(crate::t!("ui.radius"));
                         let r =
                             ui.add(egui::Slider::new(&mut self.radius, 0.5..=10.0).max_decimals(1));
                         if track_slider(&r, &mut self.dragging) {
@@ -146,14 +146,14 @@ impl VignetteDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "VIGNETTE SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.vignette_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("vignette_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Amount");
+                        ui.label(crate::t!("ui.amount"));
                         let r =
                             ui.add(egui::Slider::new(&mut self.amount, 0.0..=2.0).max_decimals(2));
                         if track_slider(&r, &mut self.dragging) {
@@ -161,7 +161,7 @@ impl VignetteDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Softness");
+                        ui.label(crate::t!("ui.softness"));
                         let r = ui
                             .add(egui::Slider::new(&mut self.softness, 0.1..=1.5).max_decimals(2));
                         if track_slider(&r, &mut self.dragging) {
@@ -222,14 +222,14 @@ impl HalftoneDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "HALFTONE SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.halftone_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("halftone_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Dot Size");
+                        ui.label(crate::t!("ui.dot_size"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.dot_size, 2.0..=30.0)
                                 .suffix(" px")
@@ -240,7 +240,7 @@ impl HalftoneDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Angle");
+                        ui.label(crate::t!("ui.angle"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.angle, -90.0..=90.0)
                                 .suffix("°")
@@ -251,7 +251,7 @@ impl HalftoneDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Shape");
+                        ui.label(crate::t!("ui.shape"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             let shapes = [

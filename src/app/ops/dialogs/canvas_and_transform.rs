@@ -9,8 +9,9 @@ impl PaintFEApp {
 
             ActiveDialog::None => {}
 
-            ActiveDialog::ResizeImage(dlg) => match dlg.show(ctx) {
+            ActiveDialog::ResizeImage(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Ok((w, h, options)) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.settings.persist_resize_lock_aspect = dlg.lock_aspect;
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
@@ -74,8 +75,9 @@ impl PaintFEApp {
 
             ActiveDialog::ResizeCanvas(dlg) => {
                 let secondary = self.colors_panel.get_secondary_color_f32();
-                match dlg.show(ctx, secondary) {
+                match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx, secondary)) {
                     DialogResult::Ok((w, h, anchor, fill)) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                         self.settings.persist_resize_lock_aspect = dlg.lock_aspect;
                         self.active_dialog = ActiveDialog::None;
                         let fill = if dlg.fill_transparent {
@@ -139,7 +141,7 @@ impl PaintFEApp {
                 }
             }
 
-            ActiveDialog::AlignLayer(dlg) => match dlg.show(ctx) {
+            ActiveDialog::AlignLayer(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat
@@ -162,6 +164,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok((_ax, _ay, _selection_target)) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
                         let idx = dlg.layer_idx;
@@ -202,7 +205,7 @@ impl PaintFEApp {
             },
 
             ActiveDialog::GaussianBlur(dlg) => {
-                match dlg.show(ctx) {
+                match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                     DialogResult::Changed => {
                         // Spawn async preview job (token-tracked, interrupts stale previews)
                         let idx = dlg.layer_idx;
@@ -230,6 +233,7 @@ impl PaintFEApp {
                         }
                     }
                     DialogResult::Ok(_sigma) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                         self.preview_job_token = self.preview_job_token.wrapping_add(1);
                         // Spawn full-resolution blur on background thread.
                         self.filter_cancel
@@ -291,7 +295,7 @@ impl PaintFEApp {
             }
 
             ActiveDialog::LayerTransform(dlg) => {
-                match dlg.show(ctx) {
+                match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                     DialogResult::Changed => {
                         // Live preview: use pre-flattened original to skip
                         // the expensive clone -> flatten round-trip.
@@ -317,6 +321,7 @@ impl PaintFEApp {
                         }
                     }
                     DialogResult::Ok((_rot_z, _rot_x, _rot_y, _scale, _offset)) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                         // Accept current preview - push undo.
                         self.active_dialog = ActiveDialog::None;
                         if let Some(project) = self.active_project_mut() {

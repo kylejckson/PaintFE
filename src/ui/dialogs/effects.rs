@@ -46,6 +46,8 @@ macro_rules! effect_dialog_base {
             $(pub $field: $ty,)*
         }
 
+        crate::impl_dialog_parameters!($name { $($field),* });
+
         impl $name {
             pub fn new(state: &CanvasState) -> Self {
                 let idx = state.active_layer_index;

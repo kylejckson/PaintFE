@@ -38,20 +38,20 @@ impl BrightnessContrastDialog {
                 }
                 ui.add_space(4.0);
 
-                section_label(ui, &colors, "ADJUSTMENTS");
+                section_label(ui, &colors, &crate::t!("ui.adjustments"));
                 let mut changed = false;
 
                 egui::Grid::new("bc_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Brightness");
+                        ui.label(crate::t!("ui.brightness"));
                         if dialog_slider(ui, &mut self.brightness, -100.0..=100.0, 1.0, "", 0) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Contrast");
+                        ui.label(crate::t!("ui.contrast"));
                         if dialog_slider(ui, &mut self.contrast, -100.0..=100.0, 1.0, "", 0) {
                             changed = true;
                         }
@@ -162,26 +162,26 @@ impl HueSaturationDialog {
                 }
                 ui.add_space(4.0);
 
-                section_label(ui, &colors, "GLOBAL ADJUSTMENTS");
+                section_label(ui, &colors, &crate::t!("ui.global_adjustments"));
                 let mut changed = false;
 
                 egui::Grid::new("hs_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Hue");
+                        ui.label(crate::t!("ui.hue"));
                         if dialog_slider(ui, &mut self.hue, -180.0..=180.0, 1.0, "°", 0) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Saturation");
+                        ui.label(crate::t!("ui.saturation"));
                         if dialog_slider(ui, &mut self.saturation, -100.0..=100.0, 1.0, "", 0) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Lightness");
+                        ui.label(crate::t!("ui.lightness"));
                         if dialog_slider(ui, &mut self.lightness, -100.0..=100.0, 1.0, "", 0) {
                             changed = true;
                         }
@@ -215,7 +215,7 @@ impl HueSaturationDialog {
 
                 // Per-band toggle
                 ui.add_space(6.0);
-                if ui.checkbox(&mut self.per_band, "Per Band").changed() {
+                if ui.checkbox(&mut self.per_band, crate::t!("ui.per_band")).changed() {
                     changed = true;
                 }
 
@@ -225,7 +225,7 @@ impl HueSaturationDialog {
                     const BAND_NAMES: [&str; 6] = ["R", "Y", "G", "C", "B", "M"];
                     const BAND_HUES: [f32; 6] = [0.0, 60.0, 120.0, 180.0, 240.0, 300.0];
                     ui.horizontal(|ui| {
-                        ui.label("Band:");
+                        ui.label(crate::t!("ui.band"));
                         for i in 0..6 {
                             let band = &self.bands[i];
                             let is_nondefault =
@@ -262,27 +262,29 @@ impl HueSaturationDialog {
                     });
 
                     // Per-band sliders for selected band
-                    let band_label = ["Reds", "Yellows", "Greens", "Cyans", "Blues", "Magentas"]
-                        [self.selected_band];
+                    let band_label = crate::i18n::translate_english(
+                        ["Reds", "Yellows", "Greens", "Cyans", "Blues", "Magentas"]
+                            [self.selected_band],
+                    );
                     ui.add_space(4.0);
-                    section_label(ui, &colors, &format!("{} BAND", band_label.to_uppercase()));
+                    section_label(ui, &colors, &crate::i18n::format_translation("ui.0_band", &[("0", band_label.to_uppercase().to_string())]));
 
                     let b = &mut self.bands[self.selected_band];
                     egui::Grid::new("hs_band_params")
                         .num_columns(2)
                         .spacing([8.0, 6.0])
                         .show(ui, |ui| {
-                            ui.label("Hue");
+                            ui.label(crate::t!("ui.hue"));
                             if dialog_slider(ui, &mut b.hue, -180.0..=180.0, 1.0, "°", 0) {
                                 changed = true;
                             }
                             ui.end_row();
-                            ui.label("Saturation");
+                            ui.label(crate::t!("ui.saturation"));
                             if dialog_slider(ui, &mut b.saturation, -100.0..=100.0, 1.0, "", 0) {
                                 changed = true;
                             }
                             ui.end_row();
-                            ui.label("Lightness");
+                            ui.label(crate::t!("ui.lightness"));
                             if dialog_slider(ui, &mut b.lightness, -100.0..=100.0, 1.0, "", 0) {
                                 changed = true;
                             }
@@ -290,7 +292,7 @@ impl HueSaturationDialog {
                         });
 
                     // Reset band button
-                    if ui.small_button("Reset Band").clicked() {
+                    if ui.small_button(crate::t!("ui.reset_band")).clicked() {
                         self.bands[self.selected_band] = Default::default();
                         changed = true;
                     }
@@ -385,20 +387,20 @@ impl ExposureDialog {
                 }
                 ui.add_space(4.0);
 
-                section_label(ui, &colors, "EXPOSURE");
+                section_label(ui, &colors, &crate::t!("ui.exposure"));
                 let mut changed = false;
 
                 egui::Grid::new("exp_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("EV Stops");
+                        ui.label(crate::t!("ui.ev_stops"));
                         if dialog_slider(ui, &mut self.exposure, -5.0..=5.0, 0.1, " EV", 2) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Quick");
+                        ui.label(crate::t!("ui.quick"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             for &(label, val) in &[
@@ -411,11 +413,11 @@ impl ExposureDialog {
                                 let is_close = (self.exposure - val).abs() < 0.1;
                                 let btn = if is_close {
                                     egui::Button::new(
-                                        egui::RichText::new(label).strong().size(11.0),
+                                        egui::RichText::new(crate::i18n::translate_english(label)).strong().size(11.0),
                                     )
                                     .fill(colors.accent_faint)
                                 } else {
-                                    egui::Button::new(egui::RichText::new(label).size(11.0))
+                                    egui::Button::new(egui::RichText::new(crate::i18n::translate_english(label)).size(11.0))
                                 };
                                 if ui.add(btn).clicked() {
                                     self.exposure = val;
@@ -516,20 +518,20 @@ impl HighlightsShadowsDialog {
                 }
                 ui.add_space(4.0);
 
-                section_label(ui, &colors, "TONAL ADJUSTMENTS");
+                section_label(ui, &colors, &crate::t!("ui.tonal_adjustments"));
                 let mut changed = false;
 
                 egui::Grid::new("hs_params_grid")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Shadows");
+                        ui.label(crate::t!("ui.shadows"));
                         if dialog_slider(ui, &mut self.shadows, -100.0..=100.0, 1.0, "", 0) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Highlights");
+                        ui.label(crate::t!("ui.highlights"));
                         if dialog_slider(ui, &mut self.highlights, -100.0..=100.0, 1.0, "", 0) {
                             changed = true;
                         }
@@ -578,7 +580,7 @@ impl HighlightsShadowsDialog {
                 painter.text(
                     Pos2::new(bar_rect.min.x + half * 0.5, bar_rect.center().y),
                     egui::Align2::CENTER_CENTER,
-                    "Shadows",
+                    crate::t!("ui.shadows"),
                     egui::FontId::proportional(9.0),
                     if shadow_brightness > 0.3 {
                         Color32::BLACK
@@ -589,7 +591,7 @@ impl HighlightsShadowsDialog {
                 painter.text(
                     Pos2::new(bar_rect.min.x + half * 1.5, bar_rect.center().y),
                     egui::Align2::CENTER_CENTER,
-                    "Highlights",
+                    crate::t!("ui.highlights"),
                     egui::FontId::proportional(9.0),
                     if highlight_brightness > 0.7 {
                         Color32::BLACK
@@ -743,7 +745,7 @@ impl LevelsDialog {
                         if ui
                             .add(
                                 egui::Button::new(
-                                    egui::RichText::new(*label).color(btn_color).strong(),
+                                    egui::RichText::new(crate::i18n::translate_english(label)).color(btn_color).strong(),
                                 )
                                 .fill(if selected {
                                     Self::ch_color(i, &colors).linear_multiply(0.2)
@@ -763,7 +765,7 @@ impl LevelsDialog {
                 let ci = self.active_channel;
                 let histogram = &self.ch_histograms[ci];
                 let hist_max = self.ch_hist_max[ci];
-                section_label(ui, &colors, "HISTOGRAM");
+                section_label(ui, &colors, &crate::t!("ui.histogram"));
                 let hist_height = 80.0;
                 let hist_rect = ui
                     .allocate_space(Vec2::new(ui.available_width(), hist_height))
@@ -810,14 +812,14 @@ impl LevelsDialog {
                 ui.add_space(4.0);
 
                 // --- Input levels ---
-                section_label(ui, &colors, "INPUT LEVELS");
+                section_label(ui, &colors, &crate::t!("ui.input_levels"));
                 let mut changed = false;
 
                 egui::Grid::new("levels_input")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Black Point");
+                        ui.label(crate::t!("ui.black_point"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.ch_input_black[ci],
@@ -833,13 +835,13 @@ impl LevelsDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Gamma");
+                        ui.label(crate::t!("ui.gamma"));
                         if dialog_slider(ui, &mut self.ch_gamma[ci], 0.1..=10.0, 0.05, "", 2) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("White Point");
+                        ui.label(crate::t!("ui.white_point"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.ch_input_white[ci],
@@ -857,13 +859,13 @@ impl LevelsDialog {
                     });
 
                 accent_separator(ui, &colors);
-                section_label(ui, &colors, "OUTPUT LEVELS");
+                section_label(ui, &colors, &crate::t!("ui.output_levels"));
 
                 egui::Grid::new("levels_output")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Output Black");
+                        ui.label(crate::t!("ui.output_black"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.ch_output_black[ci],
@@ -876,7 +878,7 @@ impl LevelsDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Output White");
+                        ui.label(crate::t!("ui.output_white"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.ch_output_white[ci],
@@ -957,7 +959,7 @@ const CH_ALPHA: usize = 4;
 const CHANNEL_COUNT: usize = 5;
 
 /// Per-channel curve data.
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct CurveChannel {
     /// Control points [(input, output)] in 0..255, sorted by input.
     pub points: Vec<(f32, f32)>,
@@ -1047,7 +1049,7 @@ impl CurvesDialog {
                 ui.add_space(4.0);
 
                 // --- Channel selector row ---
-                section_label(ui, &colors, "CHANNEL");
+                section_label(ui, &colors, &crate::t!("ui.channel"));
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 3.0;
                     for ch in 0..CHANNEL_COUNT {
@@ -1058,7 +1060,7 @@ impl CurvesDialog {
                         let _is_visible = self.channels[ch].visible;
 
                         // Channel button: click = select, shows active state
-                        let text = egui::RichText::new(label).size(11.0).color(if !is_enabled {
+                        let text = egui::RichText::new(crate::i18n::translate_english(label)).size(11.0).color(if !is_enabled {
                             colors.text_muted
                         } else if is_active {
                             Color32::WHITE
@@ -1084,7 +1086,7 @@ impl CurvesDialog {
                     };
                     if ui
                         .small_button(eye_text)
-                        .on_hover_text("Toggle curve visibility on graph")
+                        .on_hover_text(crate::t!("ui.toggle_curve_visibility_on_graph"))
                         .clicked()
                     {
                         self.channels[ch].visible = !self.channels[ch].visible;
@@ -1106,7 +1108,7 @@ impl CurvesDialog {
                             )
                             .small(),
                         )
-                        .on_hover_text("Toggle channel enabled/disabled")
+                        .on_hover_text(crate::t!("ui.toggle_channel_enabled_disabled"))
                         .clicked()
                     {
                         self.channels[ch].enabled = !self.channels[ch].enabled;
@@ -1120,7 +1122,7 @@ impl CurvesDialog {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     ui.label(
                         egui::RichText::new(
-                            "Click to add points • Right-click to remove • Drag to adjust",
+                            crate::t!("ui.click_to_add_points_right_click_to_remove_drag_to_adjust"),
                         )
                         .size(10.0)
                         .color(colors.text_muted),
@@ -1343,29 +1345,25 @@ impl CurvesDialog {
                 ui.add_space(2.0);
                 let ch_label = Self::channel_label(active_ch);
                 ui.label(
-                    egui::RichText::new(format!(
-                        "{} — {} control points",
-                        ch_label,
-                        self.channels[active_ch].points.len()
-                    ))
+                    egui::RichText::new(crate::i18n::format_translation("ui.0_1_control_points", &[("0", ch_label.to_string()), ("1", format!("{}", self.channels[active_ch].points.len()))]))
                     .size(10.0)
                     .color(colors.text_muted),
                 );
 
                 // Presets (apply to active channel)
                 ui.add_space(2.0);
-                section_label(ui, &colors, "PRESETS");
+                section_label(ui, &colors, &crate::t!("ui.presets"));
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     if ui
-                        .button(egui::RichText::new("Linear").size(11.0))
+                        .button(egui::RichText::new(crate::t!("gradient_shape.linear")).size(11.0))
                         .clicked()
                     {
                         self.channels[active_ch].points = vec![(0.0, 0.0), (255.0, 255.0)];
                         changed = true;
                     }
                     if ui
-                        .button(egui::RichText::new("Brighten").size(11.0))
+                        .button(egui::RichText::new(crate::t!("ui.brighten")).size(11.0))
                         .clicked()
                     {
                         self.channels[active_ch].points =
@@ -1373,7 +1371,7 @@ impl CurvesDialog {
                         changed = true;
                     }
                     if ui
-                        .button(egui::RichText::new("Darken").size(11.0))
+                        .button(egui::RichText::new(crate::t!("blend.darken")).size(11.0))
                         .clicked()
                     {
                         self.channels[active_ch].points =
@@ -1381,7 +1379,7 @@ impl CurvesDialog {
                         changed = true;
                     }
                     if ui
-                        .button(egui::RichText::new("S-Curve").size(11.0))
+                        .button(egui::RichText::new(crate::t!("ui.s_curve")).size(11.0))
                         .clicked()
                     {
                         self.channels[active_ch].points =
@@ -1389,7 +1387,7 @@ impl CurvesDialog {
                         changed = true;
                     }
                     if ui
-                        .button(egui::RichText::new("Negative").size(11.0))
+                        .button(egui::RichText::new(crate::t!("ui.negative")).size(11.0))
                         .clicked()
                     {
                         self.channels[active_ch].points = vec![(0.0, 255.0), (255.0, 0.0)];
@@ -1469,20 +1467,20 @@ impl TemperatureTintDialog {
                 }
                 ui.add_space(4.0);
 
-                section_label(ui, &colors, "WHITE BALANCE");
+                section_label(ui, &colors, &crate::t!("ui.white_balance"));
                 let mut changed = false;
 
                 egui::Grid::new("tt_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Temperature");
+                        ui.label(crate::t!("ui.temperature"));
                         if dialog_slider(ui, &mut self.temperature, -100.0..=100.0, 1.0, "", 0) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Tint");
+                        ui.label(crate::t!("ui.tint"));
                         if dialog_slider(ui, &mut self.tint, -100.0..=100.0, 1.0, "", 0) {
                             changed = true;
                         }
@@ -1676,14 +1674,14 @@ impl ThresholdDialog {
                 }
                 ui.add_space(4.0);
 
-                section_label(ui, &colors, "THRESHOLD");
+                section_label(ui, &colors, &crate::t!("ui.threshold"));
                 let mut changed = false;
 
                 egui::Grid::new("threshold_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Level");
+                        ui.label(crate::t!("ui.level"));
                         if dialog_slider(ui, &mut self.level, 0.0..=255.0, 1.0, "", 0) {
                             changed = true;
                         }
@@ -1783,7 +1781,7 @@ impl PosterizeDialog {
                 }
                 ui.add_space(4.0);
 
-                section_label(ui, &colors, "POSTERIZE");
+                section_label(ui, &colors, &crate::t!("ui.posterize"));
                 let mut changed = false;
                 let mut levels_i32 = self.levels as i32;
 
@@ -1791,7 +1789,7 @@ impl PosterizeDialog {
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Levels");
+                        ui.label(crate::t!("dialog.levels"));
                         {
                             let mut lf = levels_i32 as f32;
                             if dialog_slider(ui, &mut lf, 2.0..=16.0, 1.0, "", 0) {
@@ -1900,9 +1898,9 @@ impl ColorBalanceDialog {
                     for (i, label) in ["Shadows", "Midtones", "Highlights"].iter().enumerate() {
                         let active = self.active_zone == i as u8;
                         let btn = if active {
-                            egui::Button::new(*label).fill(colors.accent_faint)
+                            egui::Button::new(crate::i18n::translate_english(label)).fill(colors.accent_faint)
                         } else {
-                            egui::Button::new(*label)
+                            egui::Button::new(crate::i18n::translate_english(label))
                         };
                         if ui.add(btn).clicked() {
                             self.active_zone = i as u8;
@@ -1917,7 +1915,7 @@ impl ColorBalanceDialog {
                     _ => &mut self.midtones,
                 };
 
-                section_label(ui, &colors, "RGB BALANCE");
+                section_label(ui, &colors, &crate::t!("ui.rgb_balance"));
                 let mut changed = false;
 
                 egui::Grid::new("cb_params")
@@ -1925,7 +1923,7 @@ impl ColorBalanceDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(
-                            egui::RichText::new("Cyan — Red")
+                            egui::RichText::new(crate::t!("ui.cyan_red"))
                                 .color(Color32::from_rgb(200, 100, 100)),
                         );
                         if dialog_slider(ui, &mut zone[0], -100.0..=100.0, 1.0, "", 0) {
@@ -1934,7 +1932,7 @@ impl ColorBalanceDialog {
                         ui.end_row();
 
                         ui.label(
-                            egui::RichText::new("Magenta — Green")
+                            egui::RichText::new(crate::t!("ui.magenta_green"))
                                 .color(Color32::from_rgb(100, 180, 100)),
                         );
                         if dialog_slider(ui, &mut zone[1], -100.0..=100.0, 1.0, "", 0) {
@@ -1943,7 +1941,7 @@ impl ColorBalanceDialog {
                         ui.end_row();
 
                         ui.label(
-                            egui::RichText::new("Yellow — Blue")
+                            egui::RichText::new(crate::t!("ui.yellow_blue"))
                                 .color(Color32::from_rgb(100, 140, 220)),
                         );
                         if dialog_slider(ui, &mut zone[2], -100.0..=100.0, 1.0, "", 0) {
@@ -1984,7 +1982,7 @@ impl ColorBalanceDialog {
 // ============================================================================
 
 /// Presets for the gradient map
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum GradientMapPreset {
     BlackToWhite,
     WhiteToBlack,
@@ -2078,7 +2076,7 @@ impl GradientMapDialog {
                 ui.add_space(4.0);
 
                 // Preset buttons
-                section_label(ui, &colors, "PRESETS");
+                section_label(ui, &colors, &crate::t!("ui.presets"));
                 ui.horizontal_wrapped(|ui| {
                     let presets = [
                         (GradientMapPreset::BlackToWhite, "B→W"),
@@ -2091,9 +2089,9 @@ impl GradientMapDialog {
                     for (preset, label) in presets {
                         let active = self.preset == preset;
                         let btn = if active {
-                            egui::Button::new(label).fill(colors.accent_faint)
+                            egui::Button::new(crate::i18n::translate_english(label)).fill(colors.accent_faint)
                         } else {
-                            egui::Button::new(label)
+                            egui::Button::new(crate::i18n::translate_english(label))
                         };
                         if ui.add(btn).clicked() && !active {
                             self.apply_preset(preset);
@@ -2130,13 +2128,13 @@ impl GradientMapDialog {
 
                 // Shadow / Highlight color pickers
                 ui.add_space(4.0);
-                section_label(ui, &colors, "COLORS");
+                section_label(ui, &colors, &crate::t!("ui.colors_2"));
                 let mut changed_color = false;
                 egui::Grid::new("gm_colors")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Shadows");
+                        ui.label(crate::t!("ui.shadows"));
                         let mut c = Color32::from_rgb(
                             self.shadow_color[0],
                             self.shadow_color[1],
@@ -2149,7 +2147,7 @@ impl GradientMapDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Highlights");
+                        ui.label(crate::t!("ui.highlights"));
                         let mut c = Color32::from_rgb(
                             self.highlight_color[0],
                             self.highlight_color[1],
@@ -2234,7 +2232,7 @@ impl BlackAndWhiteDialog {
 
                 // Quick presets
                 ui.horizontal(|ui| {
-                    if ui.small_button("Luminosity").clicked() {
+                    if ui.small_button(crate::t!("ui.luminosity")).clicked() {
                         self.r_weight = 21.26;
                         self.g_weight = 71.52;
                         self.b_weight = 7.22;
@@ -2242,7 +2240,7 @@ impl BlackAndWhiteDialog {
                             result = DialogResult::Changed;
                         }
                     }
-                    if ui.small_button("Natural").clicked() {
+                    if ui.small_button(crate::t!("ui.natural")).clicked() {
                         self.r_weight = 40.0;
                         self.g_weight = 40.0;
                         self.b_weight = 20.0;
@@ -2250,7 +2248,7 @@ impl BlackAndWhiteDialog {
                             result = DialogResult::Changed;
                         }
                     }
-                    if ui.small_button("Infrared").clicked() {
+                    if ui.small_button(crate::t!("ui.infrared")).clicked() {
                         self.r_weight = 60.0;
                         self.g_weight = 40.0;
                         self.b_weight = 0.0;
@@ -2258,7 +2256,7 @@ impl BlackAndWhiteDialog {
                             result = DialogResult::Changed;
                         }
                     }
-                    if ui.small_button("Flat").clicked() {
+                    if ui.small_button(crate::t!("ui.flat")).clicked() {
                         self.r_weight = 33.33;
                         self.g_weight = 33.33;
                         self.b_weight = 33.33;
@@ -2268,21 +2266,21 @@ impl BlackAndWhiteDialog {
                     }
                 });
 
-                section_label(ui, &colors, "CHANNEL WEIGHTS");
+                section_label(ui, &colors, &crate::t!("ui.channel_weights"));
                 let mut changed = false;
 
                 egui::Grid::new("bw_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label(egui::RichText::new("Reds").color(Color32::from_rgb(220, 80, 80)));
+                        ui.label(egui::RichText::new(crate::t!("ui.reds")).color(Color32::from_rgb(220, 80, 80)));
                         if dialog_slider(ui, &mut self.r_weight, 0.0..=200.0, 1.0, "", 1) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(
-                            egui::RichText::new("Greens").color(Color32::from_rgb(80, 180, 80)),
+                            egui::RichText::new(crate::t!("ui.greens")).color(Color32::from_rgb(80, 180, 80)),
                         );
                         if dialog_slider(ui, &mut self.g_weight, 0.0..=200.0, 1.0, "", 1) {
                             changed = true;
@@ -2290,7 +2288,7 @@ impl BlackAndWhiteDialog {
                         ui.end_row();
 
                         ui.label(
-                            egui::RichText::new("Blues").color(Color32::from_rgb(80, 140, 220)),
+                            egui::RichText::new(crate::t!("ui.blues")).color(Color32::from_rgb(80, 140, 220)),
                         );
                         if dialog_slider(ui, &mut self.b_weight, 0.0..=200.0, 1.0, "", 1) {
                             changed = true;
@@ -2397,14 +2395,14 @@ impl VibranceDialog {
                 }
                 ui.add_space(4.0);
 
-                section_label(ui, &colors, "VIBRANCE");
+                section_label(ui, &colors, &crate::t!("ui.vibrance"));
                 let mut changed = false;
 
                 egui::Grid::new("vibrance_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Vibrance");
+                        ui.label(crate::t!("dialog.vibrance"));
                         if dialog_slider(ui, &mut self.amount, -100.0..=100.0, 1.0, "", 0) {
                             changed = true;
                         }

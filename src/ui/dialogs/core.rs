@@ -347,7 +347,11 @@ fn paint_dialog_header_impl(
     let theme = ctx_theme(ui.ctx());
     crate::ui::polish::control(ui, &close_response, false, theme.widget_rounding.min(6.0));
     close_response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Close dialog")
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::Button,
+            ui.is_enabled(),
+            crate::t!("ui.close_dialog"),
+        )
     });
     crate::signal_widgets::paint_close_cross(
         ui,
@@ -359,6 +363,7 @@ fn paint_dialog_header_impl(
         },
     );
 
+    super::remember::header(ui, rect, header_height);
     close_response.clicked()
 }
 
@@ -601,7 +606,13 @@ pub(crate) fn dialog_slider(
                 let is_default = (*value - default_value).abs() <= step.abs().max(0.0001) * 0.5;
                 let reset_resp = ui
                     .add_enabled(!is_default, egui::Button::new("↺"))
-                    .on_hover_text(format!("Reset to {default_value}{suffix}"));
+                    .on_hover_text(crate::i18n::format_translation(
+                        "ui.reset_to_0_1",
+                        &[
+                            ("0", format!("{}", default_value)),
+                            ("1", suffix.to_string()),
+                        ],
+                    ));
                 if reset_resp.clicked() {
                     *value = default_value;
                     changed = true;
@@ -946,9 +957,9 @@ mod footer_keyboard_tests {
             let _ = ctx.run_ui(raw(key), |_| {
                 crate::ui::polish::window(&ctx, "Keyboard test").show(&ctx, |ui| {
                     let combo = egui::ComboBox::from_id_salt("preset")
-                        .selected_text("Custom")
+                        .selected_text(crate::t!("theme_preset.custom"))
                         .show_ui(ui, |ui| {
-                            let _ = ui.selectable_label(false, "HD");
+                            let _ = ui.selectable_label(false, crate::t!("ui.hd"));
                         });
                     if frame == 1 {
                         combo.response.request_focus();
@@ -992,7 +1003,7 @@ mod footer_keyboard_tests {
             }
             let mut result = DialogResult::Open;
             let _ = ctx.run_ui(input, |ui| {
-                let _ = ui.button("Background control");
+                let _ = ui.button(crate::t!("ui.background_control"));
                 result = dialog.show(&ctx);
             });
             if frame < 6 {

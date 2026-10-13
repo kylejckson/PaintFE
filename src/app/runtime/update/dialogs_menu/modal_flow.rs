@@ -3,7 +3,10 @@ impl PaintFEApp {
         if let Some(error) = self.filter_error.clone() {
             egui::Modal::new(egui::Id::new("filter_error")).show(ctx, |ui| {
                 ui.heading(t!("common.error"));
-                ui.label(error);
+                egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                    ui.set_max_width(550.0);
+                    ui.label(error);
+                });
                 if ui.button(t!("common.ok")).clicked() { self.filter_error = None; }
             });
         }
@@ -103,32 +106,32 @@ impl PaintFEApp {
             }
         }
         let mut import_choice: Option<usize> = None;
-        if self.pending_oversized_import.is_none()
+        if self.filter_error.is_none() && self.pending_oversized_import.is_none()
             && let Some(item) = self.pending_import_queue.first().cloned()
         {
             use crate::ops::dialogs::{DialogAction, action_list, dialog_card_header};
             let total = self.pending_import_queue.len();
             let caption = if total > 1 {
-                Some(format!("{} · {} more waiting", item.name, total - 1))
+                Some(crate::i18n::format_translation("ui.0_1_more_waiting", &[("0", item.name.to_string()), ("1", format!("{}", total - 1))]))
             } else {
                 Some(item.name.clone())
             };
             let actions = [
                 DialogAction::new(
                     crate::assets::Icon::DialogOpenImage,
-                    "Open",
-                    "Open the image in a new document.",
+                    crate::t!("ui.open"),
+                    crate::t!("ui.open_the_image_in_a_new_document"),
                 )
                 .recommended(),
                 DialogAction::new(
                     crate::assets::Icon::DialogAddLayer,
-                    "Add as Layer",
-                    "Place the image into the current canvas as a new layer.",
+                    crate::t!("ui.add_as_layer"),
+                    crate::t!("ui.place_the_image_into_the_current_canvas_as_a_new_layer"),
                 ),
                 DialogAction::new(
                     crate::assets::Icon::DialogCancel,
-                    "Cancel",
-                    "Don't import the image.",
+                    crate::t!("common.cancel"),
+                    crate::t!("ui.don_t_import_the_image"),
                 ),
             ];
             let mut apply_all = self.import_apply_to_all;
@@ -144,7 +147,7 @@ impl PaintFEApp {
                         ui,
                         &self.assets,
                         crate::assets::Icon::DialogOpenImage,
-                        "Import image",
+                        &crate::t!("ui.import_image"),
                     ) {
                         import_choice = Some(2);
                     }
@@ -159,7 +162,7 @@ impl PaintFEApp {
                     }
                     if total > 1 {
                         ui.add_space(8.0);
-                        ui.checkbox(&mut apply_all, "Apply to all remaining");
+                        ui.checkbox(&mut apply_all, crate::t!("ui.apply_to_all_remaining"));
                     }
                 });
             if let Some(response) = window_response {
@@ -202,19 +205,19 @@ impl PaintFEApp {
             let actions = [
                 DialogAction::new(
                     crate::assets::Icon::DialogExpandCanvas,
-                    "Expand Canvas",
-                    "Resize canvas to fit the image.",
+                    crate::t!("ui.expand_canvas"),
+                    crate::t!("ui.resize_canvas_to_fit_the_image"),
                 )
                 .recommended(),
                 DialogAction::new(
                     crate::assets::Icon::DialogKeepCanvas,
-                    "Keep Canvas",
-                    "Place the image as is (may be cropped).",
+                    crate::t!("ui.keep_canvas"),
+                    crate::t!("ui.place_the_image_as_is_may_be_cropped"),
                 ),
                 DialogAction::new(
                     crate::assets::Icon::DialogCancel,
-                    "Cancel",
-                    "Don't import the image.",
+                    crate::t!("common.cancel"),
+                    crate::t!("ui.don_t_import_the_image"),
                 ),
             ];
             let window_response = crate::ui::polish::window(ctx, "Oversized Import")
@@ -229,14 +232,11 @@ impl PaintFEApp {
                         ui,
                         &self.assets,
                         crate::assets::Icon::DialogOpenImage,
-                        "Image is larger than canvas",
+                        &crate::t!("ui.image_is_larger_than_canvas"),
                     ) {
                         oversize_choice = Some(2);
                     }
-                    let question = format!(
-                        "The image is {} \u{D7} {}, which is larger than the current canvas ({} \u{D7} {}). How would you like to proceed?",
-                        iw, ih, cw, ch
-                    );
+                    let question = crate::i18n::format_translation("ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would", &[("0", format!("{}", iw)), ("1", format!("{}", ih)), ("2", format!("{}", cw)), ("3", format!("{}", ch))]);
                     if let Some(idx) = action_list(ui, &self.assets, &question, None, &actions) {
                         oversize_choice = Some(idx);
                     }
@@ -280,19 +280,19 @@ impl PaintFEApp {
             let actions = [
                 DialogAction::new(
                     crate::assets::Icon::DialogExpandCanvas,
-                    "Expand Canvas",
-                    "Resize canvas to fit the pasted image.",
+                    crate::t!("ui.expand_canvas"),
+                    crate::t!("ui.resize_canvas_to_fit_the_pasted_image"),
                 )
                 .recommended(),
                 DialogAction::new(
                     crate::assets::Icon::DialogKeepCanvas,
-                    "Keep Canvas",
-                    "Paste the image as is (may be cropped).",
+                    crate::t!("ui.keep_canvas"),
+                    crate::t!("ui.paste_the_image_as_is_may_be_cropped"),
                 ),
                 DialogAction::new(
                     crate::assets::Icon::DialogCancel,
-                    "Cancel",
-                    "Don't paste the image.",
+                    crate::t!("common.cancel"),
+                    crate::t!("ui.don_t_paste_the_image"),
                 ),
             ];
             let window_response = crate::ui::polish::window(ctx, "Paste Image")
@@ -307,14 +307,11 @@ impl PaintFEApp {
                         ui,
                         &self.assets,
                         crate::assets::Icon::DialogOpenImage,
-                        "Image is larger than canvas",
+                        &crate::t!("ui.image_is_larger_than_canvas"),
                     ) {
                         choice = Some(2);
                     }
-                    let question = format!(
-                        "The clipboard image is {} \u{D7} {}, which is larger than the current canvas ({} \u{D7} {}). How would you like to proceed?",
-                        iw, ih, cw, ch
-                    );
+                    let question = crate::i18n::format_translation("ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3", &[("0", format!("{}", iw)), ("1", format!("{}", ih)), ("2", format!("{}", cw)), ("3", format!("{}", ch))]);
                     if let Some(idx) = action_list(ui, &self.assets, &question, None, &actions) {
                         choice = Some(idx);
                     }
@@ -356,11 +353,11 @@ impl PaintFEApp {
                 .unwrap_or_default();
             let mut choice: Option<usize> = None;
             let buttons = [
-                ConfirmButton::new("Save")
+                ConfirmButton::new(crate::t!("script.save"))
                     .icon(crate::assets::Icon::DialogSave)
                     .primary(),
-                ConfirmButton::new("Don't Save"),
-                ConfirmButton::new("Cancel"),
+                ConfirmButton::new(crate::t!("ui.don_t_save")),
+                ConfirmButton::new(crate::t!("common.cancel")),
             ];
             let window_response = crate::ui::polish::window(ctx, "Unsaved Changes")
                 .title_bar(false)
@@ -374,13 +371,13 @@ impl PaintFEApp {
                         ui,
                         &self.assets,
                         crate::assets::Icon::DialogUnsavedWarning,
-                        "Unsaved changes",
+                        &crate::t!("layer.unsaved_changes"),
                     ) {
                         choice = Some(2);
                     }
-                    ui.label(format!("\u{201C}{}\u{201D} has unsaved changes.", name));
+                    ui.label(crate::i18n::format_translation("ui.0_has_unsaved_changes", &[("0", name.to_string())]));
                     ui.add_space(2.0);
-                    ui.label(egui::RichText::new("Do you want to save before closing?").weak());
+                    ui.label(egui::RichText::new(crate::t!("ui.do_you_want_to_save_before_closing")).weak());
                     if let Some(idx) = confirm_row(ui, &self.assets, &buttons) {
                         choice = Some(idx);
                     }
@@ -427,11 +424,11 @@ impl PaintFEApp {
             } else {
                 let mut choice: Option<usize> = None;
                 let buttons = [
-                    ConfirmButton::new("Save")
+                    ConfirmButton::new(crate::t!("script.save"))
                         .icon(crate::assets::Icon::DialogSave)
                         .primary(),
-                    ConfirmButton::new("Don't Save"),
-                    ConfirmButton::new("Cancel"),
+                    ConfirmButton::new(crate::t!("ui.don_t_save")),
+                    ConfirmButton::new(crate::t!("common.cancel")),
                 ];
                 let window_response = crate::ui::polish::window(ctx, "Exit PaintFE")
                     .title_bar(false)
@@ -445,21 +442,15 @@ impl PaintFEApp {
                             ui,
                             &self.assets,
                             crate::assets::Icon::DialogUnsavedWarning,
-                            "Unsaved changes",
+                            &crate::t!("layer.unsaved_changes"),
                         ) {
                             choice = Some(2);
                         }
                         if dirty_projects.len() == 1 {
-                            ui.label(format!(
-                                "\u{201C}{}\u{201D} has unsaved changes.",
-                                dirty_projects[0]
-                            ));
+                            ui.label(crate::i18n::format_translation("ui.0_has_unsaved_changes", &[("0", dirty_projects[0].to_string())]));
                         } else {
                             const SHOW_MAX: usize = 4;
-                            ui.label(format!(
-                                "{} projects have unsaved changes.",
-                                dirty_projects.len()
-                            ));
+                            ui.label(crate::i18n::format_translation("ui.0_projects_have_unsaved_changes", &[("0", format!("{}", dirty_projects.len()))]));
                             ui.add_space(4.0);
                             for name in dirty_projects.iter().take(SHOW_MAX) {
                                 ui.label(format!("\u{2022}  {}", name));
@@ -467,14 +458,14 @@ impl PaintFEApp {
                             let overflow = dirty_projects.len().saturating_sub(SHOW_MAX);
                             if overflow > 0 {
                                 ui.label(
-                                    egui::RichText::new(format!("({} more)…", overflow))
+                                    egui::RichText::new(crate::i18n::format_translation("ui.0_more", &[("0", format!("{}", overflow))]))
                                         .weak()
                                         .italics(),
                                 );
                             }
                         }
                         ui.add_space(2.0);
-                        ui.label(egui::RichText::new("Do you want to save before exiting?").weak());
+                        ui.label(egui::RichText::new(crate::t!("ui.do_you_want_to_save_before_exiting")).weak());
                         if let Some(idx) = confirm_row(ui, &self.assets, &buttons) {
                             choice = Some(idx);
                         }
@@ -775,7 +766,7 @@ impl PaintFEApp {
                         .inner_margin(egui::Margin::symmetric(10, 3))
                         .show(ui, |ui| {
                             ui.label(
-                                egui::RichText::new("WEB • VERSION 1.0 • EXPERIMENTAL BETA")
+                                egui::RichText::new(crate::t!("ui.web_version_1_0_experimental_beta"))
                                     .size(10.5)
                                     .strong()
                                     .color(colors.accent_strong),
@@ -790,20 +781,14 @@ impl PaintFEApp {
                 // -- Body ----------------------------------------------------
                 ui.label(
                     egui::RichText::new(
-                        "Welcome! This is a beta of PaintFE running entirely in your \
-                         browser. Everything you do stays on this device; nothing is \
-                         uploaded anywhere.",
+                        crate::t!("ui.welcome_this_is_a_beta_of_paintfe_running_entirely_in_your_browser_eve"),
                     )
                     .color(colors.text_color),
                 );
                 ui.add_space(10.0);
                 ui.label(
                     egui::RichText::new(
-                        "A few things work differently here than on desktop: font \
-                         and clipboard access are more limited by browser security, \
-                         and a couple of native only features (RAW camera import, \
-                         printing through the OS) are unavailable or work \
-                         differently. See Settings for details.",
+                        crate::t!("ui.a_few_things_work_differently_here_than_on_desktop_font_and_clipboard_"),
                     )
                     .color(colors.text_muted),
                 );
@@ -819,16 +804,13 @@ impl PaintFEApp {
                         .show(ui, |ui| {
                             ui.horizontal_wrapped(|ui| {
                                 ui.label(
-                                    egui::RichText::new("Heads up:")
+                                    egui::RichText::new(crate::t!("ui.heads_up"))
                                         .strong()
                                         .color(colors.accent_strong),
                                 );
                                 ui.label(
                                     egui::RichText::new(
-                                        "PaintFE - Web is built for a desktop experience \
-                                         (mouse and keyboard, larger screen) and may not \
-                                         work well on a phone or tablet. Mobile support \
-                                         isn't planned.",
+                                        crate::t!("ui.paintfe_web_is_built_for_a_desktop_experience_mouse_and_keyboard_large"),
                                     )
                                     .color(colors.text_color),
                                 );
@@ -844,23 +826,21 @@ impl PaintFEApp {
                     .inner_margin(egui::Margin::same(12))
                     .show(ui, |ui| {
                         ui.label(
-                            egui::RichText::new("Want the full experience?")
+                            egui::RichText::new(crate::t!("ui.want_the_full_experience"))
                                 .strong()
                                 .color(colors.text_color),
                         );
                         ui.add_space(3.0);
                         ui.label(
                             egui::RichText::new(
-                                "The desktop app has full feature access, better \
-                                 performance, and GPU acceleration for filters and \
-                                 effects.",
+                                crate::t!("ui.the_desktop_app_has_full_feature_access_better_performance_and_gpu_acc"),
                             )
                             .small()
                             .color(colors.text_muted),
                         );
                         ui.add_space(8.0);
                         let dl_btn = egui::Button::new(
-                            egui::RichText::new("Download Desktop App")
+                            egui::RichText::new(crate::t!("ui.download_desktop_app"))
                                 .strong()
                                 .color(egui::Color32::WHITE),
                         )
@@ -874,7 +854,7 @@ impl PaintFEApp {
                 ui.add_space(16.0);
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Got it").clicked() {
+                        if ui.button(crate::t!("ui.got_it")).clicked() {
                             dismiss = true;
                         }
                     });

@@ -213,7 +213,7 @@ impl SettingsWindow {
                         egui::WidgetInfo::labeled(
                             egui::WidgetType::Button,
                             ui.is_enabled(),
-                            "Close Preferences",
+                            crate::t!("ui.close_preferences"),
                         )
                     });
                     crate::ui::polish::control(
@@ -276,7 +276,7 @@ impl SettingsWindow {
                             // Font upload / Google Fonts only exist on web —
                             // desktop already has full OS font-store access.
                             #[cfg(target_arch = "wasm32")]
-                            (SettingsTab::Fonts, Icon::Text, "Fonts".to_string()),
+                            (SettingsTab::Fonts, Icon::Text, crate::t!("ui.fonts")),
                         ];
                         for (tab, icon, label) in &tabs {
                             let selected = self.active_tab == *tab;
@@ -449,7 +449,7 @@ impl SettingsWindow {
                 )
                 .clicked()
                 && let Some(paths) = rfd::FileDialog::new()
-                    .add_filter("Paint.NET effect", &["dll"])
+                    .add_filter(crate::t!("ui.paint_net_effect"), &["dll"])
                     .pick_files()
             {
                 self.plugin_status = Some(
@@ -489,9 +489,16 @@ impl SettingsWindow {
                     ui.label(egui::RichText::new(&plugin.name).strong());
                     ui.label(format!("{} · {}", plugin.category, plugin.profile));
                 });
-                ui.label(format!(
-                    "SHA-256: {}…",
-                    plugin.sha256.get(..16).unwrap_or(&plugin.sha256)
+                ui.label(crate::i18n::format_translation(
+                    "ui.sha_256_0",
+                    &[(
+                        "0",
+                        plugin
+                            .sha256
+                            .get(..16)
+                            .unwrap_or(&plugin.sha256)
+                            .to_string(),
+                    )],
                 ));
                 if let Some(error) = plugin.display_error() {
                     ui.colored_label(ui.visuals().error_fg_color, error);
@@ -548,22 +555,37 @@ impl SettingsWindow {
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
                 ui.set_min_width(460.0);
-                ui.label(egui::RichText::new("Trust Paint.NET plugin?").strong().size(16.0));
+                ui.label(
+                    egui::RichText::new(crate::t!("ui.trust_paint_net_plugin"))
+                        .strong()
+                        .size(16.0),
+                );
                 ui.add_space(8.0);
                 ui.colored_label(
                     ui.visuals().error_fg_color,
-                    "This DLL is executable code. It can access your files, network, and system as your user account.",
+                    crate::t!(
+                        "ui.this_dll_is_executable_code_it_can_access_your_files_network_and_syste"
+                    ),
                 );
                 ui.add_space(8.0);
-                ui.label(format!("Plugin: {}", plugin.name));
-                ui.label(format!("Path: {}", plugin.source_file));
-                ui.label(format!("SHA-256: {}", plugin.sha256));
+                ui.label(crate::i18n::format_translation(
+                    "ui.plugin_0",
+                    &[("0", plugin.name.to_string())],
+                ));
+                ui.label(crate::i18n::format_translation(
+                    "ui.path_0",
+                    &[("0", plugin.source_file.to_string())],
+                ));
+                ui.label(crate::i18n::format_translation(
+                    "ui.sha_256_0_2",
+                    &[("0", plugin.sha256.to_string())],
+                ));
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(crate::t!("common.cancel")).clicked() {
                         self.pending_trust_plugin = None;
                     }
-                    if ui.button("Trust this exact file").clicked() {
+                    if ui.button(crate::t!("ui.trust_this_exact_file")).clicked() {
                         if let Err(error) = self.plugin_manager.set_trusted_enabled(&hash, true) {
                             self.plugin_status = Some(error);
                         }
@@ -585,9 +607,11 @@ impl SettingsWindow {
             let changed = ui
                 .horizontal(|ui| {
                     let profile = ui
-                        .radio_value(&mut portable, false, "User profile")
+                        .radio_value(&mut portable, false, crate::t!("ui.user_profile"))
                         .changed();
-                    let portable = ui.radio_value(&mut portable, true, "Portable").changed();
+                    let portable = ui
+                        .radio_value(&mut portable, true, crate::t!("ui.portable"))
+                        .changed();
                     profile || portable
                 })
                 .inner;
@@ -619,16 +643,16 @@ impl SettingsWindow {
             ui.add_space(8.0);
         }
         // -- Language -------------------------------------------
-        Self::section_header(ui, "Language");
+        Self::section_header(ui, &crate::t!("ui.language"));
         ui.horizontal(|ui| {
-            ui.label("Language:");
+            ui.label(crate::t!("ui.language_2"));
             let current_code = if settings.language.is_empty() {
                 "auto".to_string()
             } else {
                 settings.language.clone()
             };
             let display_text = if current_code == "auto" {
-                "Auto (System)".to_string()
+                crate::t!("ui.auto_system")
             } else {
                 crate::i18n::LANGUAGES
                     .iter()
@@ -640,7 +664,7 @@ impl SettingsWindow {
                 .selected_text(&display_text)
                 .show_ui(ui, |ui| {
                     if ui
-                        .selectable_label(current_code == "auto", "Auto (System)")
+                        .selectable_label(current_code == "auto", crate::t!("ui.auto_system"))
                         .clicked()
                     {
                         settings.language = String::new();
@@ -662,7 +686,7 @@ impl SettingsWindow {
                 });
         });
         ui.label(
-            egui::RichText::new("Restart recommended after changing language.")
+            egui::RichText::new(crate::t!("ui.restart_recommended_after_changing_language"))
                 .small()
                 .weak(),
         );
@@ -675,10 +699,10 @@ impl SettingsWindow {
             .min_col_width(160.0)
             .show(ui, |ui| {
                 ui.label(t!("settings.general.max_undo_steps"));
-                Self::settings_drag_usize(ui, &mut settings.max_undo_steps, 10..=500, " steps", 50);
+                Self::settings_drag_usize(ui, &mut settings.max_undo_steps, 10..=500, "", 50);
                 ui.end_row();
 
-                ui.label("Auto-save interval:");
+                ui.label(crate::t!("ui.auto_save_interval"));
                 {
                     const OPTIONS: &[(u32, &str)] = &[
                         (0, "Disabled"),
@@ -695,11 +719,14 @@ impl SettingsWindow {
                         .map(|(_, l)| *l)
                         .unwrap_or("Custom");
                     egui::ComboBox::from_id_salt("auto_save_interval")
-                        .selected_text(current_label)
+                        .selected_text(crate::i18n::translate_english(current_label))
                         .show_ui(ui, |ui| {
                             for &(val, label) in OPTIONS {
                                 if ui
-                                    .selectable_label(settings.auto_save_minutes == val, label)
+                                    .selectable_label(
+                                        settings.auto_save_minutes == val,
+                                        crate::i18n::translate_english(label),
+                                    )
                                     .clicked()
                                 {
                                     settings.auto_save_minutes = val;
@@ -717,16 +744,19 @@ impl SettingsWindow {
         if settings.auto_save_minutes > 0 {
             if let Some(dir) = crate::io::autosave_dir() {
                 ui.label(
-                    egui::RichText::new(format!("Auto-saves to: {}", dir.display()))
-                        .small()
-                        .weak(),
+                    egui::RichText::new(crate::i18n::format_translation(
+                        "ui.auto_saves_to_0",
+                        &[("0", format!("{}", dir.display()))],
+                    ))
+                    .small()
+                    .weak(),
                 );
             }
         } else {
             ui.label(
-                egui::RichText::new(
-                    "Auto-save is disabled — enable it to protect against crashes.",
-                )
+                egui::RichText::new(crate::t!(
+                    "ui.auto_save_is_disabled_enable_it_to_protect_against_crashes"
+                ))
                 .small()
                 .weak(),
             );
@@ -751,15 +781,15 @@ impl SettingsWindow {
         });
 
         // -- Startup Canvas -------------------------------------------
-        Self::section_header(ui, "Startup Canvas");
+        Self::section_header(ui, &crate::t!("ui.startup_canvas"));
         ui.checkbox(
             &mut settings.create_canvas_on_startup,
-            "Create a blank canvas on startup",
+            crate::t!("ui.create_a_blank_canvas_on_startup"),
         );
         ui.label(
-            egui::RichText::new(
-                "When disabled, the app starts empty — use File > New or the + tab to create a canvas.",
-            )
+            egui::RichText::new(crate::t!(
+                "ui.when_disabled_the_app_starts_empty_use_file_new_or_the_tab_to_create_a"
+            ))
             .small()
             .weak(),
         );
@@ -770,7 +800,7 @@ impl SettingsWindow {
                 .spacing([16.0, 6.0])
                 .min_col_width(160.0)
                 .show(ui, |ui| {
-                    ui.label("Default width:");
+                    ui.label(crate::t!("ui.default_width"));
                     Self::settings_drag_u32(
                         ui,
                         &mut settings.default_canvas_width,
@@ -780,7 +810,7 @@ impl SettingsWindow {
                     );
                     ui.end_row();
 
-                    ui.label("Default height:");
+                    ui.label(crate::t!("ui.default_height"));
                     Self::settings_drag_u32(
                         ui,
                         &mut settings.default_canvas_height,
@@ -793,26 +823,28 @@ impl SettingsWindow {
         }
 
         // -- Behaviour -------------------------------------------------
-        Self::section_header(ui, "Behaviour");
+        Self::section_header(ui, &crate::t!("ui.behaviour"));
         ui.checkbox(
             &mut settings.confirm_on_exit,
-            "Confirm before exiting with unsaved changes",
+            crate::t!("ui.confirm_before_exiting_with_unsaved_changes"),
         );
         ui.label(
-            egui::RichText::new("Shows a save prompt when quitting with unsaved projects.")
-                .small()
-                .weak(),
+            egui::RichText::new(crate::t!(
+                "ui.shows_a_save_prompt_when_quitting_with_unsaved_projects"
+            ))
+            .small()
+            .weak(),
         );
 
         ui.add_space(6.0);
         ui.checkbox(
             &mut settings.clipboard_copy_transparent_cutout,
-            "Transparent pasted pixels overwrite destination",
+            crate::t!("ui.transparent_pasted_pixels_overwrite_destination"),
         );
         ui.label(
-            egui::RichText::new(
-                "When enabled, pasted selections keep their original silhouette instead of filling their bounding box.",
-            )
+            egui::RichText::new(crate::t!(
+                "ui.when_enabled_pasted_selections_keep_their_original_silhouette_instead_"
+            ))
             .small()
             .weak(),
         );
@@ -820,12 +852,12 @@ impl SettingsWindow {
         ui.add_space(6.0);
         ui.checkbox(
             &mut settings.select_after_paste,
-            "Select the pasted image after pasting",
+            crate::t!("ui.select_the_pasted_image_after_pasting"),
         );
         ui.label(
-            egui::RichText::new(
-                "When enabled, committing a paste leaves the pasted region selected (ready for Crop to Selection). Off by default.",
-            )
+            egui::RichText::new(crate::t!(
+                "ui.when_enabled_committing_a_paste_leaves_the_pasted_region_selected_read"
+            ))
             .small()
             .weak(),
         );
@@ -872,27 +904,27 @@ impl SettingsWindow {
         }
 
         // -- About ------------------------------------------------------
-        Self::section_header(ui, "About");
+        Self::section_header(ui, &crate::t!("ui.about"));
         egui::Grid::new("about_grid")
             .num_columns(2)
             .spacing([16.0, 6.0])
             .show(ui, |ui| {
-                ui.label(egui::RichText::new("Version").strong());
+                ui.label(egui::RichText::new(crate::t!("ui.version")).strong());
                 #[cfg(target_arch = "wasm32")]
                 ui.label("PaintFE - Web 1.0");
                 #[cfg(not(target_arch = "wasm32"))]
                 ui.label(env!("CARGO_PKG_VERSION"));
                 ui.end_row();
 
-                ui.label(egui::RichText::new("Author").strong());
+                ui.label(egui::RichText::new(crate::t!("ui.author")).strong());
                 ui.label("Kyle Jackson");
                 ui.end_row();
 
-                ui.label(egui::RichText::new("License").strong());
+                ui.label(egui::RichText::new(crate::t!("ui.license")).strong());
                 ui.label("MIT");
                 ui.end_row();
 
-                ui.label(egui::RichText::new("Source").strong());
+                ui.label(egui::RichText::new(crate::t!("ui.source")).strong());
                 ui.hyperlink_to("paintfe.com", "https://paintfe.com");
                 ui.end_row();
             });
@@ -900,11 +932,9 @@ impl SettingsWindow {
         {
             ui.add_space(4.0);
             ui.label(
-                egui::RichText::new(
-                    "PaintFE - Web is an experimental beta port of the desktop app. \
-                     Some features work differently or aren't available yet, see the \
-                     welcome message for details.",
-                )
+                egui::RichText::new(crate::t!(
+                    "ui.paintfe_web_is_an_experimental_beta_port_of_the_desktop_app_some_featu"
+                ))
                 .small()
                 .weak(),
             );
@@ -981,7 +1011,7 @@ impl SettingsWindow {
                 ui.label(t!("settings.hardware.adapter"));
                 if self.gpu_adapters_receiver.is_some() {
                     // Still loading — show a spinner label
-                    ui.weak("Detecting GPUs...");
+                    ui.weak(crate::t!("ui.detecting_gpus"));
                     ui.ctx().request_repaint();
                 } else {
                     egui::ComboBox::from_id_salt("gpu_adapter_sel")
@@ -1152,11 +1182,14 @@ impl SettingsWindow {
 
                 ui.label(t!("settings.interface.accent_preset"));
                 egui::ComboBox::from_id_salt("accent_preset")
-                    .selected_text(self.staged_preset.label())
+                    .selected_text(crate::i18n::translate_english(&self.staged_preset.label()))
                     .show_ui(ui, |ui| {
                         for &preset in ThemePreset::all() {
                             if ui
-                                .selectable_label(self.staged_preset == preset, preset.label())
+                                .selectable_label(
+                                    self.staged_preset == preset,
+                                    crate::i18n::translate_english(&preset.label()),
+                                )
                                 .clicked()
                             {
                                 self.staged_preset = preset;
@@ -1165,7 +1198,7 @@ impl SettingsWindow {
                             }
                         }
                         if self.staged_preset == ThemePreset::Custom {
-                            let _ = ui.selectable_label(true, "Custom");
+                            let _ = ui.selectable_label(true, crate::t!("theme_preset.custom"));
                         }
                     });
                 ui.end_row();
@@ -1230,24 +1263,40 @@ impl SettingsWindow {
         Self::section_header(ui, &t!("settings.interface.icon_pack"));
         ui.horizontal(|ui| {
             use crate::config::icon_packs::BundledIconStyle;
-            ui.label("Icon style:");
+            ui.label(crate::t!("ui.icon_style"));
             let selected = assets
                 .icon_pack_name()
-                .map(|name| format!("Custom: {name}"))
-                .unwrap_or_else(|| settings.bundled_icon_style.label().to_string());
+                .map(|name| {
+                    crate::i18n::format_translation("ui.custom_0", &[("0", name.to_string())])
+                })
+                .unwrap_or_else(|| {
+                    crate::i18n::translate_english(settings.bundled_icon_style.label()).to_string()
+                });
             egui::ComboBox::from_id_salt("bundled_icon_style")
                 .selected_text(selected)
                 .show_ui(ui, |ui| {
                     for style in [BundledIconStyle::Luminous, BundledIconStyle::Classic] {
                         let selected = assets.icon_pack_name().is_none()
                             && settings.bundled_icon_style == style;
-                        if ui.selectable_label(selected, style.label()).clicked() {
+                        if ui
+                            .selectable_label(
+                                selected,
+                                crate::i18n::translate_english(style.label()),
+                            )
+                            .clicked()
+                        {
                             settings.bundled_icon_style = style;
                             self.pending_icon_pack_clear = true;
                         }
                     }
                     if let Some(name) = assets.icon_pack_name() {
-                        let _ = ui.selectable_label(true, format!("Custom: {name}"));
+                        let _ = ui.selectable_label(
+                            true,
+                            crate::i18n::format_translation(
+                                "ui.custom_0",
+                                &[("0", name.to_string())],
+                            ),
+                        );
                     }
                 });
         });
@@ -1269,7 +1318,7 @@ impl SettingsWindow {
                 {
                     ui.close();
                     if let Some(file) = rfd::FileDialog::new()
-                        .add_filter("Icon pack", &["zip"])
+                        .add_filter(crate::t!("settings.interface.icon_pack_current"), &["zip"])
                         .pick_file()
                     {
                         self.pending_icon_pack_load = Some(file);
@@ -1281,7 +1330,7 @@ impl SettingsWindow {
             if ui
                 .add_enabled(
                     assets.icon_pack_name().is_some(),
-                    egui::Button::new("Use Bundled Style"),
+                    egui::Button::new(crate::t!("ui.use_bundled_style")),
                 )
                 .clicked()
             {
@@ -1409,12 +1458,16 @@ impl SettingsWindow {
                 ui.end_row();
 
                 // Pixel grid outline color
-                ui.label("Pixel Grid Outline");
+                ui.label(crate::t!("ui.pixel_grid_outline"));
                 ui.horizontal(|ui| {
                     if Self::color_row(ui, "", &mut settings.pixel_grid_outline_color) {
                         settings.save();
                     }
-                    if ui.button("↺").on_hover_text("Reset to default").clicked() {
+                    if ui
+                        .button("↺")
+                        .on_hover_text(crate::t!("ui.reset_to_default"))
+                        .clicked()
+                    {
                         settings.pixel_grid_outline_color = Color32::from_black_alpha(90);
                         settings.save();
                     }
@@ -1450,7 +1503,7 @@ impl SettingsWindow {
                 }
                 ui.end_row();
 
-                ui.label("Selection Stripes");
+                ui.label(crate::t!("ui.selection_stripes"));
                 ui.horizontal(|ui| {
                     if Self::color_row(ui, "", &mut settings.selection_stripe_color) {
                         settings.save();
@@ -1463,7 +1516,11 @@ impl SettingsWindow {
                         settings.selection_stripe_alpha = alpha.round() as u8;
                         settings.save();
                     }
-                    if ui.button("↺").on_hover_text("Reset to default").clicked() {
+                    if ui
+                        .button("↺")
+                        .on_hover_text(crate::t!("ui.reset_to_default"))
+                        .clicked()
+                    {
                         settings.selection_stripe_color =
                             Color32::from_rgba_premultiplied(255, 255, 255, 255);
                         settings.selection_stripe_alpha = 22;
@@ -1483,13 +1540,15 @@ impl SettingsWindow {
                 .weak(),
         );
         ui.label(
-            egui::RichText::new("Pixel grid outline/center colors control the dual-stroke grid visibility on any background.")
-                .small()
-                .weak(),
+            egui::RichText::new(crate::t!(
+                "ui.pixel_grid_outline_center_colors_control_the_dual_stroke_grid_visibili"
+            ))
+            .small()
+            .weak(),
         );
 
         // -- Layer Folders --------------------------------------------
-        Self::section_header(ui, "Layer Folder Colors");
+        Self::section_header(ui, &crate::t!("ui.layer_folder_colors"));
         let mut folder_palette_changed = false;
         egui::Grid::new("interface_folder_color_grid")
             .num_columns(2)
@@ -1497,7 +1556,10 @@ impl SettingsWindow {
             .min_col_width(140.0)
             .show(ui, |ui| {
                 for (idx, color) in settings.folder_color_palette.iter_mut().enumerate() {
-                    ui.label(format!("Folder {}", idx + 1));
+                    ui.label(crate::i18n::format_translation(
+                        "ui.folder_0",
+                        &[("0", format!("{}", idx + 1))],
+                    ));
                     if Self::color_row(ui, "", color) {
                         folder_palette_changed = true;
                     }
@@ -1507,15 +1569,17 @@ impl SettingsWindow {
         if folder_palette_changed {
             settings.save();
         }
-        if ui.button("Reset Folder Colors").clicked() {
+        if ui.button(crate::t!("ui.reset_folder_colors")).clicked() {
             settings.folder_color_palette = AppSettings::default_folder_color_palette();
             settings.save();
         }
 
-        Self::section_header(ui, "Motion and Interaction");
+        Self::section_header(ui, &crate::t!("ui.motion_and_interaction"));
         ui.horizontal(|ui| {
-            ui.label("Tooltip delay (seconds)")
-                .on_hover_text("Time before tooltips appear. Set to 0 for immediate tooltips.");
+            ui.label(crate::t!("ui.tooltip_delay_seconds"))
+                .on_hover_text(crate::t!(
+                    "ui.time_before_tooltips_appear_set_to_0_for_immediate_tooltips"
+                ));
             if ui
                 .add(
                     egui::DragValue::new(&mut settings.tooltip_delay)
@@ -1535,7 +1599,7 @@ impl SettingsWindow {
             theme.apply(ctx);
             settings.save();
         }
-        Self::section_header(ui, "Workspace");
+        Self::section_header(ui, &crate::t!("ui.workspace"));
         if crate::ui::workspace::preferences(
             ui,
             &mut settings.workspace,
@@ -1545,15 +1609,15 @@ impl SettingsWindow {
         }
 
         // -- Advanced Customization -----------------------------------
-        Self::section_header(ui, "Advanced Customization");
+        Self::section_header(ui, &crate::t!("ui.advanced_customization"));
         ui.checkbox(
             &mut settings.advanced_customization,
-            "Enable advanced theme overrides",
+            crate::t!("ui.enable_advanced_theme_overrides"),
         );
         ui.label(
-            egui::RichText::new(
-                "Fine-tune individual colors, geometry, and effects. Overrides apply on top of the selected preset.",
-            )
+            egui::RichText::new(crate::t!(
+                "ui.fine_tune_individual_colors_geometry_and_effects_overrides_apply_on_to"
+            ))
             .small()
             .weak(),
         );
@@ -1567,15 +1631,15 @@ impl SettingsWindow {
                 .spacing([16.0, 6.0])
                 .min_col_width(140.0)
                 .show(ui, |ui| {
-                    ui.label("UI Density");
+                    ui.label(crate::t!("ui.ui_density"));
                     egui::ComboBox::from_id_salt("ui_density_sel")
-                        .selected_text(settings.ui_density.label())
+                        .selected_text(crate::i18n::translate_english(settings.ui_density.label()))
                         .show_ui(ui, |ui| {
                             for &density in UiDensity::all() {
                                 if ui
                                     .selectable_label(
                                         settings.ui_density == density,
-                                        density.label(),
+                                        crate::i18n::translate_english(density.label()),
                                     )
                                     .clicked()
                                 {
@@ -1591,48 +1655,63 @@ impl SettingsWindow {
             let id = ui.make_persistent_id("adv_surface");
             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
                 .show_header(ui, |ui| {
-                    ui.strong("Surface Colors");
+                    ui.strong(crate::t!("ui.surface_colors"));
                 })
                 .body(|ui| {
                     Self::opt_color_row(
                         ui,
-                        "Background",
+                        &crate::t!("ui.background"),
                         &mut settings.ov_bg_color,
                         &mut self.dirty,
                     );
-                    Self::opt_color_row(ui, "Panel", &mut settings.ov_panel_bg, &mut self.dirty);
-                    Self::opt_color_row(ui, "Window", &mut settings.ov_window_bg, &mut self.dirty);
                     Self::opt_color_row(
                         ui,
-                        "Elevated (bg2)",
+                        &crate::t!("ui.panel"),
+                        &mut settings.ov_panel_bg,
+                        &mut self.dirty,
+                    );
+                    Self::opt_color_row(
+                        ui,
+                        &crate::t!("ui.window"),
+                        &mut settings.ov_window_bg,
+                        &mut self.dirty,
+                    );
+                    Self::opt_color_row(
+                        ui,
+                        &crate::t!("ui.elevated_bg2"),
                         &mut settings.ov_bg2,
                         &mut self.dirty,
                     );
-                    Self::opt_color_row(ui, "Active (bg3)", &mut settings.ov_bg3, &mut self.dirty);
+                    Self::opt_color_row(
+                        ui,
+                        &crate::t!("ui.active_bg3"),
+                        &mut settings.ov_bg3,
+                        &mut self.dirty,
+                    );
                 });
 
             // --- Text & Labels ---
             let id = ui.make_persistent_id("adv_text");
             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
                 .show_header(ui, |ui| {
-                    ui.strong("Text & Labels");
+                    ui.strong(crate::t!("ui.text_labels"));
                 })
                 .body(|ui| {
                     Self::opt_color_row(
                         ui,
-                        "Primary Text",
+                        &crate::t!("ui.primary_text"),
                         &mut settings.ov_text_color,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Muted Text",
+                        &crate::t!("ui.muted_text"),
                         &mut settings.ov_text_muted,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Faint Text",
+                        &crate::t!("ui.faint_text"),
                         &mut settings.ov_text_faint,
                         &mut self.dirty,
                     );
@@ -1642,24 +1721,24 @@ impl SettingsWindow {
             let id = ui.make_persistent_id("adv_borders");
             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
                 .show_header(ui, |ui| {
-                    ui.strong("Borders & Separators");
+                    ui.strong(crate::t!("ui.borders_separators"));
                 })
                 .body(|ui| {
                     Self::opt_color_row(
                         ui,
-                        "Border",
+                        &crate::t!("ui.border"),
                         &mut settings.ov_border_color,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Hover Border",
+                        &crate::t!("ui.hover_border"),
                         &mut settings.ov_border_lit,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Separator",
+                        &crate::t!("ui.separator"),
                         &mut settings.ov_separator_color,
                         &mut self.dirty,
                     );
@@ -1669,66 +1748,66 @@ impl SettingsWindow {
             let id = ui.make_persistent_id("adv_buttons");
             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
                 .show_header(ui, |ui| {
-                    ui.strong("Buttons & Controls");
+                    ui.strong(crate::t!("ui.buttons_controls"));
                 })
                 .body(|ui| {
                     Self::opt_color_row(
                         ui,
-                        "Button BG",
+                        &crate::t!("ui.button_bg"),
                         &mut settings.ov_button_bg,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Hover",
+                        &crate::t!("ui.hover"),
                         &mut settings.ov_button_hover,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Active",
+                        &crate::t!("ui.active"),
                         &mut settings.ov_button_active,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Icon Button BG",
+                        &crate::t!("ui.icon_button_bg"),
                         &mut settings.ov_icon_button_bg,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Icon Button Active",
+                        &crate::t!("ui.icon_button_active"),
                         &mut settings.ov_icon_button_active,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Icon Button Disabled",
+                        &crate::t!("ui.icon_button_disabled"),
                         &mut settings.ov_icon_button_disabled,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Slider/Control Track",
+                        &crate::t!("ui.slider_control_track"),
                         &mut settings.ov_bg3,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Manual Input Background",
+                        &crate::t!("ui.manual_input_background"),
                         &mut settings.ov_text_input_bg,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Stepper +/- Background",
+                        &crate::t!("ui.stepper_background"),
                         &mut settings.ov_stepper_button_bg,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Control Border",
+                        &crate::t!("ui.control_border"),
                         &mut settings.ov_border_lit,
                         &mut self.dirty,
                     );
@@ -1738,61 +1817,66 @@ impl SettingsWindow {
             let id = ui.make_persistent_id("adv_panels");
             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
                 .show_header(ui, |ui| {
-                    ui.strong("Panels & Windows");
+                    ui.strong(crate::t!("ui.panels_windows"));
                 })
                 .body(|ui| {
                     Self::opt_color_row(
                         ui,
-                        "Floating Window",
+                        &crate::t!("ui.floating_window"),
                         &mut settings.ov_floating_window_bg,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Tool Shelf BG",
+                        &crate::t!("ui.tool_shelf_bg"),
                         &mut settings.ov_tool_shelf_bg,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Tool Shelf Border",
+                        &crate::t!("ui.tool_shelf_border"),
                         &mut settings.ov_tool_shelf_border,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Toolbar",
+                        &crate::t!("ui.toolbar"),
                         &mut settings.ov_toolbar_bg,
                         &mut self.dirty,
                     );
-                    Self::opt_color_row(ui, "Menu", &mut settings.ov_menu_bg, &mut self.dirty);
+                    Self::opt_color_row(
+                        ui,
+                        &crate::t!("ui.menu"),
+                        &mut settings.ov_menu_bg,
+                        &mut self.dirty,
+                    );
                 });
 
             // --- Canvas Background ---
             let id = ui.make_persistent_id("adv_canvas");
             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
                 .show_header(ui, |ui| {
-                    ui.strong("Canvas Background");
+                    ui.strong(crate::t!("ui.canvas_background"));
                 })
                 .body(|ui| {
                     Self::opt_color_row(
                         ui,
-                        "Gradient Top",
+                        &crate::t!("ui.gradient_top"),
                         &mut settings.ov_canvas_bg_top,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Gradient Bottom",
+                        &crate::t!("ui.gradient_bottom"),
                         &mut settings.ov_canvas_bg_bottom,
                         &mut self.dirty,
                     );
                     ui.horizontal(|ui| {
-                        ui.label("Grid Visible:");
+                        ui.label(crate::t!("ui.grid_visible"));
                         ui.checkbox(&mut settings.canvas_grid_visible, "");
                     });
                     ui.horizontal(|ui| {
-                        ui.label("Grid Opacity:");
+                        ui.label(crate::t!("ui.grid_opacity"));
                         if Self::settings_slider(
                             ui,
                             &mut settings.canvas_grid_opacity,
@@ -1809,13 +1893,15 @@ impl SettingsWindow {
             let id = ui.make_persistent_id("adv_geometry");
             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
                 .show_header(ui, |ui| {
-                    ui.strong("Geometry & Shape");
+                    ui.strong(crate::t!("ui.geometry_shape"));
                 })
                 .body(|ui| {
-                    ui.weak("History motion is configured in Motion and Interaction.");
+                    ui.weak(crate::t!(
+                        "ui.history_motion_is_configured_in_motion_and_interaction"
+                    ));
                     Self::opt_f32_row(
                         ui,
-                        "History Card CornerRadius",
+                        &crate::t!("ui.history_card_cornerradius"),
                         &mut settings.history_rounding,
                         0.0,
                         24.0,
@@ -1823,7 +1909,7 @@ impl SettingsWindow {
                     );
                     Self::opt_f32_row(
                         ui,
-                        "History Placeholder Opacity",
+                        &crate::t!("ui.history_placeholder_opacity"),
                         &mut settings.history_placeholder_opacity,
                         0.0,
                         1.0,
@@ -1831,7 +1917,7 @@ impl SettingsWindow {
                     );
                     Self::opt_f32_row(
                         ui,
-                        "Widget CornerRadius",
+                        &crate::t!("ui.widget_cornerradius"),
                         &mut settings.widget_rounding,
                         0.0,
                         24.0,
@@ -1839,7 +1925,7 @@ impl SettingsWindow {
                     );
                     Self::opt_f32_row(
                         ui,
-                        "Window CornerRadius",
+                        &crate::t!("ui.window_cornerradius"),
                         &mut settings.window_rounding,
                         0.0,
                         24.0,
@@ -1847,7 +1933,7 @@ impl SettingsWindow {
                     );
                     Self::opt_f32_row(
                         ui,
-                        "Tool Shelf CornerRadius",
+                        &crate::t!("ui.tool_shelf_cornerradius"),
                         &mut settings.tool_shelf_rounding,
                         0.0,
                         24.0,
@@ -1855,7 +1941,7 @@ impl SettingsWindow {
                     );
                     Self::opt_f32_row(
                         ui,
-                        "Tool Button CornerRadius",
+                        &crate::t!("ui.tool_button_cornerradius"),
                         &mut settings.tool_button_rounding,
                         0.0,
                         24.0,
@@ -1863,7 +1949,7 @@ impl SettingsWindow {
                     );
                     Self::opt_f32_row(
                         ui,
-                        "Menu CornerRadius",
+                        &crate::t!("ui.menu_cornerradius"),
                         &mut settings.menu_rounding,
                         0.0,
                         24.0,
@@ -1871,7 +1957,7 @@ impl SettingsWindow {
                     );
                     Self::opt_f32_row(
                         ui,
-                        "Badge CornerRadius",
+                        &crate::t!("ui.badge_cornerradius"),
                         &mut settings.badge_rounding,
                         0.0,
                         24.0,
@@ -1879,7 +1965,7 @@ impl SettingsWindow {
                     );
                     Self::opt_f32_row(
                         ui,
-                        "Tab CornerRadius",
+                        &crate::t!("ui.tab_cornerradius"),
                         &mut settings.tab_rounding,
                         0.0,
                         24.0,
@@ -1887,7 +1973,7 @@ impl SettingsWindow {
                     );
                     Self::opt_f32_row(
                         ui,
-                        "Dialog CornerRadius",
+                        &crate::t!("ui.dialog_cornerradius"),
                         &mut settings.dialog_rounding,
                         0.0,
                         24.0,
@@ -1899,18 +1985,18 @@ impl SettingsWindow {
             let id = ui.make_persistent_id("adv_accents");
             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
                 .show_header(ui, |ui| {
-                    ui.strong("Additional Accents");
+                    ui.strong(crate::t!("ui.additional_accents"));
                 })
                 .body(|ui| {
                     Self::opt_color_row(
                         ui,
-                        "Secondary (Green)",
+                        &crate::t!("ui.secondary_green"),
                         &mut settings.ov_accent3,
                         &mut self.dirty,
                     );
                     Self::opt_color_row(
                         ui,
-                        "Tertiary (Amber)",
+                        &crate::t!("ui.tertiary_amber"),
                         &mut settings.ov_accent4,
                         &mut self.dirty,
                     );
@@ -1918,7 +2004,7 @@ impl SettingsWindow {
 
             // Reset overrides button
             ui.add_space(8.0);
-            if ui.button("Reset All Overrides").clicked() {
+            if ui.button(crate::t!("ui.reset_all_overrides")).clicked() {
                 settings.ov_bg_color = None;
                 settings.ov_panel_bg = None;
                 settings.ov_window_bg = None;
@@ -2005,7 +2091,7 @@ impl SettingsWindow {
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("PaintFE Theme", &["paintfe-theme"])
+                    .add_filter(crate::t!("ui.paintfe_theme"), &["paintfe-theme"])
                     .set_file_name("my_theme.paintfe-theme")
                     .save_file()
                 {
@@ -2032,7 +2118,7 @@ impl SettingsWindow {
             #[cfg(not(target_arch = "wasm32"))]
             if ui.button(t!("settings.interface.import_theme")).clicked()
                 && let Some(path) = rfd::FileDialog::new()
-                    .add_filter("PaintFE Theme", &["paintfe-theme"])
+                    .add_filter(crate::t!("ui.paintfe_theme"), &["paintfe-theme"])
                     .pick_file()
             {
                 match std::fs::read_to_string(&path) {
@@ -2069,6 +2155,7 @@ impl SettingsWindow {
 
     /// Render a single color picker row with alpha support, returns true if value changed
     fn color_row(ui: &mut egui::Ui, label: &str, color: &mut egui::Color32) -> bool {
+        let label = crate::i18n::translate_english(label);
         let mut changed = false;
         ui.horizontal(|ui| {
             ui.label(format!("{}:", label));
@@ -2103,6 +2190,7 @@ impl SettingsWindow {
 
     /// Render an optional color override row with an enable checkbox + color picker + alpha input + reset button.
     fn opt_color_row(ui: &mut egui::Ui, label: &str, opt: &mut Option<Color32>, dirty: &mut bool) {
+        let label = crate::i18n::translate_english(label);
         ui.horizontal(|ui| {
             let mut enabled = opt.is_some();
             if ui.checkbox(&mut enabled, "").changed() {
@@ -2145,12 +2233,16 @@ impl SettingsWindow {
                     );
                     *dirty = true;
                 }
-                if ui.small_button("\u{21BA}").on_hover_text("Reset").clicked() {
+                if ui
+                    .small_button("\u{21BA}")
+                    .on_hover_text(crate::t!("common.reset"))
+                    .clicked()
+                {
                     *opt = None;
                     *dirty = true;
                 }
             } else {
-                ui.weak("(preset default)");
+                ui.weak(crate::t!("ui.preset_default"));
             }
         });
     }
@@ -2188,12 +2280,16 @@ impl SettingsWindow {
                 {
                     *dirty = true;
                 }
-                if ui.small_button("\u{21BA}").on_hover_text("Reset").clicked() {
+                if ui
+                    .small_button("\u{21BA}")
+                    .on_hover_text(crate::t!("common.reset"))
+                    .clicked()
+                {
                     *opt = None;
                     *dirty = true;
                 }
             } else {
-                ui.weak("(preset default)");
+                ui.weak(crate::t!("ui.preset_default"));
             }
         });
     }
@@ -2222,7 +2318,7 @@ impl SettingsWindow {
 
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
-                if Self::themed_stepper_button(ui, "-", "Decrease").clicked() {
+                if Self::themed_stepper_button(ui, "-", &crate::t!("ui.decrease")).clicked() {
                     *value = (*value - step_f).max(min);
                     changed = true;
                 }
@@ -2240,7 +2336,7 @@ impl SettingsWindow {
                     changed = true;
                 }
 
-                if Self::themed_stepper_button(ui, "+", "Increase").clicked() {
+                if Self::themed_stepper_button(ui, "+", &crate::t!("ui.increase")).clicked() {
                     *value = (*value + step_f).min(max);
                     changed = true;
                 }
@@ -2248,7 +2344,10 @@ impl SettingsWindow {
 
             let at_default = (*value - default).abs() < step_f * 0.01;
             let reset_btn = ui.add_enabled(!at_default, egui::Button::new("\u{21BA}").small());
-            if reset_btn.on_hover_text("Reset to default").clicked() {
+            if reset_btn
+                .on_hover_text(crate::t!("ui.reset_to_default"))
+                .clicked()
+            {
                 *value = default;
                 changed = true;
             }
@@ -2269,7 +2368,9 @@ impl SettingsWindow {
         ui.horizontal(|ui| {
             let min = *range.start();
             let max = *range.end();
-            if Self::themed_stepper_button(ui, "-", "Decrease").clicked() && *value > min {
+            if Self::themed_stepper_button(ui, "-", &crate::t!("ui.decrease")).clicked()
+                && *value > min
+            {
                 *value -= 1;
                 changed = true;
             }
@@ -2284,13 +2385,18 @@ impl SettingsWindow {
             {
                 changed = true;
             }
-            if Self::themed_stepper_button(ui, "+", "Increase").clicked() && *value < max {
+            if Self::themed_stepper_button(ui, "+", &crate::t!("ui.increase")).clicked()
+                && *value < max
+            {
                 *value += 1;
                 changed = true;
             }
             let reset_btn =
                 ui.add_enabled(*value != default, egui::Button::new("\u{21BA}").small());
-            if reset_btn.on_hover_text("Reset to default").clicked() {
+            if reset_btn
+                .on_hover_text(crate::t!("ui.reset_to_default"))
+                .clicked()
+            {
                 *value = default;
                 changed = true;
             }
@@ -2311,7 +2417,9 @@ impl SettingsWindow {
         ui.horizontal(|ui| {
             let min = *range.start();
             let max = *range.end();
-            if Self::themed_stepper_button(ui, "-", "Decrease").clicked() && *value > min {
+            if Self::themed_stepper_button(ui, "-", &crate::t!("ui.decrease")).clicked()
+                && *value > min
+            {
                 *value -= 1;
                 changed = true;
             }
@@ -2326,13 +2434,18 @@ impl SettingsWindow {
             {
                 changed = true;
             }
-            if Self::themed_stepper_button(ui, "+", "Increase").clicked() && *value < max {
+            if Self::themed_stepper_button(ui, "+", &crate::t!("ui.increase")).clicked()
+                && *value < max
+            {
                 *value += 1;
                 changed = true;
             }
             let reset_btn =
                 ui.add_enabled(*value != default, egui::Button::new("\u{21BA}").small());
-            if reset_btn.on_hover_text("Reset to default").clicked() {
+            if reset_btn
+                .on_hover_text(crate::t!("ui.reset_to_default"))
+                .clicked()
+            {
                 *value = default;
                 changed = true;
             }
@@ -2442,9 +2555,9 @@ impl SettingsWindow {
             #[cfg(not(target_arch = "wasm32"))]
             if ui.button("\u{1F4C2}").clicked()
                 && let Some(path) = rfd::FileDialog::new()
-                    .add_filter("Dynamic Library", &["dll", "so", "dylib"])
+                    .add_filter(crate::t!("ui.dynamic_library"), &["dll", "so", "dylib"])
                     // Package-managed Linux libraries may end in `.so.1.23.2`.
-                    .add_filter("All Files", &["*"])
+                    .add_filter(crate::t!("ui.all_files"), &["*"])
                     .pick_file()
             {
                 self.staged_onnx_path = path.display().to_string();
@@ -2511,7 +2624,7 @@ impl SettingsWindow {
                     .weak(),
             );
             ui.hyperlink_to(
-                egui::RichText::new("github.com/microsoft/onnxruntime").small(),
+                egui::RichText::new(crate::t!("ui.github_com_microsoft_onnxruntime")).small(),
                 "https://github.com/microsoft/onnxruntime/releases",
             );
         });
@@ -2530,7 +2643,7 @@ impl SettingsWindow {
             #[cfg(not(target_arch = "wasm32"))]
             if ui.button("\u{1F4C2}").clicked()
                 && let Some(path) = rfd::FileDialog::new()
-                    .add_filter("ONNX Model", &["onnx"])
+                    .add_filter(crate::t!("ui.onnx_model"), &["onnx"])
                     .pick_file()
             {
                 self.staged_model_path = path.display().to_string();
@@ -2607,7 +2720,7 @@ impl SettingsWindow {
             );
             ui.label(egui::RichText::new("\u{2022}").small().weak());
             ui.hyperlink_to(
-                egui::RichText::new("U\u{00B2}-Net").small(),
+                egui::RichText::new(crate::t!("settings.ai.u2net")).small(),
                 "https://github.com/xuebinqin/U-2-Net",
             );
             ui.label(egui::RichText::new("\u{2022}").small().weak());
@@ -2674,17 +2787,16 @@ impl SettingsWindow {
             }
         }
 
-        Self::section_header(ui, "UPLOAD A FONT");
+        Self::section_header(ui, &crate::t!("ui.upload_a_font"));
         ui.label(
-            egui::RichText::new(
-                "Browsers can't read your system's installed fonts, so upload a TTF/OTF file \
-                 directly. It becomes available in the Text tool's font list under its file name.",
-            )
+            egui::RichText::new(crate::t!(
+                "ui.browsers_can_t_read_your_system_s_installed_fonts_so_upload_a_ttf_otf_"
+            ))
             .small()
             .weak(),
         );
         ui.add_space(4.0);
-        if ui.button("Upload Font File...").clicked() {
+        if ui.button(crate::t!("ui.upload_font_file")).clicked() {
             crate::web_bridge::open_picker("font_upload", ".ttf,.otf,font/ttf,font/otf", false);
         }
         if let Some(err) = &self.font_upload_error {
@@ -2695,12 +2807,11 @@ impl SettingsWindow {
             );
         }
 
-        Self::section_header(ui, "GOOGLE FONTS");
+        Self::section_header(ui, &crate::t!("ui.google_fonts"));
         ui.label(
-            egui::RichText::new(
-                "Fetches the font directly from the Google Fonts source repository. No API \
-                 key needed, but it does require an internet connection.",
-            )
+            egui::RichText::new(crate::t!(
+                "ui.fetches_the_font_directly_from_the_google_fonts_source_repository_no_a"
+            ))
             .small()
             .weak(),
         );
@@ -2720,11 +2831,11 @@ impl SettingsWindow {
                                 Some(crate::ops::google_fonts::FetchStatus::Done) => {
                                     ui.colored_label(
                                         egui::Color32::from_rgb(0, 180, 0),
-                                        "\u{2705} Added",
+                                        crate::t!("ui.added"),
                                     );
                                 }
                                 Some(crate::ops::google_fonts::FetchStatus::Failed(e)) => {
-                                    if ui.button("Retry").clicked() {
+                                    if ui.button(crate::t!("ui.retry")).clicked() {
                                         crate::ops::google_fonts::fetch(family, slug, ctx.clone());
                                     }
                                     ui.colored_label(
@@ -2733,7 +2844,7 @@ impl SettingsWindow {
                                     );
                                 }
                                 None => {
-                                    if ui.button("Add").clicked() {
+                                    if ui.button(crate::t!("selection_mode.add")).clicked() {
                                         crate::ops::google_fonts::fetch(family, slug, ctx.clone());
                                     }
                                 }
@@ -2745,13 +2856,13 @@ impl SettingsWindow {
 
         let installed = crate::ops::text::custom_fonts::names();
         if !installed.is_empty() {
-            Self::section_header(ui, "INSTALLED CUSTOM FONTS");
+            Self::section_header(ui, &crate::t!("ui.installed_custom_fonts"));
             let mut to_remove: Option<String> = None;
             for name in &installed {
                 ui.horizontal(|ui| {
                     ui.label(name);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Remove").clicked() {
+                        if ui.button(crate::t!("ui.remove")).clicked() {
                             to_remove = Some(name.clone());
                         }
                     });
@@ -2941,13 +3052,15 @@ impl SettingsWindow {
                             .unwrap_or(false);
                         if ui
                             .add(
-                                egui::Button::new(egui::RichText::new("Ctrl").size(9.0).color(
-                                    if ctrl_active {
-                                        Color32::WHITE
-                                    } else {
-                                        Color32::GRAY
-                                    },
-                                ))
+                                egui::Button::new(
+                                    egui::RichText::new(crate::t!("ui.ctrl")).size(9.0).color(
+                                        if ctrl_active {
+                                            Color32::WHITE
+                                        } else {
+                                            Color32::GRAY
+                                        },
+                                    ),
+                                )
                                 .min_size(mod_btn_size)
                                 .fill(if ctrl_active {
                                     ui.visuals().selection.bg_fill
@@ -2972,13 +3085,15 @@ impl SettingsWindow {
                             .unwrap_or(false);
                         if ui
                             .add(
-                                egui::Button::new(egui::RichText::new("Shft").size(9.0).color(
-                                    if shift_active {
-                                        Color32::WHITE
-                                    } else {
-                                        Color32::GRAY
-                                    },
-                                ))
+                                egui::Button::new(
+                                    egui::RichText::new(crate::t!("ui.shft")).size(9.0).color(
+                                        if shift_active {
+                                            Color32::WHITE
+                                        } else {
+                                            Color32::GRAY
+                                        },
+                                    ),
+                                )
                                 .min_size(mod_btn_size)
                                 .fill(if shift_active {
                                     ui.visuals().selection.bg_fill
@@ -3003,13 +3118,15 @@ impl SettingsWindow {
                             .unwrap_or(false);
                         if ui
                             .add(
-                                egui::Button::new(egui::RichText::new("Alt").size(9.0).color(
-                                    if alt_active {
-                                        Color32::WHITE
-                                    } else {
-                                        Color32::GRAY
-                                    },
-                                ))
+                                egui::Button::new(
+                                    egui::RichText::new(crate::t!("ui.alt")).size(9.0).color(
+                                        if alt_active {
+                                            Color32::WHITE
+                                        } else {
+                                            Color32::GRAY
+                                        },
+                                    ),
+                                )
                                 .min_size(mod_btn_size)
                                 .fill(if alt_active {
                                     ui.visuals().selection.bg_fill

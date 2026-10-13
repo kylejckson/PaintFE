@@ -1946,7 +1946,7 @@ impl FileHandler {
     pub fn pick_file_paths(&self) -> Vec<PathBuf> {
         FileDialog::new()
             .add_filter(
-                "All Supported",
+                crate::t!("ui.all_supported"),
                 &[
                     "pfe", "pdn", "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff",
                     "tif", "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2",
@@ -1955,22 +1955,22 @@ impl FileHandler {
                 ],
             )
             .add_filter("PaintFE Project", &["pfe"])
-            .add_filter("Paint.NET Project (read-only)", &["pdn"])
+            .add_filter(crate::t!("ui.paint_net_project_read_only"), &["pdn"])
             .add_filter(
-                "Images",
+                crate::t!("ui.images"),
                 &[
                     "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
                 ],
             )
             .add_filter(
-                "RAW Files",
+                crate::t!("ui.raw_files"),
                 &[
                     "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef",
                     "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos",
                     "kdc", "dcr", "erf",
                 ],
             )
-            .add_filter("All Files", &["*"])
+            .add_filter(crate::t!("ui.all_files"), &["*"])
             .pick_files()
             .unwrap_or_default()
     }
@@ -1987,7 +1987,7 @@ impl FileHandler {
     pub fn open_image(&mut self) -> Option<(RgbaImage, PathBuf)> {
         let path = FileDialog::new()
             .add_filter(
-                "All Supported",
+                crate::t!("ui.all_supported"),
                 &[
                     "pfe", "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
                     "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef",
@@ -1997,20 +1997,20 @@ impl FileHandler {
             )
             .add_filter("PaintFE Project", &["pfe"])
             .add_filter(
-                "Images",
+                crate::t!("ui.images"),
                 &[
                     "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
                 ],
             )
             .add_filter(
-                "RAW Files",
+                crate::t!("ui.raw_files"),
                 &[
                     "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef",
                     "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos",
                     "kdc", "dcr", "erf",
                 ],
             )
-            .add_filter("All Files", &["*"])
+            .add_filter(crate::t!("ui.all_files"), &["*"])
             .pick_file()?;
 
         if let Ok((w, h)) = image::image_dimensions(&path)

@@ -314,7 +314,7 @@ impl ToolsPanel {
                     egui::WidgetType::Button,
                     ui.is_enabled() && !shapes_disabled,
                     is_shapes,
-                    "Shapes",
+                    t!("tool.shapes"),
                 )
             });
             let hovered = resp.hovered() && !shapes_disabled;
@@ -479,7 +479,9 @@ impl ToolsPanel {
             );
         }
 
-        response.on_hover_text("Click to open Colors").clicked()
+        response
+            .on_hover_text(crate::t!("ui.click_to_open_colors"))
+            .clicked()
     }
 
     /// Draw larger overlapping primary/secondary color swatch (centered)
@@ -523,7 +525,9 @@ impl ToolsPanel {
             );
         }
 
-        response.on_hover_text("Click to open Colors").clicked()
+        response
+            .on_hover_text(crate::t!("ui.click_to_open_colors"))
+            .clicked()
     }
 
     /// Draw overlapping primary/secondary color swatch
@@ -567,13 +571,15 @@ impl ToolsPanel {
             );
         }
 
-        response.on_hover_text("Click to open Colors").clicked()
+        response
+            .on_hover_text(crate::t!("ui.click_to_open_colors"))
+            .clicked()
     }
 
     /// Original full show method for sidebar (kept for compatibility)
     pub fn show(&mut self, ui: &mut egui::Ui, assets: &Assets) {
         ui.vertical(|ui| {
-            ui.heading("Tools");
+            ui.heading(crate::t!("keybind_category.tools"));
             ui.separator();
 
             // Large icon-style tool buttons
@@ -636,7 +642,7 @@ impl ToolsPanel {
                 Tool::Liquify => t!("tool.liquify"),
                 Tool::MeshWarp => t!("tool.mesh_warp"),
                 Tool::ColorRemover => t!("tool.color_remover"),
-                Tool::Smudge => "Smudge".to_string(),
+                Tool::Smudge => crate::t!("tool.smudge"),
                 Tool::CloneStamp => t!("tool.clone_stamp"),
                 Tool::Text => t!("tool.text"),
                 Tool::PerspectiveCrop => t!("tool.perspective_crop"),

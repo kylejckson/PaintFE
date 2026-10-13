@@ -119,7 +119,10 @@ impl PaintDotNetPluginDialog {
                 section_label(
                     ui,
                     &colors,
-                    &format!("PAINT.NET · {}", self.plugin.category),
+                    &crate::i18n::format_translation(
+                        "ui.paint_net_0",
+                        &[("0", self.plugin.category.to_string())],
+                    ),
                 );
 
                 let mut changed = false;
@@ -193,7 +196,10 @@ impl PaintDotNetPluginDialog {
                                     *value = Value::from(index);
                                 }
                                 _ => {
-                                    ui.label(format!("Unsupported: {}", property.kind));
+                                    ui.label(crate::i18n::format_translation(
+                                        "ui.unsupported_0",
+                                        &[("0", property.kind.to_string())],
+                                    ));
                                 }
                             }
                             ui.end_row();

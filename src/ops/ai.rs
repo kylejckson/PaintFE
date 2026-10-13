@@ -12,14 +12,18 @@
 use image::RgbaImage;
 use std::path::Path;
 
+mod model;
+pub use model::ModelProfile;
+
 /// Settings for the Remove Background operation.
 /// These control how the AI-generated mask is post-processed before
 /// being applied as the alpha channel.
 #[derive(Clone, Debug)]
 pub struct RemoveBgSettings {
+    pub model_profile: ModelProfile,
     /// Foreground probability threshold (0.0–1.0). Pixels with probability
-    /// below this are considered background. Higher values = keep more
-    /// (more conservative). Default: 0.5.
+    /// below this are considered background. Higher values remove more of
+    /// the subject. Default: 0.5 preserves the model's soft alpha.
     pub threshold: f32,
     /// Edge feathering radius in pixels. Applies a Gaussian blur to the
     /// mask to soften hard edges. 0 = no feathering. Default: 0.0.
@@ -39,6 +43,7 @@ pub struct RemoveBgSettings {
 impl Default for RemoveBgSettings {
     fn default() -> Self {
         Self {
+            model_profile: ModelProfile::Auto,
             threshold: 0.5,
             edge_feather: 0.0,
             mask_expansion: 0,
@@ -643,57 +648,6 @@ const DEFAULT_MODEL_SIZE: u32 = 1024;
 
 /// Detected model profile for background removal.
 /// Auto-detected from model metadata (input shape + output count).
-#[derive(Debug, Clone, Copy)]
-enum ModelProfile {
-    /// BiRefNet: 1024×1024 input, best output = last (most refined decoder stage)
-    BiRefNet,
-    /// U²-Net: 320×320 input, best output = first (d0 is the refined output)
-    U2Net,
-    /// IS-Net: 1024×1024 input, best output = first
-    ISNet,
-    /// Unknown model — best output chosen by confidence scoring
-    Unknown,
-}
-
-impl ModelProfile {
-    /// Detect model profile from input dimensions and output count.
-    fn detect(input_h: u32, input_w: u32, output_count: usize) -> Self {
-        if input_h == 320 && input_w == 320 {
-            ModelProfile::U2Net
-        } else if input_h == 1024 && input_w == 1024 {
-            // Both BiRefNet and IS-Net use 1024×1024.
-            // BiRefNet typically has 5+ decoder outputs; IS-Net / simpler models have fewer.
-            if output_count >= 5 {
-                ModelProfile::BiRefNet
-            } else {
-                ModelProfile::ISNet
-            }
-        } else {
-            ModelProfile::Unknown
-        }
-    }
-
-    fn description(&self) -> &'static str {
-        match self {
-            ModelProfile::BiRefNet => "BiRefNet (1024x1024, prefer last output)",
-            ModelProfile::U2Net => "U²-Net (320x320, prefer first output)",
-            ModelProfile::ISNet => "IS-Net (1024x1024, prefer first output)",
-            ModelProfile::Unknown => "Unknown model (auto-selecting best output)",
-        }
-    }
-
-    /// Returns the preferred output index for this model profile, given the total output count.
-    /// Used as a tiebreaker when confidence scores are close.
-    fn preferred_output_index(&self, output_count: usize) -> usize {
-        match self {
-            ModelProfile::BiRefNet => output_count.saturating_sub(1), // last
-            ModelProfile::U2Net => 0,                                 // first (d0)
-            ModelProfile::ISNet => 0,                                 // first
-            ModelProfile::Unknown => 0,                               // default to first
-        }
-    }
-}
-
 /// Detect whether model output values are already probabilities (in [0, 1])
 /// or raw logits (arbitrary range requiring sigmoid).
 /// U²-Net and IS-Net output sigmoid-activated probabilities;
@@ -748,38 +702,6 @@ pub fn mask_confidence_score(data: &[f32]) -> f64 {
 const IMAGENET_MEAN: [f32; 3] = [0.485, 0.456, 0.406];
 const IMAGENET_STD: [f32; 3] = [0.229, 0.224, 0.225];
 
-/// Preprocess an RGBA image for segmentation model inference:
-/// 1. Resize to target_size × target_size
-/// 2. Normalize with ImageNet mean/std
-/// 3. Convert to CHW float32 layout
-///
-/// Returns a Vec<f32> in [1, 3, target_size, target_size] layout.
-fn preprocess_image(input: &RgbaImage, target_size: u32) -> Vec<f32> {
-    let resized = image::imageops::resize(
-        input,
-        target_size,
-        target_size,
-        image::imageops::FilterType::Lanczos3,
-    );
-
-    let npixels = (target_size * target_size) as usize;
-    let mut tensor = vec![0.0f32; 3 * npixels];
-
-    for y in 0..target_size {
-        for x in 0..target_size {
-            let pixel = resized.get_pixel(x, y);
-            let idx = (y * target_size + x) as usize;
-            // Channel-first layout: [R-plane, G-plane, B-plane]
-            tensor[idx] = (pixel[0] as f32 / 255.0 - IMAGENET_MEAN[0]) / IMAGENET_STD[0];
-            tensor[npixels + idx] = (pixel[1] as f32 / 255.0 - IMAGENET_MEAN[1]) / IMAGENET_STD[1];
-            tensor[2 * npixels + idx] =
-                (pixel[2] as f32 / 255.0 - IMAGENET_MEAN[2]) / IMAGENET_STD[2];
-        }
-    }
-
-    tensor
-}
-
 /// Postprocess model output probabilities and apply to original image:
 /// 1. Apply threshold / smooth edge processing to probabilities
 /// 2. Optionally expand/contract mask
@@ -805,8 +727,13 @@ fn postprocess_mask(
             if settings.smooth_edges {
                 // Smooth transition: remap probabilities around threshold
                 // using a steep sigmoid-like curve centered at threshold
-                let steepness = 12.0; // Controls how sharp the transition is
-                let remapped = 1.0 / (1.0 + (-(prob - settings.threshold) * steepness).exp());
+                // Default threshold preserves the model's soft alpha exactly.
+                let threshold = settings.threshold.clamp(0.001, 0.999);
+                let remapped = if prob < threshold {
+                    prob / (2.0 * threshold)
+                } else {
+                    0.5 + (prob - threshold) / (2.0 * (1.0 - threshold))
+                };
                 (remapped * 255.0).clamp(0.0, 255.0) as u8
             } else {
                 // Hard cutoff at threshold
@@ -1013,6 +940,8 @@ pub enum GraphOptimization {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct InferenceOptions {
+    /// Optional cap for callers running resource-limited background jobs.
+    pub cpu_threads: Option<usize>,
     pub graph_optimization: GraphOptimization,
     /// Disabled by default to avoid retaining large intermediate allocations.
     pub cpu_memory_arena: bool,
@@ -1189,7 +1118,7 @@ fn remove_background_native(
         .map_err(OnnxError::SessionCreateFailed)?;
         let session_options = _options_guard.ptr;
         // Use available CPU cores with the configured memory policy.
-        let num_threads = num_cpus().max(1) as i32;
+        let num_threads = options.cpu_threads.unwrap_or_else(num_cpus).clamp(1, 64) as i32;
         eprintln!("[AI] Setting intra_op_num_threads={}", num_threads);
         status_to_result(
             &api,
@@ -1336,26 +1265,31 @@ fn remove_background_native(
         .map_err(|e| OnnxError::SessionCreateFailed(format!("Get output count: {}", e)))?;
         eprintln!("[AI] Model has {} output(s)", output_count);
 
-        // Detect model profile from input dimensions + output count
-        let model_profile = ModelProfile::detect(model_input_h, model_input_w, output_count);
+        // Resolve the preprocessing contract independently of tensor element type.
+        if model_input_h > 8192 || model_input_w > 8192 {
+            return Err(OnnxError::InferenceFailed(
+                "Model input exceeds 8192 pixels per side".into(),
+            ));
+        }
+        let model_profile =
+            settings
+                .model_profile
+                .resolve(model_path, &input_name, model_input_size)?;
         eprintln!(
             "[AI] Detected model profile: {}",
             model_profile.description()
         );
 
-        // Collect all output names
-        let mut all_output_names = Vec::new();
-        let mut all_output_name_cstrings = Vec::new();
-        for i in 0..output_count {
-            let name = get_session_output_name(&api, session, i, allocator)?;
-            eprintln!("[AI]   Output {}: '{}'", i, name);
-            all_output_name_cstrings.push(std::ffi::CString::new(name.clone()).unwrap());
-            all_output_names.push(name);
+        // Fetch only the profile's mask. IS-Net exports may also expose large
+        // intermediate feature maps that must not be treated as segmentation.
+        let output_index = model_profile.preferred_output_index(output_count);
+        if output_count == 0 {
+            return Err(OnnxError::InvalidOutput("Model has no outputs".into()));
         }
-        let output_name_ptrs: Vec<*const std::ffi::c_char> = all_output_name_cstrings
-            .iter()
-            .map(|cs| cs.as_ptr())
-            .collect();
+        let output_name = get_session_output_name(&api, session, output_index, allocator)?;
+        let output_name_c = std::ffi::CString::new(output_name)
+            .map_err(|e| OnnxError::InvalidOutput(e.to_string()))?;
+        let output_name_ptrs = [output_name_c.as_ptr()];
 
         eprintln!(
             "[AI] Input: '{}' ({}x{}), {} output(s)",
@@ -1368,8 +1302,35 @@ fn remove_background_native(
             model_input_size, model_input_size
         );
         let (orig_w, orig_h) = input.dimensions();
-        let mut tensor_data = preprocess_image(input, model_input_size);
-        let tensor_shape: [i64; 4] = [1, 3, model_input_size as i64, model_input_size as i64];
+        let (mut tensor_data, content_size) =
+            model::preprocess_image(input, model_input_w, model_input_h, model_profile);
+        let tensor_shape: [i64; 4] = [1, 3, model_input_h as i64, model_input_w as i64];
+        let input_type = model::input_element_type(&api, session)?;
+        let mut half_data: Vec<u16> = Vec::new();
+        let (input_ptr, data_len, tensor_type) = match input_type {
+            1 => (
+                tensor_data.as_mut_ptr().cast(),
+                tensor_data.len() * 4,
+                ONNXTensorElementDataType::Float,
+            ),
+            10 => {
+                half_data.extend(
+                    tensor_data
+                        .iter()
+                        .map(|&v| half::f16::from_f32(v).to_bits()),
+                );
+                (
+                    half_data.as_mut_ptr().cast(),
+                    half_data.len() * 2,
+                    ONNXTensorElementDataType::Float16,
+                )
+            }
+            other => {
+                return Err(OnnxError::InferenceFailed(format!(
+                    "Unsupported model input type {other}; expected float32 or float16"
+                )));
+            }
+        };
 
         // -- Create memory info --
         eprintln!("[AI] Creating memory info and input tensor...");
@@ -1382,31 +1343,28 @@ fn remove_background_native(
         })
         .map_err(|error| OnnxError::InferenceFailed(format!("Create memory info: {error}")))?;
         let memory_info = _memory_guard.ptr;
-        let data_len = tensor_data.len() * std::mem::size_of::<f32>();
+
         let _input_guard = ort_owned(&api, api.release_value(), |out| {
             (api.create_tensor_with_data())(
                 memory_info,
-                tensor_data.as_mut_ptr() as *mut std::ffi::c_void,
+                input_ptr,
                 data_len,
                 tensor_shape.as_ptr(),
                 4,
-                ONNXTensorElementDataType::Float,
+                tensor_type,
                 out,
             )
         })
         .map_err(|error| OnnxError::InferenceFailed(format!("Create input tensor: {error}")))?;
         let input_tensor = _input_guard.ptr;
-        // -- Run inference requesting ALL outputs --
-        eprintln!(
-            "[AI] Running inference (requesting {} output(s))...",
-            output_count
-        );
+        // -- Run inference requesting only the selected mask --
+        eprintln!("[AI] Running inference (requesting {} output(s))...", 1);
         let input_name_c = std::ffi::CString::new(input_name.clone()).unwrap();
         let input_names = [input_name_c.as_ptr()];
         let input_tensors = [input_tensor as *const OrtValue];
         let mut output_tensors = OrtValuesGuard {
             api: &api,
-            values: vec![std::ptr::null_mut(); output_count],
+            values: vec![std::ptr::null_mut(); 1],
         };
 
         crate::log_info!(
@@ -1421,7 +1379,7 @@ fn remove_background_native(
             input_tensors.as_ptr(),
             1,
             output_name_ptrs.as_ptr(),
-            output_count,
+            1,
             output_tensors.values.as_mut_ptr(),
         );
 
@@ -1432,143 +1390,33 @@ fn remove_background_native(
             return Err(OnnxError::InferenceFailed(e));
         }
 
-        // -- Auto-select best output by confidence scoring --
-        eprintln!(
-            "[AI] Inference completed. Scoring {} output(s) to find best mask...",
-            output_count
-        );
+        eprintln!("[AI] Inference completed. Reading mask output {output_index}.");
 
-        // Score all outputs: for each output, compute mask dimensions and confidence.
-        // The most refined decoder stage has the most decisive (bimodal) probability distribution.
-        struct OutputInfo {
-            index: usize,
-            dims: Vec<i64>,
-            out_h: u32,
-            out_w: u32,
-            confidence: f64,
+        // Select the declared mask output, never an auxiliary feature tensor by confidence.
+        let output_tensor = *output_tensors
+            .values
+            .first()
+            .ok_or_else(|| OnnxError::InvalidOutput("Model has no mask output".into()))?;
+        let (mut probabilities, mut out_h, mut out_w, element_type) =
+            model::read_mask(&api, output_tensor)?;
+        model::normalize_mask(&mut probabilities, model_profile, element_type)?;
+        if model_profile == ModelProfile::ISNetTransformers {
+            let crop_w = ((content_size.0 as f64 / model_input_w as f64) * out_w as f64)
+                .round()
+                .max(1.0) as u32;
+            let crop_h = ((content_size.1 as f64 / model_input_h as f64) * out_h as f64)
+                .round()
+                .max(1.0) as u32;
+            let mask =
+                image::ImageBuffer::<image::Luma<f32>, _>::from_raw(out_w, out_h, probabilities)
+                    .ok_or_else(|| OnnxError::InvalidOutput("Invalid padded mask".into()))?;
+            probabilities =
+                image::imageops::crop_imm(&mask, 0, 0, crop_w.min(out_w), crop_h.min(out_h))
+                    .to_image()
+                    .into_raw();
+            out_w = crop_w.min(out_w);
+            out_h = crop_h.min(out_h);
         }
-
-        let mut output_infos: Vec<OutputInfo> = Vec::new();
-        for (i, &ot) in output_tensors.values.iter().enumerate() {
-            if ot.is_null() {
-                continue;
-            }
-
-            let Ok(info) = ort_owned(&api, api.release_tensor_type_and_shape_info(), |out| {
-                (api.get_tensor_type_and_shape())(ot as *const _, out)
-            }) else {
-                continue;
-            };
-            let ti = info.ptr;
-            let mut dc: usize = 0;
-            let _ = status_to_result(&api, (api.get_dimensions_count())(ti, &mut dc));
-            let mut ds = vec![0i64; dc];
-            let _ = status_to_result(&api, (api.get_dimensions())(ti, ds.as_mut_ptr(), dc));
-            drop(info);
-
-            // Parse spatial dims
-            let (oh, ow) = match ds.len() {
-                4 => (ds[2] as u32, ds[3] as u32),
-                3 => (ds[1] as u32, ds[2] as u32),
-                _ => {
-                    let total: i64 = ds.iter().product();
-                    let side = (total as f64).sqrt() as u32;
-                    (side, side)
-                }
-            };
-
-            // Get data pointer and compute confidence score
-            let mut data_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
-            if status_to_result(&api, (api.get_tensor_mutable_data())(ot, &mut data_ptr)).is_ok()
-                && !data_ptr.is_null()
-            {
-                let total = (oh as usize) * (ow as usize);
-                if total > 0 {
-                    let slice = std::slice::from_raw_parts(data_ptr as *const f32, total);
-                    let score = mask_confidence_score(slice);
-                    eprintln!(
-                        "[AI]   Output {} '{}': dims {:?} ({}x{}), confidence {:.4}",
-                        i,
-                        all_output_names.get(i).unwrap_or(&"?".to_string()),
-                        ds,
-                        ow,
-                        oh,
-                        score
-                    );
-                    output_infos.push(OutputInfo {
-                        index: i,
-                        dims: ds,
-                        out_h: oh,
-                        out_w: ow,
-                        confidence: score,
-                    });
-                }
-            }
-        }
-
-        // Select the best output:
-        // 1. Find the one with the highest confidence score
-        // 2. If scores are very close (within 1%), prefer the model profile's preferred index
-        let preferred_idx = model_profile.preferred_output_index(output_count);
-        let best_info = if output_infos.is_empty() {
-            return Err(OnnxError::InvalidOutput(
-                "No valid outputs found".to_string(),
-            ));
-        } else {
-            let max_confidence = output_infos
-                .iter()
-                .map(|o| o.confidence)
-                .fold(0.0f64, f64::max);
-            // Among outputs with confidence within 1% of the best, prefer the model's default
-            let close_to_best: Vec<&OutputInfo> = output_infos
-                .iter()
-                .filter(|o| o.confidence >= max_confidence - 0.01)
-                .collect();
-
-            if let Some(preferred) = close_to_best.iter().find(|o| o.index == preferred_idx) {
-                preferred
-            } else {
-                close_to_best
-                    .into_iter()
-                    .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap())
-                    .unwrap()
-            }
-        };
-
-        let best_output_idx = best_info.index;
-        let (out_h, out_w) = (best_info.out_h, best_info.out_w);
-        eprintln!(
-            "[AI] Selected output {} (confidence {:.4}) — {}x{}",
-            best_output_idx, best_info.confidence, out_w, out_h
-        );
-
-        // Get pointer to best output's data
-        let output_tensor = output_tensors.values[best_output_idx];
-        let mut out_data_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
-        status_to_result(
-            &api,
-            (api.get_tensor_mutable_data())(output_tensor, &mut out_data_ptr),
-        )
-        .map_err(|e| OnnxError::InvalidOutput(format!("Get tensor data: {}", e)))?;
-
-        let total_elements = (out_h * out_w) as usize;
-        let out_slice = std::slice::from_raw_parts(out_data_ptr as *const f32, total_elements);
-
-        // -- Detect output type and convert to probabilities --
-        let is_prob = is_probability_space(out_slice);
-        eprintln!(
-            "[AI] Output value space: {}",
-            if is_prob {
-                "probabilities [0,1]"
-            } else {
-                "logits (applying sigmoid)"
-            }
-        );
-
-        let probabilities: Vec<f32> = out_slice
-            .iter()
-            .map(|&v| to_probability(v, is_prob))
-            .collect();
 
         // Log mask statistics for debugging
         let mut min_val = f32::MAX;
@@ -1579,7 +1427,7 @@ fn remove_background_native(
             max_val = max_val.max(p);
             sum_prob += p as f64;
         }
-        let avg_prob = sum_prob / total_elements as f64;
+        let avg_prob = sum_prob / probabilities.len() as f64;
         eprintln!(
             "[AI] Mask stats: probability range [{:.4}, {:.4}], avg {:.4}",
             min_val, max_val, avg_prob

@@ -451,7 +451,7 @@ impl PaintFEApp {
                         #[cfg(not(target_arch = "wasm32"))]
                         if let Some(path) = rfd::FileDialog::new()
                             .add_filter(
-                                "Image",
+                                crate::t!("ui.image"),
                                 &[
                                     "png", "jpg", "jpeg", "bmp", "gif", "webp", "tiff", "tif",
                                     "tga", "ico",
@@ -960,19 +960,19 @@ impl PaintFEApp {
 
         if let Some(inner_resp) = resp {
             inner_resp.response.context_menu(|ui| {
-                if ui.button("Save Palette").clicked() {
+                if ui.button(crate::t!("ui.save_palette")).clicked() {
                     self.palette_panel.save_palette_dialog();
                     ui.close();
                 }
-                if ui.button("Load Palette").clicked() {
+                if ui.button(crate::t!("ui.load_palette")).clicked() {
                     self.palette_panel.load_palette_dialog();
                     ui.close();
                 }
-                if ui.button("Reset Palette").clicked() {
+                if ui.button(crate::t!("ui.reset_palette")).clicked() {
                     self.palette_panel.reset_palette_default();
                     ui.close();
                 }
-                if ui.button("Reset Recents").clicked() {
+                if ui.button(crate::t!("ui.reset_recents")).clicked() {
                     self.palette_panel.reset_recent_default();
                     ui.close();
                 }

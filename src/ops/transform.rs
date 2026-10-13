@@ -17,7 +17,7 @@ enum SelectionCanvasTransform {
 }
 
 /// Interpolation method for resize operations.
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum Interpolation {
     Nearest,
     #[default]
@@ -55,7 +55,7 @@ impl Interpolation {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum ResizeMethod {
     #[default]
     Standard,
@@ -71,7 +71,7 @@ impl ResizeMethod {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum PixelRetargetMode {
     #[default]
     PaletteAware,
@@ -89,7 +89,7 @@ impl PixelRetargetMode {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct PixelRetargetSettings {
     pub mode: PixelRetargetMode,
     pub preserve_palette: bool,

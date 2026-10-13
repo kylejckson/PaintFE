@@ -24,14 +24,14 @@ impl GridDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "GRID SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.grid_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("grid_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Cell Width");
+                        ui.label(crate::t!("ui.cell_width"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.cell_w,
@@ -44,7 +44,7 @@ impl GridDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Cell Height");
+                        ui.label(crate::t!("ui.cell_height"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.cell_h,
@@ -57,7 +57,7 @@ impl GridDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Line Width");
+                        ui.label(crate::t!("ui.line_width"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.line_width,
@@ -70,29 +70,29 @@ impl GridDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Color");
+                        ui.label(crate::t!("keybind_category.color"));
                         if ui.color_edit_button_rgb(&mut self.color).changed() {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Opacity");
+                        ui.label(crate::t!("settings.interface.resize_grip_opacity"));
                         if dialog_slider(ui, &mut self.opacity, 0.0..=1.0, 0.01, "", 2) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Style");
+                        ui.label(crate::t!("ui.style"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             for (i, label) in ["Lines", "Checkerboard"].iter().enumerate() {
                                 let btn = if self.style_idx == i {
                                     egui::Button::new(
-                                        egui::RichText::new(*label).strong().size(11.0),
+                                        egui::RichText::new(crate::i18n::translate_english(label)).strong().size(11.0),
                                     )
                                     .fill(colors.accent_faint)
                                 } else {
-                                    egui::Button::new(egui::RichText::new(*label).size(11.0))
+                                    egui::Button::new(egui::RichText::new(crate::i18n::translate_english(label)).size(11.0))
                                 };
                                 if ui.add(btn).clicked() {
                                     self.style_idx = i;
@@ -165,26 +165,26 @@ impl DropShadowDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "SHADOW SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.shadow_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("shadow_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Offset X");
+                        ui.label(crate::t!("ui.offset_x"));
                         if dialog_slider(ui, &mut self.offset_x, -50.0..=50.0, 1.0, " px", 0) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Offset Y");
+                        ui.label(crate::t!("ui.offset_y"));
                         if dialog_slider(ui, &mut self.offset_y, -50.0..=50.0, 1.0, " px", 0) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Radius");
+                        ui.label(crate::t!("ui.radius"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.blur_radius, 0.0..=30.0)
                                 .suffix(" px")
@@ -196,22 +196,22 @@ impl DropShadowDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Widen Radius");
+                        ui.label(crate::t!("ui.widen_radius"));
                         if ui
-                            .checkbox(&mut self.widen_radius, "Expand spread before blur")
+                            .checkbox(&mut self.widen_radius, crate::t!("ui.expand_spread_before_blur"))
                             .changed()
                         {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Color");
+                        ui.label(crate::t!("keybind_category.color"));
                         if ui.color_edit_button_rgb(&mut self.color).changed() {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Opacity");
+                        ui.label(crate::t!("settings.interface.resize_grip_opacity"));
                         if dialog_slider(ui, &mut self.opacity, 0.0..=1.0, 0.01, "", 2) {
                             changed = true;
                         }
@@ -283,14 +283,14 @@ impl OutlineDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "OUTLINE SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.outline_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("outline_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Width");
+                        ui.label(crate::t!("dialog.resize_image.width"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.width,
@@ -303,23 +303,23 @@ impl OutlineDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Color");
+                        ui.label(crate::t!("keybind_category.color"));
                         if ui.color_edit_button_rgb(&mut self.color).changed() {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Mode");
+                        ui.label(crate::t!("ui.mode"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             for (i, label) in ["Outside", "Inside", "Center"].iter().enumerate() {
                                 let btn = if self.mode_idx == i {
                                     egui::Button::new(
-                                        egui::RichText::new(*label).strong().size(11.0),
+                                        egui::RichText::new(crate::i18n::translate_english(label)).strong().size(11.0),
                                     )
                                     .fill(colors.accent_faint)
                                 } else {
-                                    egui::Button::new(egui::RichText::new(*label).size(11.0))
+                                    egui::Button::new(egui::RichText::new(crate::i18n::translate_english(label)).size(11.0))
                                 };
                                 if ui.add(btn).clicked() {
                                     self.mode_idx = i;
@@ -410,15 +410,15 @@ impl SeamlessTextureDialog {
                 if paint_dialog_header(ui, &colors, "\u{1F9F6}", &t!("dialog.seamless")) {
                     result = DialogResult::Cancel;
                 }
-                ui.small("Tiled preview is enabled while this dialog is open.");
+                ui.small(crate::t!("ui.tiled_preview_is_enabled_while_this_dialog_is_open"));
                 ui.add_space(4.0);
-                section_label(ui, &colors, "SEAM REPAIR");
+                section_label(ui, &colors, &crate::t!("ui.seam_repair"));
                 let mut changed = false;
                 egui::Grid::new("seamless_texture_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Blend width");
+                        ui.label(crate::t!("ui.blend_width"));
                         changed |= numeric_field_with_buttons(
                             ui,
                             &mut self.blend_px,
@@ -428,36 +428,36 @@ impl SeamlessTextureDialog {
                             8.0,
                         );
                         ui.end_row();
-                        ui.label("Strength");
+                        ui.label(crate::t!("ui.strength"));
                         changed |= dialog_slider(ui, &mut self.strength, 0.0..=1.0, 0.01, "", 2);
                         ui.end_row();
-                        ui.label("Directions");
+                        ui.label(crate::t!("ui.directions"));
                         ui.horizontal(|ui| {
-                            changed |= ui.checkbox(&mut self.horizontal, "Horizontal").changed();
-                            changed |= ui.checkbox(&mut self.vertical, "Vertical").changed();
+                            changed |= ui.checkbox(&mut self.horizontal, crate::t!("ui.horizontal")).changed();
+                            changed |= ui.checkbox(&mut self.vertical, crate::t!("ui.vertical")).changed();
                         });
                         ui.end_row();
-                        ui.label("Fade");
+                        ui.label(crate::t!("ui.fade"));
                         egui::ComboBox::from_id_salt("seamless_profile")
-                            .selected_text(["Linear", "Smooth"][self.profile_idx])
+                            .selected_text(&[crate::t!("gradient_shape.linear"), crate::t!("ui.smooth")][self.profile_idx])
                             .show_ui(ui, |ui| {
                                 for (idx, label) in ["Linear", "Smooth"].iter().enumerate() {
                                     changed |= ui
-                                        .selectable_value(&mut self.profile_idx, idx, *label)
+                                        .selectable_value(&mut self.profile_idx, idx, crate::i18n::translate_english(label))
                                         .changed();
                                 }
                             });
                         ui.end_row();
                     });
-                section_label(ui, &colors, "ORGANIC VARIATION");
+                section_label(ui, &colors, &crate::t!("ui.organic_variation"));
                 egui::Grid::new("seamless_organic_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Organic amount");
+                        ui.label(crate::t!("ui.organic_amount"));
                         changed |= dialog_slider(ui, &mut self.organicity, 0.0..=1.0, 0.01, "", 2);
                         ui.end_row();
-                        ui.label("Dent size");
+                        ui.label(crate::t!("ui.dent_size"));
                         changed |= numeric_field_with_buttons(
                             ui,
                             &mut self.dent_size,
@@ -467,7 +467,7 @@ impl SeamlessTextureDialog {
                             24.0,
                         );
                         ui.end_row();
-                        ui.label("Seed");
+                        ui.label(crate::t!("ui.seed"));
                         let mut seed = self.seed as f32;
                         if numeric_field_with_buttons(ui, &mut seed, 1.0, 0.0..=999_999.0, "", 42.0)
                         {
@@ -522,14 +522,14 @@ impl CanvasBorderDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "BORDER SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.border_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("canvas_border_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Width");
+                        ui.label(crate::t!("dialog.resize_image.width"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.width,
@@ -542,8 +542,8 @@ impl CanvasBorderDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Color");
-                        ui.label("Uses Primary Color");
+                        ui.label(crate::t!("keybind_category.color"));
+                        ui.label(crate::t!("ui.uses_primary_color"));
                         ui.end_row();
                     });
 
@@ -600,14 +600,14 @@ impl PixelDragDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "GLITCH SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.glitch_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("pixdrag_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Amount");
+                        ui.label(crate::t!("ui.amount"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.amount, 1.0..=100.0)
                                 .suffix("%")
@@ -618,7 +618,7 @@ impl PixelDragDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Distance");
+                        ui.label(crate::t!("ui.distance"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.distance, 5.0..=200.0)
                                 .suffix(" px")
@@ -629,7 +629,7 @@ impl PixelDragDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Direction");
+                        ui.label(crate::t!("ui.direction"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.direction, -180.0..=180.0)
                                 .suffix("°")
@@ -640,7 +640,7 @@ impl PixelDragDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Seed");
+                        ui.label(crate::t!("ui.seed"));
                         ui.horizontal(|ui| {
                             let mut seed_f = self.seed as f32;
                             if ui
@@ -718,14 +718,14 @@ impl RgbDisplaceDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "CHANNEL OFFSETS");
+                section_label(ui, &colors, &crate::t!("ui.channel_offsets"));
 
                 let mut changed = false;
 
                 // Red channel
                 ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new("Red")
+                        egui::RichText::new(crate::t!("theme_preset.red"))
                             .color(Color32::from_rgb(220, 50, 50))
                             .strong()
                             .size(12.0),
@@ -762,7 +762,7 @@ impl RgbDisplaceDialog {
                 // Green channel
                 ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new("Green")
+                        egui::RichText::new(crate::t!("theme_preset.green"))
                             .color(Color32::from_rgb(50, 180, 50))
                             .strong()
                             .size(12.0),
@@ -799,7 +799,7 @@ impl RgbDisplaceDialog {
                 // Blue channel
                 ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new("Blue")
+                        egui::RichText::new(crate::t!("theme_preset.blue"))
                             .color(Color32::from_rgb(50, 100, 220))
                             .strong()
                             .size(12.0),
@@ -832,11 +832,11 @@ impl RgbDisplaceDialog {
                     });
 
                 ui.add_space(4.0);
-                section_label(ui, &colors, "PRESETS");
+                section_label(ui, &colors, &crate::t!("ui.presets"));
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     if ui
-                        .button(egui::RichText::new("Subtle").size(11.0))
+                        .button(egui::RichText::new(crate::t!("ui.subtle")).size(11.0))
                         .clicked()
                     {
                         self.r_x = 2.0;
@@ -847,7 +847,7 @@ impl RgbDisplaceDialog {
                         self.b_y = 2.0;
                         changed = true;
                     }
-                    if ui.button(egui::RichText::new("VHS").size(11.0)).clicked() {
+                    if ui.button(egui::RichText::new(crate::t!("ui.vhs")).size(11.0)).clicked() {
                         self.r_x = 8.0;
                         self.r_y = 1.0;
                         self.g_x = -4.0;
@@ -856,7 +856,7 @@ impl RgbDisplaceDialog {
                         self.b_y = -3.0;
                         changed = true;
                     }
-                    if ui.button(egui::RichText::new("Heavy").size(11.0)).clicked() {
+                    if ui.button(egui::RichText::new(crate::t!("ui.heavy")).size(11.0)).clicked() {
                         self.r_x = 20.0;
                         self.r_y = -5.0;
                         self.g_x = -20.0;
@@ -865,7 +865,7 @@ impl RgbDisplaceDialog {
                         self.b_y = 20.0;
                         changed = true;
                     }
-                    if ui.button(egui::RichText::new("Reset").size(11.0)).clicked() {
+                    if ui.button(egui::RichText::new(crate::t!("common.reset")).size(11.0)).clicked() {
                         self.r_x = 0.0;
                         self.r_y = 0.0;
                         self.g_x = 0.0;

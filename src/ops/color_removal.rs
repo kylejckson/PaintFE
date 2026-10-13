@@ -29,7 +29,7 @@ impl Default for ColorToAlphaSettings {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum InteriorRecoveryMode {
     Off,
     SmallIslands,

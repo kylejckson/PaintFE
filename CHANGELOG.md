@@ -6,6 +6,24 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.5] - 2026-10-13
+
+- Show clear errors when an image cannot be opened.
+- Improve IS-Net background removal and remember dialog settings.
+- Complete translations and add five languages with separate Portuguese variants.
+
+### Fixed
+
+- Report unsupported and corrupted image imports before asking how to open them. Failed imports leave documents unchanged. Addresses #161.
+- Add model-specific preprocessing and mask conversion for IS-Net exports, with automatic detection and manual profile selection. Addresses #162.
+- Reuse supported dialog settings during a session, with optional persistence between launches and a reset control. Addresses #163.
+- Translate remaining controls and keep long panel titles clear of close buttons.
+
+### Added
+
+- Add Korean, Indonesian, Vietnamese, Thai and Hungarian translations, and separate Brazilian and European Portuguese. Existing Portuguese preferences keep the Brazilian wording.
+- Complete all 25 language catalogs and add offline CJK and Thai font fallbacks.
+
 ## [1.4.4] - 2026-10-12
 
 - Save As now uses the remembered export format for opened images too.

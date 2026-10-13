@@ -256,9 +256,9 @@ impl LayersPanel {
         ui.add_space(8.0);
         ui.separator();
         ui.add_space(4.0);
-        ui.label(egui::RichText::new("Image data").strong().size(12.0));
+        ui.label(egui::RichText::new(crate::t!("ui.image_data")).strong().size(12.0));
         ui.horizontal(|ui| {
-            ui.label("Pixel format");
+            ui.label(crate::t!("ui.pixel_format"));
             let mut fmt = canvas_state.layers[layer_idx].pixel_format;
             egui::ComboBox::from_id_salt(("pixel_format_combo_ls", layer_idx))
                 .selected_text(fmt.name())
@@ -280,21 +280,21 @@ impl LayersPanel {
             }
         });
         ui.horizontal(|ui| {
-            ui.label("WebP frame");
+            ui.label(crate::t!("ui.webp_frame"));
             let mut mode = canvas_state.layers[layer_idx].webp_frame_compression;
             egui::ComboBox::from_id_salt(("webp_frame_mode_ls", layer_idx))
-                .selected_text(mode.label())
+                .selected_text(crate::i18n::translate_english(mode.label()))
                 .width(120.0)
                 .show_ui(ui, |ui| {
                     ui.selectable_value(
                         &mut mode,
                         crate::canvas::WebpFrameCompression::Lossless,
-                        "Lossless",
+                        crate::t!("ui.lossless"),
                     );
                     ui.selectable_value(
                         &mut mode,
                         crate::canvas::WebpFrameCompression::Lossy,
-                        "Lossy",
+                        crate::t!("ui.lossy"),
                     );
                 });
             if mode != canvas_state.layers[layer_idx].webp_frame_compression {
@@ -303,12 +303,12 @@ impl LayersPanel {
             }
         });
         ui.label(
-            egui::RichText::new("Only used for animated WebP export.")
+            egui::RichText::new(crate::t!("ui.only_used_for_animated_webp_export"))
                 .size(11.0)
                 .color(ui.visuals().weak_text_color()),
         );
         let mut hdr_enabled = canvas_state.layers[layer_idx].hdr_metadata.enabled;
-        if ui.checkbox(&mut hdr_enabled, "HDR metadata").changed() {
+        if ui.checkbox(&mut hdr_enabled, crate::t!("ui.hdr_metadata")).changed() {
             canvas_state.layers[layer_idx].hdr_metadata.enabled = hdr_enabled;
         }
         if hdr_enabled {
@@ -317,7 +317,7 @@ impl LayersPanel {
                 .max_luminance_nits
                 .unwrap_or(1000.0);
             ui.horizontal(|ui| {
-                ui.label("Max nits");
+                ui.label(crate::t!("ui.max_nits"));
                 if ui
                     .add(
                         crate::ui::numeric::Numeric::new(&mut max_nits)
@@ -338,11 +338,7 @@ impl LayersPanel {
             || !meta.raw_png_chunks.is_empty()
         {
             ui.label(
-                egui::RichText::new(format!(
-                    "Metadata: {} text, {} raw chunks",
-                    meta.png_text_chunks.len(),
-                    meta.raw_png_chunks.len()
-                ))
+                egui::RichText::new(crate::i18n::format_translation("ui.metadata_0_text_1_raw_chunks", &[("0", format!("{}", meta.png_text_chunks.len())), ("1", format!("{}", meta.raw_png_chunks.len()))]))
                 .size(11.0),
             );
         }
@@ -357,7 +353,7 @@ impl LayersPanel {
         ui.add_space(8.0);
         ui.separator();
         ui.add_space(4.0);
-        ui.label(egui::RichText::new("Adjustment").strong().size(12.0));
+        ui.label(egui::RichText::new(crate::t!("ui.adjustment")).strong().size(12.0));
 
         let mut changed = false;
         let layer = &mut canvas_state.layers[layer_idx];
@@ -376,14 +372,14 @@ impl LayersPanel {
             .width(180.0)
             .show_ui(ui, |ui| {
                 if ui
-                    .selectable_label(selected == "Exposure", "Exposure")
+                    .selectable_label(selected == "Exposure", crate::t!("dialog.exposure"))
                     .clicked()
                 {
                     adj.kind = crate::canvas::AdjustmentKind::Exposure { ev: 0.5 };
                     changed = true;
                 }
                 if ui
-                    .selectable_label(selected == "Brightness / Contrast", "Brightness / Contrast")
+                    .selectable_label(selected == "Brightness / Contrast", crate::t!("dialog.brightness_contrast"))
                     .clicked()
                 {
                     adj.kind = crate::canvas::AdjustmentKind::BrightnessContrast {
@@ -393,14 +389,14 @@ impl LayersPanel {
                     changed = true;
                 }
                 if ui
-                    .selectable_label(selected == "Invert", "Invert")
+                    .selectable_label(selected == "Invert", crate::t!("ui.invert"))
                     .clicked()
                 {
                     adj.kind = crate::canvas::AdjustmentKind::Invert;
                     changed = true;
                 }
                 if ui
-                    .selectable_label(selected == "Channel Mixer", "Channel Mixer")
+                    .selectable_label(selected == "Channel Mixer", crate::t!("ui.channel_mixer"))
                     .clicked()
                 {
                     adj.kind = crate::canvas::AdjustmentKind::ChannelMixer {
@@ -418,7 +414,7 @@ impl LayersPanel {
                 changed |= ui
                     .add(
                         egui::Slider::new(ev, -4.0..=4.0)
-                            .text("EV")
+                            .text(crate::t!("ui.ev"))
                             .fixed_decimals(2),
                     )
                     .changed();
@@ -428,14 +424,14 @@ impl LayersPanel {
                 contrast,
             } => {
                 changed |= ui
-                    .add(egui::Slider::new(brightness, -255.0..=255.0).text("Brightness"))
+                    .add(egui::Slider::new(brightness, -255.0..=255.0).text(crate::t!("ui.brightness")))
                     .changed();
                 changed |= ui
-                    .add(egui::Slider::new(contrast, -255.0..=255.0).text("Contrast"))
+                    .add(egui::Slider::new(contrast, -255.0..=255.0).text(crate::t!("ui.contrast")))
                     .changed();
             }
             crate::canvas::AdjustmentKind::Invert => {
-                ui.label("Inverts RGB; alpha is preserved.");
+                ui.label(crate::t!("ui.inverts_rgb_alpha_is_preserved"));
             }
             crate::canvas::AdjustmentKind::ChannelMixer {
                 red,
@@ -449,7 +445,7 @@ impl LayersPanel {
                     ("Blue", blue),
                     ("Alpha", alpha),
                 ] {
-                    ui.label(label);
+                    ui.label(crate::i18n::translate_english(label));
                     ui.horizontal(|ui| {
                         for (i, coeff) in row.iter_mut().enumerate() {
                             let name = ["R", "G", "B", "A"][i];
@@ -951,7 +947,7 @@ impl LayersPanel {
                 self.settings_state.texture_load_rx = Some(rx);
                 std::thread::spawn(move || {
                     if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("Images", &["png", "jpg", "jpeg", "bmp", "webp"])
+                        .add_filter(crate::t!("ui.images"), &["png", "jpg", "jpeg", "bmp", "webp"])
                         .pick_file()
                         && let Ok(data) = std::fs::read(&path)
                     {

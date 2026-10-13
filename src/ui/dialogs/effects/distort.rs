@@ -14,14 +14,14 @@ impl CrystallizeDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "VORONOI SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.voronoi_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("crystal_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Cell Size");
+                        ui.label(crate::t!("ui.cell_size"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.cell_size,
@@ -34,7 +34,7 @@ impl CrystallizeDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Seed");
+                        ui.label(crate::t!("ui.seed"));
                         ui.horizontal(|ui| {
                             let mut seed_f = self.seed as f32;
                             if ui
@@ -57,7 +57,7 @@ impl CrystallizeDialog {
                         });
                         ui.end_row();
 
-                        ui.label("Quick");
+                        ui.label(crate::t!("ui.quick"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             for &(label, val) in &[
@@ -68,11 +68,11 @@ impl CrystallizeDialog {
                             ] {
                                 let btn = if (self.cell_size - val).abs() < 2.0 {
                                     egui::Button::new(
-                                        egui::RichText::new(label).strong().size(11.0),
+                                        egui::RichText::new(crate::i18n::translate_english(label)).strong().size(11.0),
                                     )
                                     .fill(colors.accent_faint)
                                 } else {
-                                    egui::Button::new(egui::RichText::new(label).size(11.0))
+                                    egui::Button::new(egui::RichText::new(crate::i18n::translate_english(label)).size(11.0))
                                 };
                                 if ui.add(btn).clicked() {
                                     self.cell_size = val;
@@ -133,14 +133,14 @@ impl DentsDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "DISTORTION SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.distortion_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("dents_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Scale");
+                        ui.label(crate::t!("dialog.resize_image.scale"));
                         let r =
                             ui.add(egui::Slider::new(&mut self.scale, 1.0..=80.0).max_decimals(1));
                         if track_slider(&r, &mut self.dragging) {
@@ -148,7 +148,7 @@ impl DentsDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Amount");
+                        ui.label(crate::t!("ui.amount"));
                         let r =
                             ui.add(egui::Slider::new(&mut self.amount, 0.5..=30.0).max_decimals(1));
                         if track_slider(&r, &mut self.dragging) {
@@ -156,7 +156,7 @@ impl DentsDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Seed");
+                        ui.label(crate::t!("ui.seed"));
                         ui.horizontal(|ui| {
                             let mut seed_f = self.seed as f32;
                             if ui
@@ -181,13 +181,13 @@ impl DentsDialog {
                     });
 
                 ui.add_space(4.0);
-                section_label(ui, &colors, "TURBULENCE");
+                section_label(ui, &colors, &crate::t!("ui.turbulence"));
 
                 egui::Grid::new("dents_turb")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Octaves");
+                        ui.label(crate::t!("ui.octaves"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.octaves, 1.0..=8.0)
                                 .max_decimals(0)
@@ -198,7 +198,7 @@ impl DentsDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Roughness");
+                        ui.label(crate::t!("ui.roughness"));
                         let r = ui
                             .add(egui::Slider::new(&mut self.roughness, 0.1..=1.0).max_decimals(2));
                         if track_slider(&r, &mut self.dragging) {
@@ -208,20 +208,20 @@ impl DentsDialog {
                     });
 
                 ui.add_space(4.0);
-                section_label(ui, &colors, "OPTIONS");
+                section_label(ui, &colors, &crate::t!("ui.options"));
 
                 egui::Grid::new("dents_opts")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Pinch");
-                        if ui.checkbox(&mut self.pinch, "Inward bias").changed() {
+                        ui.label(crate::t!("ui.pinch"));
+                        if ui.checkbox(&mut self.pinch, crate::t!("ui.inward_bias")).changed() {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Wrap");
-                        if ui.checkbox(&mut self.wrap, "Tile edges").changed() {
+                        ui.label(crate::t!("ui.wrap"));
+                        if ui.checkbox(&mut self.wrap, crate::t!("ui.tile_edges")).changed() {
                             changed = true;
                         }
                         ui.end_row();
@@ -276,14 +276,14 @@ impl PixelateDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "PIXEL SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.pixel_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("pixelate_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Block Size");
+                        ui.label(crate::t!("ui.block_size"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.block_size,
@@ -296,7 +296,7 @@ impl PixelateDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Quick");
+                        ui.label(crate::t!("ui.quick"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             for &(label, val) in &[
@@ -307,11 +307,11 @@ impl PixelateDialog {
                             ] {
                                 let btn = if (self.block_size - val).abs() < 1.0 {
                                     egui::Button::new(
-                                        egui::RichText::new(label).strong().size(11.0),
+                                        egui::RichText::new(crate::i18n::translate_english(label)).strong().size(11.0),
                                     )
                                     .fill(colors.accent_faint)
                                 } else {
-                                    egui::Button::new(egui::RichText::new(label).size(11.0))
+                                    egui::Button::new(egui::RichText::new(crate::i18n::translate_english(label)).size(11.0))
                                 };
                                 if ui.add(btn).clicked() {
                                     self.block_size = val;
@@ -365,14 +365,14 @@ impl BulgeDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "DISTORTION SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.distortion_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("bulge_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Amount");
+                        ui.label(crate::t!("ui.amount"));
                         let r =
                             ui.add(egui::Slider::new(&mut self.amount, -3.0..=3.0).max_decimals(2));
                         if track_slider(&r, &mut self.dragging) {
@@ -381,13 +381,13 @@ impl BulgeDialog {
                         ui.end_row();
                         ui.label("");
                         ui.label(
-                            egui::RichText::new("Positive = bulge, Negative = pinch")
+                            egui::RichText::new(crate::t!("ui.positive_bulge_negative_pinch"))
                                 .size(10.0)
                                 .color(colors.text_muted),
                         );
                         ui.end_row();
 
-                        ui.label("Origin X");
+                        ui.label(crate::t!("ui.origin_x"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.origin_x, 0.0..=100.0)
                                 .suffix("%")
@@ -398,7 +398,7 @@ impl BulgeDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Origin Y");
+                        ui.label(crate::t!("ui.origin_y"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.origin_y, 0.0..=100.0)
                                 .suffix("%")
@@ -409,8 +409,8 @@ impl BulgeDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Origin");
-                        if ui.small_button("Center").clicked() {
+                        ui.label(crate::t!("ui.origin"));
+                        if ui.small_button(crate::t!("text_alignment.center")).clicked() {
                             self.origin_x = 50.0;
                             self.origin_y = 50.0;
                             changed = true;
@@ -465,14 +465,14 @@ impl TwistDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "TWIST SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.twist_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("twist_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Angle");
+                        ui.label(crate::t!("ui.angle"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.angle, -720.0..=720.0)
                                 .suffix("°")
@@ -483,7 +483,7 @@ impl TwistDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Quick");
+                        ui.label(crate::t!("ui.quick"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             for &(label, val) in &[
@@ -494,11 +494,11 @@ impl TwistDialog {
                             ] {
                                 let btn = if (self.angle - val).abs() < 5.0 {
                                     egui::Button::new(
-                                        egui::RichText::new(label).strong().size(11.0),
+                                        egui::RichText::new(crate::i18n::translate_english(label)).strong().size(11.0),
                                     )
                                     .fill(colors.accent_faint)
                                 } else {
-                                    egui::Button::new(egui::RichText::new(label).size(11.0))
+                                    egui::Button::new(egui::RichText::new(crate::i18n::translate_english(label)).size(11.0))
                                 };
                                 if ui.add(btn).clicked() {
                                     self.angle = val;
@@ -508,7 +508,7 @@ impl TwistDialog {
                         });
                         ui.end_row();
 
-                        ui.label("Origin X");
+                        ui.label(crate::t!("ui.origin_x"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.origin_x, 0.0..=100.0)
                                 .suffix("%")
@@ -519,7 +519,7 @@ impl TwistDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Origin Y");
+                        ui.label(crate::t!("ui.origin_y"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.origin_y, 0.0..=100.0)
                                 .suffix("%")
@@ -530,8 +530,8 @@ impl TwistDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Origin");
-                        if ui.small_button("Center").clicked() {
+                        ui.label(crate::t!("ui.origin"));
+                        if ui.small_button(crate::t!("text_alignment.center")).clicked() {
                             self.origin_x = 50.0;
                             self.origin_y = 50.0;
                             changed = true;

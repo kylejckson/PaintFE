@@ -86,6 +86,7 @@ struct StraightenSession {
 
 /// Result delivered from a background IO thread.
 pub enum IoResult {
+    ImportReady { bytes: Vec<u8>, path: PathBuf, width: u32, height: u32 },
     /// An image file was decoded and tiled, ready to become a new project.
     ImageLoaded {
         tiled: TiledImage,

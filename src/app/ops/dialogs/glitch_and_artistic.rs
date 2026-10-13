@@ -20,7 +20,7 @@ impl PaintFEApp {
         }
 
         match dialog {
-            ActiveDialog::PixelDrag(dlg) => match dlg.show(ctx) {
+            ActiveDialog::PixelDrag(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     dlg.first_open = false;
                     let idx = dlg.layer_idx;
@@ -44,6 +44,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.preview_job_token = self.preview_job_token.wrapping_add(1);
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat {
@@ -128,7 +129,7 @@ impl PaintFEApp {
                 }
             },
 
-            ActiveDialog::RgbDisplace(dlg) => match dlg.show(ctx) {
+            ActiveDialog::RgbDisplace(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     dlg.first_open = false;
                     let idx = dlg.layer_idx;
@@ -152,6 +153,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.preview_job_token = self.preview_job_token.wrapping_add(1);
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat {
@@ -236,7 +238,7 @@ impl PaintFEApp {
                 }
             },
 
-            ActiveDialog::Ink(dlg) => match dlg.show(ctx) {
+            ActiveDialog::Ink(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     dlg.first_open = false;
                     let idx = dlg.layer_idx;
@@ -256,6 +258,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.preview_job_token = self.preview_job_token.wrapping_add(1);
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat {
@@ -342,7 +345,7 @@ impl PaintFEApp {
                 }
             },
 
-            ActiveDialog::OilPainting(dlg) => match dlg.show(ctx) {
+            ActiveDialog::OilPainting(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     dlg.first_open = false;
                     let idx = dlg.layer_idx;
@@ -362,6 +365,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.preview_job_token = self.preview_job_token.wrapping_add(1);
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat {
@@ -442,7 +446,7 @@ impl PaintFEApp {
                 }
             },
 
-            ActiveDialog::ColorFilter(dlg) => match dlg.show(ctx) {
+            ActiveDialog::ColorFilter(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     dlg.first_open = false;
                     let idx = dlg.layer_idx;
@@ -471,6 +475,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.preview_job_token = self.preview_job_token.wrapping_add(1);
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat {
@@ -565,10 +570,10 @@ impl PaintFEApp {
                 }
             },
 
-            ActiveDialog::ColorToAlpha(dlg) => match dlg.show(
+            ActiveDialog::ColorToAlpha(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(
                 ctx,
                 self.assets.icon_texture(crate::assets::Icon::ColorRemover),
-            ) {
+            )) {
                 DialogResult::Changed => {
                     dlg.first_open = false;
                     let idx = dlg.layer_idx;
@@ -595,6 +600,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(settings) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.preview_job_token = self.preview_job_token.wrapping_add(1);
                     let idx = dlg.layer_idx;
                     let selection_mask = self
@@ -679,11 +685,11 @@ impl PaintFEApp {
                 }
             },
 
-            ActiveDialog::RecoverTransparency(dlg) => match dlg.show(
+            ActiveDialog::RecoverTransparency(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(
                 ctx,
                 self.assets
                     .icon_texture(crate::assets::Icon::MenuColorRecoverTransparency),
-            ) {
+            )) {
                 DialogResult::Changed => {
                     dlg.first_open = false;
                     let idx = dlg.layer_idx;
@@ -712,6 +718,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(settings) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.preview_job_token = self.preview_job_token.wrapping_add(1);
                     let idx = dlg.layer_idx;
                     let selection_mask = self
@@ -798,7 +805,7 @@ impl PaintFEApp {
                 }
             },
 
-            ActiveDialog::Contours(dlg) => match dlg.show(ctx) {
+            ActiveDialog::Contours(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     dlg.first_open = false;
                     let idx = dlg.layer_idx;
@@ -837,6 +844,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.preview_job_token = self.preview_job_token.wrapping_add(1);
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat {

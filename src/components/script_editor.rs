@@ -207,11 +207,14 @@ impl ScriptEditorPanel {
             let preview_color = if self.live_preview { accent } else { muted };
             if ui
                 .button(
-                    RichText::new(format!("{} Live", preview_icon))
-                        .color(preview_color)
-                        .size(11.0),
+                    RichText::new(crate::i18n::format_translation(
+                        "ui.0_live",
+                        &[("0", preview_icon.to_string())],
+                    ))
+                    .color(preview_color)
+                    .size(11.0),
                 )
-                .on_hover_text("Preview changes on canvas during sleep() calls")
+                .on_hover_text(crate::t!("ui.preview_changes_on_canvas_during_sleep_calls"))
                 .clicked()
             {
                 self.live_preview = !self.live_preview;
@@ -242,8 +245,14 @@ impl ScriptEditorPanel {
                 Color32::from_rgb(100, 60, 200)
             };
             if ui
-                .button(RichText::new("+ Filter").color(filter_color).size(11.0))
-                .on_hover_text("Add this script as a custom filter effect (Filter > Custom)")
+                .button(
+                    RichText::new(crate::t!("ui.filter"))
+                        .color(filter_color)
+                        .size(11.0),
+                )
+                .on_hover_text(crate::t!(
+                    "ui.add_this_script_as_a_custom_filter_effect_filter_custom"
+                ))
                 .clicked()
             {
                 // Open the naming popup
@@ -296,7 +305,11 @@ impl ScriptEditorPanel {
                 .inner_margin(Margin::same(6))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Effect name:").color(text_color).size(12.0));
+                        ui.label(
+                            RichText::new(crate::t!("ui.effect_name"))
+                                .color(text_color)
+                                .size(12.0),
+                        );
                         let name = self.naming_effect.as_mut().unwrap();
                         let resp = ui.add(
                             egui::TextEdit::singleline(name)
@@ -315,7 +328,11 @@ impl ScriptEditorPanel {
                             Color32::from_rgb(20, 140, 60)
                         };
                         if ui
-                            .button(RichText::new("Add").color(add_color).strong())
+                            .button(
+                                RichText::new(crate::t!("selection_mode.add"))
+                                    .color(add_color)
+                                    .strong(),
+                            )
                             .clicked()
                             || enter_pressed
                         {
@@ -326,7 +343,11 @@ impl ScriptEditorPanel {
                             }
                         }
                         if ui
-                            .button(RichText::new("Cancel").color(muted).size(11.0))
+                            .button(
+                                RichText::new(crate::t!("common.cancel"))
+                                    .color(muted)
+                                    .size(11.0),
+                            )
                             .clicked()
                         {
                             self.naming_effect = None;
@@ -737,7 +758,7 @@ impl ScriptEditorPanel {
     fn load_script_dialog(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("Rhai Script", &["rhai"])
-            .add_filter("All Files", &["*"])
+            .add_filter(crate::t!("ui.all_files"), &["*"])
             .pick_file()
             && let Ok(contents) = std::fs::read_to_string(&path)
         {

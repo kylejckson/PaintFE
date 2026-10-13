@@ -2,12 +2,12 @@ impl ToolsPanel {
     fn show_liquify_options(&mut self, ui: &mut egui::Ui) {
         ui.label(t!("ctx.mode"));
         egui::ComboBox::from_id_salt("ctx_liquify_mode")
-            .selected_text(self.liquify_state.mode.label())
+            .selected_text(crate::i18n::translate_english(&self.liquify_state.mode.label()))
             .width(90.0)
             .show_ui(ui, |ui| {
                 for mode in LiquifyMode::all() {
                     if ui
-                        .selectable_label(self.liquify_state.mode == *mode, mode.label())
+                        .selectable_label(self.liquify_state.mode == *mode, crate::i18n::translate_english(&mode.label()))
                         .clicked()
                     {
                         self.liquify_state.mode = *mode;
@@ -478,7 +478,7 @@ impl ToolsPanel {
     // ====================================================================
 
     fn show_smudge_options(&mut self, ui: &mut egui::Ui) {
-        ui.label("Size:");
+        ui.label(crate::t!("ctx.liquify.size"));
         ui.add(
             crate::ui::numeric::Numeric::new(&mut self.properties.size)
                 .speed(0.5)
@@ -486,7 +486,7 @@ impl ToolsPanel {
                 .suffix("px"),
         );
         ui.separator();
-        ui.label("Strength:");
+        ui.label(crate::t!("ctx.liquify.strength"));
         ui.add(egui::Slider::new(&mut self.smudge_state.strength, 0.01..=1.0).fixed_decimals(2));
     }
 
@@ -590,7 +590,7 @@ impl ToolsPanel {
                 .shapes_state
                 .selected_custom_shape
                 .clone()
-                .unwrap_or_else(|| self.shapes_state.selected_shape.label());
+                .unwrap_or_else(|| crate::i18n::translate_english(&self.shapes_state.selected_shape.label()));
             if label_text.chars().count() > 12 {
                 label_text = format!("{}...", label_text.chars().take(12).collect::<String>());
             }
@@ -639,7 +639,7 @@ impl ToolsPanel {
             };
 
             if ui
-                .add_sized([54.0, 20.0], egui::Button::new("New..."))
+                .add_sized([54.0, 20.0], egui::Button::new(crate::t!("menu.file.new")))
                 .clicked()
             {
                 self.pending_open_add_shape = true;
@@ -690,7 +690,7 @@ impl ToolsPanel {
                             let inner_rect = rect.shrink(icon_size.x * 0.1);
                             img.paint_at(ui, inner_rect);
                         } else {
-                            let lbl = kind.label();
+                            let lbl = crate::i18n::translate_english(&kind.label());
                             let short: String = lbl.chars().take(2).collect();
                             ui.painter().text(
                                 rect.center(),
@@ -706,7 +706,7 @@ impl ToolsPanel {
                             self.shapes_state.selected_custom_shape = None;
                             self.shapes_state.selected_custom_shape_data = None;
                         }
-                        response.on_hover_text(kind.label());
+                        response.on_hover_text(crate::i18n::translate_english(&kind.label()));
 
                         if (i + 1) % cols == 0 {
                             ui.end_row();
@@ -837,7 +837,7 @@ impl ToolsPanel {
         if icon_resp.clicked() {
             self.shapes_state.fill_mode = self.shapes_state.fill_mode.next();
         }
-        icon_resp.on_hover_text(self.shapes_state.fill_mode.label());
+        icon_resp.on_hover_text(crate::i18n::translate_english(&self.shapes_state.fill_mode.label()));
 
         // Arrow click → open dropdown popup
         if arrow_resp.clicked() {
@@ -857,7 +857,7 @@ impl ToolsPanel {
             ui.set_min_width(120.0);
             for mode in ShapeFillMode::all() {
                 let mode_icon = mode.icon();
-                let label = mode.label();
+                let label = crate::i18n::translate_english(&mode.label());
                 let is_selected = self.shapes_state.fill_mode == *mode;
 
                 let resp = if let Some(tex) = assets.get_texture(mode_icon) {

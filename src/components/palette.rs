@@ -106,7 +106,7 @@ impl PalettePanel {
                 egui::Button::new("+").min_size(egui::vec2(24.0, 24.0)),
             );
             if response
-                .on_hover_text("Add selected color to this collection")
+                .on_hover_text(crate::t!("ui.add_selected_color_to_this_collection"))
                 .clicked()
             {
                 let list = if self.tab == 2 {
@@ -145,9 +145,9 @@ impl PalettePanel {
                     ui.add_space(20.0);
                     ui.label(
                         egui::RichText::new(if self.tab == 1 {
-                            "Colors appear here after painting."
+                            crate::t!("ui.colors_appear_here_after_painting")
                         } else {
-                            "Add a color with + to start."
+                            crate::t!("ui.add_a_color_with_to_start")
                         })
                         .size(11.0)
                         .color(ui.visuals().weak_text_color()),
@@ -176,20 +176,22 @@ impl PalettePanel {
                             }
                             response.context_menu(|ui| {
                                 if self.tab != 1 {
-                                    if ui.button("Replace with Primary").clicked() {
+                                    if ui.button(crate::t!("ui.replace_with_primary")).clicked() {
                                         *color = primary;
                                         ui.close();
                                     }
-                                    if ui.button("Replace with Secondary").clicked() {
+                                    if ui.button(crate::t!("ui.replace_with_secondary")).clicked() {
                                         *color = secondary;
                                         ui.close();
                                     }
                                 }
-                                if self.tab != 2 && ui.button("Add to Favorites").clicked() {
+                                if self.tab != 2
+                                    && ui.button(crate::t!("ui.add_to_favorites")).clicked()
+                                {
                                     favorite = Some(*color);
                                     ui.close();
                                 }
-                                if ui.button("Remove color").clicked() {
+                                if ui.button(crate::t!("ui.remove_color")).clicked() {
                                     remove = Some(index);
                                     ui.close();
                                 }
@@ -225,7 +227,7 @@ impl PalettePanel {
         crate::web_fs::trigger_download("paintfe.pfepalette", text.as_bytes());
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Palette", &["pfepalette"])
+            .add_filter(crate::t!("ui.palette"), &["pfepalette"])
             .set_file_name("paintfe.pfepalette")
             .save_file()
         {
@@ -236,7 +238,7 @@ impl PalettePanel {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let Some(path) = rfd::FileDialog::new()
-                .add_filter("Palette", &["pfepalette"])
+                .add_filter(crate::t!("ui.palette"), &["pfepalette"])
                 .pick_file()
             else {
                 return;

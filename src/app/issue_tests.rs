@@ -124,6 +124,8 @@ fn cancel_preview_drops_queued_work_and_preserves_pixels() {
 }
 
 fn app() -> PaintFEApp {
+    // Match main's startup so localized errors interpolate filenames in tests.
+    crate::i18n::init();
     let cc = eframe::CreationContext::_new_kittest(egui::Context::default());
     let mut app = PaintFEApp::new(&cc, Vec::new(), mpsc::channel().1);
     app.projects = vec![Project::new_untitled(1, 16, 16)];
@@ -265,6 +267,15 @@ fn dropped_native_image_retains_path_and_save_as_defaults() {
         .save(&source)
         .unwrap();
     app.queue_import_or_open(source.clone(), 1.0);
+    let preflight = app
+        .io_receiver
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .unwrap();
+    app.io_sender.send(preflight).unwrap();
+    let ctx = egui::Context::default();
+    let _ = ctx.run_ui(egui::RawInput::default(), |_| {
+        app.update_runtime_lifecycle_async(&ctx);
+    });
     let item = app.pending_import_queue.remove(0);
     assert_eq!(item.source_path.as_ref(), Some(&source));
     app.apply_import_choice(&item, 0, 2.0);
@@ -522,4 +533,62 @@ fn tab_close_preserves_dirty_projects_for_save_discard_cancel() {
     app.projects[0].is_dirty = false;
     app.close_project(0);
     assert!(app.projects.is_empty());
+}
+
+#[test]
+fn invalid_image_imports_report_errors_without_changing_documents() {
+    let mut app = app();
+    let before = app.projects[0].canvas_state.layers[0]
+        .pixels
+        .to_rgba_image();
+    app.open_image_from_bytes(b"not an image", Some("bad.png".into()));
+    let item = PendingImport {
+        bytes: std::sync::Arc::new(b"not an image".to_vec()),
+        name: "layer.jpg".into(),
+        source_path: None,
+        width: 0,
+        height: 0,
+    };
+    app.apply_import_choice(&item, 1, 0.0);
+    let error = app.filter_error.as_deref().unwrap();
+    assert!(error.contains("bad.png"), "{error}");
+    assert!(error.contains("layer.jpg"), "{error}");
+    assert_eq!(app.projects.len(), 1);
+    assert_eq!(app.projects[0].canvas_state.layers.len(), 1);
+    assert_eq!(
+        app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image(),
+        before
+    );
+}
+
+#[test]
+fn renamed_script_fails_preflight_before_import_prompt() {
+    let mut app = app();
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join(format!("invalid-drop-{}.jpg", uuid::Uuid::new_v4()));
+    std::fs::write(&source, b"Write-Host 'not an image'").unwrap();
+    app.queue_import_or_open(source.clone(), 0.0);
+    let result = app
+        .io_receiver
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .unwrap();
+    assert!(matches!(result, IoResult::LoadFailed { .. }));
+    app.io_sender.send(result).unwrap();
+    let ctx = egui::Context::default();
+    let _ = ctx.run_ui(egui::RawInput::default(), |_| {
+        app.update_runtime_lifecycle_async(&ctx);
+    });
+    assert!(app.pending_import_queue.is_empty());
+    assert!(
+        app.filter_error
+            .as_deref()
+            .unwrap()
+            .contains(source.file_name().unwrap().to_str().unwrap())
+    );
+    assert_eq!(app.projects.len(), 1);
+    assert_eq!(app.pending_io_ops, 0);
+    std::fs::remove_file(source).unwrap();
 }

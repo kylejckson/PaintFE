@@ -14,7 +14,7 @@ impl BokehBlurDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "BLUR SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.blur_settings"));
 
                 let mut changed = false;
                 let slider_max = if self.advanced_blur { 100.0 } else { 10.0 };
@@ -23,7 +23,7 @@ impl BokehBlurDialog {
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Radius");
+                        ui.label(crate::t!("ui.radius"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             if self.advanced_blur {
@@ -50,7 +50,7 @@ impl BokehBlurDialog {
                         });
                         ui.end_row();
 
-                        ui.label("Quick");
+                        ui.label(crate::t!("ui.quick"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             let presets: &[(&str, f32)] = if self.advanced_blur {
@@ -73,11 +73,11 @@ impl BokehBlurDialog {
                                 let is_close = (self.radius - val).abs() < 1.0;
                                 let btn = if is_close {
                                     egui::Button::new(
-                                        egui::RichText::new(label).strong().size(11.0),
+                                        egui::RichText::new(crate::i18n::translate_strength_preset(label)).strong().size(11.0),
                                     )
                                     .fill(colors.accent_faint)
                                 } else {
-                                    egui::Button::new(egui::RichText::new(label).size(11.0))
+                                    egui::Button::new(egui::RichText::new(crate::i18n::translate_strength_preset(label)).size(11.0))
                                 };
                                 if ui.add(btn).clicked() {
                                     self.radius = val;
@@ -91,7 +91,7 @@ impl BokehBlurDialog {
                         ui.label("");
                         ui.horizontal(|ui| {
                             if ui
-                                .checkbox(&mut self.advanced_blur, "Advanced (up to 100)")
+                                .checkbox(&mut self.advanced_blur, crate::t!("ui.advanced_up_to_100"))
                                 .changed()
                             {
                                 // Clamp radius when switching back to normal mode
@@ -146,14 +146,14 @@ impl MotionBlurDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "MOTION SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.motion_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("motion_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Angle");
+                        ui.label(crate::t!("ui.angle"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.angle, -180.0..=180.0)
                                 .suffix("°")
@@ -164,7 +164,7 @@ impl MotionBlurDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Distance");
+                        ui.label(crate::t!("ui.distance"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.distance, 1.0..=100.0)
                                 .suffix(" px")
@@ -175,17 +175,17 @@ impl MotionBlurDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Direction");
+                        ui.label(crate::t!("ui.direction"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             for &(label, val) in
                                 &[("→", 0.0), ("↗", -45.0), ("↑", -90.0), ("↖", -135.0)]
                             {
                                 let btn = if (self.angle - val).abs() < 1.0 {
-                                    egui::Button::new(egui::RichText::new(label).strong())
+                                    egui::Button::new(egui::RichText::new(crate::i18n::translate_strength_preset(label)).strong())
                                         .fill(colors.accent_faint)
                                 } else {
-                                    egui::Button::new(label)
+                                    egui::Button::new(crate::i18n::translate_strength_preset(label))
                                 };
                                 if ui.add(btn).clicked() {
                                     self.angle = val;
@@ -235,14 +235,14 @@ impl BoxBlurDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "BLUR SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.blur_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("box_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Radius");
+                        ui.label(crate::t!("ui.radius"));
                         let r =
                             ui.add(egui::Slider::new(&mut self.radius, 1.0..=50.0).max_decimals(1));
                         if track_slider(&r, &mut self.dragging) {
@@ -334,12 +334,12 @@ impl ZoomBlurDialog {
                 // --------------------------------------------------
                 // ZOOM ORIGIN
                 // --------------------------------------------------
-                section_label(ui, &colors, "ZOOM ORIGIN");
+                section_label(ui, &colors, &crate::t!("ui.zoom_origin"));
                 egui::Grid::new("zoom_origin_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Center X");
+                        ui.label(crate::t!("ui.center_x"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.center_x, 0.0..=1.0)
                                 .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
@@ -355,7 +355,7 @@ impl ZoomBlurDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Center Y");
+                        ui.label(crate::t!("ui.center_y"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.center_y, 0.0..=1.0)
                                 .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
@@ -371,7 +371,7 @@ impl ZoomBlurDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Preset");
+                        ui.label(crate::t!("dialog.resize_image.preset"));
                         ui.horizontal_wrapped(|ui| {
                             ui.spacing_mut().item_spacing = egui::vec2(3.0, 3.0);
                             let presets: &[(&str, f32, f32)] = &[
@@ -389,7 +389,7 @@ impl ZoomBlurDialog {
                                 let active = (self.center_x - px).abs() < 0.01
                                     && (self.center_y - py).abs() < 0.01;
                                 let btn = if active {
-                                    egui::Button::new(egui::RichText::new(lbl).strong())
+                                    egui::Button::new(egui::RichText::new(crate::i18n::translate_english(lbl)).strong())
                                         .fill(colors.accent_faint)
                                 } else {
                                     egui::Button::new(lbl)
@@ -409,12 +409,12 @@ impl ZoomBlurDialog {
                 // --------------------------------------------------
                 // BLUR SETTINGS
                 // --------------------------------------------------
-                section_label(ui, &colors, "BLUR SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.blur_settings"));
                 egui::Grid::new("zoom_blur_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Intensity");
+                        ui.label(crate::t!("ui.intensity"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.intensity, 1.0..=100.0)
                                 .max_decimals(0)
@@ -425,28 +425,28 @@ impl ZoomBlurDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Quality");
+                        ui.label(crate::t!("ui.quality_2"));
                         egui::ComboBox::from_id_salt("zoom_quality")
                             .selected_text(match self.quality {
-                                0 => "Fast",
-                                1 => "Normal",
-                                _ => "High",
+                                0 => crate::t!("ui.fast"),
+                                1 => crate::t!("selection_mode.normal"),
+                                _ => crate::t!("ui.high"),
                             })
                             .show_ui(ui, |ui| {
                                 if ui
-                                    .selectable_value(&mut self.quality, 0, "Fast  (8 samples)")
+                                    .selectable_value(&mut self.quality, 0, crate::t!("ui.fast_8_samples"))
                                     .changed()
                                 {
                                     changed = true;
                                 }
                                 if ui
-                                    .selectable_value(&mut self.quality, 1, "Normal (16 samples)")
+                                    .selectable_value(&mut self.quality, 1, crate::t!("ui.normal_16_samples"))
                                     .changed()
                                 {
                                     changed = true;
                                 }
                                 if ui
-                                    .selectable_value(&mut self.quality, 2, "High  (32 samples)")
+                                    .selectable_value(&mut self.quality, 2, crate::t!("ui.high_32_samples"))
                                     .changed()
                                 {
                                     changed = true;
@@ -454,7 +454,7 @@ impl ZoomBlurDialog {
                             });
                         ui.end_row();
 
-                        ui.label("Quick");
+                        ui.label(crate::t!("ui.quick"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             for &(lbl, val) in &[
@@ -465,10 +465,10 @@ impl ZoomBlurDialog {
                             ] {
                                 let active = (self.intensity - val).abs() < 2.0;
                                 let btn = if active {
-                                    egui::Button::new(egui::RichText::new(lbl).strong().size(11.0))
+                                    egui::Button::new(egui::RichText::new(crate::i18n::translate_english(lbl)).strong().size(11.0))
                                         .fill(colors.accent_faint)
                                 } else {
-                                    egui::Button::new(egui::RichText::new(lbl).size(11.0))
+                                    egui::Button::new(egui::RichText::new(crate::i18n::translate_english(lbl)).size(11.0))
                                 };
                                 if ui.add(btn).clicked() {
                                     self.intensity = val;
@@ -484,14 +484,14 @@ impl ZoomBlurDialog {
                 // --------------------------------------------------
                 // COLOR TINT
                 // --------------------------------------------------
-                section_label(ui, &colors, "COLOR TINT");
+                section_label(ui, &colors, &crate::t!("ui.color_tint"));
                 egui::Grid::new("zoom_tint_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Enable");
+                        ui.label(crate::t!("ui.enable"));
                         if ui
-                            .checkbox(&mut self.tint_enabled, "Radial color tint at origin")
+                            .checkbox(&mut self.tint_enabled, crate::t!("ui.radial_color_tint_at_origin"))
                             .changed()
                         {
                             changed = true;
@@ -499,7 +499,7 @@ impl ZoomBlurDialog {
                         ui.end_row();
 
                         if self.tint_enabled {
-                            ui.label("Tint Color");
+                            ui.label(crate::t!("ui.tint_color"));
                             ui.horizontal(|ui| {
                                 let mut col = egui::Color32::from_rgb(
                                     (self.tint_r * 255.0) as u8,
@@ -548,7 +548,7 @@ impl ZoomBlurDialog {
                             });
                             ui.end_row();
 
-                            ui.label("Mix");
+                            ui.label(crate::t!("ui.mix"));
                             let r = ui.add(
                                 egui::Slider::new(&mut self.tint_mix, 0.0..=100.0)
                                     .max_decimals(0)

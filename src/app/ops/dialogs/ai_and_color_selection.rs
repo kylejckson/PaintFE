@@ -7,8 +7,9 @@ impl PaintFEApp {
 
         match dialog {
 
-            ActiveDialog::RemoveBackground(dlg) => match dlg.show(ctx) {
+            ActiveDialog::RemoveBackground(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Ok(settings) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.active_dialog = ActiveDialog::None;
                     if self.background_removal_pending { return true; }
                     if let Some(project) = self.active_project() {
@@ -19,6 +20,7 @@ impl PaintFEApp {
                         let model_path = self.settings.birefnet_model_path.clone();
 
                         let options = crate::ops::ai::InferenceOptions {
+                            cpu_threads: None,
                             graph_optimization: self.settings.onnx_graph_optimization,
                             cpu_memory_arena: self.settings.onnx_cpu_memory_arena,
                         };
@@ -44,7 +46,7 @@ impl PaintFEApp {
                 _ => {}
             },
 
-            ActiveDialog::ColorRange(dlg) => match dlg.show(ctx) {
+            ActiveDialog::ColorRange(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     if let Some(project) = self.active_project_mut() {
                         project.canvas_state.selection_mask = dlg.original_selection.clone();
@@ -61,6 +63,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.active_dialog = ActiveDialog::None;
                     return true;
                 }

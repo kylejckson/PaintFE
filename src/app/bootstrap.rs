@@ -17,8 +17,8 @@ impl PaintFEApp {
 
         // -- Font configuration ------------------------------------------------
         // Proportional: DM Sans (primary, matches website) → Noto Sans (Cyrillic/
-        //   Greek/Thai fallback) → system CJK → egui defaults
-        // Monospace: JetBrains Mono (matches website badges/tags) → egui defaults
+        //   Greek fallback) → system CJK → bundled CJK/Thai → egui defaults
+        // Monospace: JetBrains Mono → the same script fallbacks → egui defaults
         {
             let mut fonts = egui::FontDefinitions::default();
 
@@ -31,7 +31,7 @@ impl PaintFEApp {
                 .into(),
             );
 
-            // Noto Sans — fallback for Cyrillic, Greek, Thai (~556 KB)
+            // Noto Sans — fallback for Cyrillic and Greek (~556 KB)
             fonts.font_data.insert(
                 "noto_sans".to_owned(),
                 egui::FontData::from_static(include_bytes!(
@@ -57,12 +57,37 @@ impl PaintFEApp {
             proportional.insert(0, "noto_sans".to_owned());
             proportional.insert(0, "dm_sans".to_owned()); // push to front
 
-            // Monospace family: JetBrains Mono → egui defaults (Hack)
+            // Monospace family: JetBrains Mono → Noto Sans → egui defaults (Hack).
+            // Keep translated section headings readable for Cyrillic/Latin extensions.
             let monospace = fonts
                 .families
                 .entry(egui::FontFamily::Monospace)
                 .or_default();
             monospace.insert(0, "jetbrains_mono".to_owned());
+            monospace.insert(1, "noto_sans".to_owned());
+
+            // Keep language switching independent of installed system fonts.
+            for (name, bytes) in [
+                (
+                    "noto_thai",
+                    include_bytes!("../../assets/fonts/NotoSansThai.ttf").as_slice(),
+                ),
+                (
+                    "noto_cjk",
+                    include_bytes!("../../assets/fonts/NotoSansCJK-Regular.otf").as_slice(),
+                ),
+            ] {
+                fonts
+                    .font_data
+                    .insert(name.to_owned(), egui::FontData::from_static(bytes).into());
+                for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+                    fonts
+                        .families
+                        .entry(family)
+                        .or_default()
+                        .insert(2, name.to_owned());
+                }
+            }
 
             // Try to discover a system CJK font at runtime for JP/KO/ZH support
             if let Some((name, data)) = discover_system_cjk_font() {
@@ -74,7 +99,12 @@ impl PaintFEApp {
                     .families
                     .entry(egui::FontFamily::Proportional)
                     .or_default();
-                proportional.insert(2, name);
+                proportional.insert(2, name.clone());
+                fonts
+                    .families
+                    .entry(egui::FontFamily::Monospace)
+                    .or_default()
+                    .insert(2, name);
             }
 
             fonts.font_data.insert(

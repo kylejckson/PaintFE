@@ -3,7 +3,7 @@
 // ============================================================================
 
 /// How a new selection shape interacts with the existing mask.
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum SelectionMode {
     /// Clear any existing selection, then set the new shape.
     #[default]

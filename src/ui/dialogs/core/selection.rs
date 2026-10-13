@@ -45,7 +45,7 @@ impl ColorRangeDialog {
             .default_pos(egui::pos2(ctx.content_rect().center().x - 170.0, 40.0))
             .show(ctx, |ui| {
                 ui.set_min_width(340.0);
-                if paint_dialog_header(ui, &colors, "🎨", "Select Color Range") {
+                if paint_dialog_header(ui, &colors, "🎨", &crate::t!("ui.select_color_range")) {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
@@ -56,35 +56,35 @@ impl ColorRangeDialog {
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Hue Center");
+                        ui.label(crate::t!("ui.hue_center"));
                         if dialog_slider(ui, &mut self.hue_center, 0.0..=360.0, 1.0, "°", 1) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Tolerance");
+                        ui.label(crate::t!("ui.tolerance"));
                         if dialog_slider(ui, &mut self.hue_tolerance, 1.0..=180.0, 1.0, "°", 1) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Min Saturation");
+                        ui.label(crate::t!("ui.min_saturation"));
                         if dialog_slider(ui, &mut self.sat_min, 0.0..=1.0, 0.01, "", 2) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Fuzziness");
+                        ui.label(crate::t!("ui.fuzziness"));
                         if dialog_slider(ui, &mut self.fuzziness, 0.0..=1.0, 0.01, "", 2) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Mode");
+                        ui.label(crate::t!("ui.mode"));
                         ui.horizontal(|ui| {
                             for mode in crate::canvas::SelectionMode::all() {
                                 let selected = self.mode == *mode;
-                                if ui.selectable_label(selected, mode.label()).clicked() {
+                                if ui.selectable_label(selected, crate::i18n::translate_english(&mode.label())).clicked() {
                                     self.mode = *mode;
                                     changed = true;
                                 }

@@ -2268,11 +2268,13 @@ impl PasteOverlay {
     /// Cancel was clicked.
     pub fn context_menu(&mut self, ui: &mut egui::Ui) -> Option<bool> {
         let mut result = None;
-        ui.menu_button("Paste Options", |ui| {
-            ui.label("Hold Shift while moving to snap to edges and centre.");
+        ui.menu_button(crate::t!("ui.paste_options"), |ui| {
+            ui.label(crate::t!(
+                "ui.hold_shift_while_moving_to_snap_to_edges_and_centre"
+            ));
             ui.separator();
             // Interpolation selector
-            ui.label("Filter:");
+            ui.label(crate::t!("ui.filter_2"));
             for interp in Interpolation::all() {
                 if ui
                     .selectable_label(self.interpolation == *interp, interp.label())
@@ -2284,24 +2286,24 @@ impl PasteOverlay {
             ui.separator();
 
             // Reset transforms
-            if ui.button("Reset Position").clicked() {
+            if ui.button(crate::t!("ui.reset_position")).clicked() {
                 self.rotation = 0.0;
                 self.scale_x = 1.0;
                 self.scale_y = 1.0;
                 self.anchor_offset = Vec2::ZERO;
                 ui.close();
             }
-            if ui.button("Center Anchor").clicked() {
+            if ui.button(crate::t!("ui.center_anchor")).clicked() {
                 self.anchor_offset = Vec2::ZERO;
                 ui.close();
             }
 
             ui.separator();
-            if ui.button("✓ Commit (Enter)").clicked() {
+            if ui.button(crate::t!("ui.commit_enter")).clicked() {
                 result = Some(true);
                 ui.close();
             }
-            if ui.button("✗ Cancel (Esc)").clicked() {
+            if ui.button(crate::t!("ui.cancel_esc")).clicked() {
                 result = Some(false);
                 ui.close();
             }

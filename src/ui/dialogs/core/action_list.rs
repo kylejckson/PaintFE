@@ -322,7 +322,7 @@ fn action_row(
         ui.painter().text(
             pill.center(),
             egui::Align2::CENTER_CENTER,
-            "Recommended",
+            crate::t!("ui.recommended"),
             egui::FontId::proportional(10.0),
             tint.accent_text,
         );

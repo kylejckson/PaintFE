@@ -1536,15 +1536,17 @@ pub struct HistoryPanel {
 impl HistoryPanel {
     pub fn show(&mut self, ui: &mut egui::Ui, history: &HistoryManager) {
         ui.horizontal(|ui| {
-            ui.label(format!(
-                "Undo: {} | Redo: {}",
-                history.undo_count(),
-                history.redo_count()
+            ui.label(crate::i18n::format_translation(
+                "ui.undo_0_redo_1",
+                &[
+                    ("0", format!("{}", history.undo_count())),
+                    ("1", format!("{}", history.redo_count())),
+                ],
             ));
 
             if ui
                 .small_button("ℹ")
-                .on_hover_text("Show memory info")
+                .on_hover_text(crate::t!("ui.show_memory_info"))
                 .clicked()
             {
                 self.show_memory_info = !self.show_memory_info;
@@ -1554,7 +1556,10 @@ impl HistoryPanel {
         if self.show_memory_info {
             let mem_usage = history.memory_usage();
             let mem_mb = mem_usage as f64 / (1024.0 * 1024.0);
-            ui.label(format!("Memory: {:.2} MB", mem_mb));
+            ui.label(crate::i18n::format_translation(
+                "ui.memory_0_mb",
+                &[("0", format!("{:.2}", mem_mb))],
+            ));
         }
 
         // Show recent history entries
@@ -1562,13 +1567,13 @@ impl HistoryPanel {
             let history_items = history.undo_history();
 
             if history_items.is_empty() {
-                ui.label("No history");
+                ui.label(crate::t!("ui.no_history"));
             } else {
                 for (i, desc) in history_items.iter().enumerate() {
                     let label = if i == 0 {
-                        format!("▶ {}", desc) // Current state indicator
+                        format!("▶ {}", crate::i18n::translate_english(desc)) // Current state indicator
                     } else {
-                        format!("  {}", desc)
+                        format!("  {}", crate::i18n::translate_english(desc))
                     };
                     ui.label(label);
                 }
@@ -1623,7 +1628,7 @@ impl HistoryPanel {
                 if items.is_empty() {
                     ui.add_space(5.0);
                     ui.label(
-                        egui::RichText::new("History will appear here as you edit.")
+                        egui::RichText::new(crate::t!("ui.history_will_appear_here_as_you_edit"))
                             .size(11.0)
                             .color(theme.text_muted),
                     );
@@ -1674,7 +1679,7 @@ impl HistoryPanel {
                             revert = Some(i);
                         }
                         if i > 0 {
-                            response.on_hover_text("Click to revert to this state");
+                            response.on_hover_text(crate::t!("ui.click_to_revert_to_this_state"));
                         }
                     }
                     if let Some(index) = revert {
@@ -1803,7 +1808,7 @@ impl HistoryPanel {
                 card.center().y
             };
             let mut job = egui::text::LayoutJob::simple(
-                entry.title.clone(),
+                crate::i18n::translate_english(&entry.title),
                 egui::FontId::proportional(11.0),
                 theme.text_color,
                 width,

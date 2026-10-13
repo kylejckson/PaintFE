@@ -1633,7 +1633,7 @@ impl Canvas {
             // Right-click context menu on the paste overlay.
             response.context_menu(|ui| {
                 // Interpolation filter selector.
-                ui.label("Filter:");
+                ui.label(crate::t!("ui.filter_2"));
                 for interp in crate::ops::transform::Interpolation::all() {
                     if ui
                         .selectable_label(overlay.interpolation == *interp, interp.label())
@@ -1646,7 +1646,7 @@ impl Canvas {
                     }
                 }
                 ui.separator();
-                if ui.button("Reset Transform").clicked() {
+                if ui.button(crate::t!("ui.reset_transform")).clicked() {
                     overlay.rotation = 0.0;
                     overlay.scale_x = 1.0;
                     overlay.scale_y = 1.0;
@@ -1654,24 +1654,24 @@ impl Canvas {
                     overlay.reset_crop();
                     ui.close();
                 }
-                if ui.button("Center Anchor").clicked() {
+                if ui.button(crate::t!("ui.center_anchor")).clicked() {
                     overlay.anchor_offset = Vec2::ZERO;
                     ui.close();
                 }
                 ui.separator();
-                if ui.button("Commit (Enter)").clicked() {
+                if ui.button(crate::t!("ui.commit_enter_2")).clicked() {
                     paste_context_result = Some(PasteAction::Commit);
                     ui.close();
                 }
-                if ui.button("Commit & Select").clicked() {
+                if ui.button(crate::t!("ui.commit_select")).clicked() {
                     paste_context_result = Some(PasteAction::CommitAndSelect);
                     ui.close();
                 }
-                if ui.button("Commit & Crop").clicked() {
+                if ui.button(crate::t!("ui.commit_crop")).clicked() {
                     paste_context_result = Some(PasteAction::CommitAndCrop);
                     ui.close();
                 }
-                if ui.button("Cancel (Esc)").clicked() {
+                if ui.button(crate::t!("ui.cancel_esc_2")).clicked() {
                     paste_context_result = Some(PasteAction::Cancel);
                     ui.close();
                 }

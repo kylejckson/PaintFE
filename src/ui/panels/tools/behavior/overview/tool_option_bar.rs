@@ -124,25 +124,33 @@ impl ToolsPanel {
     }
 
     fn show_move_options(&mut self, ui: &mut egui::Ui) {
-        ui.label("Filter:");
+        ui.label(crate::t!("ui.filter_2"));
         let current = self.move_interpolation;
         egui::ComboBox::from_id_salt("move_tool_filter")
-            .selected_text(current.label())
+            .selected_text(crate::i18n::translate_english(&current.label()))
             .width(110.0)
             .show_ui(ui, |ui| {
                 for interp in crate::ops::transform::Interpolation::all() {
-                    ui.selectable_value(&mut self.move_interpolation, *interp, interp.label());
+                    ui.selectable_value(
+                        &mut self.move_interpolation,
+                        *interp,
+                        crate::i18n::translate_english(&interp.label()),
+                    );
                 }
             });
-        ui.checkbox(&mut self.move_anti_aliasing, "Anti-aliasing");
+        ui.checkbox(&mut self.move_anti_aliasing, crate::t!("ui.anti_aliasing"));
     }
 
     /// Show brush tip picker dropdown (grid popup with categories, matching shapes tool pattern)
     fn show_brush_tip_picker(&mut self, ui: &mut egui::Ui, assets: &Assets) {
-        ui.label("Tip:");
+        ui.label(crate::t!("ui.tip"));
 
         let popup_id = ui.make_persistent_id("brush_tip_grid_popup");
-        let display_name = self.properties.brush_tip.display_name().to_string();
+        let display_name = if self.properties.brush_tip.is_circle() {
+            crate::t!("ui.circle")
+        } else {
+            self.properties.brush_tip.display_name().to_string()
+        };
 
         // Button showing current tip icon + name
         let btn_response = {
@@ -208,7 +216,7 @@ impl ToolsPanel {
             // "New..." button in top-right corner
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("New...").clicked() {
+                    if ui.button(crate::t!("menu.file.new")).clicked() {
                         self.pending_open_add_brush_tip = true;
                         ui.close();
                     }
@@ -216,7 +224,11 @@ impl ToolsPanel {
             });
 
             // "Basic" category header always first, with Circle as first item
-            ui.label(egui::RichText::new("Basic").strong().size(11.0));
+            ui.label(
+                egui::RichText::new(crate::t!("settings.ai.graph_basic"))
+                    .strong()
+                    .size(11.0),
+            );
             egui::Grid::new("brush_tip_basic_grid")
                 .spacing(egui::Vec2::splat(2.0))
                 .show(ui, |ui| {
@@ -247,7 +259,7 @@ impl ToolsPanel {
                     if response.clicked() {
                         self.properties.brush_tip = BrushTip::Circle;
                     }
-                    response.on_hover_text("Circle");
+                    response.on_hover_text(crate::t!("ui.circle"));
 
                     // Other tips in the "Basic" category
                     let mut col = 1;
@@ -308,7 +320,13 @@ impl ToolsPanel {
             let categories = assets.brush_tip_categories();
             for cat in categories.iter().filter(|c| c.name != "Basic") {
                 ui.add_space(4.0);
-                ui.label(egui::RichText::new(&cat.name).strong().size(11.0));
+                let category_label =
+                    if matches!(cat.name.as_str(), "Basic" | "Texture" | "Vegetation") {
+                        crate::i18n::translate_english(&cat.name)
+                    } else {
+                        cat.name.clone()
+                    };
+                ui.label(egui::RichText::new(category_label).strong().size(11.0));
                 egui::Grid::new(format!("brush_tip_{}_grid", cat.name))
                     .spacing(egui::Vec2::splat(2.0))
                     .show(ui, |ui| {
@@ -386,7 +404,7 @@ impl ToolsPanel {
                         let frame = egui::Frame::popup(ui.style());
                         frame.show(ui, |ui| {
                             ui.set_min_width(120.0);
-                            if ui.button("Delete").clicked() {
+                            if ui.button(crate::t!("common.delete")).clicked() {
                                 self.pending_delete_brush_tip = Some(ctx_tip.clone());
                                 self.brush_tip_context_menu = None;
                                 ui.close();
@@ -653,12 +671,12 @@ impl ToolsPanel {
         ui.label(t!("ctx.blend"));
         let current_mode = self.properties.blending_mode;
         egui::ComboBox::from_id_salt("ctx_blend_mode")
-            .selected_text(current_mode.name())
+            .selected_text(current_mode.display_name())
             .width(90.0)
             .show_ui(ui, |ui| {
                 for &mode in BlendMode::all() {
                     if ui
-                        .selectable_label(mode == current_mode, mode.name())
+                        .selectable_label(mode == current_mode, mode.display_name())
                         .clicked()
                     {
                         self.properties.blending_mode = mode;
@@ -678,15 +696,18 @@ impl ToolsPanel {
         // Brush Mode (Normal/Dodge/Burn/Sponge) - only for Brush tool (disabled for now)
         if self.active_tool == Tool::Brush {
             ui.separator();
-            ui.label("Mode:");
+            ui.label(crate::t!("settings.interface.mode"));
             let current_bm = self.properties.brush_mode;
             egui::ComboBox::from_id_salt("ctx_brush_mode")
-                .selected_text(current_bm.label())
+                .selected_text(crate::i18n::translate_english(current_bm.label()))
                 .width(75.0)
                 .show_ui(ui, |ui| {
                     for mode in [BrushMode::Normal, BrushMode::Uniform, BrushMode::BuildUp] {
                         if ui
-                            .selectable_label(mode == current_bm, mode.label())
+                            .selectable_label(
+                                mode == current_bm,
+                                crate::i18n::translate_english(mode.label()),
+                            )
                             .clicked()
                         {
                             self.properties.brush_mode = mode;
@@ -694,9 +715,9 @@ impl ToolsPanel {
                     }
                 })
                 .response
-                .on_hover_text(
-                    "Normal builds with movement; Uniform keeps the strongest coverage.",
-                );
+                .on_hover_text(crate::t!(
+                    "ui.normal_builds_with_movement_uniform_keeps_the_strongest_coverage"
+                ));
         }
 
         // Dynamics popup: Scatter, Color Jitter
@@ -736,7 +757,7 @@ impl ToolsPanel {
                         ("Opacity", &mut self.properties.opacity),
                         ("Flow", &mut self.properties.flow),
                     ] {
-                        ui.label(label);
+                        ui.label(crate::i18n::translate_english(label));
                         ui.horizontal(|ui| {
                             if ui.small_button("-").clicked() {
                                 *value = (*value - 0.05).max(0.0);
@@ -762,7 +783,7 @@ impl ToolsPanel {
                         });
                         ui.end_row();
                     }
-                    ui.label("Scatter");
+                    ui.label(crate::t!("ui.scatter"));
                     let mut scatter_pct = (self.properties.scatter * 200.0).round();
                     if ui
                         .add(
@@ -775,7 +796,7 @@ impl ToolsPanel {
                         self.properties.scatter = scatter_pct / 200.0;
                     }
                     ui.end_row();
-                    ui.label("Hue Jitter");
+                    ui.label(crate::t!("ui.hue_jitter"));
                     let mut hj_pct = (self.properties.hue_jitter * 100.0).round();
                     if ui
                         .add(
@@ -788,7 +809,7 @@ impl ToolsPanel {
                         self.properties.hue_jitter = hj_pct / 100.0;
                     }
                     ui.end_row();
-                    ui.label("Brightness");
+                    ui.label(crate::t!("ui.brightness"));
                     let mut bj_pct = (self.properties.brightness_jitter * 100.0).round();
                     if ui
                         .add(
@@ -807,12 +828,12 @@ impl ToolsPanel {
                     ui.separator();
                     ui.end_row();
 
-                    ui.label("Pen Pressure");
+                    ui.label(crate::t!("ui.pen_pressure"));
                     ui.label("");
                     ui.end_row();
 
-                    ui.checkbox(&mut self.properties.pressure_size, "Size")
-                        .on_hover_text("Pen pressure controls brush size");
+                    ui.checkbox(&mut self.properties.pressure_size, crate::t!("ui.size"))
+                        .on_hover_text(crate::t!("ui.pen_pressure_controls_brush_size"));
                     let mut min_size_pct = (self.properties.pressure_min_size * 100.0).round();
                     if ui
                         .add_enabled(
@@ -821,15 +842,18 @@ impl ToolsPanel {
                                 .suffix("% min")
                                 .max_decimals(0),
                         )
-                        .on_hover_text("Minimum brush size at zero pressure")
+                        .on_hover_text(crate::t!("ui.minimum_brush_size_at_zero_pressure"))
                         .changed()
                     {
                         self.properties.pressure_min_size = min_size_pct / 100.0;
                     }
                     ui.end_row();
 
-                    ui.checkbox(&mut self.properties.pressure_opacity, "Opacity")
-                        .on_hover_text("Pen pressure controls brush opacity");
+                    ui.checkbox(
+                        &mut self.properties.pressure_opacity,
+                        crate::t!("settings.interface.resize_grip_opacity"),
+                    )
+                    .on_hover_text(crate::t!("ui.pen_pressure_controls_brush_opacity"));
                     let mut min_opacity_pct =
                         (self.properties.pressure_min_opacity * 100.0).round();
                     if ui
@@ -839,7 +863,7 @@ impl ToolsPanel {
                                 .suffix("% min")
                                 .max_decimals(0),
                         )
-                        .on_hover_text("Minimum opacity at zero pressure")
+                        .on_hover_text(crate::t!("ui.minimum_opacity_at_zero_pressure"))
                         .changed()
                     {
                         self.properties.pressure_min_opacity = min_opacity_pct / 100.0;
@@ -986,12 +1010,15 @@ impl ToolsPanel {
         ui.label(t!("ctx.pattern"));
         let current_pattern = self.line_state.line_tool.options.pattern;
         egui::ComboBox::from_id_salt("ctx_line_pattern")
-            .selected_text(current_pattern.label())
+            .selected_text(crate::i18n::translate_english(&current_pattern.label()))
             .width(70.0)
             .show_ui(ui, |ui| {
                 for &pattern in LinePattern::all() {
                     if ui
-                        .selectable_label(pattern == current_pattern, pattern.label())
+                        .selectable_label(
+                            pattern == current_pattern,
+                            crate::i18n::translate_english(&pattern.label()),
+                        )
                         .clicked()
                     {
                         self.line_state.line_tool.options.pattern = pattern;
@@ -1005,12 +1032,15 @@ impl ToolsPanel {
         ui.label(t!("ctx.ends"));
         let current_end_shape = self.line_state.line_tool.options.end_shape;
         egui::ComboBox::from_id_salt("ctx_line_end_shape")
-            .selected_text(current_end_shape.label())
+            .selected_text(crate::i18n::translate_english(&current_end_shape.label()))
             .width(60.0)
             .show_ui(ui, |ui| {
                 for &shape in LineEndShape::all() {
                     if ui
-                        .selectable_label(shape == current_end_shape, shape.label())
+                        .selectable_label(
+                            shape == current_end_shape,
+                            crate::i18n::translate_english(&shape.label()),
+                        )
                         .clicked()
                     {
                         self.line_state.line_tool.options.end_shape = shape;
@@ -1022,12 +1052,15 @@ impl ToolsPanel {
         if self.line_state.line_tool.options.end_shape == LineEndShape::Arrow {
             let current_arrow_side = self.line_state.line_tool.options.arrow_side;
             egui::ComboBox::from_id_salt("ctx_line_arrow_side")
-                .selected_text(current_arrow_side.label())
+                .selected_text(crate::i18n::translate_english(&current_arrow_side.label()))
                 .width(55.0)
                 .show_ui(ui, |ui| {
                     for &side in ArrowSide::all() {
                         if ui
-                            .selectable_label(side == current_arrow_side, side.label())
+                            .selectable_label(
+                                side == current_arrow_side,
+                                crate::i18n::translate_english(&side.label()),
+                            )
                             .clicked()
                         {
                             self.line_state.line_tool.options.arrow_side = side;
@@ -1055,12 +1088,12 @@ impl ToolsPanel {
         ui.label(t!("ctx.blend"));
         let current_mode = self.properties.blending_mode;
         egui::ComboBox::from_id_salt("ctx_line_blend_mode")
-            .selected_text(current_mode.name())
+            .selected_text(current_mode.display_name())
             .width(90.0)
             .show_ui(ui, |ui| {
                 for &mode in BlendMode::all() {
                     if ui
-                        .selectable_label(mode == current_mode, mode.name())
+                        .selectable_label(mode == current_mode, mode.display_name())
                         .clicked()
                     {
                         self.properties.blending_mode = mode;
@@ -1132,7 +1165,7 @@ impl ToolsPanel {
                 .num_columns(2)
                 .spacing([8.0, 4.0])
                 .show(ui, |ui| {
-                    ui.label("Scatter");
+                    ui.label(crate::t!("ui.scatter"));
                     let mut scatter_pct = (self.properties.scatter * 200.0).round();
                     if ui
                         .add(
@@ -1183,11 +1216,17 @@ impl ToolsPanel {
         ui.label(t!("ctx.mode"));
         let current = self.selection_state.mode;
         egui::ComboBox::from_id_salt("ctx_sel_mode")
-            .selected_text(current.label())
+            .selected_text(crate::i18n::translate_english(&current.label()))
             .width(90.0)
             .show_ui(ui, |ui| {
                 for &mode in SelectionMode::all() {
-                    if ui.selectable_label(mode == current, mode.label()).clicked() {
+                    if ui
+                        .selectable_label(
+                            mode == current,
+                            crate::i18n::translate_english(&mode.label()),
+                        )
+                        .clicked()
+                    {
                         self.selection_state.mode = mode;
                     }
                 }
@@ -1196,15 +1235,15 @@ impl ToolsPanel {
         if self.active_tool == Tool::RectangleSelect {
             ui.separator();
 
-            ui.label("Aspect ratio:");
+            ui.label(crate::t!("ui.aspect_ratio"));
             ui.add(
                 egui::TextEdit::singleline(&mut self.selection_state.aspect_ratio_input)
                     .desired_width(72.0)
                     .hint_text("3:4"),
             )
-            .on_hover_text(
-                "Lock rectangular selections to width:height. Use image for the canvas ratio.",
-            );
+            .on_hover_text(crate::t!(
+                "ui.lock_rectangular_selections_to_width_height_use_image_for_the_canvas_r"
+            ));
             if let Err(error) =
                 parse_selection_aspect_ratio(&self.selection_state.aspect_ratio_input)
             {
@@ -1225,11 +1264,17 @@ impl ToolsPanel {
         ui.label(t!("ctx.mode"));
         let current = self.lasso_state.mode;
         egui::ComboBox::from_id_salt("ctx_lasso_mode")
-            .selected_text(current.label())
+            .selected_text(crate::i18n::translate_english(&current.label()))
             .width(90.0)
             .show_ui(ui, |ui| {
                 for &mode in SelectionMode::all() {
-                    if ui.selectable_label(mode == current, mode.label()).clicked() {
+                    if ui
+                        .selectable_label(
+                            mode == current,
+                            crate::i18n::translate_english(&mode.label()),
+                        )
+                        .clicked()
+                    {
                         self.lasso_state.mode = mode;
                     }
                 }
@@ -1242,7 +1287,7 @@ impl ToolsPanel {
 
     /// Inline Feather / Expand / Contract controls for all selection tool context bars.
     fn show_sel_modify_controls(&mut self, ui: &mut egui::Ui) {
-        ui.label("Modify:");
+        ui.label(crate::t!("ui.modify"));
         ui.add(
             crate::ui::numeric::Numeric::new(&mut self.sel_modify_radius)
                 .range(1.0..=200.0)
@@ -1250,17 +1295,17 @@ impl ToolsPanel {
                 .suffix("px")
                 .max_decimals(0),
         )
-        .on_hover_text("Radius in pixels for Feather / Expand / Contract");
+        .on_hover_text(crate::t!("ui.radius_in_pixels_for_feather_expand_contract"));
         if ui
-            .button("Feather")
-            .on_hover_text("Blur (soften) selection edge by radius")
+            .button(crate::t!("ui.feather"))
+            .on_hover_text(crate::t!("ui.blur_soften_selection_edge_by_radius"))
             .clicked()
         {
             self.pending_sel_modify = Some(SelectionModifyOp::Feather(self.sel_modify_radius));
         }
         if ui
-            .button("Expand")
-            .on_hover_text("Grow selection by radius")
+            .button(crate::t!("liquify_mode.expand"))
+            .on_hover_text(crate::t!("ui.grow_selection_by_radius"))
             .clicked()
         {
             self.pending_sel_modify = Some(SelectionModifyOp::Expand(
@@ -1268,8 +1313,8 @@ impl ToolsPanel {
             ));
         }
         if ui
-            .button("Contract")
-            .on_hover_text("Shrink selection by radius")
+            .button(crate::t!("liquify_mode.contract"))
+            .on_hover_text(crate::t!("ui.shrink_selection_by_radius"))
             .clicked()
         {
             self.pending_sel_modify = Some(SelectionModifyOp::Contract(
@@ -1363,14 +1408,17 @@ impl ToolsPanel {
         ui.separator();
 
         // Quality dropdown
-        ui.label("Quality:");
+        ui.label(crate::t!("ui.quality"));
         let cur_q = self.content_aware_state.quality;
         egui::ComboBox::from_id_salt("ca_quality")
-            .selected_text(cur_q.label())
+            .selected_text(crate::i18n::translate_english(cur_q.label()))
             .width(100.0)
             .show_ui(ui, |ui| {
                 for &q in ContentAwareQuality::all() {
-                    if ui.selectable_label(q == cur_q, q.label()).clicked() {
+                    if ui
+                        .selectable_label(q == cur_q, crate::i18n::translate_english(q.label()))
+                        .clicked()
+                    {
                         self.content_aware_state.quality = q;
                     }
                 }
@@ -1391,7 +1439,7 @@ impl ToolsPanel {
 
         // Patch size (Balanced / HQ only)
         if cur_q.is_async() {
-            ui.label("Patch:");
+            ui.label(crate::t!("ui.patch"));
             ui.add(
                 crate::ui::numeric::Numeric::new(&mut self.content_aware_state.patch_size)
                     .range(3_u32..=11_u32)
@@ -1408,7 +1456,7 @@ impl ToolsPanel {
         if cur_q == ContentAwareQuality::Instant {
             ui.label(t!("ctx.content_aware.hint"));
         } else {
-            ui.label("Paint to preview, then release to run inpaint.");
+            ui.label(crate::t!("ui.paint_to_preview_then_release_to_run_inpaint"));
         }
     }
 
@@ -1603,15 +1651,20 @@ impl ToolsPanel {
 
         ui.separator();
 
-        ui.label("Compare");
+        ui.label(crate::t!("ui.compare"));
         let prev_distance_mode = self.magic_wand_state.distance_mode;
         egui::ComboBox::from_id_salt("ctx_magic_wand_distance_mode")
-            .selected_text(self.magic_wand_state.distance_mode.label())
+            .selected_text(crate::i18n::translate_english(
+                self.magic_wand_state.distance_mode.label(),
+            ))
             .width(120.0)
             .show_ui(ui, |ui| {
                 for &mode in WandDistanceMode::all() {
                     if ui
-                        .selectable_label(mode == self.magic_wand_state.distance_mode, mode.label())
+                        .selectable_label(
+                            mode == self.magic_wand_state.distance_mode,
+                            crate::i18n::translate_english(mode.label()),
+                        )
                         .clicked()
                     {
                         self.magic_wand_state.distance_mode = mode;
@@ -1625,15 +1678,20 @@ impl ToolsPanel {
 
         ui.separator();
 
-        ui.label("Connectivity");
+        ui.label(crate::t!("ui.connectivity"));
         let prev_connectivity = self.magic_wand_state.connectivity;
         egui::ComboBox::from_id_salt("ctx_magic_wand_connectivity")
-            .selected_text(self.magic_wand_state.connectivity.label())
+            .selected_text(crate::i18n::translate_english(
+                self.magic_wand_state.connectivity.label(),
+            ))
             .width(120.0)
             .show_ui(ui, |ui| {
                 for &mode in FloodConnectivity::all() {
                     if ui
-                        .selectable_label(mode == self.magic_wand_state.connectivity, mode.label())
+                        .selectable_label(
+                            mode == self.magic_wand_state.connectivity,
+                            crate::i18n::translate_english(mode.label()),
+                        )
                         .clicked()
                     {
                         self.magic_wand_state.connectivity = mode;
@@ -1650,11 +1708,17 @@ impl ToolsPanel {
         ui.label(t!("ctx.mode"));
         let current = self.selection_state.mode;
         egui::ComboBox::from_id_salt("ctx_magic_wand_mode")
-            .selected_text(current.label())
+            .selected_text(crate::i18n::translate_english(&current.label()))
             .width(90.0)
             .show_ui(ui, |ui| {
                 for &mode in SelectionMode::all() {
-                    if ui.selectable_label(mode == current, mode.label()).clicked() {
+                    if ui
+                        .selectable_label(
+                            mode == current,
+                            crate::i18n::translate_english(&mode.label()),
+                        )
+                        .clicked()
+                    {
                         self.selection_state.mode = mode;
                     }
                 }
@@ -1717,12 +1781,12 @@ impl ToolsPanel {
         ui.label(t!("ctx.blend"));
         let current_mode = self.properties.blending_mode;
         egui::ComboBox::from_id_salt("tool_blend_mode")
-            .selected_text(current_mode.name())
+            .selected_text(current_mode.display_name())
             .width(90.0)
             .show_ui(ui, |ui: &mut egui::Ui| {
                 for &mode in BlendMode::all() {
                     if ui
-                        .selectable_label(mode == current_mode, mode.name())
+                        .selectable_label(mode == current_mode, mode.display_name())
                         .clicked()
                     {
                         self.properties.blending_mode = mode;

@@ -368,21 +368,24 @@ pub fn preferences(
     let mut changed = false;
     ui.checkbox(
         &mut settings.snapping,
-        "Snap panels to edges and each other",
+        crate::t!("ui.snap_panels_to_edges_and_each_other"),
     );
-    ui.checkbox(&mut settings.guides, "Show alignment guides while dragging");
+    ui.checkbox(
+        &mut settings.guides,
+        crate::t!("ui.show_alignment_guides_while_dragging"),
+    );
     ui.checkbox(
         &mut settings.remember_positions,
-        "Remember panel positions and sizes",
+        crate::t!("ui.remember_panel_positions_and_sizes"),
     );
     ui.add(
         egui::Slider::new(&mut settings.snap_distance, 3.0..=20.0)
-            .text("Snap distance")
+            .text(crate::t!("ui.snap_distance"))
             .suffix(" px"),
     );
     ui.add(
         egui::Slider::new(&mut settings.panel_gap, 0.0..=24.0)
-            .text("Panel spacing")
+            .text(crate::t!("ui.panel_spacing"))
             .suffix(" px"),
     );
     ui.horizontal(|ui| {
@@ -393,10 +396,10 @@ pub fn preferences(
             .unwrap_or_default();
         ui.add(
             egui::TextEdit::singleline(&mut name)
-                .hint_text("Workspace name")
+                .hint_text(crate::t!("ui.workspace_name"))
                 .desired_width(140.0),
         );
-        if ui.button("Save Current Layout").clicked() {
+        if ui.button(crate::t!("ui.save_current_layout")).clicked() {
             match capture(ui.ctx(), name.clone()) {
                 Ok(profile) => {
                     changed |= store_profile(profiles, profile);
@@ -424,14 +427,14 @@ pub fn preferences(
                     profile.name = format!("Workspace {}", index + 1);
                     changed = true;
                 }
-                if ui.button("Apply").clicked() {
+                if ui.button(crate::t!("settings.keybinds.apply")).clicked() {
                     request(ui.ctx(), Command::Apply(profile.clone()));
                 }
-                if ui.button("Delete").clicked() {
+                if ui.button(crate::t!("common.delete")).clicked() {
                     remove = Some(index);
                 }
                 #[cfg(not(target_arch = "wasm32"))]
-                if ui.button("Export…").clicked()
+                if ui.button(crate::t!("ui.export")).clicked()
                     && let Some(path) = rfd::FileDialog::new()
                         .add_filter("PaintFE Workspace", &["json"])
                         .set_file_name("workspace.json")
@@ -453,11 +456,11 @@ pub fn preferences(
         changed = true;
     }
     ui.horizontal(|ui| {
-        if ui.button("Restore Default Layout").clicked() {
+        if ui.button(crate::t!("ui.restore_default_layout")).clicked() {
             request(ui.ctx(), Command::Reset);
         }
         #[cfg(not(target_arch = "wasm32"))]
-        if ui.button("Import Layout…").clicked()
+        if ui.button(crate::t!("ui.import_layout")).clicked()
             && let Some(path) = rfd::FileDialog::new()
                 .add_filter("PaintFE Workspace", &["json"])
                 .pick_file()
@@ -494,7 +497,7 @@ pub fn preferences(
         .data(|d| d.get_temp::<String>(Id::new("workspace_error")))
     {
         ui.colored_label(ui.visuals().error_fg_color, error);
-        if ui.small_button("Dismiss").clicked() {
+        if ui.small_button(crate::t!("ui.dismiss")).clicked() {
             ui.ctx()
                 .data_mut(|d| d.remove::<String>(Id::new("workspace_error")));
         }

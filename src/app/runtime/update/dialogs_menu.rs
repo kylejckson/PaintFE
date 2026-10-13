@@ -16,16 +16,16 @@ impl PaintFEApp {
             .show(root_ui, |ui| {
                 egui::MenuBar::new().ui(ui, |ui| {
                     ui.menu_button(t!("menu.file"), |ui| {
-                        ui.menu_button("Recent Files", |ui| {
+                        ui.menu_button(crate::t!("ui.recent_files"), |ui| {
                             let recent = self.settings.recent_files.clone();
-                            if recent.is_empty() { ui.weak("No recent files"); }
+                            if recent.is_empty() { ui.weak(crate::t!("ui.no_recent_files")); }
                             for path in recent {
                                 if ui.button(&path).clicked() {
                                     self.open_file_by_path(PathBuf::from(path), ctx.input(|i| i.time));
                                     ui.close();
                                 }
                             }
-                            if ui.button("Clear Recent Files").clicked() {
+                            if ui.button(crate::t!("ui.clear_recent_files")).clicked() {
                                 self.settings.recent_files.clear();
                                 self.settings.save();
                                 ui.close();
@@ -348,7 +348,7 @@ impl PaintFEApp {
                             .menu_item_enabled(
                                 ui,
                                 Icon::MenuEditColorRange,
-                                "Select Color Range...",
+                                &format!("{}...", crate::t!("ui.select_color_range")),
                                 has_project,
                             )
                             .clicked()
@@ -490,7 +490,7 @@ impl PaintFEApp {
                         if !align_enabled {
                             align_resp
                                 .clone()
-                                .on_disabled_hover_text("Align works only on raster layers.");
+                                .on_disabled_hover_text(crate::t!("ui.align_works_only_on_raster_layers"));
                         }
                         if align_resp.clicked() {
                             if let Some(project) = self.active_project() {
@@ -1509,7 +1509,7 @@ impl PaintFEApp {
                         );
                         if !self.onnx_available {
                             remove_bg_resp.clone().on_disabled_hover_text(
-                                "Configure ONNX Runtime and BiRefNet model in Preferences > AI tab",
+                                crate::t!("menu.filter.remove_background.disabled_hint"),
                             );
                         }
                         if remove_bg_resp.clicked() {
@@ -1522,7 +1522,7 @@ impl PaintFEApp {
                         // -- Custom Scripts submenu (only shown if scripts exist) --
                         if !self.custom_scripts.is_empty() {
                             ui.separator();
-                            ui.menu_button("Custom", |ui| {
+                            ui.menu_button(crate::t!("theme_preset.custom"), |ui| {
                                 let mut action: Option<CustomScriptAction> = None;
                                 for (idx, effect) in self.custom_scripts.iter().enumerate() {
                                     ui.horizontal(|ui| {
@@ -1537,22 +1537,22 @@ impl PaintFEApp {
                                             |ui| {
                                                 let del_btn = ui
                                                     .small_button(
-                                                        egui::RichText::new("Del")
+                                                        egui::RichText::new(crate::t!("ui.del"))
                                                             .color(egui::Color32::from_rgb(
                                                                 180, 80, 80,
                                                             ))
                                                             .size(10.0),
                                                     )
-                                                    .on_hover_text("Delete this custom effect");
+                                                    .on_hover_text(crate::t!("ui.delete_this_custom_effect"));
                                                 if del_btn.clicked() {
                                                     action = Some(CustomScriptAction::Delete(idx));
                                                     ui.close();
                                                 }
                                                 let edit_btn = ui
                                                     .small_button(
-                                                        egui::RichText::new("Edit").size(10.0),
+                                                        egui::RichText::new(crate::t!("keybind_category.edit")).size(10.0),
                                                     )
-                                                    .on_hover_text("Edit in Script Editor");
+                                                    .on_hover_text(crate::t!("ui.edit_in_script_editor"));
                                                 if edit_btn.clicked() {
                                                     action = Some(CustomScriptAction::Edit(idx));
                                                     ui.close();
@@ -1673,7 +1673,7 @@ impl PaintFEApp {
 
                     ui.menu_button(t!("menu.view"), |ui| {
                         // Panel toggles
-                        ui.label(egui::RichText::new("Panels").strong().size(11.0));
+                        ui.label(egui::RichText::new(crate::t!("menu.view.panels_heading")).strong().size(11.0));
                         ui.checkbox(
                             &mut self.window_visibility.tools,
                             t!("menu.view.tools_panel"),
@@ -1690,7 +1690,7 @@ impl PaintFEApp {
                             &mut self.window_visibility.colors,
                             t!("menu.view.colors_panel"),
                         );
-                        ui.checkbox(&mut self.window_visibility.palette, "Palette Panel");
+                        ui.checkbox(&mut self.window_visibility.palette, crate::t!("ui.palette_panel"));
                         // Script Editor needs a native file picker to load .rhai
                         // scripts from disk — not available on web, so don't
                         // offer the menu entry at all there.
@@ -2296,9 +2296,22 @@ impl PaintFEApp {
                                     });
                                     full_tab_resp.clone().on_hover_ui(|ui| {
                                         ui.label(name);
-                                        ui.label(format!(
-                                            "{cw} × {ch} · {} layers",
-                                            self.projects[idx].canvas_state.layers.len()
+                                        ui.label(crate::i18n::format_translation(
+                                            "ui.0_1_2_layers",
+                                            &[
+                                                ("0", format!("{}", cw)),
+                                                ("1", format!("{}", ch)),
+                                                (
+                                                    "2",
+                                                    format!(
+                                                        "{}",
+                                                        self.projects[idx]
+                                                            .canvas_state
+                                                            .layers
+                                                            .len()
+                                                    ),
+                                                ),
+                                            ],
                                         ));
                                         let state = &self.projects[idx].canvas_state;
                                         // Compositing changes can leave pixel generations unchanged.
@@ -2574,9 +2587,9 @@ impl PaintFEApp {
                                     egui::Sense::click(),
                                 )
                                 .on_hover_text(if right {
-                                    "Scroll tabs right"
+                                    crate::t!("ui.scroll_tabs_right")
                                 } else {
-                                    "Scroll tabs left"
+                                    crate::t!("ui.scroll_tabs_left")
                                 });
                             let color = if response.hovered() {
                                 self.theme.accent
@@ -2680,15 +2693,21 @@ impl PaintFEApp {
         if let Some(id) = ctx.data(|d| d.get_temp::<uuid::Uuid>(info_id)) {
             let mut open = true;
             if let Some(project) = self.projects.iter().find(|p| p.id == id) {
-                egui::Window::new("Document Info")
+                egui::Window::new(crate::t!("ui.document_info"))
                     .open(&mut open)
                     .show(ctx, |ui| {
                         ui.label(&project.name);
-                        ui.label(format!(
-                            "{} × {} pixels",
-                            project.canvas_state.width, project.canvas_state.height
+                        ui.label(crate::i18n::format_translation(
+                            "ui.0_1_pixels",
+                            &[
+                                ("0", format!("{}", project.canvas_state.width)),
+                                ("1", format!("{}", project.canvas_state.height)),
+                            ],
                         ));
-                        ui.label(format!("{} layers", project.canvas_state.layers.len()));
+                        ui.label(crate::i18n::format_translation(
+                            "ui.0_layers",
+                            &[("0", format!("{}", project.canvas_state.layers.len()))],
+                        ));
                         ui.label(
                             project
                                 .path

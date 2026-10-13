@@ -585,8 +585,8 @@ impl Icon {
     }
 
     /// Get the tooltip description for this icon (base text without keybind)
-    pub fn tooltip(&self) -> &'static str {
-        match self {
+    pub fn tooltip(&self) -> String {
+        let text = match self {
             // Tools — no hardcoded keybind letters
             Icon::Brush => "Brush Tool",
             Icon::Eraser => "Eraser Tool",
@@ -699,7 +699,8 @@ impl Icon {
             Icon::UiStraighten => "Straighten Canvas",
             // All menu items — tooltip matches the label
             _ => "",
-        }
+        };
+        crate::i18n::translate_english(text)
     }
 
     /// Map a tool icon to its BindableAction (for dynamic tooltip keybind lookup)

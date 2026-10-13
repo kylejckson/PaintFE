@@ -191,14 +191,19 @@ impl PaintFEApp {
     }
 
     fn open_image_from_bytes(&mut self, bytes: &[u8], name_hint: Option<String>) {
-        let Ok(decoded) = image::load_from_memory(bytes) else {
-            return;
+        let decoded = match image::load_from_memory(bytes) {
+            Ok(decoded) => decoded,
+            Err(error) => {
+                self.report_open_error(name_hint.as_deref().unwrap_or("Dropped image"), &error.to_string());
+                return;
+            }
         };
 
         let image = decoded.to_rgba8();
         let width = image.width();
         let height = image.height();
-        if crate::io::validate_open_dimensions(width, height).is_err() {
+        if let Err(error) = crate::io::validate_open_dimensions(width, height) {
+            self.report_open_error(name_hint.as_deref().unwrap_or("Dropped image"), &error.to_string());
             return;
         }
 
@@ -286,23 +291,36 @@ impl PaintFEApp {
     /// Route a dropped file: raster images queue the import dialog, everything
     /// else opens directly.
     fn queue_import_or_open(&mut self, path: std::path::PathBuf, current_time: f64) {
-        if Self::is_raster_image_path(&path)
-            && let Ok(bytes) = std::fs::read(&path)
-        {
-            let name = path
-                .file_name()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            self.pending_import_queue.push(PendingImport {
-                bytes: std::sync::Arc::new(bytes),
-                name,
-                source_path: Some(path),
-                width: 0,
-                height: 0,
+        if Self::is_raster_image_path(&path) {
+            self.pending_io_ops += 1;
+            self.io_ops_start_time = Some(current_time);
+            let sender = self.io_sender.clone();
+            crate::par_compat::spawn(move || {
+                let result = (|| -> Result<_, String> {
+                    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+                    let reader = image::ImageReader::new(std::io::Cursor::new(&bytes))
+                        .with_guessed_format().map_err(|e| e.to_string())?;
+                    let (width, height) = reader.into_dimensions().map_err(|e| e.to_string())?;
+                    crate::io::validate_open_dimensions(width, height).map_err(|e| e.to_string())?;
+                    Ok((bytes, width, height))
+                })();
+                let message = match result {
+                    Ok((bytes, width, height)) => IoResult::ImportReady { bytes, path, width, height },
+                    Err(error) => IoResult::LoadFailed { path: Some(path), error },
+                };
+                let _ = sender.send(message);
             });
             return;
         }
         self.open_file_by_path(path, current_time);
+    }
+
+    fn report_open_error(&mut self, name: &str, reason: &str) {
+        let message = crate::i18n::format_translation("ui.could_not_open_0_the_file_may_be_damaged_unreadable_or_unsupported_1", &[("0", name.to_string()), ("1", reason.to_string())]);
+        match &mut self.filter_error {
+            Some(errors) => { errors.push_str("\n\n"); errors.push_str(&message); }
+            None => self.filter_error = Some(message),
+        }
     }
 
     /// Apply one import-dialog choice to a dropped image.
@@ -317,9 +335,17 @@ impl PaintFEApp {
                 }
             }
             1 => {
-                let Ok(img) = image::load_from_memory(&item.bytes) else {
-                    return; // undecodable — nothing to import
+                let img = match image::load_from_memory(&item.bytes) {
+                    Ok(img) => img,
+                    Err(error) => {
+                        self.report_open_error(&item.name, &error.to_string());
+                        return;
+                    }
                 };
+                if let Err(error) = crate::io::validate_open_dimensions(img.width(), img.height()) {
+                    self.report_open_error(&item.name, &error.to_string());
+                    return;
+                }
                 let img = img.to_rgba8();
                 let oversized = self
                     .projects

@@ -221,7 +221,7 @@ impl ResizeImageDialog {
                         let preset_was_open = egui::ComboBox::is_open(ctx, ui.make_persistent_id(egui::IdSalt::new("resize_preset")));
                         egui::ComboBox::from_id_salt("resize_preset")
                             .width(210.0)
-                            .selected_text(self.preset.label())
+                            .selected_text(crate::i18n::translate_english(&self.preset.label()))
                             .show_ui(ui, |ui| {
                                 let choices = ResizePreset::all();
                                 let choice_id = ui.id().with("keyboard_choice");
@@ -242,7 +242,7 @@ impl ResizeImageDialog {
                                 }
                                 let mut picked = enter.then_some(choice);
                                 for (index, p) in choices.iter().enumerate() {
-                                    let response = ui.selectable_label(index == choice, p.label());
+                                    let response = ui.selectable_label(index == choice, crate::i18n::translate_english(&p.label()));
                                     if index == choice && (!preset_was_open || down || up) {
                                         response.request_focus();
                                     }
@@ -315,8 +315,8 @@ impl ResizeImageDialog {
                             if width_commit {
                                 self.commit_width_input();
                             }
-                            let drag = ui.add(egui::Label::new("px ↔").sense(egui::Sense::DRAG))
-                                .on_hover_text("Drag to change width; click the number to enter a value or expression.");
+                            let drag = ui.add(egui::Label::new(crate::t!("ui.px")).sense(egui::Sense::DRAG))
+                                .on_hover_text(crate::t!("ui.drag_to_change_width_click_the_number_to_enter_a_value_or_expression"));
                             if drag.dragged() {
                                 self.width_input = (self.width + drag.drag_delta().x).round().clamp(1.0, 32768.0).to_string();
                                 self.commit_width_input();
@@ -345,8 +345,8 @@ impl ResizeImageDialog {
                             if height_commit {
                                 self.commit_height_input();
                             }
-                            let drag = ui.add(egui::Label::new("px ↔").sense(egui::Sense::DRAG))
-                                .on_hover_text("Drag to change height; click the number to enter a value or expression.");
+                            let drag = ui.add(egui::Label::new(crate::t!("ui.px")).sense(egui::Sense::DRAG))
+                                .on_hover_text(crate::t!("ui.drag_to_change_height_click_the_number_to_enter_a_value_or_expression"));
                             if drag.dragged() {
                                 self.height_input = (self.height + drag.drag_delta().x).round().clamp(1.0, 32768.0).to_string();
                                 self.commit_height_input();
@@ -396,20 +396,20 @@ impl ResizeImageDialog {
                     .num_columns(2)
                     .spacing([8.0, 4.0])
                     .show(ui, |ui| {
-                        ui.label("Resize Method");
+                        ui.label(crate::t!("ui.resize_method"));
                         egui::ComboBox::from_id_salt("resize_method")
                             .width(220.0)
-                            .selected_text(self.resize_method.label())
+                            .selected_text(crate::i18n::translate_english(self.resize_method.label()))
                             .show_ui(ui, |ui| {
                                 ui.selectable_value(
                                     &mut self.resize_method,
                                     ResizeMethod::Standard,
-                                    ResizeMethod::Standard.label(),
+                                    crate::i18n::translate_english(ResizeMethod::Standard.label()),
                                 );
                                 ui.selectable_value(
                                     &mut self.resize_method,
                                     ResizeMethod::PixelArtRetarget,
-                                    ResizeMethod::PixelArtRetarget.label(),
+                                    crate::i18n::translate_english(ResizeMethod::PixelArtRetarget.label()),
                                 );
                             });
                         ui.end_row();
@@ -418,33 +418,33 @@ impl ResizeImageDialog {
                             ui.label(t!("dialog.resize_image.interpolation"));
                             egui::ComboBox::from_id_salt("resize_interp")
                                 .width(220.0)
-                                .selected_text(self.interpolation.label())
+                                .selected_text(crate::i18n::translate_english(&self.interpolation.label()))
                                 .show_ui(ui, |ui| {
                                     for i in Interpolation::all() {
-                                        ui.selectable_value(&mut self.interpolation, *i, i.label());
+                                        ui.selectable_value(&mut self.interpolation, *i, crate::i18n::translate_english(&i.label()));
                                     }
                                 });
                             ui.end_row();
                         } else {
-                            ui.label("Retarget Mode");
+                            ui.label(crate::t!("ui.retarget_mode"));
                             egui::ComboBox::from_id_salt("pixel_retarget_mode")
                                 .width(220.0)
-                                .selected_text(self.retarget.mode.label())
+                                .selected_text(crate::i18n::translate_english(self.retarget.mode.label()))
                                 .show_ui(ui, |ui| {
                                     ui.selectable_value(
                                         &mut self.retarget.mode,
                                         PixelRetargetMode::PaletteAware,
-                                        PixelRetargetMode::PaletteAware.label(),
+                                        crate::i18n::translate_english(PixelRetargetMode::PaletteAware.label()),
                                     );
                                     ui.selectable_value(
                                         &mut self.retarget.mode,
                                         PixelRetargetMode::StructurePreserving,
-                                        PixelRetargetMode::StructurePreserving.label(),
+                                        crate::i18n::translate_english(PixelRetargetMode::StructurePreserving.label()),
                                     );
                                     ui.selectable_value(
                                         &mut self.retarget.mode,
                                         PixelRetargetMode::TopologyPreserving,
-                                        PixelRetargetMode::TopologyPreserving.label(),
+                                        crate::i18n::translate_english(PixelRetargetMode::TopologyPreserving.label()),
                                     );
                                 });
                             ui.end_row();
@@ -457,45 +457,45 @@ impl ResizeImageDialog {
                         .num_columns(2)
                         .spacing([8.0, 4.0])
                         .show(ui, |ui| {
-                            ui.label("Palette");
-                            ui.checkbox(&mut self.retarget.preserve_palette, "Preserve source colors");
+                            ui.label(crate::t!("ui.palette"));
+                            ui.checkbox(&mut self.retarget.preserve_palette, crate::t!("ui.preserve_source_colors"));
                             ui.end_row();
 
-                            ui.label("Silhouette");
-                            ui.checkbox(&mut self.retarget.preserve_silhouette, "Protect alpha edges");
+                            ui.label(crate::t!("ui.silhouette"));
+                            ui.checkbox(&mut self.retarget.preserve_silhouette, crate::t!("ui.protect_alpha_edges"));
                             ui.end_row();
 
-                            ui.label("Thin Features");
-                            ui.checkbox(&mut self.retarget.protect_thin_features, "Protect one-pixel details");
+                            ui.label(crate::t!("ui.thin_features"));
+                            ui.checkbox(&mut self.retarget.protect_thin_features, crate::t!("ui.protect_one_pixel_details"));
                             ui.end_row();
 
-                            ui.label("Connectivity");
+                            ui.label(crate::t!("ui.connectivity"));
                             egui::ComboBox::from_id_salt("retarget_connectivity")
-                                .selected_text(if self.retarget.eight_connected { "8-way" } else { "4-way" })
+                                .selected_text(if self.retarget.eight_connected { crate::t!("ui.8_way") } else { crate::t!("ui.4_way") })
                                 .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut self.retarget.eight_connected, false, "4-way");
-                                    ui.selectable_value(&mut self.retarget.eight_connected, true, "8-way");
+                                    ui.selectable_value(&mut self.retarget.eight_connected, false, crate::t!("ui.4_way"));
+                                    ui.selectable_value(&mut self.retarget.eight_connected, true, crate::t!("ui.8_way"));
                                 });
                             ui.end_row();
 
-                            ui.label("Detail Priority");
+                            ui.label(crate::t!("ui.detail_priority"));
                             dialog_slider(ui, &mut self.retarget.detail_priority, 0.0..=1.0, 0.05, "", 2);
                             ui.end_row();
 
-                            ui.label("Geometry / Topology");
+                            ui.label(crate::t!("ui.geometry_topology"));
                             ui.horizontal(|ui| {
-                                ui.label("Geometry");
+                                ui.label(crate::t!("ui.geometry"));
                                 ui.add(egui::Slider::new(&mut self.retarget.topology_priority, 0.0..=1.0).show_value(false));
-                                ui.label("Topology");
+                                ui.label(crate::t!("ui.topology"));
                             });
                             ui.end_row();
 
-                            ui.label("Sampling Phase");
-                            ui.checkbox(&mut self.retarget.optimize_phase, "Optimize automatically");
+                            ui.label(crate::t!("ui.sampling_phase"));
+                            ui.checkbox(&mut self.retarget.optimize_phase, crate::t!("ui.optimize_automatically"));
                             ui.end_row();
 
-                            ui.label("Protection Mask");
-                            ui.checkbox(&mut self.retarget.use_selection_as_protection, "Use current selection");
+                            ui.label(crate::t!("ui.protection_mask"));
+                            ui.checkbox(&mut self.retarget.use_selection_as_protection, crate::t!("ui.use_current_selection"));
                             ui.end_row();
                         });
 
@@ -504,26 +504,26 @@ impl ResizeImageDialog {
                     if target_ratio < 0.5 {
                         ui.colored_label(
                             Color32::from_rgb(220, 145, 45),
-                            "Severe reduction: some detail must be simplified. Use a protection selection for critical pixels.",
+                            crate::t!("ui.severe_reduction_some_detail_must_be_simplified_use_a_protection_selec"),
                         );
                     } else if self.width > self.original_w as f32
                         || self.height > self.original_h as f32
                     {
                         ui.colored_label(
                             colors.text_muted,
-                            "Retarget is designed for reduction; enlargement uses nearest-neighbor pixels.",
+                            crate::t!("ui.retarget_is_designed_for_reduction_enlargement_uses_nearest_neighbor_p"),
                         );
                     }
 
                     ui.add_space(4.0);
-                    if ui.button("Generate Comparison Preview").clicked() {
+                    if ui.button(crate::t!("ui.generate_comparison_preview")).clicked() {
                         self.generate_comparison_previews(ctx);
                     }
                     if !self.comparison_previews.is_empty() {
                         ui.horizontal_wrapped(|ui| {
                             for (label, texture) in &self.comparison_previews {
                                 ui.vertical(|ui| {
-                                    ui.label(egui::RichText::new(label).size(10.0));
+                                    ui.label(egui::RichText::new(crate::i18n::translate_strength_preset(label)).size(10.0));
                                     ui.add(
                                         egui::Image::new(texture)
                                             .fit_to_exact_size(egui::vec2(80.0, 80.0)),
@@ -731,7 +731,7 @@ impl ResizeCanvasDialog {
                             if width_commit {
                                 self.commit_width_input();
                             }
-                            ui.label("px");
+                            ui.label(crate::t!("unit.px_suffix"));
                         });
                         ui.end_row();
 
@@ -748,7 +748,7 @@ impl ResizeCanvasDialog {
                             if height_commit {
                                 self.commit_height_input();
                             }
-                            ui.label("px");
+                            ui.label(crate::t!("unit.px_suffix"));
                         });
                         ui.end_row();
 
@@ -1056,7 +1056,7 @@ impl GaussianBlurDialog {
                 ui.add_space(4.0);
 
                 // -- Parameters --
-                section_label(ui, &colors, "BLUR SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.blur_settings"));
 
                 let mut sigma_changed = false;
 
@@ -1066,7 +1066,7 @@ impl GaussianBlurDialog {
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Radius");
+                        ui.label(crate::t!("ui.radius"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             if self.advanced_blur {
@@ -1091,7 +1091,7 @@ impl GaussianBlurDialog {
                         ui.end_row();
 
                         // Quick presets
-                        ui.label("Quick");
+                        ui.label(crate::t!("ui.quick"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             let presets: &[(&str, f32)] = if self.advanced_blur {
@@ -1115,11 +1115,11 @@ impl GaussianBlurDialog {
                                 let is_close = (self.sigma - val).abs() < 0.3;
                                 let btn = if is_close {
                                     egui::Button::new(
-                                        egui::RichText::new(label).strong().size(11.0),
+                                        egui::RichText::new(crate::i18n::translate_strength_preset(label)).strong().size(11.0),
                                     )
                                     .fill(colors.accent_faint)
                                 } else {
-                                    egui::Button::new(egui::RichText::new(label).size(11.0))
+                                    egui::Button::new(egui::RichText::new(crate::i18n::translate_strength_preset(label)).size(11.0))
                                 };
                                 if ui.add(btn).clicked() {
                                     self.sigma = val;
@@ -1133,7 +1133,7 @@ impl GaussianBlurDialog {
                         ui.label("");
                         ui.horizontal(|ui| {
                             if ui
-                                .checkbox(&mut self.advanced_blur, "Advanced (up to 100)")
+                                .checkbox(&mut self.advanced_blur, crate::t!("ui.advanced_up_to_100"))
                                 .changed()
                             {
                                 // Clamp sigma when switching back to normal mode
@@ -1338,7 +1338,7 @@ impl AddBrushTipDialog {
                     ui,
                     &colors,
                     self.brush_icon_texture.as_ref(),
-                    "New Brush Tip",
+                    &crate::t!("ui.new_brush_tip"),
                 ) {
                     self.open = false;
                     return;
@@ -1346,12 +1346,11 @@ impl AddBrushTipDialog {
                 ui.add_space(4.0);
 
                 // Info section
-                super::section_label(ui, &colors, "INFORMATION");
+                super::section_label(ui, &colors, &crate::t!("ui.information"));
                 ui.add_space(2.0);
                 ui.label(
                     egui::RichText::new(
-                        "Recommended file size: 128\u{00D7}128 px. Black pixels are treated as \
-                         transparent; white pixels define the brush area.",
+                        crate::t!("ui.recommended_file_size_128_128_px_black_pixels_are_treated_as_transpare"),
                     )
                     .size(12.0)
                     .color(colors.text_muted),
@@ -1359,19 +1358,19 @@ impl AddBrushTipDialog {
                 ui.add_space(8.0);
 
                 // Name field
-                super::section_label(ui, &colors, "BRUSH NAME");
+                super::section_label(ui, &colors, &crate::t!("ui.brush_name"));
                 ui.add_space(2.0);
                 ui.horizontal(|ui| {
                     ui.add_sized(
                         [280.0, 22.0],
                         egui::TextEdit::singleline(&mut self.name)
-                            .hint_text("Enter brush tip name..."),
+                            .hint_text(crate::t!("ui.enter_brush_tip_name")),
                     );
                 });
                 ui.add_space(6.0);
 
                 // File browse
-                super::section_label(ui, &colors, "IMAGE FILE");
+                super::section_label(ui, &colors, &crate::t!("ui.image_file"));
                 ui.add_space(2.0);
                 ui.horizontal(|ui| {
                     let path_text = self
@@ -1379,7 +1378,7 @@ impl AddBrushTipDialog {
                         .as_ref()
                         .and_then(|p| p.file_name())
                         .and_then(|n| n.to_str())
-                        .unwrap_or("No file selected");
+                        .map(str::to_owned).unwrap_or_else(|| crate::t!("ui.no_file_selected"));
                     ui.add_sized(
                         [250.0, 22.0],
                         egui::Label::new(
@@ -1389,9 +1388,9 @@ impl AddBrushTipDialog {
                         ),
                     );
                     #[cfg(not(target_arch = "wasm32"))]
-                    if ui.button("Browse...").clicked()
+                    if ui.button(crate::t!("ui.browse")).clicked()
                         && let Some(path) = rfd::FileDialog::new()
-                            .add_filter("PNG Image", &["png"])
+                            .add_filter(crate::t!("ui.png_image"), &["png"])
                             .pick_file()
                     {
                         self.selected_path = Some(path.clone());
@@ -1404,14 +1403,14 @@ impl AddBrushTipDialog {
                         }
                     }
                     #[cfg(target_arch = "wasm32")]
-                    if ui.button("Browse...").clicked() {
+                    if ui.button(crate::t!("ui.browse")).clicked() {
                         crate::web_bridge::open_picker("brush_tip", "image/png", false);
                     }
                 });
                 ui.add_space(6.0);
 
                 // Category
-                super::section_label(ui, &colors, "CATEGORY");
+                super::section_label(ui, &colors, &crate::t!("ui.category"));
                 ui.add_space(2.0);
                 egui::ComboBox::from_id_salt("brush_tip_category")
                     .selected_text(&self.category)
@@ -1427,7 +1426,7 @@ impl AddBrushTipDialog {
                 if self.selected_path.is_some() {
                     super::accent_separator(ui, &colors);
                     ui.add_space(4.0);
-                    super::section_label(ui, &colors, "PREVIEW");
+                    super::section_label(ui, &colors, &crate::t!("ui.preview"));
 
                     if self.valid {
                         // Load preview texture if needed
@@ -1468,10 +1467,10 @@ impl AddBrushTipDialog {
                             ui.add_space(8.0);
                             ui.vertical(|ui| {
                                 ui.label(
-                                    egui::RichText::new("\u{2705} Valid")
+                                    egui::RichText::new(crate::t!("ui.valid"))
                                         .color(egui::Color32::from_rgb(80, 200, 80)),
                                 );
-                                ui.label(format!("{}x{} px", self.image_width, self.image_height));
+                                ui.label(crate::i18n::format_translation("ui.0_x_1_px", &[("0", format!("{}", self.image_width)), ("1", format!("{}", self.image_height))]));
                                 if !self.error_message.is_empty() {
                                     ui.label(
                                         egui::RichText::new(&self.error_message)
@@ -1484,7 +1483,7 @@ impl AddBrushTipDialog {
                     } else {
                         ui.horizontal(|ui| {
                             ui.label(
-                                egui::RichText::new("\u{274C} Invalid")
+                                egui::RichText::new(crate::t!("ui.invalid"))
                                     .color(egui::Color32::from_rgb(220, 60, 60)),
                             );
                             if !self.error_message.is_empty() {
@@ -1661,24 +1660,24 @@ impl AddShapeDialog {
             .default_pos(egui::pos2(ctx.content_rect().center().x - 200.0, 80.0))
             .show(ctx, |ui| {
                 ui.set_min_width(400.0);
-                if super::paint_dialog_header(ui, &colors, "◇", "New Shape") {
+                if super::paint_dialog_header(ui, &colors, "◇", &crate::t!("ui.new_shape")) {
                     self.open = false;
                     return;
                 }
                 ui.add_space(4.0);
-                super::section_label(ui, &colors, "INFORMATION");
-                ui.label(egui::RichText::new("Import an SVG containing path geometry. Use the example as a template; embedded raster images are not supported.").size(12.0).color(colors.text_muted));
+                super::section_label(ui, &colors, &crate::t!("ui.information"));
+                ui.label(egui::RichText::new(crate::t!("ui.import_an_svg_containing_path_geometry_use_the_example_as_a_template_e")).size(12.0).color(colors.text_muted));
                 ui.add_space(8.0);
-                super::section_label(ui, &colors, "SHAPE NAME");
-                ui.add_sized([280.0, 22.0], egui::TextEdit::singleline(&mut self.name).hint_text("Enter shape name..."));
+                super::section_label(ui, &colors, &crate::t!("ui.shape_name"));
+                ui.add_sized([280.0, 22.0], egui::TextEdit::singleline(&mut self.name).hint_text(crate::t!("ui.enter_shape_name")));
                 ui.add_space(6.0);
-                super::section_label(ui, &colors, "SVG FILE");
+                super::section_label(ui, &colors, &crate::t!("ui.svg_file"));
                 ui.horizontal(|ui| {
-                    let path_text = self.selected_path.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("No file selected");
+                    let path_text = self.selected_path.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()).map(str::to_owned).unwrap_or_else(|| crate::t!("ui.no_file_selected"));
                     ui.add_sized([250.0, 22.0], egui::Label::new(egui::RichText::new(path_text).size(12.0).color(colors.text_muted)));
                     #[cfg(not(target_arch = "wasm32"))]
-                    if ui.button("Browse...").clicked()
-                        && let Some(path) = rfd::FileDialog::new().add_filter("SVG Shape", &["svg"]).pick_file()
+                    if ui.button(crate::t!("ui.browse")).clicked()
+                        && let Some(path) = rfd::FileDialog::new().add_filter(crate::t!("ui.svg_shape"), &["svg"]).pick_file()
                     {
                         self.selected_path = Some(path.clone());
                         self.validate_file(ctx, &path);
@@ -1689,7 +1688,7 @@ impl AddShapeDialog {
                         }
                     }
                     #[cfg(target_arch = "wasm32")]
-                    if ui.button("Browse...").clicked() {
+                    if ui.button(crate::t!("ui.browse")).clicked() {
                         crate::web_bridge::open_picker("custom_shape", ".svg,image/svg+xml", false);
                     }
                     let example_svg = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="-50 -50 100 100">
@@ -1697,17 +1696,17 @@ impl AddShapeDialog {
 </svg>
 "#;
                     #[cfg(target_arch = "wasm32")]
-                    if ui.button("Export example...").clicked() {
+                    if ui.button(crate::t!("ui.export_example")).clicked() {
                         crate::web_fs::trigger_download(
                             "paintfe_pentagon_shape.svg",
                             example_svg.as_bytes(),
                         );
                     }
                     #[cfg(not(target_arch = "wasm32"))]
-                    if ui.button("Export example...").clicked()
+                    if ui.button(crate::t!("ui.export_example")).clicked()
                         && let Some(path) = rfd::FileDialog::new()
                             .set_file_name("paintfe_pentagon_shape.svg")
-                            .add_filter("SVG Shape", &["svg"])
+                            .add_filter(crate::t!("ui.svg_shape"), &["svg"])
                             .save_file()
                         && let Err(e) = std::fs::write(&path, example_svg)
                     {
@@ -1716,7 +1715,7 @@ impl AddShapeDialog {
                 });
                 if self.selected_path.is_some() {
                     super::accent_separator(ui, &colors);
-                    super::section_label(ui, &colors, "PREVIEW");
+                    super::section_label(ui, &colors, &crate::t!("ui.preview"));
                     if self.valid {
                         ui.horizontal(|ui| {
                             if let Some(tex) = &self.preview_texture {
@@ -1724,7 +1723,7 @@ impl AddShapeDialog {
                                 let rect = ui.allocate_exact_size(egui::Vec2::splat(96.0), egui::Sense::hover()).0;
                                 egui::Image::from_texture(sized).fit_to_exact_size(egui::Vec2::splat(96.0)).paint_at(ui, rect);
                             }
-                            ui.label(egui::RichText::new("Valid SVG path").color(egui::Color32::from_rgb(80, 200, 80)));
+                            ui.label(egui::RichText::new(crate::t!("ui.valid_svg_path")).color(egui::Color32::from_rgb(80, 200, 80)));
                         });
                     } else {
                         ui.label(egui::RichText::new(&self.error_message).color(egui::Color32::from_rgb(220, 60, 60)));

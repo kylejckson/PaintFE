@@ -14,14 +14,14 @@ impl InkDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "INK SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.ink_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("ink_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Edge Strength");
+                        ui.label(crate::t!("ui.edge_strength"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.edge_strength, 10.0..=300.0)
                                 .max_decimals(0),
@@ -31,7 +31,7 @@ impl InkDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Threshold");
+                        ui.label(crate::t!("dialog.threshold"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.threshold, 0.05..=1.0).max_decimals(2),
                         );
@@ -83,14 +83,14 @@ impl OilPaintingDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "PAINTING SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.painting_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("oil_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Brush Radius");
+                        ui.label(crate::t!("ui.brush_radius"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.radius,
@@ -103,7 +103,7 @@ impl OilPaintingDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Intensity Levels");
+                        ui.label(crate::t!("ui.intensity_levels"));
                         let r =
                             ui.add(egui::Slider::new(&mut self.levels, 4.0..=64.0).max_decimals(0));
                         if track_slider(&r, &mut self.dragging) {
@@ -164,20 +164,20 @@ impl ColorFilterDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "FILTER SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.filter_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("cfilter_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Color");
+                        ui.label(crate::t!("keybind_category.color"));
                         if ui.color_edit_button_rgb(&mut self.color).changed() {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Intensity");
+                        ui.label(crate::t!("ui.intensity"));
                         let r = ui
                             .add(egui::Slider::new(&mut self.intensity, 0.0..=1.0).max_decimals(2));
                         if track_slider(&r, &mut self.dragging) {
@@ -185,7 +185,7 @@ impl ColorFilterDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Quick");
+                        ui.label(crate::t!("ui.quick"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 3.0;
                             let presets: [(&str, [f32; 3]); 5] = [
@@ -202,7 +202,7 @@ impl ColorFilterDialog {
                                     (c[2] * 255.0) as u8,
                                 );
                                 let btn = egui::Button::new(
-                                    egui::RichText::new(*label).size(10.5).color(
+                                    egui::RichText::new(crate::i18n::translate_english(label)).size(10.5).color(
                                         if c[0] > 0.8 && c[1] > 0.8 && c[2] > 0.8 {
                                             Color32::BLACK
                                         } else {
@@ -219,7 +219,7 @@ impl ColorFilterDialog {
                         });
                         ui.end_row();
 
-                        ui.label("Blend Mode");
+                        ui.label(crate::t!("ui.blend_mode"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             for (i, label) in ["Multiply", "Screen", "Overlay", "Soft Light"]
@@ -228,11 +228,11 @@ impl ColorFilterDialog {
                             {
                                 let btn = if self.mode_idx == i {
                                     egui::Button::new(
-                                        egui::RichText::new(*label).strong().size(11.0),
+                                        egui::RichText::new(crate::i18n::translate_english(label)).strong().size(11.0),
                                     )
                                     .fill(colors.accent_faint)
                                 } else {
-                                    egui::Button::new(egui::RichText::new(*label).size(11.0))
+                                    egui::Button::new(egui::RichText::new(crate::i18n::translate_english(label)).size(11.0))
                                 };
                                 if ui.add(btn).clicked() {
                                     self.mode_idx = i;
@@ -354,20 +354,20 @@ impl ColorToAlphaDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "TARGET COLOR");
+                section_label(ui, &colors, &crate::t!("ui.target_color"));
 
                 let mut changed = false;
                 egui::Grid::new("color_to_alpha_target")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Color");
+                        ui.label(crate::t!("keybind_category.color"));
                         if ui.color_edit_button_rgb(&mut self.target_color).changed() {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Sample");
+                        ui.label(crate::t!("ui.sample"));
                         ui.horizontal(|ui| {
                             let max_x = self
                                 .original_flat
@@ -386,7 +386,7 @@ impl ColorToAlphaDialog {
                                 crate::ui::numeric::Numeric::new(&mut self.sample_y)
                                     .range(0..=max_y),
                             );
-                            if ui.small_button("Pick").clicked()
+                            if ui.small_button(crate::t!("ui.pick")).clicked()
                                 && let Some(flat) = &self.original_flat
                             {
                                 let x = self.sample_x.min(flat.width().saturating_sub(1));
@@ -402,7 +402,7 @@ impl ColorToAlphaDialog {
                         });
                         ui.end_row();
 
-                        ui.label("Reset");
+                        ui.label(crate::t!("common.reset"));
                         if ui.small_button("\u{21BA}").clicked() {
                             self.set_preset([1.0, 0.0, 0.0]);
                             changed = true;
@@ -411,50 +411,50 @@ impl ColorToAlphaDialog {
                     });
 
                 ui.add_space(4.0);
-                section_label(ui, &colors, "REMOVAL SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.removal_settings"));
                 egui::Grid::new("color_to_alpha_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Tolerance");
+                        ui.label(crate::t!("ui.tolerance"));
                         if dialog_slider(ui, &mut self.tolerance, 0.0..=128.0, 1.0, "", 0) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Softness");
+                        ui.label(crate::t!("ui.softness"));
                         if dialog_slider(ui, &mut self.softness, 0.0..=255.0, 1.0, "", 0) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Strength");
+                        ui.label(crate::t!("ui.strength"));
                         if dialog_slider(ui, &mut self.strength, 0.0..=1.0, 0.01, "", 2) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Spill Suppression");
+                        ui.label(crate::t!("ui.spill_suppression"));
                         if dialog_slider(ui, &mut self.spill_suppression, 0.0..=1.0, 0.01, "", 2) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Alpha Floor");
+                        ui.label(crate::t!("ui.alpha_floor"));
                         if dialog_slider(ui, &mut self.alpha_floor, 0.0..=1.0, 0.01, "", 2) {
                             self.alpha_ceiling = self.alpha_ceiling.max(self.alpha_floor);
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Alpha Ceiling");
+                        ui.label(crate::t!("ui.alpha_ceiling"));
                         if dialog_slider(ui, &mut self.alpha_ceiling, 0.0..=1.0, 0.01, "", 2) {
                             self.alpha_floor = self.alpha_floor.min(self.alpha_ceiling);
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Protect Luminance");
+                        ui.label(crate::t!("ui.protect_luminance"));
                         if dialog_slider(ui, &mut self.protect_luminance, 0.0..=1.0, 0.01, "", 2) {
                             changed = true;
                         }
@@ -592,30 +592,30 @@ impl RecoverTransparencyDialog {
                     .show(ui, |ui| {
                 let mut changed = false;
                 ui.add_space(4.0);
-                ui.label("Recover alpha and edge colors from artwork flattened over a noisy solid background.");
+                ui.label(crate::t!("ui.recover_alpha_and_edge_colors_from_artwork_flattened_over_a_noisy_soli"));
                 ui.add_space(4.0);
-                section_label(ui, &colors, "BACKGROUND MODEL");
+                section_label(ui, &colors, &crate::t!("ui.background_model"));
                 egui::Grid::new("recover_transparency_background")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Automatic");
+                        ui.label(crate::t!("ui.automatic"));
                         if ui
-                            .checkbox(&mut self.auto_sample_edges, "Estimate from canvas edges")
+                            .checkbox(&mut self.auto_sample_edges, crate::t!("ui.estimate_from_canvas_edges"))
                             .changed()
                         {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Fallback / Manual");
+                        ui.label(crate::t!("ui.fallback_manual"));
                         if ui.color_edit_button_rgb(&mut self.background_color).changed() {
                             self.auto_sample_edges = false;
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Sample Pixel");
+                        ui.label(crate::t!("ui.sample_pixel"));
                         ui.horizontal(|ui| {
                             let max_x = self
                                 .original_flat
@@ -628,7 +628,7 @@ impl RecoverTransparencyDialog {
                             ui.add(crate::ui::numeric::Numeric::new(&mut self.sample_x).range(0..=max_x));
                             ui.label("x");
                             ui.add(crate::ui::numeric::Numeric::new(&mut self.sample_y).range(0..=max_y));
-                            if ui.small_button("Pick").clicked()
+                            if ui.small_button(crate::t!("ui.pick")).clicked()
                                 && let Some(flat) = &self.original_flat
                             {
                                 let p = flat.get_pixel(
@@ -646,61 +646,61 @@ impl RecoverTransparencyDialog {
                         });
                         ui.end_row();
 
-                        ui.label("Edge Sample Depth");
+                        ui.label(crate::t!("ui.edge_sample_depth"));
                         if dialog_slider(ui, &mut self.sample_depth, 1.0..=8.0, 1.0, " px", 0) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Noise Tolerance");
+                        ui.label(crate::t!("ui.noise_tolerance"));
                         if dialog_slider(ui, &mut self.noise_tolerance, 0.5..=32.0, 0.5, "", 1) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Connectivity");
+                        ui.label(crate::t!("ui.connectivity"));
                         egui::ComboBox::from_id_salt("recover_connectivity")
-                            .selected_text(if self.eight_connected { "8-way" } else { "4-way (pixel art)" })
+                            .selected_text(if self.eight_connected { crate::t!("ui.8_way") } else { crate::t!("ui.4_way_pixel_art") })
                             .show_ui(ui, |ui| {
-                                changed |= ui.selectable_value(&mut self.eight_connected, false, "4-way (pixel art)").changed();
-                                changed |= ui.selectable_value(&mut self.eight_connected, true, "8-way").changed();
+                                changed |= ui.selectable_value(&mut self.eight_connected, false, crate::t!("ui.4_way_pixel_art")).changed();
+                                changed |= ui.selectable_value(&mut self.eight_connected, true, crate::t!("ui.8_way")).changed();
                             });
                         ui.end_row();
                     });
 
                 ui.add_space(4.0);
-                section_label(ui, &colors, "EDGE RECOVERY");
+                section_label(ui, &colors, &crate::t!("ui.edge_recovery"));
                 egui::Grid::new("recover_transparency_edges")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Recover Band");
+                        ui.label(crate::t!("ui.recover_band"));
                         if dialog_slider(ui, &mut self.edge_width, 0.0..=6.0, 1.0, " px", 0) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Preserve Hard Pixels");
-                        if ui.checkbox(&mut self.preserve_hard_pixels, "Snap near-opaque edges").changed() {
+                        ui.label(crate::t!("ui.preserve_hard_pixels"));
+                        if ui.checkbox(&mut self.preserve_hard_pixels, crate::t!("ui.snap_near_opaque_edges")).changed() {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Transparent Snap");
+                        ui.label(crate::t!("ui.transparent_snap"));
                         if dialog_slider(ui, &mut self.transparent_snap, 0.0..=0.25, 0.005, "", 3) {
                             self.opaque_snap = self.opaque_snap.max(self.transparent_snap);
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Opaque Snap");
+                        ui.label(crate::t!("ui.opaque_snap"));
                         if dialog_slider(ui, &mut self.opaque_snap, 0.75..=1.0, 0.005, "", 3) {
                             self.transparent_snap = self.transparent_snap.min(self.opaque_snap);
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Color Preservation");
+                        ui.label(crate::t!("ui.color_preservation"));
                         if dialog_slider(ui, &mut self.foreground_influence, 0.0..=1.0, 0.05, "", 2) {
                             changed = true;
                         }
@@ -708,53 +708,53 @@ impl RecoverTransparencyDialog {
                     });
 
                 ui.add_space(4.0);
-                section_label(ui, &colors, "INTERIOR BACKGROUND RECOVERY");
+                section_label(ui, &colors, &crate::t!("ui.interior_background_recovery"));
                 egui::Grid::new("recover_transparency_islands")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         use crate::ops::color_removal::InteriorRecoveryMode;
-                        ui.label("Enclosed Regions");
+                        ui.label(crate::t!("ui.enclosed_regions"));
                         egui::ComboBox::from_id_salt("recover_island_mode")
                             .selected_text(match self.interior_mode {
-                                InteriorRecoveryMode::Off => "Off (safest)",
-                                InteriorRecoveryMode::SmallIslands => "Small Islands",
-                                InteriorRecoveryMode::NearExterior => "Near Exterior",
-                                InteriorRecoveryMode::AllMatching => "All Matching",
+                                InteriorRecoveryMode::Off => crate::t!("ui.off_safest"),
+                                InteriorRecoveryMode::SmallIslands => crate::t!("ui.small_islands"),
+                                InteriorRecoveryMode::NearExterior => crate::t!("ui.near_exterior"),
+                                InteriorRecoveryMode::AllMatching => crate::t!("ui.all_matching"),
                             })
                             .show_ui(ui, |ui| {
-                                changed |= ui.selectable_value(&mut self.interior_mode, InteriorRecoveryMode::Off, "Off (safest)").changed();
-                                changed |= ui.selectable_value(&mut self.interior_mode, InteriorRecoveryMode::SmallIslands, "Small Islands").changed();
-                                changed |= ui.selectable_value(&mut self.interior_mode, InteriorRecoveryMode::NearExterior, "Near Exterior").changed();
-                                changed |= ui.selectable_value(&mut self.interior_mode, InteriorRecoveryMode::AllMatching, "All Matching").changed();
+                                changed |= ui.selectable_value(&mut self.interior_mode, InteriorRecoveryMode::Off, crate::t!("ui.off_safest")).changed();
+                                changed |= ui.selectable_value(&mut self.interior_mode, InteriorRecoveryMode::SmallIslands, crate::t!("ui.small_islands")).changed();
+                                changed |= ui.selectable_value(&mut self.interior_mode, InteriorRecoveryMode::NearExterior, crate::t!("ui.near_exterior")).changed();
+                                changed |= ui.selectable_value(&mut self.interior_mode, InteriorRecoveryMode::AllMatching, crate::t!("ui.all_matching")).changed();
                             });
                         ui.end_row();
 
-                        ui.label("Maximum Island Size");
+                        ui.label(crate::t!("ui.maximum_island_size"));
                         if dialog_slider(ui, &mut self.island_max_size, 1.0..=256.0, 1.0, " px", 0) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Island Strictness");
+                        ui.label(crate::t!("ui.island_strictness"));
                         if dialog_slider(ui, &mut self.island_tolerance, 0.1..=1.25, 0.05, "", 2) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Maximum Depth");
+                        ui.label(crate::t!("ui.maximum_depth"));
                         if dialog_slider(ui, &mut self.island_max_depth, 1.0..=64.0, 1.0, " px", 0) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Bridge Tiny Gaps");
+                        ui.label(crate::t!("ui.bridge_tiny_gaps"));
                         if dialog_slider(ui, &mut self.bridge_gaps, 0.0..=4.0, 1.0, " px", 0) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Manual Component Seed");
+                        ui.label(crate::t!("ui.manual_component_seed"));
                         ui.horizontal(|ui| {
                             let max_x = self.original_flat.as_ref().map_or(0, |img| img.width().saturating_sub(1));
                             let max_y = self.original_flat.as_ref().map_or(0, |img| img.height().saturating_sub(1));
@@ -764,9 +764,9 @@ impl RecoverTransparencyDialog {
                         });
                         ui.end_row();
 
-                        ui.label("Component Override");
+                        ui.label(crate::t!("ui.component_override"));
                         ui.horizontal(|ui| {
-                            if ui.small_button("Remove").clicked() {
+                            if ui.small_button(crate::t!("ui.remove")).clicked() {
                                 let seed = (self.island_x, self.island_y);
                                 self.protect_seeds.retain(|&p| p != seed);
                                 if !self.remove_seeds.contains(&seed) {
@@ -774,7 +774,7 @@ impl RecoverTransparencyDialog {
                                 }
                                 changed = true;
                             }
-                            if ui.small_button("Protect").clicked() {
+                            if ui.small_button(crate::t!("ui.protect")).clicked() {
                                 let seed = (self.island_x, self.island_y);
                                 self.remove_seeds.retain(|&p| p != seed);
                                 if !self.protect_seeds.contains(&seed) {
@@ -782,7 +782,7 @@ impl RecoverTransparencyDialog {
                                 }
                                 changed = true;
                             }
-                            if ui.small_button("Clear").clicked() {
+                            if ui.small_button(crate::t!("script.console.clear")).clicked() {
                                 self.remove_seeds.clear();
                                 self.protect_seeds.clear();
                                 changed = true;
@@ -790,29 +790,25 @@ impl RecoverTransparencyDialog {
                         });
                         ui.end_row();
                     });
-                ui.small(format!(
-                    "Manual overrides: {} remove, {} protect. Interior strictness is relative to the measured background noise.",
-                    self.remove_seeds.len(),
-                    self.protect_seeds.len()
-                ));
+                ui.small(crate::i18n::format_translation("ui.manual_overrides_0_remove_1_protect_interior_strictness_is_relative_to", &[("0", format!("{}", self.remove_seeds.len())), ("1", format!("{}", self.protect_seeds.len()))]));
 
                 ui.add_space(4.0);
-                section_label(ui, &colors, "DIAGNOSTIC PREVIEW");
+                section_label(ui, &colors, &crate::t!("ui.diagnostic_preview"));
                 ui.horizontal(|ui| {
-                    ui.label("View");
+                    ui.label(crate::t!("keybind_category.view"));
                     egui::ComboBox::from_id_salt("recover_preview_mode")
                         .selected_text(match self.preview_mode {
-                            1 => "Alpha Matte",
-                            2 => "Reconstruction Error",
-                            _ => "Recovered Result",
+                            1 => crate::t!("ui.alpha_matte"),
+                            2 => crate::t!("ui.reconstruction_error"),
+                            _ => crate::t!("ui.recovered_result"),
                         })
                         .show_ui(ui, |ui| {
-                            changed |= ui.selectable_value(&mut self.preview_mode, 0, "Recovered Result").changed();
-                            changed |= ui.selectable_value(&mut self.preview_mode, 1, "Alpha Matte").changed();
-                            changed |= ui.selectable_value(&mut self.preview_mode, 2, "Reconstruction Error").changed();
+                            changed |= ui.selectable_value(&mut self.preview_mode, 0, crate::t!("ui.recovered_result")).changed();
+                            changed |= ui.selectable_value(&mut self.preview_mode, 1, crate::t!("ui.alpha_matte")).changed();
+                            changed |= ui.selectable_value(&mut self.preview_mode, 2, crate::t!("ui.reconstruction_error")).changed();
                         });
                 });
-                ui.small("Reconstruction Error is amplified 8×; black means the recovered pixels reproduce the source backing.");
+                ui.small(crate::t!("ui.reconstruction_error_is_amplified_8_black_means_the_recovered_pixels_r"));
 
                 accent_separator(ui, &colors);
                 let manual = preview_controls(ui, &colors, &mut self.live_preview);
@@ -866,46 +862,46 @@ impl ContoursDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "CONTOUR SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.contour_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("contour_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Scale");
+                        ui.label(crate::t!("dialog.resize_image.scale"));
                         if dialog_slider(ui, &mut self.scale, 5.0..=400.0, 1.0, " px", 0) {
                             changed = true;
                         }
                         ui.end_row();
                         ui.label("");
                         ui.label(
-                            egui::RichText::new("Size of the noise pattern")
+                            egui::RichText::new(crate::t!("ui.size_of_the_noise_pattern"))
                                 .size(10.0)
                                 .color(colors.text_muted),
                         );
                         ui.end_row();
 
-                        ui.label("Frequency");
+                        ui.label(crate::t!("ui.frequency"));
                         if dialog_slider(ui, &mut self.frequency, 1.0..=30.0, 0.1, "", 1) {
                             changed = true;
                         }
                         ui.end_row();
                         ui.label("");
                         ui.label(
-                            egui::RichText::new("Number of contour levels")
+                            egui::RichText::new(crate::t!("ui.number_of_contour_levels"))
                                 .size(10.0)
                                 .color(colors.text_muted),
                         );
                         ui.end_row();
 
-                        ui.label("Line Width");
+                        ui.label(crate::t!("ui.line_width"));
                         if dialog_slider(ui, &mut self.line_width, 0.5..=8.0, 0.1, " px", 1) {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Line Color");
+                        ui.label(crate::t!("ui.line_color"));
                         ui.horizontal(|ui| {
                             let mut c32 = Color32::from_rgb(
                                 (self.line_color[0] * 255.0) as u8,
@@ -921,26 +917,26 @@ impl ContoursDialog {
                                 changed = true;
                             }
                             ui.spacing_mut().item_spacing.x = 3.0;
-                            if ui.small_button("Black").clicked() {
+                            if ui.small_button(crate::t!("ui.black")).clicked() {
                                 self.line_color = [0.0, 0.0, 0.0];
                                 changed = true;
                             }
-                            if ui.small_button("White").clicked() {
+                            if ui.small_button(crate::t!("ui.white")).clicked() {
                                 self.line_color = [1.0, 1.0, 1.0];
                                 changed = true;
                             }
-                            if ui.small_button("Brown").clicked() {
+                            if ui.small_button(crate::t!("ui.brown")).clicked() {
                                 self.line_color = [0.55, 0.35, 0.17];
                                 changed = true;
                             }
-                            if ui.small_button("Blue").clicked() {
+                            if ui.small_button(crate::t!("theme_preset.blue")).clicked() {
                                 self.line_color = [0.15, 0.35, 0.7];
                                 changed = true;
                             }
                         });
                         ui.end_row();
 
-                        ui.label("Blend");
+                        ui.label(crate::t!("ui.blend"));
                         if dialog_slider(ui, &mut self.blend, 0.0..=1.0, 0.01, "", 2) {
                             changed = true;
                         }
@@ -948,20 +944,20 @@ impl ContoursDialog {
                     });
 
                 ui.add_space(4.0);
-                section_label(ui, &colors, "NOISE FIELD");
+                section_label(ui, &colors, &crate::t!("ui.noise_field"));
 
                 egui::Grid::new("contour_noise")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Octaves");
+                        ui.label(crate::t!("ui.octaves"));
                         if dialog_slider(ui, &mut self.octaves, 1.0..=6.0, 1.0, "", 0) {
                             self.octaves = self.octaves.round().clamp(1.0, 6.0);
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Seed");
+                        ui.label(crate::t!("ui.seed"));
                         ui.horizontal(|ui| {
                             let mut seed_f = self.seed as f32;
                             if ui
@@ -986,11 +982,11 @@ impl ContoursDialog {
                     });
 
                 ui.add_space(4.0);
-                section_label(ui, &colors, "PRESETS");
+                section_label(ui, &colors, &crate::t!("ui.presets"));
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     if ui
-                        .button(egui::RichText::new("Topo Map").size(11.0))
+                        .button(egui::RichText::new(crate::t!("ui.topo_map")).size(11.0))
                         .clicked()
                     {
                         self.scale = 40.0;
@@ -1002,7 +998,7 @@ impl ContoursDialog {
                         changed = true;
                     }
                     if ui
-                        .button(egui::RichText::new("Fine Lines").size(11.0))
+                        .button(egui::RichText::new(crate::t!("ui.fine_lines")).size(11.0))
                         .clicked()
                     {
                         self.scale = 15.0;
@@ -1013,7 +1009,7 @@ impl ContoursDialog {
                         self.blend = 0.5;
                         changed = true;
                     }
-                    if ui.button(egui::RichText::new("Bold").size(11.0)).clicked() {
+                    if ui.button(egui::RichText::new(crate::t!("ui.bold")).size(11.0)).clicked() {
                         self.scale = 60.0;
                         self.frequency = 5.0;
                         self.line_width = 4.0;
@@ -1022,7 +1018,7 @@ impl ContoursDialog {
                         self.blend = 1.0;
                         changed = true;
                     }
-                    if ui.button(egui::RichText::new("Ocean").size(11.0)).clicked() {
+                    if ui.button(egui::RichText::new(crate::t!("ui.ocean")).size(11.0)).clicked() {
                         self.scale = 50.0;
                         self.frequency = 12.0;
                         self.line_width = 1.5;

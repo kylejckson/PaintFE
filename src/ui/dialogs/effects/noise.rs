@@ -25,14 +25,14 @@ impl AddNoiseDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "NOISE SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.noise_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("noise_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Amount");
+                        ui.label(crate::t!("ui.amount"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.amount, 1.0..=100.0)
                                 .suffix("%")
@@ -43,18 +43,18 @@ impl AddNoiseDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Type");
+                        ui.label(crate::t!("ui.type"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             let types = ["Uniform", "Gaussian", "Perlin"];
                             for (i, label) in types.iter().enumerate() {
                                 let btn = if self.noise_type_idx == i {
                                     egui::Button::new(
-                                        egui::RichText::new(*label).strong().size(11.0),
+                                        egui::RichText::new(crate::i18n::translate_english(label)).strong().size(11.0),
                                     )
                                     .fill(colors.accent_faint)
                                 } else {
-                                    egui::Button::new(egui::RichText::new(*label).size(11.0))
+                                    egui::Button::new(egui::RichText::new(crate::i18n::translate_english(label)).size(11.0))
                                 };
                                 if ui.add(btn).clicked() {
                                     self.noise_type_idx = i;
@@ -64,13 +64,13 @@ impl AddNoiseDialog {
                         });
                         ui.end_row();
 
-                        ui.label("Color");
-                        if ui.checkbox(&mut self.monochrome, "Monochrome").changed() {
+                        ui.label(crate::t!("keybind_category.color"));
+                        if ui.checkbox(&mut self.monochrome, crate::t!("ui.monochrome")).changed() {
                             changed = true;
                         }
                         ui.end_row();
 
-                        ui.label("Seed");
+                        ui.label(crate::t!("ui.seed"));
                         ui.horizontal(|ui| {
                             let mut seed_f = self.seed as f32;
                             if ui
@@ -95,13 +95,13 @@ impl AddNoiseDialog {
                     });
 
                 ui.add_space(4.0);
-                section_label(ui, &colors, "GRAIN CONTROL");
+                section_label(ui, &colors, &crate::t!("ui.grain_control"));
 
                 egui::Grid::new("noise_grain")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Scale");
+                        ui.label(crate::t!("dialog.resize_image.scale"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.scale, 0.5..=100.0)
                                 .suffix(" px")
@@ -115,7 +115,7 @@ impl AddNoiseDialog {
                         ui.end_row();
                         ui.label("");
                         ui.label(
-                            egui::RichText::new("Size of each noise grain (1 = single pixel)")
+                            egui::RichText::new(crate::t!("ui.size_of_each_noise_grain_1_single_pixel"))
                                 .size(10.0)
                                 .color(colors.text_muted),
                         );
@@ -123,7 +123,7 @@ impl AddNoiseDialog {
 
                         // Octaves only for Perlin
                         if self.noise_type_idx == 2 {
-                            ui.label("Octaves");
+                            ui.label(crate::t!("ui.octaves"));
                             let r = ui.add(
                                 egui::Slider::new(&mut self.octaves, 1.0..=8.0)
                                     .max_decimals(0)
@@ -135,7 +135,7 @@ impl AddNoiseDialog {
                             ui.end_row();
                             ui.label("");
                             ui.label(
-                                egui::RichText::new("More octaves = finer detail layers")
+                                egui::RichText::new(crate::t!("ui.more_octaves_finer_detail_layers"))
                                     .size(10.0)
                                     .color(colors.text_muted),
                             );
@@ -192,14 +192,14 @@ impl ReduceNoiseDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "DENOISE SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.denoise_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("denoise_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Strength");
+                        ui.label(crate::t!("ui.strength"));
                         let r = ui.add(
                             egui::Slider::new(&mut self.strength, 5.0..=100.0).max_decimals(0),
                         );
@@ -208,7 +208,7 @@ impl ReduceNoiseDialog {
                         }
                         ui.end_row();
 
-                        ui.label("Radius");
+                        ui.label(crate::t!("ui.radius"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.radius,
@@ -260,14 +260,14 @@ impl MedianDialog {
                     result = DialogResult::Cancel;
                 }
                 ui.add_space(4.0);
-                section_label(ui, &colors, "FILTER SETTINGS");
+                section_label(ui, &colors, &crate::t!("ui.filter_settings"));
 
                 let mut changed = false;
                 egui::Grid::new("median_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Radius");
+                        ui.label(crate::t!("ui.radius"));
                         if numeric_field_with_buttons(
                             ui,
                             &mut self.radius,

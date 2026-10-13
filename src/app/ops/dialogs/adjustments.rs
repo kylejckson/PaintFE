@@ -7,7 +7,7 @@ impl PaintFEApp {
 
         match dialog {
 
-            ActiveDialog::BrightnessContrast(dlg) => match dlg.show(ctx) {
+            ActiveDialog::BrightnessContrast(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     let brightness = dlg.brightness;
                     let contrast = dlg.contrast;
@@ -27,6 +27,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
                         let idx = dlg.layer_idx;
@@ -69,7 +70,7 @@ impl PaintFEApp {
             // ================================================================
             // HUE / SATURATION
             // ================================================================
-            ActiveDialog::HueSaturation(dlg) => match dlg.show(ctx) {
+            ActiveDialog::HueSaturation(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     let hue = dlg.hue;
                     let sat = dlg.saturation;
@@ -105,6 +106,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
                         let idx = dlg.layer_idx;
@@ -152,7 +154,7 @@ impl PaintFEApp {
             // ================================================================
             // EXPOSURE
             // ================================================================
-            ActiveDialog::Exposure(dlg) => match dlg.show(ctx) {
+            ActiveDialog::Exposure(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     let exposure = dlg.exposure;
                     let idx = dlg.layer_idx;
@@ -168,6 +170,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
                         let idx = dlg.layer_idx;
@@ -210,7 +213,7 @@ impl PaintFEApp {
             // ================================================================
             // HIGHLIGHTS / SHADOWS
             // ================================================================
-            ActiveDialog::HighlightsShadows(dlg) => match dlg.show(ctx) {
+            ActiveDialog::HighlightsShadows(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     let shadows = dlg.shadows;
                     let highlights = dlg.highlights;
@@ -228,6 +231,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
                         let idx = dlg.layer_idx;
@@ -270,7 +274,7 @@ impl PaintFEApp {
             // ================================================================
             // LEVELS
             // ================================================================
-            ActiveDialog::Levels(dlg) => match dlg.show(ctx) {
+            ActiveDialog::Levels(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     let res = dlg.as_result();
                     let idx = dlg.layer_idx;
@@ -289,6 +293,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
                         let idx = dlg.layer_idx;
@@ -331,7 +336,7 @@ impl PaintFEApp {
             // ================================================================
             // CURVES
             // ================================================================
-            ActiveDialog::Curves(dlg) => match dlg.show(ctx) {
+            ActiveDialog::Curves(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     let ch_data: [(&[(f32, f32)], bool); 5] = [
                         (&dlg.channels[0].points, dlg.channels[0].enabled),
@@ -353,6 +358,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
                         let idx = dlg.layer_idx;
@@ -395,7 +401,7 @@ impl PaintFEApp {
             // ================================================================
             // TEMPERATURE / TINT
             // ================================================================
-            ActiveDialog::TemperatureTint(dlg) => match dlg.show(ctx) {
+            ActiveDialog::TemperatureTint(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     let temperature = dlg.temperature;
                     let tint = dlg.tint;
@@ -413,6 +419,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
                         let idx = dlg.layer_idx;
@@ -452,7 +459,7 @@ impl PaintFEApp {
                 _ => {}
             },
 
-            ActiveDialog::Threshold(dlg) => match dlg.show(ctx) {
+            ActiveDialog::Threshold(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat
@@ -467,6 +474,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
                         let idx = dlg.layer_idx;
@@ -506,7 +514,7 @@ impl PaintFEApp {
                 _ => {}
             },
 
-            ActiveDialog::Posterize(dlg) => match dlg.show(ctx) {
+            ActiveDialog::Posterize(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat
@@ -521,6 +529,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
                         let idx = dlg.layer_idx;
@@ -560,7 +569,7 @@ impl PaintFEApp {
                 _ => {}
             },
 
-            ActiveDialog::ColorBalance(dlg) => match dlg.show(ctx) {
+            ActiveDialog::ColorBalance(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat
@@ -577,6 +586,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
                         let idx = dlg.layer_idx;
@@ -616,7 +626,7 @@ impl PaintFEApp {
                 _ => {}
             },
 
-            ActiveDialog::GradientMap(dlg) => match dlg.show(ctx) {
+            ActiveDialog::GradientMap(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     let idx = dlg.layer_idx;
                     let lut = dlg.build_lut();
@@ -632,6 +642,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
                         let idx = dlg.layer_idx;
@@ -671,7 +682,7 @@ impl PaintFEApp {
                 _ => {}
             },
 
-            ActiveDialog::BlackAndWhite(dlg) => match dlg.show(ctx) {
+            ActiveDialog::BlackAndWhite(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat
@@ -688,6 +699,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
                         let idx = dlg.layer_idx;
@@ -727,7 +739,7 @@ impl PaintFEApp {
                 _ => {}
             },
 
-            ActiveDialog::Vibrance(dlg) => match dlg.show(ctx) {
+            ActiveDialog::Vibrance(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
                     let idx = dlg.layer_idx;
                     if let Some(flat) = &dlg.original_flat
@@ -742,6 +754,7 @@ impl PaintFEApp {
                     }
                 }
                 DialogResult::Ok(_) => {
+                    crate::ui::dialogs::remember::mark_applied(ctx);
                     self.active_dialog = ActiveDialog::None;
                     if let Some(project) = self.active_project_mut() {
                         let idx = dlg.layer_idx;

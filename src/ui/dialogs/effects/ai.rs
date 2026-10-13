@@ -1,4 +1,5 @@
 pub struct RemoveBackgroundDialog {
+    pub model_profile: crate::ops::ai::ModelProfile,
     pub threshold: f32,
     pub edge_feather: f32,
     pub mask_expansion: i32,
@@ -9,6 +10,7 @@ pub struct RemoveBackgroundDialog {
 impl RemoveBackgroundDialog {
     pub fn new() -> Self {
         Self {
+            model_profile: crate::ops::ai::ModelProfile::Auto,
             threshold: 0.5,
             edge_feather: 0.0,
             mask_expansion: 0,
@@ -35,7 +37,18 @@ impl RemoveBackgroundDialog {
                 }
                 ui.add_space(4.0);
 
-                section_label(ui, &colors, "MASK SETTINGS");
+                ui.horizontal(|ui| {
+                    ui.label(crate::t!("ui.model_profile"));
+                    egui::ComboBox::from_id_salt("remove_bg_profile")
+                        .selected_text(crate::i18n::translate_english(self.model_profile.description()))
+                        .show_ui(ui, |ui| {
+                            for profile in crate::ops::ai::ModelProfile::ALL {
+                                ui.selectable_value(&mut self.model_profile, profile, crate::i18n::translate_english(profile.description()));
+                            }
+                        });
+                });
+                ui.label(egui::RichText::new(crate::t!("ui.if_automatic_cannot_identify_your_export_select_its_profile")).small().color(colors.text_muted));
+                section_label(ui, &colors, &crate::t!("ui.mask_settings"));
                 ui.add_space(2.0);
 
                 egui::Grid::new("remove_bg_grid")
@@ -43,7 +56,7 @@ impl RemoveBackgroundDialog {
                     .spacing([8.0, 4.0])
                     .show(ui, |ui| {
                         // Threshold
-                        ui.label(egui::RichText::new("Threshold").size(11.0));
+                        ui.label(egui::RichText::new(crate::t!("dialog.threshold")).size(11.0));
                         ui.horizontal(|ui| {
                             ui.add(
                                 egui::Slider::new(&mut self.threshold, 0.05..=0.95)
@@ -58,13 +71,13 @@ impl RemoveBackgroundDialog {
                         ui.label("");
                         ui.label(
                             egui::RichText::new(if self.threshold > 0.7 {
-                                "Aggressive \u{2014} removes more of the background"
+                                crate::t!("ui.aggressive_removes_more_of_the_background")
                             } else if self.threshold > 0.5 {
-                                "Strict \u{2014} only keeps confident foreground"
+                                crate::t!("ui.strict_only_keeps_confident_foreground")
                             } else if self.threshold > 0.3 {
-                                "Balanced \u{2014} standard cutoff"
+                                crate::t!("ui.balanced_standard_cutoff")
                             } else {
-                                "Conservative \u{2014} keeps more of the subject"
+                                crate::t!("ui.conservative_keeps_more_of_the_subject")
                             })
                             .size(9.5)
                             .color(colors.text_muted),
@@ -72,12 +85,12 @@ impl RemoveBackgroundDialog {
                         ui.end_row();
 
                         // Smooth edges
-                        ui.label(egui::RichText::new("Smooth Edges").size(11.0));
-                        ui.checkbox(&mut self.smooth_edges, "Soft alpha transitions");
+                        ui.label(egui::RichText::new(crate::t!("ui.smooth_edges")).size(11.0));
+                        ui.checkbox(&mut self.smooth_edges, crate::t!("ui.soft_alpha_transitions"));
                         ui.end_row();
 
                         // Fill holes
-                        ui.label(egui::RichText::new("Fill Holes").size(11.0));
+                        ui.label(egui::RichText::new(crate::t!("ui.fill_holes")).size(11.0));
                         ui.horizontal(|ui| {
                             let mut fill_val = self.fill_holes as i32;
                             ui.add(
@@ -93,9 +106,9 @@ impl RemoveBackgroundDialog {
                         ui.label("");
                         ui.label(
                             egui::RichText::new(if self.fill_holes > 0 {
-                                "Fills gaps inside the subject (nose, teeth, etc.)"
+                                crate::t!("ui.fills_gaps_inside_the_subject_nose_teeth_etc")
                             } else {
-                                "Off \u{2014} enable to fix holes in foreground"
+                                crate::t!("ui.off_enable_to_fix_holes_in_foreground")
                             })
                             .size(9.5)
                             .color(colors.text_muted),
@@ -103,7 +116,7 @@ impl RemoveBackgroundDialog {
                         ui.end_row();
 
                         // Edge feather
-                        ui.label(egui::RichText::new("Edge Feather").size(11.0));
+                        ui.label(egui::RichText::new(crate::t!("ui.edge_feather")).size(11.0));
                         ui.horizontal(|ui| {
                             ui.add(
                                 egui::Slider::new(&mut self.edge_feather, 0.0..=20.0)
@@ -116,7 +129,7 @@ impl RemoveBackgroundDialog {
                         ui.end_row();
 
                         // Mask expansion
-                        ui.label(egui::RichText::new("Mask Expansion").size(11.0));
+                        ui.label(egui::RichText::new(crate::t!("ui.mask_expansion")).size(11.0));
                         ui.horizontal(|ui| {
                             ui.add(
                                 egui::Slider::new(&mut self.mask_expansion, -10..=10)
@@ -130,11 +143,11 @@ impl RemoveBackgroundDialog {
                         ui.label("");
                         ui.label(
                             egui::RichText::new(if self.mask_expansion > 0 {
-                                "Expand: grows foreground mask outward"
+                                crate::t!("ui.expand_grows_foreground_mask_outward")
                             } else if self.mask_expansion < 0 {
-                                "Contract: shrinks foreground mask inward"
+                                crate::t!("ui.contract_shrinks_foreground_mask_inward")
                             } else {
-                                "No change to mask boundary"
+                                crate::t!("ui.no_change_to_mask_boundary")
                             })
                             .size(9.5)
                             .color(colors.text_muted),
@@ -144,11 +157,11 @@ impl RemoveBackgroundDialog {
 
                 accent_separator(ui, &colors);
 
-                section_label(ui, &colors, "PRESETS");
+                section_label(ui, &colors, &crate::t!("ui.presets"));
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     if ui
-                        .button(egui::RichText::new("Default").size(11.0))
+                        .button(egui::RichText::new(crate::t!("ui.default")).size(11.0))
                         .clicked()
                     {
                         self.threshold = 0.5;
@@ -158,7 +171,7 @@ impl RemoveBackgroundDialog {
                         self.fill_holes = 0;
                     }
                     if ui
-                        .button(egui::RichText::new("Portrait").size(11.0))
+                        .button(egui::RichText::new(crate::t!("ui.portrait")).size(11.0))
                         .clicked()
                     {
                         self.threshold = 0.5;
@@ -168,7 +181,7 @@ impl RemoveBackgroundDialog {
                         self.fill_holes = 8;
                     }
                     if ui
-                        .button(egui::RichText::new("Conservative").size(11.0))
+                        .button(egui::RichText::new(crate::t!("ui.conservative")).size(11.0))
                         .clicked()
                     {
                         self.threshold = 0.3;
@@ -178,7 +191,7 @@ impl RemoveBackgroundDialog {
                         self.fill_holes = 5;
                     }
                     if ui
-                        .button(egui::RichText::new("Aggressive").size(11.0))
+                        .button(egui::RichText::new(crate::t!("ui.aggressive")).size(11.0))
                         .clicked()
                     {
                         self.threshold = 0.7;
@@ -197,7 +210,7 @@ impl RemoveBackgroundDialog {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let run_btn = ui.add(
                             egui::Button::new(
-                                egui::RichText::new("\u{25B6} Run")
+                                egui::RichText::new(crate::t!("script.run"))
                                     .size(12.0)
                                     .color(contrast_text_color(colors.accent)),
                             )
@@ -207,6 +220,7 @@ impl RemoveBackgroundDialog {
                         );
                         if run_btn.clicked() {
                             result = DialogResult::Ok(crate::ops::ai::RemoveBgSettings {
+                                model_profile: self.model_profile,
                                 threshold: self.threshold,
                                 edge_feather: self.edge_feather,
                                 mask_expansion: self.mask_expansion,
