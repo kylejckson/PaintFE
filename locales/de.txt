@@ -1495,3 +1495,5 @@ ui.0_1_exceeds_256_256_and_will_be_scaled_down=⚠ {0}×{1} überschreitet 256×
 ui.0_1_more_waiting={0} · {1} weitere Wartezeiten
 ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=Das Bild hat die Größe {0} × {1} und ist damit größer als die aktuelle Leinwand ({2} × {3}). Wie möchten Sie fortfahren?
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=Das Bild in der Zwischenablage hat die Größe {0} × {1} und ist damit größer als die aktuelle Leinwand ({2} × {3}). Wie möchten Sie fortfahren?
+keybind.clear_selected_pixels=Ausgewählte Pixel löschen
+keybind.fill_selected_pixels=Ausgewählte Pixel füllen

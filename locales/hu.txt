@@ -1495,3 +1495,5 @@ ui.0_1_exceeds_256_256_and_will_be_scaled_down=⚠ A {0}×{1} meghaladja a 256×
 ui.0_1_more_waiting={0} · {1} még több várakozás
 ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=A kép mérete {0} × {1}, amely nagyobb, mint a jelenlegi vászon ({2} × {3}). Hogyan szeretne továbblépni?
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=A vágólap képe {0} × {1}, amely nagyobb, mint az aktuális vászon ({2} × {3}). Hogyan szeretne továbblépni?
+keybind.clear_selected_pixels=Kijelölt képpontok törlése
+keybind.fill_selected_pixels=Kijelölt képpontok kitöltése

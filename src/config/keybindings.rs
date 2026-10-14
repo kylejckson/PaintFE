@@ -174,6 +174,8 @@ pub enum BindableAction {
     Paste,
     SelectAll,
     Deselect,
+    ClearSelectedPixels,
+    FillSelectedPixels,
     FlattenLayers,
     // Canvas
     ResizeImage,
@@ -280,6 +282,8 @@ impl BindableAction {
             Self::Paste => t!("keybind.paste"),
             Self::SelectAll => t!("keybind.select_all"),
             Self::Deselect => t!("keybind.deselect"),
+            Self::ClearSelectedPixels => t!("keybind.clear_selected_pixels"),
+            Self::FillSelectedPixels => t!("keybind.fill_selected_pixels"),
             Self::FlattenLayers => t!("keybind.flatten_layers"),
             Self::ResizeImage => t!("keybind.resize_image"),
             Self::ResizeCanvas => t!("keybind.resize_canvas"),
@@ -380,6 +384,8 @@ impl BindableAction {
             | Self::Paste
             | Self::SelectAll
             | Self::Deselect
+            | Self::ClearSelectedPixels
+            | Self::FillSelectedPixels
             | Self::FlattenLayers => t!("keybind_category.edit"),
             Self::ResizeImage | Self::ResizeCanvas => t!("keybind_category.canvas"),
             Self::ViewZoomIn | Self::ViewZoomOut | Self::ViewFitToWindow | Self::ViewZoom100 => {
@@ -472,6 +478,8 @@ impl BindableAction {
             Paste,
             SelectAll,
             Deselect,
+            ClearSelectedPixels,
+            FillSelectedPixels,
             FlattenLayers,
             ResizeImage,
             ResizeCanvas,
@@ -589,6 +597,8 @@ impl Default for KeyBindings {
         map.insert(Paste, KeyCombo::ctrl_key(Key::V));
         map.insert(SelectAll, KeyCombo::ctrl_key(Key::A));
         map.insert(Deselect, KeyCombo::ctrl_key(Key::D));
+        map.insert(ClearSelectedPixels, KeyCombo::key(Key::Delete));
+        map.insert(FillSelectedPixels, KeyCombo::key(Key::Backspace));
         map.insert(FlattenLayers, KeyCombo::ctrl_shift_key(Key::F));
         // Canvas
         map.insert(ResizeImage, KeyCombo::ctrl_key(Key::R));
@@ -688,6 +698,8 @@ impl KeyBindings {
             "Paste" => Some(BindableAction::Paste),
             "SelectAll" => Some(BindableAction::SelectAll),
             "Deselect" => Some(BindableAction::Deselect),
+            "ClearSelectedPixels" => Some(BindableAction::ClearSelectedPixels),
+            "FillSelectedPixels" => Some(BindableAction::FillSelectedPixels),
             "FlattenLayers" => Some(BindableAction::FlattenLayers),
             "ResizeImage" => Some(BindableAction::ResizeImage),
             "ResizeCanvas" => Some(BindableAction::ResizeCanvas),
@@ -1113,5 +1125,52 @@ fn parse_key_name(s: &str) -> Option<egui::Key> {
         "F19" => Some(egui::Key::F19),
         "F20" => Some(egui::Key::F20),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod selection_binding_tests {
+    use super::*;
+    #[test]
+    fn selection_bindings_save_load_and_unbind_without_changing_deselect() {
+        let mut bindings = KeyBindings::default();
+        assert_eq!(
+            bindings.bindings[&BindableAction::ClearSelectedPixels],
+            KeyCombo::key(egui::Key::Delete)
+        );
+        assert_eq!(
+            bindings.bindings[&BindableAction::FillSelectedPixels],
+            KeyCombo::key(egui::Key::Backspace)
+        );
+        bindings.set(
+            BindableAction::ClearSelectedPixels,
+            KeyCombo::key(egui::Key::Backspace),
+        );
+        bindings.set(
+            BindableAction::FillSelectedPixels,
+            KeyCombo::modifiers_only(false, false, false),
+        );
+        let mut loaded = KeyBindings::default();
+        for line in bindings.to_config_lines() {
+            let (name, combo) = line
+                .strip_prefix("keybind.")
+                .unwrap()
+                .split_once('=')
+                .unwrap();
+            loaded.load_config_line(name, combo);
+        }
+        assert_eq!(
+            loaded.bindings[&BindableAction::ClearSelectedPixels],
+            KeyCombo::key(egui::Key::Backspace)
+        );
+        assert!(
+            !loaded
+                .bindings
+                .contains_key(&BindableAction::FillSelectedPixels)
+        );
+        assert_eq!(
+            loaded.bindings[&BindableAction::Deselect],
+            KeyCombo::ctrl_key(egui::Key::D)
+        );
     }
 }

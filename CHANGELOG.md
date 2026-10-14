@@ -6,6 +6,25 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.6] - 2026-10-14
+
+- Fixed background-removal edge contrast and faint transparency in solid areas.
+- Added editable shortcuts for clearing and filling selected pixels.
+- Simplified background-removal model settings, keeping automatic detection as the default.
+
+### Fixed
+
+- Restored BiRefNet and U²-Net edge contrast while keeping the IS-Net fixes. Corrected alpha rounding and kept the threshold at half opacity. Closes #162.
+- Stopped saved model-profile overrides from carrying into the next background-removal dialog. Manual overrides are tucked into a collapsible section.
+
+### Added
+
+- Added Clear Selected Pixels and Fill Selected Pixels to Preferences > Keybinds. Delete and Backspace remain the defaults, and both can be changed. Closes #164.
+
+### Build
+
+- Returned Microsoft Store packaging to manual submission. The release workflow provides a downloadable MSIX without uploading to Partner Center or requesting deployment approval.
+
 ## [1.4.5] - 2026-10-13
 
 - Show clear errors when an image cannot be opened.

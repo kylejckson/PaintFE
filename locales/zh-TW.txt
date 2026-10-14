@@ -1495,3 +1495,5 @@ ui.0_1_exceeds_256_256_and_will_be_scaled_down=⚠ {0}×{1} 超過256×256，將
 ui.0_1_more_waiting={0}·{1} 更多等待
 ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=影像為 {0} × {1}，大於目前畫布（{2} × {3}）。您想如何繼續？
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=剪貼簿影像為{0} × {1}，大於目前畫布（{2} × {3}）。您想如何繼續？
+keybind.clear_selected_pixels=清除選取的像素
+keybind.fill_selected_pixels=填滿選取的像素

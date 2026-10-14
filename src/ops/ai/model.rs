@@ -341,7 +341,7 @@ mod tests {
         );
         assert_eq!(
             default.pixels().map(|p| p[3]).collect::<Vec<_>>(),
-            [0, 63, 191, 255]
+            [0, 12, 243, 255]
         );
         let settings = RemoveBgSettings {
             threshold: 0.05,
@@ -350,6 +350,78 @@ mod tests {
         let low = postprocess_mask(&[0.0, 0.25, 0.75, 1.0], 2, 2, &image, &settings);
         assert_eq!(low.get_pixel(0, 0)[3], 0);
         assert_eq!(low.get_pixel(1, 1)[3], 255);
+    }
+    #[test]
+    fn mask_quantization_preserves_opaque_interiors_and_source_alpha() {
+        for profile in [
+            ModelProfile::BiRefNet,
+            ModelProfile::U2Net,
+            ModelProfile::ISNet,
+        ] {
+            let settings = RemoveBgSettings {
+                model_profile: profile,
+                ..Default::default()
+            };
+            let image = RgbaImage::from_pixel(3, 1, image::Rgba([10, 20, 30, 255]));
+            let result = postprocess_mask(&[0.0, 0.999, 1.0], 1, 3, &image, &settings);
+            assert_eq!(
+                result.pixels().map(|p| p[3]).collect::<Vec<_>>(),
+                [0, 255, 255]
+            );
+            for alpha in 0..=255 {
+                let image = RgbaImage::from_pixel(1, 1, image::Rgba([10, 20, 30, alpha]));
+                let result = postprocess_mask(&[1.0], 1, 1, &image, &settings);
+                assert_eq!(result.get_pixel(0, 0).0, [10, 20, 30, alpha]);
+            }
+        }
+    }
+
+    #[test]
+    fn edge_curve_keeps_threshold_at_half_opacity_across_slider_range() {
+        let image = RgbaImage::from_pixel(3, 1, image::Rgba([10, 20, 30, 255]));
+        for threshold in [0.05, 0.4, 0.5, 0.95] {
+            for profile in [
+                ModelProfile::BiRefNet,
+                ModelProfile::U2Net,
+                ModelProfile::ISNet,
+            ] {
+                let settings = RemoveBgSettings {
+                    threshold,
+                    model_profile: profile,
+                    ..Default::default()
+                };
+                let result = postprocess_mask(&[0.0, threshold, 1.0], 1, 3, &image, &settings);
+                assert_eq!(
+                    result.pixels().map(|p| p[3]).collect::<Vec<_>>(),
+                    [0, 128, 255]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn isnet_retains_soft_mask_while_other_models_keep_edge_contrast() {
+        let image = RgbaImage::from_pixel(3, 1, image::Rgba([10, 20, 30, 255]));
+        let settings = RemoveBgSettings {
+            model_profile: ModelProfile::ISNet,
+            ..Default::default()
+        };
+        let result = postprocess_mask(&[0.25, 0.5, 0.75], 1, 3, &image, &settings);
+        assert_eq!(
+            result.pixels().map(|p| p[3]).collect::<Vec<_>>(),
+            [64, 128, 191]
+        );
+        for profile in [ModelProfile::BiRefNet, ModelProfile::U2Net] {
+            let settings = RemoveBgSettings {
+                model_profile: profile,
+                ..settings.clone()
+            };
+            let result = postprocess_mask(&[0.25, 0.5, 0.75], 1, 3, &image, &settings);
+            assert_eq!(
+                result.pixels().map(|p| p[3]).collect::<Vec<_>>(),
+                [12, 128, 243]
+            );
+        }
     }
     #[test]
     fn profiles_use_distinct_normalization_and_keep_rectangular_shape() {

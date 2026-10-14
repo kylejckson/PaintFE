@@ -125,54 +125,47 @@ impl PaintFEApp {
             }
         }
 
-        // --- Paste Overlay Keyboard Shortcuts ---
-        // Delete/Backspace cancels paste overlay (same as Escape)
-        if self.paste_overlay.is_some() && !panel_keyboard_focus {
-            let delete_pressed = ctx.input(|i| i.key_pressed(egui::Key::Delete));
-            let backspace_pressed = ctx.input(|i| i.key_pressed(egui::Key::Backspace));
-            if delete_pressed || backspace_pressed {
+        let is_rebinding = self.settings_window.rebinding_action.is_some();
+        // Cancel a floating paste without also modifying the underlying selection.
+        let mut paste_cancelled = false;
+        if self.paste_overlay.is_some() && !modal_open && !panel_keyboard_focus && !is_rebinding {
+            paste_cancelled = ctx.input_mut(|i| {
+                let delete = i.consume_key(egui::Modifiers::NONE, egui::Key::Delete);
+                let backspace = i.consume_key(egui::Modifiers::NONE, egui::Key::Backspace);
+                delete || backspace
+            });
+            if paste_cancelled {
                 self.cancel_paste_overlay();
+                self.settings.keybindings.discard_pending_presses(ctx);
             }
         }
 
-        // --- Selection Keyboard Shortcuts ---
-        if !modal_open && !panel_keyboard_focus {
-            let delete_pressed = ctx.input(|i| i.key_pressed(egui::Key::Delete));
-            let backspace_pressed = ctx.input(|i| i.key_pressed(egui::Key::Backspace));
-
-            if delete_pressed {
-                if self.is_pointer_over_layers_panel {
-                    let project_idx = self.active_project_index;
-                    if let Some(project) = self.projects.get_mut(project_idx) {
-                        self.layers_panel.delete_active_layer_from_app(
-                            &mut project.canvas_state,
-                            &mut project.history,
-                        );
-                    }
-                } else {
-                    // Delete selected pixels (make transparent) on active layer
-                    let has_sel = self
-                        .active_project()
-                        .is_some_and(|p| p.canvas_state.has_selection());
-                    if has_sel {
-                        self.do_snapshot_op("Delete Selection", |s| {
-                            s.delete_selected_pixels();
-                        });
-                    }
+        if !modal_open && !panel_keyboard_focus && !is_rebinding && !paste_cancelled
+            && self.paste_overlay.is_none()
+        {
+            // Physical Delete retains its layer-panel context. Pixel actions
+            // elsewhere use the editable bindings, including on Mac keyboards.
+            let delete_layer = self.is_pointer_over_layers_panel
+                && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Delete));
+            if delete_layer {
+                let project_idx = self.active_project_index;
+                if let Some(project) = self.projects.get_mut(project_idx) {
+                    self.layers_panel.delete_active_layer_from_app(
+                        &mut project.canvas_state, &mut project.history,
+                    );
                 }
-            }
-
-            if backspace_pressed {
-                // Fill selected area with primary colour on active layer
-                let has_sel = self
-                    .active_project()
-                    .is_some_and(|p| p.canvas_state.has_selection());
-                if has_sel {
-                    let pc = self.colors_panel.get_primary_color();
-                    let fill = image::Rgba([pc.r(), pc.g(), pc.b(), pc.a()]);
-                    self.do_snapshot_op("Fill Selection", |s| {
-                        s.fill_selected_pixels(fill);
-                    });
+                self.settings.keybindings.discard_pending_presses(ctx);
+            } else {
+                let clear = self.settings.keybindings.is_pressed(ctx, BindableAction::ClearSelectedPixels);
+                let fill = self.settings.keybindings.is_pressed(ctx, BindableAction::FillSelectedPixels);
+                if self.active_project().is_some_and(|p| p.canvas_state.has_selection()) {
+                    if clear {
+                        self.do_snapshot_op("Delete Selection", |s| s.delete_selected_pixels());
+                    } else if fill {
+                        let pc = self.colors_panel.get_primary_color();
+                        let color = image::Rgba([pc.r(), pc.g(), pc.b(), pc.a()]);
+                        self.do_snapshot_op("Fill Selection", |s| s.fill_selected_pixels(color));
+                    }
                 }
             }
         }
@@ -185,7 +178,6 @@ impl PaintFEApp {
         //
         // Skip all shortcut processing while the settings window is waiting
         // for a keybind combo, so the rebinding handler sees the raw events.
-        let is_rebinding = self.settings_window.rebinding_action.is_some();
         if modal_open || is_rebinding || panel_keyboard_focus {
             self.settings.keybindings.discard_pending_presses(ctx);
         }

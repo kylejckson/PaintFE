@@ -1495,3 +1495,5 @@ ui.0_1_exceeds_256_256_and_will_be_scaled_down=⚠ {0}×{1} přesahuje 256×256 
 ui.0_1_more_waiting={0} · Ve frontě: {1}
 ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=Obrázek má rozměry {0} × {1} a přesahuje aktuální plátno ({2} × {3}). Jak chcete pokračovat?
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=Obrázek ze schránky má rozměry {0} × {1} a přesahuje aktuální plátno ({2} × {3}). Jak chcete pokračovat?
+keybind.clear_selected_pixels=Vymazat vybrané pixely
+keybind.fill_selected_pixels=Vyplnit vybrané pixely

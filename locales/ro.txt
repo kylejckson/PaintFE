@@ -1495,3 +1495,5 @@ ui.0_1_exceeds_256_256_and_will_be_scaled_down=⚠ {0}×{1} depășește 256×25
 ui.0_1_more_waiting={0} · În așteptare: {1}
 ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=Imaginea are dimensiunile {0} × {1} și depășește pânza curentă ({2} × {3}). Cum dorești să continui?
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=Imaginea din clipboard are dimensiunile {0} × {1} și depășește pânza curentă ({2} × {3}). Cum dorești să continui?
+keybind.clear_selected_pixels=Șterge pixelii selectați
+keybind.fill_selected_pixels=Umple pixelii selectați

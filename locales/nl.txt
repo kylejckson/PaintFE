@@ -1495,3 +1495,5 @@ ui.0_1_exceeds_256_256_and_will_be_scaled_down=⚠ {0}×{1} overschrijdt 256×25
 ui.0_1_more_waiting={0} · {1} nog meer wachten
 ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=De afbeelding is {0} × {1}, wat groter is dan het huidige canvas ({2} × {3}). Hoe zou je verder willen?
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=De klembordafbeelding is {0} × {1}, wat groter is dan het huidige canvas ({2} × {3}). Hoe zou je verder willen?
+keybind.clear_selected_pixels=Geselecteerde pixels wissen
+keybind.fill_selected_pixels=Geselecteerde pixels vullen

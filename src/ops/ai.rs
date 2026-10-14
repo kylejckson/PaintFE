@@ -23,7 +23,7 @@ pub struct RemoveBgSettings {
     pub model_profile: ModelProfile,
     /// Foreground probability threshold (0.0–1.0). Pixels with probability
     /// below this are considered background. Higher values remove more of
-    /// the subject. Default: 0.5 preserves the model's soft alpha.
+    /// the subject. Default: 0.5. IS-Net preserves soft alpha; BiRefNet/U²-Net use the established edge curve.
     pub threshold: f32,
     /// Edge feathering radius in pixels. Applies a Gaussian blur to the
     /// mask to soften hard edges. 0 = no feathering. Default: 0.0.
@@ -725,16 +725,30 @@ fn postprocess_mask(
         .iter()
         .map(|&prob| {
             if settings.smooth_edges {
-                // Smooth transition: remap probabilities around threshold
-                // using a steep sigmoid-like curve centered at threshold
-                // Default threshold preserves the model's soft alpha exactly.
                 let threshold = settings.threshold.clamp(0.001, 0.999);
-                let remapped = if prob < threshold {
+                let prob = prob.clamp(0.0, 1.0);
+                let remapped = if matches!(
+                    settings.model_profile,
+                    ModelProfile::Auto | ModelProfile::BiRefNet | ModelProfile::U2Net
+                ) {
+                    // Preserve the established edge contrast without its faint
+                    // background/foreground leakage at probability endpoints.
+                    let sigmoid = |v: f32| 1.0 / (1.0 + (-(v - threshold) * 12.0).exp());
+                    // Anchor each half separately so threshold still means
+                    // half opacity, even at the extreme slider settings.
+                    if prob < threshold {
+                        let low = sigmoid(0.0);
+                        0.5 * (sigmoid(prob) - low) / (0.5 - low)
+                    } else {
+                        0.5 + 0.5 * (sigmoid(prob) - 0.5) / (sigmoid(1.0) - 0.5)
+                    }
+                } else if prob < threshold {
+                    // IS-Net keeps the soft mask behavior fixed in 1.4.5.
                     prob / (2.0 * threshold)
                 } else {
                     0.5 + (prob - threshold) / (2.0 * (1.0 - threshold))
                 };
-                (remapped * 255.0).clamp(0.0, 255.0) as u8
+                (remapped * 255.0).round().clamp(0.0, 255.0) as u8
             } else {
                 // Hard cutoff at threshold
                 if prob >= settings.threshold {
@@ -789,9 +803,7 @@ fn postprocess_mask(
             let mask_val = resized_mask.get_pixel(x, y)[0];
             let pixel = output.get_pixel_mut(x, y);
             // Combine existing alpha with mask
-            let orig_alpha = pixel[3] as f32 / 255.0;
-            let mask_alpha = mask_val as f32 / 255.0;
-            pixel[3] = (orig_alpha * mask_alpha * 255.0).clamp(0.0, 255.0) as u8;
+            pixel[3] = ((u16::from(pixel[3]) * u16::from(mask_val) + 127) / 255) as u8;
         }
     }
 
@@ -1446,7 +1458,11 @@ fn remove_background_native(
             settings.smooth_edges,
             settings.fill_holes
         );
-        let result = postprocess_mask(&probabilities, out_h, out_w, input, settings);
+        let resolved_settings = RemoveBgSettings {
+            model_profile,
+            ..settings.clone()
+        };
+        let result = postprocess_mask(&probabilities, out_h, out_w, input, &resolved_settings);
 
         // -- Cleanup --
         eprintln!("[AI] Cleaning up ONNX resources...");

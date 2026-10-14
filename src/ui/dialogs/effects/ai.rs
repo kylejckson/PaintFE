@@ -37,6 +37,9 @@ impl RemoveBackgroundDialog {
                 }
                 ui.add_space(4.0);
 
+                // Automatic detection is the default. Overrides are deliberately
+                // kept out of remembered tool parameters and tucked away here.
+                ui.collapsing(crate::t!("ui.model_profile"), |ui| {
                 ui.horizontal(|ui| {
                     ui.label(crate::t!("ui.model_profile"));
                     egui::ComboBox::from_id_salt("remove_bg_profile")
@@ -48,6 +51,7 @@ impl RemoveBackgroundDialog {
                         });
                 });
                 ui.label(egui::RichText::new(crate::t!("ui.if_automatic_cannot_identify_your_export_select_its_profile")).small().color(colors.text_muted));
+                });
                 section_label(ui, &colors, &crate::t!("ui.mask_settings"));
                 ui.add_space(2.0);
 

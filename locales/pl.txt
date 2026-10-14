@@ -1495,3 +1495,5 @@ ui.0_1_exceeds_256_256_and_will_be_scaled_down=⚠ {0}×{1} przekracza 256×256 
 ui.0_1_more_waiting={0} · {1} dalsze oczekiwanie
 ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=Obraz ma rozmiar {0} × {1} i jest większy niż bieżące płótno ({2} × {3}). Jak chcesz kontynuować?
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=Obraz w schowku to {0} × {1} i jest większy niż bieżące płótno ({2} × {3}). Jak chcesz kontynuować?
+keybind.clear_selected_pixels=Wyczyść zaznaczone piksele
+keybind.fill_selected_pixels=Wypełnij zaznaczone piksele

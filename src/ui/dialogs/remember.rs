@@ -235,6 +235,18 @@ mod tests {
     use crate::ui::dialogs::RemoveBackgroundDialog;
 
     #[test]
+    fn old_saved_model_override_does_not_replace_automatic_detection() {
+        let mut dialog = ActiveDialog::RemoveBackground(RemoveBackgroundDialog::new());
+        dialog.restore_parameters(&serde_json::json!({"model_profile": "ISNet", "threshold": 0.4}));
+        if let ActiveDialog::RemoveBackground(d) = dialog {
+            assert_eq!(d.model_profile, crate::ops::ai::ModelProfile::Auto);
+            assert_eq!(d.threshold, 0.4);
+        } else {
+            panic!("Expected background dialog");
+        }
+    }
+
+    #[test]
     fn apply_cancel_reset_and_restart_keep_only_parameters() {
         let ctx = Context::default();
         let mut preferences = DialogPreferences::default();
@@ -365,7 +377,6 @@ crate::impl_dialog_parameters!(ColorRangeDialog {
     mode
 });
 crate::impl_dialog_parameters!(RemoveBackgroundDialog {
-    model_profile,
     threshold,
     edge_feather,
     mask_expansion,

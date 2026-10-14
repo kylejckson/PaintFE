@@ -133,6 +133,129 @@ fn app() -> PaintFEApp {
     app
 }
 
+fn selection_key(app: &mut PaintFEApp, ctx: &egui::Context, key: egui::Key) {
+    let _ = ctx.run_ui(
+        egui::RawInput {
+            events: vec![egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        },
+        |ui| {
+            app.update_runtime_input(ui.ctx());
+        },
+    );
+}
+
+#[test]
+fn selection_pixel_shortcuts_can_swap_backspace_and_delete_and_undo() {
+    use crate::config::keybindings::{BindableAction, KeyCombo};
+    let mut app = app();
+    let ctx = egui::Context::default();
+    app.projects[0].canvas_state.selection_all = true;
+    app.settings.keybindings.bindings.insert(
+        BindableAction::ClearSelectedPixels,
+        KeyCombo::key(egui::Key::Backspace),
+    );
+    app.settings.keybindings.bindings.insert(
+        BindableAction::FillSelectedPixels,
+        KeyCombo::key(egui::Key::Delete),
+    );
+    let original = app.projects[0].canvas_state.layers[0]
+        .pixels
+        .to_rgba_image();
+    selection_key(&mut app, &ctx, egui::Key::Backspace);
+    assert!(
+        app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image()
+            .pixels()
+            .all(|p| p[3] == 0)
+    );
+    assert_eq!(app.projects[0].history.undo_count(), 1);
+    assert!(app.projects[0].canvas_state.has_selection());
+    let project = &mut app.projects[0];
+    project.history.undo(&mut project.canvas_state);
+    assert_eq!(
+        project.canvas_state.layers[0].pixels.to_rgba_image(),
+        original
+    );
+    selection_key(&mut app, &ctx, egui::Key::Delete);
+    let primary = app.colors_panel.get_primary_color();
+    assert!(
+        app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image()
+            .pixels()
+            .all(|p| p.0 == [primary.r(), primary.g(), primary.b(), primary.a()])
+    );
+    assert_eq!(app.projects[0].history.undo_count(), 1);
+}
+
+#[test]
+fn selection_pixel_shortcuts_respect_modal_text_and_rebinding_focus() {
+    for mode in 0..3 {
+        let mut app = app();
+        let ctx = egui::Context::default();
+        app.projects[0].canvas_state.selection_all = true;
+        let original = app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image();
+        match mode {
+            0 => app.settings_window.open = true,
+            1 => app.settings_window.rebinding_action = Some(BindableAction::ClearSelectedPixels),
+            _ => {
+                let mut text = String::from("editing");
+                let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    ui.text_edit_singleline(&mut text).request_focus();
+                });
+                assert!(ctx.text_edit_focused());
+            }
+        }
+        selection_key(&mut app, &ctx, egui::Key::Delete);
+        assert_eq!(app.projects[0].history.undo_count(), 0);
+        assert_eq!(
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image(),
+            original
+        );
+    }
+}
+
+#[test]
+fn selection_pixel_shortcuts_keep_layer_delete_and_paste_cancel_separate() {
+    let mut app = app();
+    let ctx = egui::Context::default();
+    app.projects[0].canvas_state.selection_all = true;
+    let original = app.projects[0].canvas_state.layers[0]
+        .pixels
+        .to_rgba_image();
+    app.paste_overlay = Some(crate::ops::clipboard::PasteOverlay::new(
+        image::RgbaImage::from_pixel(2, 2, image::Rgba([255, 0, 0, 255])),
+        16,
+        16,
+    ));
+    selection_key(&mut app, &ctx, egui::Key::Backspace);
+    assert!(app.paste_overlay.is_none());
+    assert_eq!(app.projects[0].history.undo_count(), 0);
+    assert_eq!(
+        app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image(),
+        original
+    );
+    app.is_pointer_over_layers_panel = true;
+    selection_key(&mut app, &ctx, egui::Key::Delete);
+    // Delete over Layers performs a layer operation, not a pixel operation.
+    assert!(app.projects[0].canvas_state.layers.is_empty());
+    assert_eq!(app.projects[0].history.undo_count(), 1);
+}
+
 #[test]
 fn colors_resize_keeps_anchor_and_stays_stable_across_frames() {
     for snapping in [false, true] {
