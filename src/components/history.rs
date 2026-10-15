@@ -34,6 +34,22 @@ pub struct HistoryPresentation {
 mod refinement_tests {
     use super::*;
     #[test]
+    fn effects_and_selection_deletion_use_their_own_icons() {
+        for (name, icon) in [
+            ("Auto Levels", Icon::MenuColorAutoLevels),
+            ("Outline", Icon::MenuGenerateOutline),
+            ("Gaussian Blur", Icon::MenuFilterGaussian),
+            ("Canvas Border", Icon::MenuFilterCanvasBorder),
+            ("Delete Selection", Icon::Delete),
+        ] {
+            assert_eq!(
+                HistoryPresentation::fallback(name.into()).icon,
+                icon,
+                "{name}"
+            );
+        }
+    }
+    #[test]
     fn presentation_tracks_revert_and_redo_without_changing_commands() {
         let mut history = HistoryManager::new(20);
         let mut canvas = CanvasState::new(2, 2);
@@ -48,14 +64,98 @@ mod refinement_tests {
         assert_eq!(history.presentation_history()[0].icon, Icon::Fill);
         history.push(Box::new(MarkerCommand::new("Custom operation")));
         assert_eq!(history.redo_count(), 0);
-        assert_eq!(history.presentation_history()[0].icon, Icon::Undo);
+        assert_eq!(history.presentation_history()[0].icon, Icon::Settings);
     }
 }
 
 impl HistoryPresentation {
     fn fallback(title: String) -> Self {
         let lower = title.to_lowercase();
-        let icon = if lower.contains("eraser") {
+        let canonical: String = lower.chars().filter(|c| c.is_alphanumeric()).collect();
+        let operation_icon = match canonical.as_str() {
+            "180" => Some(Icon::MenuCanvasRotate180),
+            "90clockwise" => Some(Icon::MenuCanvasRotateCw),
+            "90counterclockwise" => Some(Icon::MenuCanvasRotateCcw),
+            "addlayer" => Some(Icon::NewLayer),
+            "addnoise" => Some(Icon::MenuFilterAddNoise),
+            "align" | "alignlayer" => Some(Icon::MenuCanvasAlign),
+            "autolevels" => Some(Icon::MenuColorAutoLevels),
+            "blackwhite" => Some(Icon::MenuColorDesaturate),
+            "bokehblur" => Some(Icon::MenuFilterBokeh),
+            "boxblur" => Some(Icon::MenuFilterBoxBlur),
+            "brightnesscontrast" => Some(Icon::MenuColorBrightness),
+            "bulgepinch" | "bulge" => Some(Icon::MenuFilterBulge),
+            "canvasborder" => Some(Icon::MenuFilterCanvasBorder),
+            "colorbalance" => Some(Icon::MenuColorBrightness),
+            "colorfilter" => Some(Icon::MenuFilterColorFilter),
+            "colortoalpha" => Some(Icon::MenuColorInvertAlpha),
+            "layertransform" => Some(Icon::MovePixels),
+            "medianfilter" => Some(Icon::MenuFilterMedian),
+            "pasteasnewlayer" => Some(Icon::MenuEditPasteLayer),
+            "rotate180deg" => Some(Icon::MenuCanvasRotate180),
+            "rotate90degcw" => Some(Icon::MenuCanvasRotateCw),
+            "rotate90degccw" => Some(Icon::MenuCanvasRotateCcw),
+            "contours" => Some(Icon::MenuGenerateContours),
+            "croptoselection" => Some(Icon::MenuCanvasCrop),
+            "crystallize" => Some(Icon::MenuFilterCrystallize),
+            "curves" => Some(Icon::MenuColorCurves),
+            "deletelayer" => Some(Icon::Delete),
+            "deleteselection" => Some(Icon::Delete),
+            "dents" => Some(Icon::MenuFilterDents),
+            "desaturate" => Some(Icon::MenuColorDesaturate),
+            "deselect" => Some(Icon::RectSelect),
+            "dropshadow" => Some(Icon::MenuGenerateShadow),
+            "duplicatelayer" => Some(Icon::Duplicate),
+            "exposure" => Some(Icon::MenuColorExposure),
+            "fillselection" => Some(Icon::Fill),
+            "flatten" => Some(Icon::Flatten),
+            "flattenalllayers" => Some(Icon::MenuCanvasFlatten),
+            "fliphorizontal" => Some(Icon::MenuCanvasFlipH),
+            "flipvertical" => Some(Icon::MenuCanvasFlipV),
+            "gaussianblur" => Some(Icon::MenuFilterGaussian),
+            "glow" => Some(Icon::MenuFilterGlow),
+            "gradientmap" => Some(Icon::MenuColorCurves),
+            "grid" => Some(Icon::MenuGenerateGrid),
+            "halftone" => Some(Icon::MenuFilterHalftone),
+            "highlightsshadows" => Some(Icon::MenuColorHighlights),
+            "huesaturation" => Some(Icon::MenuColorHsl),
+            "ink" => Some(Icon::MenuFilterInk),
+            "invertalpha" => Some(Icon::MenuColorInvertAlpha),
+            "invertcolors" => Some(Icon::MenuColorInvert),
+            "invertselection" => Some(Icon::MenuEditInvertSel),
+            "layermask" => Some(Icon::ToggleLayerMask),
+            "levels" => Some(Icon::MenuColorLevels),
+            "makeseamlesstexture" => Some(Icon::MenuFilterSeamless),
+            "median" => Some(Icon::MenuFilterMedian),
+            "merge" => Some(Icon::MergeDown),
+            "motionblur" => Some(Icon::MenuFilterMotionBlur),
+            "newlayer" => Some(Icon::NewLayer),
+            "oilpainting" => Some(Icon::MenuFilterOilPainting),
+            "outline" => Some(Icon::MenuGenerateOutline),
+            "pixelate" => Some(Icon::MenuFilterPixelate),
+            "pixeldrag" => Some(Icon::MenuFilterPixelDrag),
+            "posterize" => Some(Icon::MenuColorDesaturate),
+            "recovertransparency" => Some(Icon::MenuColorRecoverTransparency),
+            "reducenoise" => Some(Icon::MenuFilterReduceNoise),
+            "removebackground" => Some(Icon::MenuFilterRemoveBg),
+            "renamelayer" => Some(Icon::Rename),
+            "resizecanvas" => Some(Icon::MenuCanvasResize),
+            "resizeimage" => Some(Icon::MenuCanvasResize),
+            "rgbdisplace" => Some(Icon::MenuFilterRgbDisplace),
+            "selectall" => Some(Icon::RectSelect),
+            "sepiatone" => Some(Icon::MenuColorSepia),
+            "sharpen" => Some(Icon::MenuFilterSharpenItem),
+            "temperaturetint" => Some(Icon::MenuColorTemperature),
+            "threshold" => Some(Icon::MenuColorLevels),
+            "twist" => Some(Icon::MenuFilterTwist),
+            "vibrance" => Some(Icon::MenuColorHsl),
+            "vignette" => Some(Icon::MenuFilterVignette),
+            "zoomblur" => Some(Icon::MenuFilterZoomBlur),
+            _ => None,
+        };
+        let icon = if let Some(icon) = operation_icon {
+            icon
+        } else if lower.contains("eraser") {
             Icon::Eraser
         } else if lower.contains("pencil") {
             Icon::Pencil
@@ -88,7 +188,7 @@ impl HistoryPresentation {
         } else if lower.contains("brush") || lower.contains("stroke") {
             Icon::Brush
         } else {
-            Icon::Undo
+            Icon::Settings
         };
         Self {
             title,

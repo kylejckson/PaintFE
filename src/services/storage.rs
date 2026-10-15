@@ -100,6 +100,13 @@ impl Storage {
         let mut files = Vec::new();
         collect_files(&self.settings_path(), &target.settings_path(), &mut files)?;
         collect_files(&self.log_path(), &target.log_path(), &mut files)?;
+        collect_files(
+            &self.data_dir().join(super::file_dialogs::HISTORY_FILE_NAME),
+            &target
+                .data_dir()
+                .join(super::file_dialogs::HISTORY_FILE_NAME),
+            &mut files,
+        )?;
         for name in ["autosave", "scripts", "effects", "plugins"] {
             collect_files(
                 &self.data_dir().join(name),
@@ -519,6 +526,11 @@ mod tests {
     #[test]
     fn migration_preserves_sources_and_copies_all_owned_data() {
         let f = Fixture::new();
+        let picker_history = super::super::file_dialogs::HISTORY_FILE_NAME;
+        f.write(
+            &f.storage.data_dir().join(picker_history),
+            br#"{"themes":"C:/Themes"}"#,
+        );
         f.write(
             &f.storage.settings_path(),
             b"middle_click_close_tabs=false\n",
@@ -533,6 +545,10 @@ mod tests {
         f.storage.migrate(true, false).unwrap();
         assert!(f.storage.settings_path().exists());
         let target = f.storage.target(true);
+        assert_eq!(
+            std::fs::read(target.data_dir().join(picker_history)).unwrap(),
+            br#"{"themes":"C:/Themes"}"#
+        );
         for name in ["autosave", "scripts", "effects", "plugins"] {
             assert_eq!(
                 std::fs::read(target.data_dir().join(name).join("owned")).unwrap(),

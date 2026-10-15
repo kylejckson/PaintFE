@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=Від
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=Відарыс з буфера абмену памерам {0} × {1} перавышае памер бягучага палатна ({2} × {3}). Як працягнуць?
 keybind.clear_selected_pixels=Ачысціць вылучаныя пікселі
 keybind.fill_selected_pixels=Запоўніць вылучаныя пікселі
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape здымае вылучэнне
+settings.interface.tools_show_colors=Паказваць элементы кіравання колерам на панэлі інструментаў
+settings.interface.tool_options=Панэль параметраў інструмента
+settings.interface.floating=Плаваючая
+settings.interface.docked=Замацаваная
+settings.interface.bar_opacity=Непразрыстасць фону
+settings.interface.bar_spacing=Водступы
+settings.interface.bar_top=Водступ зверху
+settings.interface.bar_link_sides=Звязаць левы і правы водступы
+settings.interface.bar_left=Водступ злева
+settings.interface.bar_right=Водступ справа
+settings.interface.bar_padding_x=Унутраны водступ па гарызанталі
+settings.interface.bar_padding_y=Унутраны водступ па вертыкалі
+settings.interface.bar_radius=Радыус кутоў

@@ -2,29 +2,28 @@ impl PaintFEApp {
     fn update_runtime_input(&mut self, ctx: &egui::Context) -> bool {
         let ui_blocks_canvas_input = self.ui_pointer_capture_active;
         // Keep editing/navigation keys with focused panel text and numeric fields.
-        let panel_keyboard_focus = (self.window_visibility.colors
-            && self.colors_panel.is_hex_editing())
+        let escape_event = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        let (previous_field, previous_popup) = ctx
+            .data(|d| {
+                d.get_temp::<(Option<egui::Id>, bool)>(egui::Id::new("paintfe_keyboard_owners"))
+            })
+            .unwrap_or_default();
+        let escaped_field = escape_event
+            && previous_field.is_some_and(|id| ctx.memory(|m| m.had_focus_last_frame(id)));
+        let panel_keyboard_focus = escaped_field
+            || (self.window_visibility.colors && self.colors_panel.is_hex_editing())
             || (ctx.text_edit_focused()
                 && ctx
                     .memory(|m| m.focused())
                     .is_some_and(|id| Some(id) != self.canvas.canvas_widget_id));
 
         // Determine if a modal dialog is open — block all shortcuts and canvas interaction.
-        #[cfg(target_arch = "wasm32")]
-        let welcome_open = self.show_welcome_popup;
-        #[cfg(not(target_arch = "wasm32"))]
-        let welcome_open = false;
-        let modal_open = self.filter_error.is_some()
-            || welcome_open
-            || self.settings_window.open
-            || self.save_file_dialog.open
-            || self.new_file_dialog.open
-            || !matches!(self.active_dialog, ActiveDialog::None)
-            || self.pending_paste_request.is_some()
-            || !self.pending_import_queue.is_empty()
-            || self.pending_oversized_import.is_some()
-            || self.pending_exit
-            || self.pending_close_index.is_some();
+        let modal_open = self.document_modal_open();
+        let popup_open = egui::Popup::is_any_open(ctx) || (escape_event && previous_popup);
+        let escape_operation = self.move_sel_dragging
+            || self.paste_overlay.is_some()
+            || self.straighten_session.is_some()
+            || self.tools_panel.has_escape_operation();
 
         let global_probe = ctx.input(|i| {
             let cmd = i.modifiers.ctrl || i.modifiers.command;
@@ -74,9 +73,18 @@ impl PaintFEApp {
         let mut free_amount = 0.0f32;
         let pointer_over_widget = egui::Popup::is_any_open(ctx)
             || self.pointer_over_cursor_blocking_ui(ctx)
+            || (modal_open
+                && ctx.input(|i| i.pointer.hover_pos()).is_some_and(|pos| {
+                    ctx.layer_id_at(pos).is_some_and(|layer| {
+                        layer.order != egui::Order::Background
+                            && ctx
+                                .memory(|m| m.area_rect(layer.id))
+                                .is_some_and(|rect| rect.contains(pos))
+                    })
+                }))
             || ui_blocks_canvas_input;
 
-        if !modal_open {
+        {
             ctx.input_mut(|i| {
                 let mouse_over_canvas = i.pointer.hover_pos().is_some_and(|pos| {
                     self.canvas
@@ -140,7 +148,10 @@ impl PaintFEApp {
             }
         }
 
-        if !modal_open && !panel_keyboard_focus && !is_rebinding && !paste_cancelled
+        if !modal_open
+            && !panel_keyboard_focus
+            && !is_rebinding
+            && !paste_cancelled
             && self.paste_overlay.is_none()
         {
             // Physical Delete retains its layer-panel context. Pixel actions
@@ -151,14 +162,24 @@ impl PaintFEApp {
                 let project_idx = self.active_project_index;
                 if let Some(project) = self.projects.get_mut(project_idx) {
                     self.layers_panel.delete_active_layer_from_app(
-                        &mut project.canvas_state, &mut project.history,
+                        &mut project.canvas_state,
+                        &mut project.history,
                     );
                 }
                 self.settings.keybindings.discard_pending_presses(ctx);
             } else {
-                let clear = self.settings.keybindings.is_pressed(ctx, BindableAction::ClearSelectedPixels);
-                let fill = self.settings.keybindings.is_pressed(ctx, BindableAction::FillSelectedPixels);
-                if self.active_project().is_some_and(|p| p.canvas_state.has_selection()) {
+                let clear = self
+                    .settings
+                    .keybindings
+                    .is_pressed(ctx, BindableAction::ClearSelectedPixels);
+                let fill = self
+                    .settings
+                    .keybindings
+                    .is_pressed(ctx, BindableAction::FillSelectedPixels);
+                if self
+                    .active_project()
+                    .is_some_and(|p| p.canvas_state.has_selection())
+                {
                     if clear {
                         self.do_snapshot_op("Delete Selection", |s| s.delete_selected_pixels());
                     } else if fill {
@@ -603,6 +624,7 @@ impl PaintFEApp {
             }
             // Escape — Cancel paste (not rebindable)
             if (ctx.input(|i| i.key_pressed(egui::Key::Escape)) || escape_vk_edge)
+                && !popup_open
                 && self.paste_overlay.is_some()
             {
                 self.cancel_paste_overlay();
@@ -629,7 +651,7 @@ impl PaintFEApp {
                         key: egui::Key::Escape,
                         pressed: true,
                         ..
-                    } if !consumed_escape => {
+                    } if !consumed_escape && !popup_open => {
                         escape = true;
                         consumed_escape = true;
                         false
@@ -661,8 +683,39 @@ impl PaintFEApp {
                     }
                 }
             }
-            if enter_or_escape.1 || escape_poll_edge || escape_vk_edge {
-                self.tools_panel.injected_escape_pressed = true;
+            if !popup_open && (enter_or_escape.1 || escape_poll_edge || escape_vk_edge) {
+                // Idle selection clearing belongs to the app, not individual tools.
+                self.tools_panel.injected_escape_pressed = escape_operation;
+                if let Some(project) = self.projects.get_mut(self.active_project_index) {
+                    self.tools_panel.cancel_line_preview(
+                        &mut project.canvas_state,
+                        ctx.input(|i| i.pointer.primary_down()),
+                    );
+                }
+                if self.move_sel_dragging {
+                    let before = self.move_sel_start_mask.take();
+                    if let Some(project) = self.active_project_mut() {
+                        project.canvas_state.selection_mask = before;
+                        project.canvas_state.selection_transform_preview_bounds = None;
+                        project.canvas_state.invalidate_selection_overlay();
+                        project.canvas_state.mark_dirty(None);
+                    }
+                    self.move_sel_dragging = false;
+                    self.move_sel_last_canvas = None;
+                    self.move_sel_handle = None;
+                    self.move_sel_start_bounds = None;
+                    self.move_sel_preserved_ratio = None;
+                    self.move_sel_ratio_lock_active = false;
+                }
+                if self.straighten_session.is_some() {
+                    self.cancel_straighten();
+                }
+                if !escape_operation
+                    && self.settings.escape_deselect
+                    && ctx.input(|i| i.modifiers.is_none())
+                {
+                    self.clear_selection_with_history();
+                }
                 if self.tools_panel.active_tool == crate::components::tools::Tool::MeshWarp
                     && self.tools_panel.mesh_warp_state.is_active
                 {
@@ -809,19 +862,8 @@ impl PaintFEApp {
                     self.tools_panel.liquify_state.commit_pending_frame = 0;
                 }
             }
-            if deselect_pressed && let Some(project) = self.active_project_mut() {
-                let sel_before = project.canvas_state.selection_mask.clone();
-                let sel_before_all = project.canvas_state.selection_all;
-                project.canvas_state.clear_selection();
-                if sel_before.is_some() || sel_before_all {
-                    project.history.push(Box::new(SelectionCommand::new_states(
-                        "Deselect",
-                        sel_before,
-                        sel_before_all,
-                        None,
-                        false,
-                    )));
-                }
+            if deselect_pressed {
+                self.clear_selection_with_history();
             }
 
             // Arrow keys — Move paste overlay (not rebindable)
@@ -1652,6 +1694,10 @@ impl PaintFEApp {
             }
         }
 
+        // Consume native Escape edges even while a dialog or text field owns the key.
+        // Otherwise its closing press could be replayed as deselection next frame.
+        self.prev_escape_down = global_probe.5;
+        self.prev_vk_escape_press_count = vk_probe.escape_press_count;
         modal_open
     }
 
@@ -1913,5 +1959,34 @@ impl PaintFEApp {
         let mut out = image::GrayImage::from_pixel(cw, ch, image::Luma([0u8]));
         imageops::overlay(&mut out, &resized, left as i64, top as i64);
         out
+    }
+}
+
+impl PaintFEApp {
+    fn clear_selection_with_history(&mut self) {
+        self.tools_panel.clear_selection_tool_session();
+        if let Some(project) = self.active_project_mut() {
+            let before = project.canvas_state.selection_mask.clone();
+            let before_all = project.canvas_state.selection_all;
+            if before.is_some() || before_all {
+                project.canvas_state.clear_selection();
+                project.history.push(Box::new(SelectionCommand::new_states(
+                    "Deselect", before, before_all, None, false,
+                )));
+            }
+        }
+    }
+}
+
+impl PaintFEApp {
+    fn remember_keyboard_owners(&self, ctx: &egui::Context) {
+        let field = if ctx.text_edit_focused() {
+            ctx.memory(|m| m.focused())
+                .filter(|id| Some(*id) != self.canvas.canvas_widget_id)
+        } else {
+            None
+        };
+        let popup = egui::Popup::is_any_open(ctx);
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("paintfe_keyboard_owners"), (field, popup)));
     }
 }

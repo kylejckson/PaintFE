@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=Das Bi
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=Das Bild in der Zwischenablage hat die Größe {0} × {1} und ist damit größer als die aktuelle Leinwand ({2} × {3}). Wie möchten Sie fortfahren?
 keybind.clear_selected_pixels=Ausgewählte Pixel löschen
 keybind.fill_selected_pixels=Ausgewählte Pixel füllen
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape hebt die Auswahl auf
+settings.interface.tools_show_colors=Farbsteuerung im Werkzeugfenster anzeigen
+settings.interface.tool_options=Werkzeugoptionsleiste
+settings.interface.floating=Schwebend
+settings.interface.docked=Angedockt
+settings.interface.bar_opacity=Hintergrunddeckkraft
+settings.interface.bar_spacing=Abstände
+settings.interface.bar_top=Abstand oben
+settings.interface.bar_link_sides=Linken und rechten Abstand koppeln
+settings.interface.bar_left=Abstand links
+settings.interface.bar_right=Abstand rechts
+settings.interface.bar_padding_x=Horizontaler Innenabstand
+settings.interface.bar_padding_y=Vertikaler Innenabstand
+settings.interface.bar_radius=Eckenradius

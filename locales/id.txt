@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=Gambar
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=Gambar clipboard adalah {0} × {1}, yang lebih besar dari kanvas saat ini ({2} × {3}). Bagaimana Anda ingin melanjutkan?
 keybind.clear_selected_pixels=Hapus Piksel Terpilih
 keybind.fill_selected_pixels=Isi Piksel Terpilih
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape membatalkan seleksi
+settings.interface.tools_show_colors=Tampilkan kontrol warna di panel Alat
+settings.interface.tool_options=Bilah opsi alat
+settings.interface.floating=Mengambang
+settings.interface.docked=Ditambatkan
+settings.interface.bar_opacity=Opasitas latar belakang
+settings.interface.bar_spacing=Jarak dan ruang dalam
+settings.interface.bar_top=Jarak atas
+settings.interface.bar_link_sides=Tautkan jarak kiri dan kanan
+settings.interface.bar_left=Jarak kiri
+settings.interface.bar_right=Jarak kanan
+settings.interface.bar_padding_x=Ruang dalam horizontal
+settings.interface.bar_padding_y=Ruang dalam vertikal
+settings.interface.bar_radius=Radius sudut

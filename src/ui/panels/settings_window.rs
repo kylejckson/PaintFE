@@ -1053,6 +1053,68 @@ impl SettingsWindow {
         settings.save();
     }
 
+    /// Keep native slider keyboard support while painting the app's triangular handle.
+    fn tool_shelf_slider(
+        ui: &mut egui::Ui,
+        value: &mut f32,
+        max: f32,
+        label: &str,
+        suffix: &str,
+    ) -> bool {
+        let before = *value;
+        ui.horizontal(|ui| {
+            ui.add_sized([180.0, 22.0], egui::Label::new(label).wrap());
+            let response = ui
+                .scope(|ui| {
+                    let widgets = &mut ui.visuals_mut().widgets;
+                    for visual in [
+                        &mut widgets.inactive,
+                        &mut widgets.hovered,
+                        &mut widgets.active,
+                    ] {
+                        visual.fg_stroke = egui::Stroke::NONE;
+                        visual.expansion = 0.0;
+                    }
+                    ui.add(
+                        egui::Slider::new(value, 0.0..=max)
+                            .show_value(false)
+                            .handle_shape(egui::style::HandleShape::Rect { aspect_ratio: 0.0 }),
+                    )
+                })
+                .inner;
+            response
+                .widget_info(|| egui::WidgetInfo::slider(ui.is_enabled(), *value as f64, label));
+            if ui.is_rect_visible(response.rect) {
+                let x = egui::lerp(response.rect.x_range(), (*value / max).clamp(0.0, 1.0));
+                let y = response.rect.center().y;
+                let visual = ui.style().interact(&response);
+                ui.painter().add(egui::Shape::convex_polygon(
+                    vec![
+                        egui::pos2(x - 5.0, y - 5.0),
+                        egui::pos2(x + 5.0, y - 5.0),
+                        egui::pos2(x, y + 5.0),
+                    ],
+                    visual.bg_fill,
+                    visual.fg_stroke,
+                ));
+            }
+            if ui.small_button("−").clicked() {
+                *value = (*value - 1.0).max(0.0);
+            }
+            ui.add(
+                crate::ui::numeric::Numeric::new(value)
+                    .range(0.0..=max)
+                    .speed(0.5)
+                    .max_decimals(1)
+                    .suffix(suffix),
+            );
+            if ui.small_button("+").clicked() {
+                *value = (*value + 1.0).min(max);
+            }
+        });
+        *value != before
+    }
+
     // -- Interface Tab ----------------------------------------------
     fn show_interface_tab(
         &mut self,
@@ -1096,6 +1158,125 @@ impl SettingsWindow {
             .changed()
         {
             settings.save();
+        }
+        ui.add_space(8.0);
+
+        let mut layout_changed = false;
+        layout_changed |= ui
+            .checkbox(
+                &mut settings.escape_deselect,
+                t!("settings.interface.escape_deselect"),
+            )
+            .changed();
+        layout_changed |= ui
+            .checkbox(
+                &mut settings.tools_show_colors,
+                t!("settings.interface.tools_show_colors"),
+            )
+            .changed();
+        Self::section_header(ui, &t!("settings.interface.tool_options"));
+        ui.horizontal(|ui| {
+            layout_changed |= ui
+                .selectable_value(
+                    &mut settings.tool_shelf.docked,
+                    false,
+                    t!("settings.interface.floating"),
+                )
+                .changed();
+            layout_changed |= ui
+                .selectable_value(
+                    &mut settings.tool_shelf.docked,
+                    true,
+                    t!("settings.interface.docked"),
+                )
+                .changed();
+            if ui.button("↺").clicked() {
+                settings.tool_shelf = Default::default();
+                settings.tool_shelf_rounding = None;
+                layout_changed = true;
+            }
+        });
+        let mut opacity = settings.tool_shelf.effective_opacity() * 100.0;
+        if Self::tool_shelf_slider(
+            ui,
+            &mut opacity,
+            100.0,
+            &t!("settings.interface.bar_opacity"),
+            "%",
+        ) {
+            settings.tool_shelf.opacity = Some(opacity / 100.0);
+            layout_changed = true;
+        }
+        let mut rounding = settings
+            .tool_shelf_rounding
+            .unwrap_or(if settings.tool_shelf.docked {
+                0.0
+            } else {
+                theme.tool_shelf_rounding
+            });
+        if Self::tool_shelf_slider(
+            ui,
+            &mut rounding,
+            24.0,
+            &t!("settings.interface.bar_radius"),
+            " px",
+        ) {
+            settings.tool_shelf_rounding = Some(rounding);
+            layout_changed = true;
+        }
+        ui.collapsing(t!("settings.interface.bar_spacing"), |ui| {
+            // Docked bars attach directly to the toolbar; their floating margins are retained.
+            ui.add_enabled_ui(!settings.tool_shelf.docked, |ui| {
+                layout_changed |= Self::tool_shelf_slider(
+                    ui,
+                    &mut settings.tool_shelf.top,
+                    64.0,
+                    &t!("settings.interface.bar_top"),
+                    " px",
+                );
+                layout_changed |= ui
+                    .checkbox(
+                        &mut settings.tool_shelf.link_sides,
+                        t!("settings.interface.bar_link_sides"),
+                    )
+                    .changed();
+                layout_changed |= Self::tool_shelf_slider(
+                    ui,
+                    &mut settings.tool_shelf.left,
+                    64.0,
+                    &t!("settings.interface.bar_left"),
+                    " px",
+                );
+                ui.add_enabled_ui(!settings.tool_shelf.link_sides, |ui| {
+                    layout_changed |= Self::tool_shelf_slider(
+                        ui,
+                        &mut settings.tool_shelf.right,
+                        64.0,
+                        &t!("settings.interface.bar_right"),
+                        " px",
+                    );
+                });
+            });
+            layout_changed |= Self::tool_shelf_slider(
+                ui,
+                &mut settings.tool_shelf.padding_x,
+                32.0,
+                &t!("settings.interface.bar_padding_x"),
+                " px",
+            );
+            layout_changed |= Self::tool_shelf_slider(
+                ui,
+                &mut settings.tool_shelf.padding_y,
+                32.0,
+                &t!("settings.interface.bar_padding_y"),
+                " px",
+            );
+        });
+        if layout_changed {
+            settings.tool_shelf.normalize();
+            self.dirty = true;
+            settings.save();
+            ctx.request_repaint();
         }
         ui.add_space(8.0);
 
@@ -2090,11 +2271,18 @@ impl SettingsWindow {
                     ));
                 }
                 #[cfg(not(target_arch = "wasm32"))]
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter(crate::t!("ui.paintfe_theme"), &["paintfe-theme"])
-                    .set_file_name("my_theme.paintfe-theme")
-                    .save_file()
+                if let Some(path) = crate::services::file_dialogs::dialog(
+                    crate::services::file_dialogs::Purpose::Themes,
+                    None,
+                )
+                .add_filter(crate::t!("ui.paintfe_theme"), &["paintfe-theme"])
+                .set_file_name("my_theme.paintfe-theme")
+                .save_file()
                 {
+                    crate::services::file_dialogs::remember(
+                        crate::services::file_dialogs::Purpose::Themes,
+                        &path,
+                    );
                     match std::fs::write(&path, &theme_str) {
                         Ok(()) => {
                             self.theme_status = Some((
@@ -2117,10 +2305,17 @@ impl SettingsWindow {
             }
             #[cfg(not(target_arch = "wasm32"))]
             if ui.button(t!("settings.interface.import_theme")).clicked()
-                && let Some(path) = rfd::FileDialog::new()
-                    .add_filter(crate::t!("ui.paintfe_theme"), &["paintfe-theme"])
-                    .pick_file()
+                && let Some(path) = crate::services::file_dialogs::dialog(
+                    crate::services::file_dialogs::Purpose::Themes,
+                    None,
+                )
+                .add_filter(crate::t!("ui.paintfe_theme"), &["paintfe-theme"])
+                .pick_file()
             {
+                crate::services::file_dialogs::remember(
+                    crate::services::file_dialogs::Purpose::Themes,
+                    &path,
+                );
                 match std::fs::read_to_string(&path) {
                     Ok(content) => {
                         settings.import_theme_from_string(&content);
@@ -2554,12 +2749,19 @@ impl SettingsWindow {
             );
             #[cfg(not(target_arch = "wasm32"))]
             if ui.button("\u{1F4C2}").clicked()
-                && let Some(path) = rfd::FileDialog::new()
-                    .add_filter(crate::t!("ui.dynamic_library"), &["dll", "so", "dylib"])
-                    // Package-managed Linux libraries may end in `.so.1.23.2`.
-                    .add_filter(crate::t!("ui.all_files"), &["*"])
-                    .pick_file()
+                && let Some(path) = crate::services::file_dialogs::dialog(
+                    crate::services::file_dialogs::Purpose::Runtime,
+                    Some(std::path::Path::new(&self.staged_onnx_path)),
+                )
+                .add_filter(crate::t!("ui.dynamic_library"), &["dll", "so", "dylib"])
+                // Package-managed Linux libraries may end in `.so.1.23.2`.
+                .add_filter(crate::t!("ui.all_files"), &["*"])
+                .pick_file()
             {
+                crate::services::file_dialogs::remember(
+                    crate::services::file_dialogs::Purpose::Runtime,
+                    &path,
+                );
                 self.staged_onnx_path = path.display().to_string();
                 self.onnx_probe_result = None;
             }
@@ -2642,10 +2844,17 @@ impl SettingsWindow {
             );
             #[cfg(not(target_arch = "wasm32"))]
             if ui.button("\u{1F4C2}").clicked()
-                && let Some(path) = rfd::FileDialog::new()
-                    .add_filter(crate::t!("ui.onnx_model"), &["onnx"])
-                    .pick_file()
+                && let Some(path) = crate::services::file_dialogs::dialog(
+                    crate::services::file_dialogs::Purpose::Model,
+                    Some(std::path::Path::new(&self.staged_model_path)),
+                )
+                .add_filter(crate::t!("ui.onnx_model"), &["onnx"])
+                .pick_file()
             {
+                crate::services::file_dialogs::remember(
+                    crate::services::file_dialogs::Purpose::Model,
+                    &path,
+                );
                 self.staged_model_path = path.display().to_string();
             }
         });

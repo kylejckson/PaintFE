@@ -1,3 +1,23 @@
+impl PaintFEApp {
+    fn document_modal_open(&self) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        let welcome_open = self.show_welcome_popup;
+        #[cfg(not(target_arch = "wasm32"))]
+        let welcome_open = false;
+        self.filter_error.is_some()
+            || welcome_open
+            || self.settings_window.open
+            || self.save_file_dialog.open
+            || self.new_file_dialog.open
+            || !matches!(self.active_dialog, ActiveDialog::None)
+            || self.pending_paste_request.is_some()
+            || !self.pending_import_queue.is_empty()
+            || self.pending_oversized_import.is_some()
+            || self.pending_exit
+            || self.pending_close_index.is_some()
+    }
+}
+
 impl eframe::App for PaintFEApp {
     fn raw_input_hook(&mut self, ctx: &egui::Context, input: &mut egui::RawInput) {
         #[cfg(target_os = "windows")]

@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=이미
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=클립보드 이미지는 {0} × {1}로 현재 캔버스({2} × {3})보다 큽니다. 어떻게 진행하시겠습니까?
 keybind.clear_selected_pixels=선택한 픽셀 지우기
 keybind.fill_selected_pixels=선택한 픽셀 채우기
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape로 선택 해제
+settings.interface.tools_show_colors=도구 패널에 색상 컨트롤 표시
+settings.interface.tool_options=도구 옵션 모음
+settings.interface.floating=떠 있는 모드
+settings.interface.docked=고정 모드
+settings.interface.bar_opacity=배경 불투명도
+settings.interface.bar_spacing=간격 및 안쪽 여백
+settings.interface.bar_top=위쪽 간격
+settings.interface.bar_link_sides=좌우 간격 연결
+settings.interface.bar_left=왼쪽 간격
+settings.interface.bar_right=오른쪽 간격
+settings.interface.bar_padding_x=가로 안쪽 여백
+settings.interface.bar_padding_y=세로 안쪽 여백
+settings.interface.bar_radius=모서리 반경

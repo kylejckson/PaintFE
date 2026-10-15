@@ -1,4 +1,5 @@
 pub mod clipboard;
+pub mod file_dialogs;
 pub mod io;
 pub mod ipc;
 pub mod project;

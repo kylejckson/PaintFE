@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=The im
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=The clipboard image is {0} × {1}, which is larger than the current canvas ({2} × {3}). How would you like to proceed?
 keybind.clear_selected_pixels=Clear Selected Pixels
 keybind.fill_selected_pixels=Fill Selected Pixels
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape clears selection
+settings.interface.tools_show_colors=Show colour controls in Tools panel
+settings.interface.tool_options=Tool options bar
+settings.interface.floating=Floating
+settings.interface.docked=Docked
+settings.interface.bar_opacity=Background opacity
+settings.interface.bar_spacing=Spacing and padding
+settings.interface.bar_top=Top gap
+settings.interface.bar_link_sides=Link left and right gaps
+settings.interface.bar_left=Left gap
+settings.interface.bar_right=Right gap
+settings.interface.bar_padding_x=Horizontal padding
+settings.interface.bar_padding_y=Vertical padding
+settings.interface.bar_radius=Corner radius

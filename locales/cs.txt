@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=Obráz
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=Obrázek ze schránky má rozměry {0} × {1} a přesahuje aktuální plátno ({2} × {3}). Jak chcete pokračovat?
 keybind.clear_selected_pixels=Vymazat vybrané pixely
 keybind.fill_selected_pixels=Vyplnit vybrané pixely
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape zruší výběr
+settings.interface.tools_show_colors=Zobrazit ovládání barev v panelu nástrojů
+settings.interface.tool_options=Panel voleb nástroje
+settings.interface.floating=Plovoucí
+settings.interface.docked=Ukotvený
+settings.interface.bar_opacity=Krytí pozadí
+settings.interface.bar_spacing=Mezery a odsazení
+settings.interface.bar_top=Horní mezera
+settings.interface.bar_link_sides=Propojit levou a pravou mezeru
+settings.interface.bar_left=Levá mezera
+settings.interface.bar_right=Pravá mezera
+settings.interface.bar_padding_x=Vodorovné vnitřní odsazení
+settings.interface.bar_padding_y=Svislé vnitřní odsazení
+settings.interface.bar_radius=Poloměr rohů

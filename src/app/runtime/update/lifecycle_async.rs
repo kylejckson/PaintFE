@@ -74,7 +74,8 @@ impl PaintFEApp {
             }
         }
 
-        if let Some(receiver) = self.clipboard_paste_receiver.as_ref()
+        if !self.document_modal_open()
+            && let Some(receiver) = self.clipboard_paste_receiver.as_ref()
             && let Ok(payload) = receiver.try_recv()
         {
             self.clipboard_paste_receiver = None;
@@ -87,7 +88,9 @@ impl PaintFEApp {
         // --- Single-instance IPC: open files sent from other PaintFE invocations ---
         {
             let current_time = ctx.input(|i| i.time);
-            while let Ok(path) = self.ipc_receiver.try_recv() {
+            while !self.document_modal_open()
+                && let Ok(path) = self.ipc_receiver.try_recv()
+            {
                 self.open_file_by_path(path, current_time);
                 // Bring our window to the foreground (the sender already tried via
                 // FindWindow, but this handles the case where it didn't have permission).
@@ -386,7 +389,10 @@ impl PaintFEApp {
         self.poll_web_open_picker();
 
         // --- Poll async IO results (image load / save) ---
-        while let Ok(result) = self.io_receiver.try_recv() {
+        // Keep completed loads queued while a dialog owns the current document.
+        while !self.document_modal_open()
+            && let Ok(result) = self.io_receiver.try_recv()
+        {
             self.pending_io_ops = self.pending_io_ops.saturating_sub(1);
             if self.pending_io_ops == 0 {
                 self.io_ops_start_time = None;
@@ -444,15 +450,30 @@ impl PaintFEApp {
                     self.restore_active_project_view();
                     self.maybe_close_initial_blank();
                 }
-                IoResult::ImportReady { bytes, path, width, height } => {
+                IoResult::ImportReady {
+                    bytes,
+                    path,
+                    width,
+                    height,
+                } => {
                     self.pending_import_queue.push(PendingImport {
                         bytes: std::sync::Arc::new(bytes),
-                        name: path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
-                        source_path: Some(path), width, height,
+                        name: path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .into_owned(),
+                        source_path: Some(path),
+                        width,
+                        height,
                     });
                 }
                 IoResult::LoadFailed { path, error } => {
-                    let name = path.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "Image".into());
+                    let name = path
+                        .as_ref()
+                        .and_then(|p| p.file_name())
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "Image".into());
                     if let Some(path) = path {
                         self.pending_open_paths
                             .remove(&Self::normalize_open_path(&path));
@@ -650,7 +671,7 @@ impl PaintFEApp {
                     )
                 })
             });
-            if !shortcut_paste_present {
+            if !shortcut_paste_present && !self.document_modal_open() {
                 let dropped: Vec<egui::DroppedFile> = ctx.input(|i| i.raw.dropped_files.clone());
                 for file in dropped {
                     if let Some(path) = file.path.clone() {

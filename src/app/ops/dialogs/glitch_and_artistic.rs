@@ -22,6 +22,7 @@ impl PaintFEApp {
         match dialog {
             ActiveDialog::PixelDrag(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
+                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
                     dlg.first_open = false;
                     let idx = dlg.layer_idx;
                     if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
@@ -37,13 +38,14 @@ impl PaintFEApp {
                             flat.clone(),
                             move |img| {
                                 crate::ops::effects::pixel_drag_core(
-                                    img, seed, amount, distance, direction, None,
+                                    img, seed, amount, distance, direction, selection_mask.as_ref(),
                                 )
                             },
                         );
                     }
                 }
                 DialogResult::Ok(_) => {
+                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
                     crate::ui::dialogs::remember::mark_applied(ctx);
                     self.preview_job_token = self.preview_job_token.wrapping_add(1);
                     let idx = dlg.layer_idx;
@@ -58,7 +60,7 @@ impl PaintFEApp {
                                 flat,
                                 |img| {
                                     crate::ops::effects::pixel_drag_core(
-                                        img, seed, amount, distance, direction, None,
+                                        img, seed, amount, distance, direction, selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -104,6 +106,7 @@ impl PaintFEApp {
                 _ => {
                     dlg.poll_flat();
                     if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
+                        let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
                         dlg.first_open = false;
                         let idx = dlg.layer_idx;
                         if let (Some(original), Some(flat)) =
@@ -120,7 +123,7 @@ impl PaintFEApp {
                                 flat.clone(),
                                 move |img| {
                                     crate::ops::effects::pixel_drag_core(
-                                        img, seed, amount, distance, direction, None,
+                                        img, seed, amount, distance, direction, selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -131,6 +134,7 @@ impl PaintFEApp {
 
             ActiveDialog::RgbDisplace(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
+                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
                     dlg.first_open = false;
                     let idx = dlg.layer_idx;
                     if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
@@ -146,13 +150,14 @@ impl PaintFEApp {
                             flat.clone(),
                             move |img| {
                                 crate::ops::effects::rgb_displace_core(
-                                    img, r_off, g_off, b_off, None,
+                                    img, r_off, g_off, b_off, selection_mask.as_ref(),
                                 )
                             },
                         );
                     }
                 }
                 DialogResult::Ok(_) => {
+                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
                     crate::ui::dialogs::remember::mark_applied(ctx);
                     self.preview_job_token = self.preview_job_token.wrapping_add(1);
                     let idx = dlg.layer_idx;
@@ -167,7 +172,7 @@ impl PaintFEApp {
                                 flat,
                                 |img| {
                                     crate::ops::effects::rgb_displace_core(
-                                        img, r_off, g_off, b_off, None,
+                                        img, r_off, g_off, b_off, selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -213,6 +218,7 @@ impl PaintFEApp {
                 _ => {
                     dlg.poll_flat();
                     if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
+                        let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
                         dlg.first_open = false;
                         let idx = dlg.layer_idx;
                         if let (Some(original), Some(flat)) =
@@ -229,7 +235,7 @@ impl PaintFEApp {
                                 flat.clone(),
                                 move |img| {
                                     crate::ops::effects::rgb_displace_core(
-                                        img, r_off, g_off, b_off, None,
+                                        img, r_off, g_off, b_off, selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -240,6 +246,7 @@ impl PaintFEApp {
 
             ActiveDialog::Ink(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
+                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
                     dlg.first_open = false;
                     let idx = dlg.layer_idx;
                     if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
@@ -252,12 +259,13 @@ impl PaintFEApp {
                             original.clone(),
                             flat.clone(),
                             move |img| {
-                                crate::ops::effects::ink_core(img, edge_strength, threshold, None)
+                                crate::ops::effects::ink_core(img, edge_strength, threshold, selection_mask.as_ref())
                             },
                         );
                     }
                 }
                 DialogResult::Ok(_) => {
+                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
                     crate::ui::dialogs::remember::mark_applied(ctx);
                     self.preview_job_token = self.preview_job_token.wrapping_add(1);
                     let idx = dlg.layer_idx;
@@ -273,7 +281,7 @@ impl PaintFEApp {
                                         img,
                                         edge_strength,
                                         threshold,
-                                        None,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -319,6 +327,7 @@ impl PaintFEApp {
                 _ => {
                     dlg.poll_flat();
                     if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
+                        let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
                         dlg.first_open = false;
                         let idx = dlg.layer_idx;
                         if let (Some(original), Some(flat)) =
@@ -336,7 +345,7 @@ impl PaintFEApp {
                                         img,
                                         edge_strength,
                                         threshold,
-                                        None,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -347,6 +356,7 @@ impl PaintFEApp {
 
             ActiveDialog::OilPainting(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
+                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
                     dlg.first_open = false;
                     let idx = dlg.layer_idx;
                     if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
@@ -359,12 +369,13 @@ impl PaintFEApp {
                             original.clone(),
                             flat.clone(),
                             move |img| {
-                                crate::ops::effects::oil_painting_core(img, radius, levels, None)
+                                crate::ops::effects::oil_painting_core(img, radius, levels, selection_mask.as_ref())
                             },
                         );
                     }
                 }
                 DialogResult::Ok(_) => {
+                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
                     crate::ui::dialogs::remember::mark_applied(ctx);
                     self.preview_job_token = self.preview_job_token.wrapping_add(1);
                     let idx = dlg.layer_idx;
@@ -377,7 +388,7 @@ impl PaintFEApp {
                                 flat,
                                 |img| {
                                     crate::ops::effects::oil_painting_core(
-                                        img, radius, levels, None,
+                                        img, radius, levels, selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -423,6 +434,7 @@ impl PaintFEApp {
                 _ => {
                     dlg.poll_flat();
                     if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
+                        let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
                         dlg.first_open = false;
                         let idx = dlg.layer_idx;
                         if let (Some(original), Some(flat)) =
@@ -437,7 +449,7 @@ impl PaintFEApp {
                                 flat.clone(),
                                 move |img| {
                                     crate::ops::effects::oil_painting_core(
-                                        img, radius, levels, None,
+                                        img, radius, levels, selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -448,6 +460,7 @@ impl PaintFEApp {
 
             ActiveDialog::ColorFilter(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                 DialogResult::Changed => {
+                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
                     dlg.first_open = false;
                     let idx = dlg.layer_idx;
                     if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
@@ -468,13 +481,14 @@ impl PaintFEApp {
                             flat.clone(),
                             move |img| {
                                 crate::ops::effects::color_filter_core(
-                                    img, fc, intensity, mode, None,
+                                    img, fc, intensity, mode, selection_mask.as_ref(),
                                 )
                             },
                         );
                     }
                 }
                 DialogResult::Ok(_) => {
+                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
                     crate::ui::dialogs::remember::mark_applied(ctx);
                     self.preview_job_token = self.preview_job_token.wrapping_add(1);
                     let idx = dlg.layer_idx;
@@ -494,7 +508,7 @@ impl PaintFEApp {
                                 flat,
                                 |img| {
                                     crate::ops::effects::color_filter_core(
-                                        img, fc, intensity, mode, None,
+                                        img, fc, intensity, mode, selection_mask.as_ref(),
                                     )
                                 },
                             );
@@ -540,6 +554,7 @@ impl PaintFEApp {
                 _ => {
                     dlg.poll_flat();
                     if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
+                        let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
                         dlg.first_open = false;
                         let idx = dlg.layer_idx;
                         if let (Some(original), Some(flat)) =
@@ -561,7 +576,7 @@ impl PaintFEApp {
                                 flat.clone(),
                                 move |img| {
                                     crate::ops::effects::color_filter_core(
-                                        img, fc, intensity, mode, None,
+                                        img, fc, intensity, mode, selection_mask.as_ref(),
                                     )
                                 },
                             );

@@ -135,6 +135,10 @@ pub fn window<'a>(ctx: &Context, title: impl Into<egui::WidgetText>) -> Polished
 
 pub struct PolishedWindow<'a>(egui::Window<'a>, bool);
 impl<'a> PolishedWindow<'a> {
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.0 = self.0.enabled(enabled);
+        self
+    }
     pub fn open(mut self, open: &'a mut bool) -> Self {
         self.0 = self.0.open(open);
         self

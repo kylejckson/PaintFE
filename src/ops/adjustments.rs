@@ -140,7 +140,8 @@ pub fn sepia(state: &mut CanvasState, layer_idx: usize) {
 }
 
 /// Auto Levels: stretches the tonal range of each channel independently
-/// so min → 0 and max → 255, improving contrast.
+/// using the central 99% of selected, visible pixels. Isolated saturated
+/// outliers must not prevent a useful contrast stretch.
 pub fn auto_levels(state: &mut CanvasState, layer_idx: usize) {
     if layer_idx >= state.layers.len() {
         return;
@@ -164,13 +165,10 @@ pub fn auto_levels(state: &mut CanvasState, layer_idx: usize) {
         .as_ref()
         .map_or(0, |m| m.height() as usize);
 
-    // Compute per-channel min/max (only for selected pixels)
-    let mut min_r = 255u8;
-    let mut max_r = 0u8;
-    let mut min_g = 255u8;
-    let mut max_g = 0u8;
-    let mut min_b = 255u8;
-    let mut max_b = 0u8;
+    // Clip only a small tail: for fewer than 200 pixels this remains the
+    // exact min/max stretch. Transparent/out-of-selection pixels never count.
+    let mut histograms = [[0u64; 256]; 3];
+    let mut count = 0u64;
 
     for y in 0..h {
         for x in 0..w {
@@ -186,19 +184,20 @@ pub fn auto_levels(state: &mut CanvasState, layer_idx: usize) {
             if a == 0 {
                 continue;
             } // skip fully transparent
-            min_r = min_r.min(src_raw[pi]);
-            max_r = max_r.max(src_raw[pi]);
-            min_g = min_g.min(src_raw[pi + 1]);
-            max_g = max_g.max(src_raw[pi + 1]);
-            min_b = min_b.min(src_raw[pi + 2]);
-            max_b = max_b.max(src_raw[pi + 2]);
+            count += 1;
+            for channel in 0..3 {
+                histograms[channel][src_raw[pi + channel] as usize] += 1;
+            }
         }
     }
 
-    // Build lookup tables
-    let lut_r = build_stretch_lut(min_r, max_r);
-    let lut_g = build_stretch_lut(min_g, max_g);
-    let lut_b = build_stretch_lut(min_b, max_b);
+    if count == 0 {
+        return;
+    }
+    let bounds = histograms.map(|histogram| auto_level_bounds(&histogram, count));
+    let lut_r = build_stretch_lut(bounds[0].0, bounds[0].1);
+    let lut_g = build_stretch_lut(bounds[1].0, bounds[1].1);
+    let lut_b = build_stretch_lut(bounds[2].0, bounds[2].1);
 
     // Apply via the flat transform
     let mut dst_raw = vec![0u8; w * h * 4];
@@ -230,6 +229,27 @@ pub fn auto_levels(state: &mut CanvasState, layer_idx: usize) {
     let layer = &mut state.layers[layer_idx];
     layer.pixels = TiledImage::from_rgba_image(&out);
     state.mark_dirty(None);
+}
+
+fn auto_level_bounds(histogram: &[u64; 256], count: u64) -> (u8, u8) {
+    let tail = count / 200;
+    let mut sum = 0;
+    let low = histogram
+        .iter()
+        .position(|&n| {
+            sum += n;
+            sum > tail
+        })
+        .unwrap_or(0);
+    sum = 0;
+    let high = histogram
+        .iter()
+        .rposition(|&n| {
+            sum += n;
+            sum > tail
+        })
+        .unwrap_or(255);
+    (low as u8, high as u8)
 }
 
 fn build_stretch_lut(min: u8, max: u8) -> [u8; 256] {

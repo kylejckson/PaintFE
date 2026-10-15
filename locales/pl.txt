@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=Obraz 
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=Obraz w schowku to {0} × {1} i jest większy niż bieżące płótno ({2} × {3}). Jak chcesz kontynuować?
 keybind.clear_selected_pixels=Wyczyść zaznaczone piksele
 keybind.fill_selected_pixels=Wypełnij zaznaczone piksele
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape usuwa zaznaczenie
+settings.interface.tools_show_colors=Pokaż kontrolki kolorów w panelu narzędzi
+settings.interface.tool_options=Pasek opcji narzędzia
+settings.interface.floating=Pływający
+settings.interface.docked=Zadokowany
+settings.interface.bar_opacity=Krycie tła
+settings.interface.bar_spacing=Odstępy i marginesy
+settings.interface.bar_top=Odstęp u góry
+settings.interface.bar_link_sides=Połącz lewy i prawy odstęp
+settings.interface.bar_left=Odstęp z lewej
+settings.interface.bar_right=Odstęp z prawej
+settings.interface.bar_padding_x=Poziomy margines wewnętrzny
+settings.interface.bar_padding_y=Pionowy margines wewnętrzny
+settings.interface.bar_radius=Promień narożników

@@ -9,6 +9,7 @@ impl PaintFEApp {
         match command {
             Command::Reset => {
                 self.tools_panel_pos = Some((12.0, 128.0));
+                self.tools_panel_size = None;
                 self.layers_panel_right_offset = Some((264.0, 128.0));
                 self.layers_panel_size = Some((240.0, 200.0));
                 self.history_panel_right_offset = Some((224.0, 380.0));
@@ -24,6 +25,7 @@ impl PaintFEApp {
                 self.window_visibility.palette = true;
                 self.window_visibility.script_editor = false;
                 for (panel, size) in [
+                    ("Tools", egui::vec2(114.0, 400.0)),
                     ("Layers", egui::vec2(240.0, 200.0)),
                     ("History", egui::vec2(200.0, 200.0)),
                     ("Palette", egui::vec2(300.0, 108.0)),
@@ -50,6 +52,7 @@ impl PaintFEApp {
                     match panel.panel.as_str() {
                         "Tools" => {
                             self.tools_panel_pos = Some((pos.x, pos.y));
+                            self.tools_panel_size = Some((size.x, size.y));
                             self.window_visibility.tools = panel.visible;
                         }
                         "Layers" => {
@@ -211,22 +214,43 @@ impl PaintFEApp {
         let screen_rect = ctx.content_rect();
         let (pos_x, pos_y) = self.tools_panel_pos.unwrap_or((12.0, 128.0));
 
+        let panel_min = egui::vec2(
+            90.0,
+            if self.settings.tools_show_colors {
+                185.0
+            } else {
+                125.0
+            },
+        );
+        let panel_size = self
+            .tools_panel_size
+            .map(|(w, h)| egui::vec2(w, h))
+            .unwrap_or(egui::vec2(
+                114.0,
+                if self.settings.tools_show_colors {
+                    400.0
+                } else {
+                    340.0
+                },
+            ))
+            .max(panel_min);
+
         let hover_id = egui::Id::new("ToolsStrip_hover");
         let hover_t = crate::ui::polish::panel_hover(ctx, hover_id);
         let mut window = crate::ui::polish::window(ctx, "ToolsStrip")
+            .enabled(!self.document_modal_open())
             .open(&mut show)
             .movable(false)
             .resizable(false)
             .collapsible(false)
-            .default_size(egui::vec2(120.0, 400.0))
-            .max_width(114.0)
+            .min_size(panel_min)
+            .fixed_size(panel_size)
             .title_bar(false)
             .frame(self.theme.floating_window_frame_animated(hover_t));
 
         // Always enforce anchored position so the panel stays put on resize
         {
-            let clamped =
-                Self::clamp_floating_pos(pos_x, pos_y, egui::vec2(114.0, 400.0), screen_rect);
+            let clamped = Self::clamp_floating_pos(pos_x, pos_y, panel_size, screen_rect);
             window = window.current_pos(clamped);
         }
 
@@ -234,7 +258,7 @@ impl PaintFEApp {
             ctx,
             "Tools",
             egui::pos2(pos_x, pos_y),
-            egui::vec2(114.0, 400.0),
+            panel_size,
         ));
         if let Some(size) = ctx.data_mut(|d| {
             d.remove_temp::<egui::Vec2>(egui::Id::new(("workspace_size_request", "Tools")))
@@ -271,14 +295,20 @@ impl PaintFEApp {
                 })
                 .unwrap_or(false);
 
-            let action = self.tools_panel.show_compact(
-                ui,
-                &self.assets,
-                primary,
-                secondary,
-                &self.settings.keybindings,
-                is_text_layer,
-            );
+            let action = egui::ScrollArea::vertical()
+                .id_salt("tools_scroll")
+                .max_height(ui.available_height())
+                .show(ui, |ui| {
+                    self.tools_panel.show_compact(
+                        ui,
+                        &self.assets,
+                        (primary, secondary),
+                        &self.settings.keybindings,
+                        is_text_layer,
+                        self.settings.tools_show_colors,
+                    )
+                })
+                .inner;
 
             match action {
                 tools::ToolsPanelAction::OpenColors => {
@@ -295,7 +325,18 @@ impl PaintFEApp {
             let win_rect = inner_resp.response.rect;
             crate::ui::workspace::register(ctx, "Tools", win_rect);
             self.remember_ui_cursor_rect(win_rect);
-            self.tools_panel_pos = Some((win_rect.min.x, win_rect.min.y));
+            if let Some(size) =
+                signal_widgets::floating_resize(ctx, &inner_resp.response, "Tools", panel_min)
+            {
+                self.tools_panel_size = Some((size.x, size.y));
+                ctx.data_mut(|d| {
+                    d.insert_temp(egui::Id::new(("workspace_size_request", "Tools")), size)
+                });
+                ctx.request_repaint();
+            }
+            if self.palette_reposition_settle_frames == 0 {
+                self.tools_panel_pos = Some((win_rect.min.x, win_rect.min.y));
+            }
             let hovered =
                 ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p)));
             crate::ui::polish::remember_hover(ctx, hover_id, hovered);
@@ -331,6 +372,7 @@ impl PaintFEApp {
         let hover_id = egui::Id::new("Layers_hover");
         let hover_t = crate::ui::polish::panel_hover(ctx, hover_id);
         let mut window = crate::ui::polish::window(ctx, "Layers")
+            .enabled(!self.document_modal_open())
             .open(&mut show)
             .movable(false)
             .resizable(false)
@@ -591,7 +633,10 @@ impl PaintFEApp {
                 ctx.request_repaint();
             }
             self.remember_ui_cursor_rect(win_rect);
-            self.layers_panel_right_offset = Some((screen_w - win_rect.min.x, win_rect.min.y));
+            // Do not persist a temporary startup clamp before maximization/DPI settles.
+            if self.palette_reposition_settle_frames == 0 {
+                self.layers_panel_right_offset = Some((screen_w - win_rect.min.x, win_rect.min.y));
+            }
             let observed_size = (win_rect.width().round(), win_rect.height().round());
             let pointer_down = ctx.input(|i| i.pointer.primary_down());
             let should_store_size = pointer_down
@@ -640,6 +685,7 @@ impl PaintFEApp {
         let hover_id = egui::Id::new("History_hover");
         let hover_t = crate::ui::polish::panel_hover(ctx, hover_id);
         let mut window = crate::ui::polish::window(ctx, "History")
+            .enabled(!self.document_modal_open())
             .open(&mut show)
             .movable(false)
             .resizable(false)
@@ -700,7 +746,10 @@ impl PaintFEApp {
             let win_rect = inner_resp.response.rect;
             crate::ui::workspace::register(ctx, "History", win_rect);
             self.remember_ui_cursor_rect(win_rect);
-            self.history_panel_right_offset = Some((screen_w - win_rect.min.x, win_rect.min.y));
+            // Do not persist a temporary startup clamp before maximization/DPI settles.
+            if self.palette_reposition_settle_frames == 0 {
+                self.history_panel_right_offset = Some((screen_w - win_rect.min.x, win_rect.min.y));
+            }
             if let Some(size) = signal_widgets::floating_resize(
                 ctx,
                 &inner_resp.response,
@@ -771,6 +820,7 @@ impl PaintFEApp {
         let hover_id = egui::Id::new("Colors_hover");
         let hover_t = crate::ui::polish::panel_hover(ctx, hover_id);
         let mut window = crate::ui::polish::window(ctx, "Colors")
+            .enabled(!self.document_modal_open())
             .open(&mut show)
             .movable(false)
             // Our top-left clamp and body scroll bounds own positioning. egui's
@@ -891,6 +941,7 @@ impl PaintFEApp {
         let hover_id = egui::Id::new("Palette_hover");
         let hover_t = crate::ui::polish::panel_hover(ctx, hover_id);
         let mut window = crate::ui::polish::window(ctx, "Palette")
+            .enabled(!self.document_modal_open())
             .open(&mut show)
             .movable(false)
             .resizable(false)
@@ -1033,6 +1084,7 @@ impl PaintFEApp {
         let hover_id = egui::Id::new("ScriptEditor_hover");
         let hover_t = crate::ui::polish::panel_hover(ctx, hover_id);
         let mut window = crate::ui::polish::window(ctx, "ScriptEditor")
+            .enabled(!self.document_modal_open())
             .open(&mut show)
             .movable(false)
             .resizable(true)

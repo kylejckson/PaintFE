@@ -86,7 +86,12 @@ struct StraightenSession {
 
 /// Result delivered from a background IO thread.
 pub enum IoResult {
-    ImportReady { bytes: Vec<u8>, path: PathBuf, width: u32, height: u32 },
+    ImportReady {
+        bytes: Vec<u8>,
+        path: PathBuf,
+        width: u32,
+        height: u32,
+    },
     /// An image file was decoded and tiled, ready to become a new project.
     ImageLoaded {
         tiled: TiledImage,
@@ -220,7 +225,8 @@ pub struct PaintFEApp {
     colors_panel_pos: Option<(f32, f32)>, // (x, offset_from_bottom)
     palette_panel_size: Option<(f32, f32)>,
     palette_panel_pos: Option<(f32, f32)>, // (x, y)
-    tools_panel_pos: Option<(f32, f32)>,   // (x, y) absolute
+    tools_panel_size: Option<(f32, f32)>,
+    tools_panel_pos: Option<(f32, f32)>, // (x, y) absolute
     last_screen_size: (f32, f32),
     ui_cursor_blocking_rects: Vec<egui::Rect>,
     ui_cursor_blocking_rects_next: Vec<egui::Rect>,

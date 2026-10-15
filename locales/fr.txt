@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=L'imag
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=L'image du presse-papiers est {0} × {1}, qui est plus grande que le canevas actuel ({2} × {3}). Comment souhaitez-vous procéder ?
 keybind.clear_selected_pixels=Effacer les pixels sélectionnés
 keybind.fill_selected_pixels=Remplir les pixels sélectionnés
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Échap désélectionne
+settings.interface.tools_show_colors=Afficher les commandes de couleur dans le panneau Outils
+settings.interface.tool_options=Barre des options de l’outil
+settings.interface.floating=Flottante
+settings.interface.docked=Ancrée
+settings.interface.bar_opacity=Opacité du fond
+settings.interface.bar_spacing=Espacement et marges
+settings.interface.bar_top=Espace supérieur
+settings.interface.bar_link_sides=Lier les espaces gauche et droit
+settings.interface.bar_left=Espace gauche
+settings.interface.bar_right=Espace droit
+settings.interface.bar_padding_x=Marge intérieure horizontale
+settings.interface.bar_padding_y=Marge intérieure verticale
+settings.interface.bar_radius=Rayon des angles

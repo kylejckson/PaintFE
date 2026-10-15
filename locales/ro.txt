@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=Imagin
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=Imaginea din clipboard are dimensiunile {0} × {1} și depășește pânza curentă ({2} × {3}). Cum dorești să continui?
 keybind.clear_selected_pixels=Șterge pixelii selectați
 keybind.fill_selected_pixels=Umple pixelii selectați
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape elimină selecția
+settings.interface.tools_show_colors=Afișează controalele de culoare în panoul Instrumente
+settings.interface.tool_options=Bara de opțiuni a instrumentului
+settings.interface.floating=Flotantă
+settings.interface.docked=Andocată
+settings.interface.bar_opacity=Opacitatea fundalului
+settings.interface.bar_spacing=Spațiere și margini
+settings.interface.bar_top=Spațiu sus
+settings.interface.bar_link_sides=Leagă spațiile din stânga și din dreapta
+settings.interface.bar_left=Spațiu stânga
+settings.interface.bar_right=Spațiu dreapta
+settings.interface.bar_padding_x=Margine interioară orizontală
+settings.interface.bar_padding_y=Margine interioară verticală
+settings.interface.bar_radius=Raza colțurilor

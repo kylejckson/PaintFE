@@ -292,6 +292,7 @@ impl PaintFEApp {
             palette_panel_size: None,
             palette_panel_pos: None,
             tools_panel_pos: None,
+            tools_panel_size: None,
             last_screen_size: (0.0, 0.0),
             ui_cursor_blocking_rects: Vec::new(),
             ui_cursor_blocking_rects_next: Vec::new(),
@@ -368,6 +369,7 @@ impl PaintFEApp {
         app.window_visibility.script_editor = app.settings.persist_script_editor_visible;
         if app.settings.workspace.remember_positions {
             app.tools_panel_pos = app.settings.persist_tools_panel_pos;
+            app.tools_panel_size = app.settings.persist_tools_panel_size;
             app.layers_panel_right_offset = app.settings.persist_layers_panel_right_offset;
             app.layers_panel_size = app.settings.persist_layers_panel_size;
             app.history_panel_right_offset = app.settings.persist_history_panel_right_offset;
@@ -1138,6 +1140,7 @@ impl PaintFEApp {
             .serialize_recent_colors()
             .hash(&mut hasher);
         hash_opt_pair(self.tools_panel_pos, &mut hasher);
+        hash_opt_pair(self.tools_panel_size, &mut hasher);
         hash_opt_pair(self.layers_panel_right_offset, &mut hasher);
         hash_opt_pair(self.layers_panel_size, &mut hasher);
         hash_opt_pair(self.history_panel_right_offset, &mut hasher);
@@ -1173,6 +1176,11 @@ impl PaintFEApp {
         self.settings.persist_colors_visible = self.window_visibility.colors;
         self.settings.persist_palette_visible = self.window_visibility.palette;
         self.settings.persist_script_editor_visible = self.window_visibility.script_editor;
+        self.settings.persist_tools_panel_size = if self.settings.workspace.remember_positions {
+            self.tools_panel_size
+        } else {
+            None
+        };
         self.settings.persist_tools_panel_pos = if self.settings.workspace.remember_positions {
             self.tools_panel_pos
         } else {

@@ -14,28 +14,9 @@ impl PaintFEApp {
             .frame(self.theme.menu_frame())
             .exact_size(28.0)
             .show(root_ui, |ui| {
+                if modal_open { ui.disable(); }
                 egui::MenuBar::new().ui(ui, |ui| {
                     ui.menu_button(t!("menu.file"), |ui| {
-                        ui.menu_button(crate::t!("ui.recent_files"), |ui| {
-                            let recent = self.settings.recent_files.clone();
-                            if recent.is_empty() { ui.weak(crate::t!("ui.no_recent_files")); }
-                            for path in recent {
-                                if ui.button(&path).clicked() {
-                                    self.open_file_by_path(PathBuf::from(path), ctx.input(|i| i.time));
-                                    ui.close();
-                                }
-                            }
-                            if ui.button(crate::t!("ui.clear_recent_files")).clicked() {
-                                self.settings.recent_files.clear();
-                                self.settings.save();
-                                ui.close();
-                            }
-                        });
-                        if self.assets.menu_item_shortcut_enabled(ui, Icon::Close,
-                            "Close", has_project, &menu_kb, BindableAction::CloseProject).clicked() {
-                            self.close_project(self.active_project_index);
-                            ui.close();
-                        }
                         if self
                             .assets
                             .menu_item_shortcut(
@@ -67,6 +48,21 @@ impl PaintFEApp {
                             self.handle_open_file(ctx.input(|i| i.time));
                             ui.close();
                         }
+                        ui.menu_button(crate::t!("ui.recent_files"), |ui| {
+                            let recent = self.settings.recent_files.clone();
+                            if recent.is_empty() { ui.weak(crate::t!("ui.no_recent_files")); }
+                            for path in recent {
+                                if ui.button(crate::services::io::display_path(std::path::Path::new(&path))).clicked() {
+                                    self.open_file_by_path(PathBuf::from(path), ctx.input(|i| i.time));
+                                    ui.close();
+                                }
+                            }
+                            if ui.button(crate::t!("ui.clear_recent_files")).clicked() {
+                                self.settings.recent_files.clear();
+                                self.settings.save();
+                                ui.close();
+                            }
+                        });
                         ui.separator();
                         if self
                             .assets
@@ -81,6 +77,21 @@ impl PaintFEApp {
                             .clicked()
                         {
                             self.handle_save(ctx.input(|i| i.time));
+                            ui.close();
+                        }
+                        if self
+                            .assets
+                            .menu_item_shortcut_enabled(
+                                ui,
+                                Icon::MenuFileSaveAs,
+                                &t!("menu.file.save_as"),
+                                has_project,
+                                &menu_kb,
+                                BindableAction::SaveAs,
+                            )
+                            .clicked()
+                        {
+                            self.open_save_as_for_project(self.active_project_index);
                             ui.close();
                         }
                         {
@@ -102,21 +113,6 @@ impl PaintFEApp {
                                 ui.close();
                             }
                         }
-                        if self
-                            .assets
-                            .menu_item_shortcut_enabled(
-                                ui,
-                                Icon::MenuFileSaveAs,
-                                &t!("menu.file.save_as"),
-                                has_project,
-                                &menu_kb,
-                                BindableAction::SaveAs,
-                            )
-                            .clicked()
-                        {
-                            self.open_save_as_for_project(self.active_project_index);
-                            ui.close();
-                        }
                         ui.separator();
                         if self
                             .assets
@@ -135,6 +131,12 @@ impl PaintFEApp {
                                     eprintln!("Print error: {}", e);
                                 }
                             }
+                            ui.close();
+                        }
+                        ui.separator();
+                        if self.assets.menu_item_shortcut_enabled(ui, Icon::Close,
+                            &t!("ui.close"), has_project, &menu_kb, BindableAction::CloseProject).clicked() {
+                            self.close_project(self.active_project_index);
                             ui.close();
                         }
                         ui.separator();
@@ -1850,6 +1852,9 @@ impl PaintFEApp {
         let toolbar_resp = egui::Panel::top("toolbar_tabs")
             .frame(self.theme.toolbar_frame())
             .show(root_ui, |ui| {
+                if modal_open {
+                    ui.disable();
+                }
                 ui.horizontal(|ui| {
                     // === File Actions ===
                     if self.assets.small_icon_button(ui, Icon::New).clicked() {

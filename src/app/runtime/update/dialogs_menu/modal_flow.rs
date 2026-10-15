@@ -3,11 +3,15 @@ impl PaintFEApp {
         if let Some(error) = self.filter_error.clone() {
             egui::Modal::new(egui::Id::new("filter_error")).show(ctx, |ui| {
                 ui.heading(t!("common.error"));
-                egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-                    ui.set_max_width(550.0);
-                    ui.label(error);
-                });
-                if ui.button(t!("common.ok")).clicked() { self.filter_error = None; }
+                egui::ScrollArea::vertical()
+                    .max_height(300.0)
+                    .show(ui, |ui| {
+                        ui.set_max_width(550.0);
+                        ui.label(error);
+                    });
+                if ui.button(t!("common.ok")).clicked() {
+                    self.filter_error = None;
+                }
             });
         }
         #[cfg(target_arch = "wasm32")]
@@ -55,7 +59,9 @@ impl PaintFEApp {
         let bundled_icons_changed =
             self.assets.bundled_icon_style() != self.settings.bundled_icon_style;
         if bundled_icons_changed
-            && let Err(e) = self.assets.set_bundled_icon_style(self.settings.bundled_icon_style)
+            && let Err(e) = self
+                .assets
+                .set_bundled_icon_style(self.settings.bundled_icon_style)
         {
             log_info!("Bundled icon style load failed: {e}");
             self.settings.bundled_icon_style = self.assets.bundled_icon_style();
@@ -106,13 +112,20 @@ impl PaintFEApp {
             }
         }
         let mut import_choice: Option<usize> = None;
-        if self.filter_error.is_none() && self.pending_oversized_import.is_none()
+        if self.filter_error.is_none()
+            && self.pending_oversized_import.is_none()
             && let Some(item) = self.pending_import_queue.first().cloned()
         {
             use crate::ops::dialogs::{DialogAction, action_list, dialog_card_header};
             let total = self.pending_import_queue.len();
             let caption = if total > 1 {
-                Some(crate::i18n::format_translation("ui.0_1_more_waiting", &[("0", item.name.to_string()), ("1", format!("{}", total - 1))]))
+                Some(crate::i18n::format_translation(
+                    "ui.0_1_more_waiting",
+                    &[
+                        ("0", item.name.to_string()),
+                        ("1", format!("{}", total - 1)),
+                    ],
+                ))
             } else {
                 Some(item.name.clone())
             };
@@ -236,7 +249,15 @@ impl PaintFEApp {
                     ) {
                         oversize_choice = Some(2);
                     }
-                    let question = crate::i18n::format_translation("ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would", &[("0", format!("{}", iw)), ("1", format!("{}", ih)), ("2", format!("{}", cw)), ("3", format!("{}", ch))]);
+                    let question = crate::i18n::format_translation(
+                        "ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would",
+                        &[
+                            ("0", format!("{}", iw)),
+                            ("1", format!("{}", ih)),
+                            ("2", format!("{}", cw)),
+                            ("3", format!("{}", ch)),
+                        ],
+                    );
                     if let Some(idx) = action_list(ui, &self.assets, &question, None, &actions) {
                         oversize_choice = Some(idx);
                     }
@@ -311,7 +332,15 @@ impl PaintFEApp {
                     ) {
                         choice = Some(2);
                     }
-                    let question = crate::i18n::format_translation("ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3", &[("0", format!("{}", iw)), ("1", format!("{}", ih)), ("2", format!("{}", cw)), ("3", format!("{}", ch))]);
+                    let question = crate::i18n::format_translation(
+                        "ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3",
+                        &[
+                            ("0", format!("{}", iw)),
+                            ("1", format!("{}", ih)),
+                            ("2", format!("{}", cw)),
+                            ("3", format!("{}", ch)),
+                        ],
+                    );
                     if let Some(idx) = action_list(ui, &self.assets, &question, None, &actions) {
                         choice = Some(idx);
                     }
@@ -375,9 +404,15 @@ impl PaintFEApp {
                     ) {
                         choice = Some(2);
                     }
-                    ui.label(crate::i18n::format_translation("ui.0_has_unsaved_changes", &[("0", name.to_string())]));
+                    ui.label(crate::i18n::format_translation(
+                        "ui.0_has_unsaved_changes",
+                        &[("0", name.to_string())],
+                    ));
                     ui.add_space(2.0);
-                    ui.label(egui::RichText::new(crate::t!("ui.do_you_want_to_save_before_closing")).weak());
+                    ui.label(
+                        egui::RichText::new(crate::t!("ui.do_you_want_to_save_before_closing"))
+                            .weak(),
+                    );
                     if let Some(idx) = confirm_row(ui, &self.assets, &buttons) {
                         choice = Some(idx);
                     }
@@ -447,10 +482,16 @@ impl PaintFEApp {
                             choice = Some(2);
                         }
                         if dirty_projects.len() == 1 {
-                            ui.label(crate::i18n::format_translation("ui.0_has_unsaved_changes", &[("0", dirty_projects[0].to_string())]));
+                            ui.label(crate::i18n::format_translation(
+                                "ui.0_has_unsaved_changes",
+                                &[("0", dirty_projects[0].to_string())],
+                            ));
                         } else {
                             const SHOW_MAX: usize = 4;
-                            ui.label(crate::i18n::format_translation("ui.0_projects_have_unsaved_changes", &[("0", format!("{}", dirty_projects.len()))]));
+                            ui.label(crate::i18n::format_translation(
+                                "ui.0_projects_have_unsaved_changes",
+                                &[("0", format!("{}", dirty_projects.len()))],
+                            ));
                             ui.add_space(4.0);
                             for name in dirty_projects.iter().take(SHOW_MAX) {
                                 ui.label(format!("\u{2022}  {}", name));
@@ -458,14 +499,20 @@ impl PaintFEApp {
                             let overflow = dirty_projects.len().saturating_sub(SHOW_MAX);
                             if overflow > 0 {
                                 ui.label(
-                                    egui::RichText::new(crate::i18n::format_translation("ui.0_more", &[("0", format!("{}", overflow))]))
-                                        .weak()
-                                        .italics(),
+                                    egui::RichText::new(crate::i18n::format_translation(
+                                        "ui.0_more",
+                                        &[("0", format!("{}", overflow))],
+                                    ))
+                                    .weak()
+                                    .italics(),
                                 );
                             }
                         }
                         ui.add_space(2.0);
-                        ui.label(egui::RichText::new(crate::t!("ui.do_you_want_to_save_before_exiting")).weak());
+                        ui.label(
+                            egui::RichText::new(crate::t!("ui.do_you_want_to_save_before_exiting"))
+                                .weak(),
+                        );
                         if let Some(idx) = confirm_row(ui, &self.assets, &buttons) {
                             choice = Some(idx);
                         }
@@ -702,20 +749,7 @@ impl PaintFEApp {
             }
         }
 
-        #[cfg(target_arch = "wasm32")]
-        let welcome_open = self.show_welcome_popup;
-        #[cfg(not(target_arch = "wasm32"))]
-        let welcome_open = false;
-
-        self.filter_error.is_some() || welcome_open
-            || self.save_file_dialog.open
-            || self.new_file_dialog.open
-            || !matches!(self.active_dialog, ActiveDialog::None)
-            || self.pending_paste_request.is_some()
-            || !self.pending_import_queue.is_empty()
-            || self.pending_oversized_import.is_some()
-            || self.pending_exit
-            || self.pending_close_index.is_some()
+        self.document_modal_open()
     }
 
     /// First-run welcome / beta-disclaimer popup (web only). Shown once per

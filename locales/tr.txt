@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=Resim 
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=Pano görüntüsü {0} × {1}'dir ve geçerli tuvalden ({2} × {3}) daha büyüktür. Nasıl ilerlemek istersiniz?
 keybind.clear_selected_pixels=Seçili Pikselleri Temizle
 keybind.fill_selected_pixels=Seçili Pikselleri Doldur
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape seçimi kaldırır
+settings.interface.tools_show_colors=Araçlar panelinde renk denetimlerini göster
+settings.interface.tool_options=Araç seçenekleri çubuğu
+settings.interface.floating=Kayan
+settings.interface.docked=Sabitlenmiş
+settings.interface.bar_opacity=Arka plan opaklığı
+settings.interface.bar_spacing=Boşluklar ve iç kenar boşlukları
+settings.interface.bar_top=Üst boşluk
+settings.interface.bar_link_sides=Sol ve sağ boşlukları bağla
+settings.interface.bar_left=Sol boşluk
+settings.interface.bar_right=Sağ boşluk
+settings.interface.bar_padding_x=Yatay iç kenar boşluğu
+settings.interface.bar_padding_y=Dikey iç kenar boşluğu
+settings.interface.bar_radius=Köşe yarıçapı

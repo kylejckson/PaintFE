@@ -8,8 +8,6 @@ use image::codecs::png::PngEncoder;
 use image::codecs::tga::TgaEncoder;
 use image::{DynamicImage, ImageError, Rgba, RgbaImage};
 #[cfg(not(target_arch = "wasm32"))]
-use rfd::FileDialog;
-#[cfg(not(target_arch = "wasm32"))]
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -1944,35 +1942,45 @@ impl FileHandler {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn pick_file_paths(&self) -> Vec<PathBuf> {
-        FileDialog::new()
-            .add_filter(
-                crate::t!("ui.all_supported"),
-                &[
-                    "pfe", "pdn", "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff",
-                    "tif", "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2",
-                    "pef", "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef",
-                    "mos", "kdc", "dcr", "erf",
-                ],
-            )
-            .add_filter("PaintFE Project", &["pfe"])
-            .add_filter(crate::t!("ui.paint_net_project_read_only"), &["pdn"])
-            .add_filter(
-                crate::t!("ui.images"),
-                &[
-                    "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
-                ],
-            )
-            .add_filter(
-                crate::t!("ui.raw_files"),
-                &[
-                    "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef",
-                    "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos",
-                    "kdc", "dcr", "erf",
-                ],
-            )
-            .add_filter(crate::t!("ui.all_files"), &["*"])
-            .pick_files()
-            .unwrap_or_default()
+        let paths = crate::services::file_dialogs::dialog(
+            crate::services::file_dialogs::Purpose::Documents,
+            self.current_path.as_deref(),
+        )
+        .add_filter(
+            crate::t!("ui.all_supported"),
+            &[
+                "pfe", "pdn", "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff",
+                "tif", "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef",
+                "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos", "kdc",
+                "dcr", "erf",
+            ],
+        )
+        .add_filter("PaintFE Project", &["pfe"])
+        .add_filter(crate::t!("ui.paint_net_project_read_only"), &["pdn"])
+        .add_filter(
+            crate::t!("ui.images"),
+            &[
+                "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
+            ],
+        )
+        .add_filter(
+            crate::t!("ui.raw_files"),
+            &[
+                "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef", "raf",
+                "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos", "kdc", "dcr",
+                "erf",
+            ],
+        )
+        .add_filter(crate::t!("ui.all_files"), &["*"])
+        .pick_files()
+        .unwrap_or_default();
+        if let Some(path) = paths.first() {
+            crate::services::file_dialogs::remember(
+                crate::services::file_dialogs::Purpose::Documents,
+                path,
+            );
+        }
+        paths
     }
 
     /// Open an image file using native file dialog
@@ -1985,33 +1993,36 @@ impl FileHandler {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn open_image(&mut self) -> Option<(RgbaImage, PathBuf)> {
-        let path = FileDialog::new()
-            .add_filter(
-                crate::t!("ui.all_supported"),
-                &[
-                    "pfe", "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
-                    "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef",
-                    "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos",
-                    "kdc", "dcr", "erf",
-                ],
-            )
-            .add_filter("PaintFE Project", &["pfe"])
-            .add_filter(
-                crate::t!("ui.images"),
-                &[
-                    "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
-                ],
-            )
-            .add_filter(
-                crate::t!("ui.raw_files"),
-                &[
-                    "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef",
-                    "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos",
-                    "kdc", "dcr", "erf",
-                ],
-            )
-            .add_filter(crate::t!("ui.all_files"), &["*"])
-            .pick_file()?;
+        let path = crate::services::file_dialogs::dialog(
+            crate::services::file_dialogs::Purpose::Documents,
+            self.current_path.as_deref(),
+        )
+        .add_filter(
+            crate::t!("ui.all_supported"),
+            &[
+                "pfe", "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
+                "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef", "raf",
+                "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos", "kdc", "dcr",
+                "erf",
+            ],
+        )
+        .add_filter("PaintFE Project", &["pfe"])
+        .add_filter(
+            crate::t!("ui.images"),
+            &[
+                "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
+            ],
+        )
+        .add_filter(
+            crate::t!("ui.raw_files"),
+            &[
+                "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef", "raf",
+                "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos", "kdc", "dcr",
+                "erf",
+            ],
+        )
+        .add_filter(crate::t!("ui.all_files"), &["*"])
+        .pick_file()?;
 
         if let Ok((w, h)) = image::image_dimensions(&path)
             && let Err(e) = validate_open_dimensions(w, h)

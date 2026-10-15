@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=De afb
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=De klembordafbeelding is {0} × {1}, wat groter is dan het huidige canvas ({2} × {3}). Hoe zou je verder willen?
 keybind.clear_selected_pixels=Geselecteerde pixels wissen
 keybind.fill_selected_pixels=Geselecteerde pixels vullen
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape heft de selectie op
+settings.interface.tools_show_colors=Kleurbediening in het gereedschapspaneel tonen
+settings.interface.tool_options=Balk met gereedschapsopties
+settings.interface.floating=Zwevend
+settings.interface.docked=Vastgezet
+settings.interface.bar_opacity=Achtergronddekking
+settings.interface.bar_spacing=Afstand en opvulling
+settings.interface.bar_top=Bovenruimte
+settings.interface.bar_link_sides=Linker- en rechterruimte koppelen
+settings.interface.bar_left=Linkerruimte
+settings.interface.bar_right=Rechterruimte
+settings.interface.bar_padding_x=Horizontale binnenruimte
+settings.interface.bar_padding_y=Verticale binnenruimte
+settings.interface.bar_radius=Hoekradius

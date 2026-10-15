@@ -5,6 +5,7 @@ impl PaintFEApp {
         root_ui: &mut egui::Ui,
         modal_open: bool,
     ) {
+        let modal_open = modal_open || self.document_modal_open();
         if let Some(mask) = self.pending_selection_reassert.take()
             && let Some(project) = self.active_project_mut()
         {
@@ -26,175 +27,215 @@ impl PaintFEApp {
             ctx.request_repaint();
         }
 
-        // --- Floating Tool Shelf (replaces docked context bar) ---
-        // Drawn as an egui::Area so the canvas renders behind it; the shelf
-        // itself is a translucent rounded pill (website `.card` pattern).
         let mut start_straighten = false;
         let mut commit_straighten = false;
         let mut cancel_straighten = false;
         let mut shelf_ui_rect = egui::Rect::NOTHING;
-        // Floating overlay: the shelf is an egui::Area over the canvas instead
-        // of a Panel, so the canvas fills the full viewport behind it and the
-        // shelf genuinely floats above it (see Theme::tool_shelf_frame).
-        let viewport_rect = ctx.content_rect();
-        let shelf_y = self
-            .canvas
-            .last_canvas_rect
-            .map(|r| r.min.y)
-            .unwrap_or(root_ui.min_rect().min.y)
-            + 8.0;
-        let shelf_anchor = egui::pos2(viewport_rect.min.x + 12.0, shelf_y);
-        egui::Area::new(egui::Id::new("tool_shelf_strip"))
-            .order(egui::Order::Middle)
-            .fixed_pos(shelf_anchor)
-            .show(root_ui.ctx(), |ui| {
-                // Static full-width bar: the pill spans the viewport minus the
-                // 12px padding on both sides, so its width never jumps when the
-                // active tool's options change.
-                let bar_w = (viewport_rect.width() - 24.0).max(0.0);
-                ui.set_width(bar_w);
-                let shelf_frame = self.theme.tool_shelf_frame();
-                let content_w = (bar_w - shelf_frame.total_margin().sum().x).max(0.0);
-                let shelf_inner = shelf_frame.show(ui, |ui| {
-                    // The painted frame must reserve the blank space as well.
-                    ui.set_width(content_w);
-                    // Context bar label styling
-                    ui.style_mut().override_font_id =
-                        Some(egui::FontId::proportional(crate::theme::Theme::FONT_LABEL));
-                    ui.visuals_mut().override_text_color = Some(self.theme.text_color);
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        if !has_project {
-                            ui.disable();
-                        }
-                        if let Some(session) = self.straighten_session.as_mut() {
-                            crate::signal_widgets::tool_shelf_tag(
-                                ui,
-                                &crate::t!("ui.straighten"),
-                                self.theme.accent,
-                                &self.theme,
-                            );
-                            ui.label(crate::t!("ctx.text.effects.gradient.angle"));
-                            ui.add(
-                                crate::ui::numeric::Numeric::new(&mut session.angle_degrees)
-                                    .speed(0.1)
-                                    .range(-180.0..=180.0)
-                                    .suffix("°"),
-                            );
-                            ui.label(crate::t!("ui.interpolation"));
-                            egui::ComboBox::from_id_salt("straighten_interpolation")
-                                .selected_text(session.interpolation.label())
-                                .width(100.0)
-                                .show_ui(ui, |ui| {
-                                    for interpolation in [
-                                        crate::ops::transform::Interpolation::Nearest,
-                                        crate::ops::transform::Interpolation::Bilinear,
-                                    ] {
-                                        ui.selectable_value(
-                                            &mut session.interpolation,
-                                            interpolation,
-                                            interpolation.label(),
-                                        );
-                                    }
-                                });
-                            // Quick actions — inline with the rest of the controls.
-                            if ui.button(crate::t!("common.reset")).clicked() {
-                                session.angle_degrees = 0.0;
+        let appearance = self.settings.tool_shelf.clone();
+        let docked = appearance.docked;
+        let viewport_rect = root_ui.available_rect_before_wrap();
+        let (top, left, right) = if docked {
+            (0.0, 0.0, 0.0)
+        } else {
+            (appearance.top, appearance.left, appearance.right)
+        };
+        let shelf_anchor = viewport_rect.min + egui::vec2(left, top);
+        let mut show_shelf = |ui: &mut egui::Ui| {
+            if modal_open {
+                ui.disable();
+            }
+            let bar_w = if docked {
+                ui.available_width()
+            } else {
+                (viewport_rect.width() - left - right).max(0.0)
+            };
+            ui.set_width(bar_w);
+            let mut shelf_frame = self.theme.tool_shelf_frame();
+            shelf_frame.fill = self
+                .theme
+                .tool_shelf_bg
+                .to_opaque()
+                .gamma_multiply(appearance.effective_opacity());
+            shelf_frame.inner_margin =
+                egui::Margin::symmetric(appearance.padding_x as i8, appearance.padding_y as i8);
+            shelf_frame.corner_radius =
+                egui::CornerRadius::same(self.settings.tool_shelf_rounding.unwrap_or(if docked {
+                    0.0
+                } else {
+                    self.theme.tool_shelf_rounding
+                }) as u8);
+            if docked {
+                shelf_frame.shadow = egui::epaint::Shadow::NONE;
+            }
+            let content_w = (bar_w - shelf_frame.total_margin().sum().x).max(0.0);
+            let shelf_inner = shelf_frame.show(ui, |ui| {
+                // The painted frame must reserve the blank space as well.
+                ui.set_width(content_w);
+                // Context bar label styling
+                ui.style_mut().override_font_id =
+                    Some(egui::FontId::proportional(crate::theme::Theme::FONT_LABEL));
+                ui.visuals_mut().override_text_color = Some(self.theme.text_color);
+                egui::ScrollArea::horizontal()
+                    .id_salt("tool_options_scroll")
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            if !has_project {
+                                ui.disable();
                             }
-                            if ui.button(crate::t!("settings.keybinds.apply")).clicked() {
-                                commit_straighten = true;
-                            }
-                            if ui.button(crate::t!("common.cancel")).clicked() {
-                                cancel_straighten = true;
-                            }
-                        } else if let Some(ref mut overlay) = self.paste_overlay {
-                            // --- Paste overlay context bar ---
-                            crate::signal_widgets::tool_shelf_tag(
-                                ui,
-                                &crate::t!("ui.paste"),
-                                self.theme.accent,
-                                &self.theme,
-                            );
-                            ui.add_space(6.0);
-
-                            // Filter mode
-                            ui.label(crate::t!("ui.filter_2"));
-                            let current_interp = overlay.interpolation;
-                            egui::ComboBox::from_id_salt("ctx_paste_filter")
-                                .selected_text(current_interp.label())
-                                .width(110.0)
-                                .show_ui(ui, |ui| {
-                                    for interp in crate::ops::transform::Interpolation::all() {
-                                        if ui
-                                            .selectable_label(
-                                                *interp == current_interp,
-                                                interp.label(),
-                                            )
-                                            .clicked()
-                                        {
-                                            overlay.interpolation = *interp;
-                                            self.tools_panel.move_interpolation = *interp;
-                                        }
-                                    }
-                                });
-
-                            ui.add_space(4.0);
-
-                            // Anti-aliasing toggle
-                            if ui
-                                .checkbox(&mut overlay.anti_aliasing, crate::t!("ui.anti_aliasing"))
-                                .changed()
-                            {
-                                self.tools_panel.move_anti_aliasing = overlay.anti_aliasing;
-                            }
-
-                            ui.add_space(4.0);
-
-                            // Position info
-                            let (content_w, content_h) = overlay.content_size();
-                            ui.label(crate::i18n::format_translation("ui.x_0_y_1_w_2_h_3_rot_4", &[("0", format!("{:.0}", overlay.center.x - content_w as f32 * overlay.scale_x / 2.0)), ("1", format!("{:.0}", overlay.center.y - content_h as f32 * overlay.scale_y / 2.0)), ("2", format!("{:.0}", content_w as f32 * overlay.scale_x)), ("3", format!("{:.0}", content_h as f32 * overlay.scale_y)), ("4", format!("{:.1}", overlay.rotation.to_degrees()))]));
-
-                            ui.add_space(4.0);
-
-                            // Quick action — inline with the rest of the controls.
-                            if ui
-                                .button(crate::t!("common.reset"))
-                                .on_hover_text(crate::t!("ui.reset_all_transforms_and_crop"))
-                                .clicked()
-                            {
-                                overlay.rotation = 0.0;
-                                overlay.scale_x = 1.0;
-                                overlay.scale_y = 1.0;
-                                overlay.anchor_offset = egui::Vec2::ZERO;
-                                overlay.reset_crop();
-                            }
-                        } else {
-                            let ctx_primary = self.colors_panel.get_primary_color();
-                            let ctx_secondary = self.colors_panel.get_secondary_color();
-                            self.tools_panel.show_context_bar(
-                                ui,
-                                &self.assets,
-                                ctx_primary,
-                                ctx_secondary,
-                                &self.theme,
-                            );
-                            // Quick action — inline with the rest of the controls.
-                            if self
-                                .assets
-                                .icon_button(
+                            if let Some(session) = self.straighten_session.as_mut() {
+                                crate::signal_widgets::tool_shelf_tag(
                                     ui,
-                                    crate::assets::Icon::UiStraighten,
-                                    egui::Vec2::splat(20.0),
-                                )
-                                .on_hover_text(crate::t!("ui.straighten_canvas"))
-                                .clicked()
-                            {
-                                start_straighten = true;
+                                    &crate::t!("ui.straighten"),
+                                    self.theme.accent,
+                                    &self.theme,
+                                );
+                                ui.label(crate::t!("ctx.text.effects.gradient.angle"));
+                                ui.add(
+                                    crate::ui::numeric::Numeric::new(&mut session.angle_degrees)
+                                        .speed(0.1)
+                                        .range(-180.0..=180.0)
+                                        .suffix("°"),
+                                );
+                                ui.label(crate::t!("ui.interpolation"));
+                                egui::ComboBox::from_id_salt("straighten_interpolation")
+                                    .selected_text(session.interpolation.label())
+                                    .width(100.0)
+                                    .show_ui(ui, |ui| {
+                                        for interpolation in [
+                                            crate::ops::transform::Interpolation::Nearest,
+                                            crate::ops::transform::Interpolation::Bilinear,
+                                        ] {
+                                            ui.selectable_value(
+                                                &mut session.interpolation,
+                                                interpolation,
+                                                interpolation.label(),
+                                            );
+                                        }
+                                    });
+                                // Quick actions — inline with the rest of the controls.
+                                if ui.button(crate::t!("common.reset")).clicked() {
+                                    session.angle_degrees = 0.0;
+                                }
+                                if ui.button(crate::t!("settings.keybinds.apply")).clicked() {
+                                    commit_straighten = true;
+                                }
+                                if ui.button(crate::t!("common.cancel")).clicked() {
+                                    cancel_straighten = true;
+                                }
+                            } else if let Some(ref mut overlay) = self.paste_overlay {
+                                // --- Paste overlay context bar ---
+                                crate::signal_widgets::tool_shelf_tag(
+                                    ui,
+                                    &crate::t!("ui.paste"),
+                                    self.theme.accent,
+                                    &self.theme,
+                                );
+                                ui.add_space(6.0);
+
+                                // Filter mode
+                                ui.label(crate::t!("ui.filter_2"));
+                                let current_interp = overlay.interpolation;
+                                egui::ComboBox::from_id_salt("ctx_paste_filter")
+                                    .selected_text(current_interp.label())
+                                    .width(110.0)
+                                    .show_ui(ui, |ui| {
+                                        for interp in crate::ops::transform::Interpolation::all() {
+                                            if ui
+                                                .selectable_label(
+                                                    *interp == current_interp,
+                                                    interp.label(),
+                                                )
+                                                .clicked()
+                                            {
+                                                overlay.interpolation = *interp;
+                                                self.tools_panel.move_interpolation = *interp;
+                                            }
+                                        }
+                                    });
+
+                                ui.add_space(4.0);
+
+                                // Anti-aliasing toggle
+                                if ui
+                                    .checkbox(
+                                        &mut overlay.anti_aliasing,
+                                        crate::t!("ui.anti_aliasing"),
+                                    )
+                                    .changed()
+                                {
+                                    self.tools_panel.move_anti_aliasing = overlay.anti_aliasing;
+                                }
+
+                                ui.add_space(4.0);
+
+                                // Position info
+                                let (content_w, content_h) = overlay.content_size();
+                                ui.label(crate::i18n::format_translation(
+                                    "ui.x_0_y_1_w_2_h_3_rot_4",
+                                    &[
+                                        (
+                                            "0",
+                                            format!(
+                                                "{:.0}",
+                                                overlay.center.x
+                                                    - content_w as f32 * overlay.scale_x / 2.0
+                                            ),
+                                        ),
+                                        (
+                                            "1",
+                                            format!(
+                                                "{:.0}",
+                                                overlay.center.y
+                                                    - content_h as f32 * overlay.scale_y / 2.0
+                                            ),
+                                        ),
+                                        ("2", format!("{:.0}", content_w as f32 * overlay.scale_x)),
+                                        ("3", format!("{:.0}", content_h as f32 * overlay.scale_y)),
+                                        ("4", format!("{:.1}", overlay.rotation.to_degrees())),
+                                    ],
+                                ));
+
+                                ui.add_space(4.0);
+
+                                // Quick action — inline with the rest of the controls.
+                                if ui
+                                    .button(crate::t!("common.reset"))
+                                    .on_hover_text(crate::t!("ui.reset_all_transforms_and_crop"))
+                                    .clicked()
+                                {
+                                    overlay.rotation = 0.0;
+                                    overlay.scale_x = 1.0;
+                                    overlay.scale_y = 1.0;
+                                    overlay.anchor_offset = egui::Vec2::ZERO;
+                                    overlay.reset_crop();
+                                }
+                            } else {
+                                let ctx_primary = self.colors_panel.get_primary_color();
+                                let ctx_secondary = self.colors_panel.get_secondary_color();
+                                start_straighten = self.tools_panel.show_context_bar(
+                                    ui,
+                                    &self.assets,
+                                    ctx_primary,
+                                    ctx_secondary,
+                                    &self.theme,
+                                );
                             }
-                        }
+                        });
                     });
-                });
-                shelf_ui_rect = shelf_inner.response.rect;
             });
+            shelf_ui_rect = shelf_inner.response.rect;
+        };
+        if docked {
+            egui::Panel::top("docked_tool_options")
+                .frame(egui::Frame::NONE)
+                .show(root_ui, &mut show_shelf);
+        } else {
+            egui::Area::new(egui::Id::new("tool_shelf_strip"))
+                .order(egui::Order::Middle)
+                .fixed_pos(shelf_anchor)
+                .show(ctx, &mut show_shelf);
+        }
         self.remember_ui_cursor_rect(shelf_ui_rect);
         if start_straighten {
             self.start_straighten();
@@ -604,6 +645,7 @@ impl PaintFEApp {
             self.colors_panel.is_expanded(),
             self.colors_panel.section_mask(),
         );
+        self.remember_keyboard_owners(ctx);
         self.publish_ui_cursor_blocking_rects();
         if self.palette_reposition_settle_frames > 0 {
             self.palette_reposition_settle_frames -= 1;

@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=รู
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=รูปภาพคลิปบอร์ดคือ {0} × {1} ซึ่งใหญ่กว่าแคนวาสปัจจุบัน ({2} × {3}) คุณต้องการดำเนินการอย่างไร?
 keybind.clear_selected_pixels=ล้างพิกเซลที่เลือก
 keybind.fill_selected_pixels=เติมสีพิกเซลที่เลือก
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape ยกเลิกการเลือก
+settings.interface.tools_show_colors=แสดงตัวควบคุมสีในแผงเครื่องมือ
+settings.interface.tool_options=แถบตัวเลือกเครื่องมือ
+settings.interface.floating=ลอย
+settings.interface.docked=ยึดติด
+settings.interface.bar_opacity=ความทึบของพื้นหลัง
+settings.interface.bar_spacing=ระยะห่างและระยะขอบภายใน
+settings.interface.bar_top=ระยะห่างด้านบน
+settings.interface.bar_link_sides=เชื่อมระยะห่างซ้ายและขวา
+settings.interface.bar_left=ระยะห่างด้านซ้าย
+settings.interface.bar_right=ระยะห่างด้านขวา
+settings.interface.bar_padding_x=ระยะขอบภายในแนวนอน
+settings.interface.bar_padding_y=ระยะขอบภายในแนวตั้ง
+settings.interface.bar_radius=รัศมีมุม

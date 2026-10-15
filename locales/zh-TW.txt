@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=影像
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=剪貼簿影像為{0} × {1}，大於目前畫布（{2} × {3}）。您想如何繼續？
 keybind.clear_selected_pixels=清除選取的像素
 keybind.fill_selected_pixels=填滿選取的像素
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape 取消選取範圍
+settings.interface.tools_show_colors=在工具面板中顯示色彩控制項
+settings.interface.tool_options=工具選項列
+settings.interface.floating=浮動
+settings.interface.docked=停駐
+settings.interface.bar_opacity=背景不透明度
+settings.interface.bar_spacing=間距與內距
+settings.interface.bar_top=頂部間距
+settings.interface.bar_link_sides=連結左右間距
+settings.interface.bar_left=左側間距
+settings.interface.bar_right=右側間距
+settings.interface.bar_padding_x=水平內距
+settings.interface.bar_padding_y=垂直內距
+settings.interface.bar_radius=圓角半徑

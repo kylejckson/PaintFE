@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=Раз
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=Размер изображения из буфера обмена {0} × {1} превышает размер текущего холста ({2} × {3}). Как продолжить?
 keybind.clear_selected_pixels=Очистить выделенные пиксели
 keybind.fill_selected_pixels=Залить выделенные пиксели
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape снимает выделение
+settings.interface.tools_show_colors=Показывать управление цветом на панели инструментов
+settings.interface.tool_options=Панель параметров инструмента
+settings.interface.floating=Плавающая
+settings.interface.docked=Закреплённая
+settings.interface.bar_opacity=Непрозрачность фона
+settings.interface.bar_spacing=Отступы
+settings.interface.bar_top=Отступ сверху
+settings.interface.bar_link_sides=Связать левый и правый отступы
+settings.interface.bar_left=Отступ слева
+settings.interface.bar_right=Отступ справа
+settings.interface.bar_padding_x=Внутренний отступ по горизонтали
+settings.interface.bar_padding_y=Внутренний отступ по вертикали
+settings.interface.bar_radius=Радиус углов

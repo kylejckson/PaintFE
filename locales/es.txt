@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=La ima
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=La imagen del portapapeles es {0} × {1}, que es más grande que el lienzo actual ({2} × {3}). ¿Cómo le gustaría proceder?
 keybind.clear_selected_pixels=Borrar los píxeles seleccionados
 keybind.fill_selected_pixels=Rellenar los píxeles seleccionados
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape quita la selección
+settings.interface.tools_show_colors=Mostrar controles de color en el panel de herramientas
+settings.interface.tool_options=Barra de opciones de herramienta
+settings.interface.floating=Flotante
+settings.interface.docked=Acoplada
+settings.interface.bar_opacity=Opacidad del fondo
+settings.interface.bar_spacing=Espaciado y márgenes
+settings.interface.bar_top=Espacio superior
+settings.interface.bar_link_sides=Vincular espacios izquierdo y derecho
+settings.interface.bar_left=Espacio izquierdo
+settings.interface.bar_right=Espacio derecho
+settings.interface.bar_padding_x=Relleno horizontal
+settings.interface.bar_padding_y=Relleno vertical
+settings.interface.bar_radius=Radio de las esquinas

@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=Роз
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=Розмір зображення з буфера обміну {0} × {1} перевищує розмір поточного полотна ({2} × {3}). Як продовжити?
 keybind.clear_selected_pixels=Очистити виділені пікселі
 keybind.fill_selected_pixels=Залити виділені пікселі
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape знімає виділення
+settings.interface.tools_show_colors=Показувати керування кольором на панелі інструментів
+settings.interface.tool_options=Панель параметрів інструмента
+settings.interface.floating=Плаваюча
+settings.interface.docked=Закріплена
+settings.interface.bar_opacity=Непрозорість тла
+settings.interface.bar_spacing=Відступи
+settings.interface.bar_top=Відступ зверху
+settings.interface.bar_link_sides=Пов’язати лівий і правий відступи
+settings.interface.bar_left=Відступ зліва
+settings.interface.bar_right=Відступ справа
+settings.interface.bar_padding_x=Внутрішній відступ по горизонталі
+settings.interface.bar_padding_y=Внутрішній відступ по вертикалі
+settings.interface.bar_radius=Радіус кутів

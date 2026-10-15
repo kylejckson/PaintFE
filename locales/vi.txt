@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=Hình 
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=Hình ảnh bảng nhớ tạm là {0} × {1}, lớn hơn khung vẽ hiện tại ({2} × {3}). Bạn muốn tiếp tục như thế nào?
 keybind.clear_selected_pixels=Xóa các điểm ảnh đã chọn
 keybind.fill_selected_pixels=Tô các điểm ảnh đã chọn
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape bỏ vùng chọn
+settings.interface.tools_show_colors=Hiện điều khiển màu trong bảng Công cụ
+settings.interface.tool_options=Thanh tùy chọn công cụ
+settings.interface.floating=Nổi
+settings.interface.docked=Gắn cố định
+settings.interface.bar_opacity=Độ mờ đục của nền
+settings.interface.bar_spacing=Khoảng cách và lề trong
+settings.interface.bar_top=Khoảng cách phía trên
+settings.interface.bar_link_sides=Liên kết khoảng cách trái và phải
+settings.interface.bar_left=Khoảng cách bên trái
+settings.interface.bar_right=Khoảng cách bên phải
+settings.interface.bar_padding_x=Lề trong ngang
+settings.interface.bar_padding_y=Lề trong dọc
+settings.interface.bar_radius=Bán kính góc

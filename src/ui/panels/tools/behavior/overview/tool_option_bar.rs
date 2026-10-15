@@ -6,121 +6,158 @@ impl ToolsPanel {
         primary_color: Color32,
         secondary_color: Color32,
         theme: &crate::theme::Theme,
-    ) {
-        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-            // Tool name tag badge (Signal Grid style)
-            crate::signal_widgets::tool_shelf_tag(
-                ui,
-                &self.active_tool_name().to_uppercase(),
-                ui.visuals().widgets.active.bg_stroke.color,
-                theme,
-            );
-            ui.add_space(6.0);
+    ) -> bool {
+        // Reserve the image button's padded height before placing any controls.
+        let button_style = ui
+            .style()
+            .button_style(&Default::default(), Default::default());
+        let row_height =
+            (20.0 + button_style.frame.total_margin().sum().y).max(ui.spacing().interact_size.y);
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), row_height),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                // Tool name tag badge (Signal Grid style)
+                crate::signal_widgets::tool_shelf_tag(
+                    ui,
+                    &self.active_tool_name().to_uppercase(),
+                    ui.visuals().widgets.active.bg_stroke.color,
+                    theme,
+                );
+                ui.add_space(6.0);
 
-            // Rebuild tip mask cache for brush/eraser tools
-            // Called both before AND after tool options UI so picker changes
-            // take effect in the same frame (picker runs inside show_*_options).
-            match self.active_tool {
-                Tool::Brush | Tool::Eraser => {
-                    self.rebuild_tip_mask(assets);
-                }
-                _ => {}
-            }
-
-            match self.active_tool {
-                Tool::Brush | Tool::Pencil => {
-                    self.show_brush_options(ui, assets);
-                }
-                Tool::Line => {
-                    self.show_line_options(ui, assets);
-                }
-                Tool::Eraser => {
-                    self.show_eraser_options(ui, assets);
-                }
-                _ => {}
-            }
-            // Re-run rebuild_tip_mask after options UI so that picker changes
-            // (tip/size/hardness) take effect this frame, not next frame.
-            match self.active_tool {
-                Tool::Brush | Tool::Eraser => {
-                    self.rebuild_tip_mask(assets);
-                }
-                _ => {}
-            }
-            match self.active_tool {
-                // Already handled above
-                Tool::Brush | Tool::Pencil | Tool::Line | Tool::Eraser => {}
-                Tool::RectangleSelect | Tool::EllipseSelect => {
-                    self.show_selection_options(ui);
-                }
-                Tool::MovePixels => {
-                    self.show_move_options(ui);
-                }
-                Tool::MoveSelection => {
-                    self.show_move_options(ui);
-                }
-                Tool::MagicWand => {
-                    self.show_magic_wand_options(ui);
-                }
-                Tool::Fill => {
-                    self.show_fill_options(ui);
-                }
-                Tool::ColorPicker => {
-                    // Hint only ÔÇö no options
-                }
-                Tool::Lasso => {
-                    self.show_lasso_options(ui);
-                }
-                Tool::Zoom => {
-                    // Toggle button for zoom direction (touch-friendly)
-                    let label = if self.zoom_tool_state.zoom_out_mode {
-                        "\u{1F50D}\u{2796} Zoom Out"
-                    } else {
-                        "\u{1F50D}\u{2795} Zoom In"
-                    };
-                    if ui
-                        .selectable_label(self.zoom_tool_state.zoom_out_mode, label)
-                        .clicked()
-                    {
-                        self.zoom_tool_state.zoom_out_mode = !self.zoom_tool_state.zoom_out_mode;
+                // Rebuild tip mask cache for brush/eraser tools
+                // Called both before AND after tool options UI so picker changes
+                // take effect in the same frame (picker runs inside show_*_options).
+                match self.active_tool {
+                    Tool::Brush | Tool::Eraser => {
+                        self.rebuild_tip_mask(assets);
                     }
-                    // Removed inline label ÔÇö zoom hint is in tool_hint
+                    _ => {}
                 }
-                Tool::Pan => {
-                    // Hint only ÔÇö no options
+
+                match self.active_tool {
+                    Tool::Brush | Tool::Pencil => {
+                        self.show_brush_options(ui, assets);
+                    }
+                    Tool::Line => {
+                        self.show_line_options(ui, assets);
+                    }
+                    Tool::Eraser => {
+                        self.show_eraser_options(ui, assets);
+                    }
+                    _ => {}
                 }
-                Tool::PerspectiveCrop => {
-                    self.show_perspective_crop_options(ui);
+                // Re-run rebuild_tip_mask after options UI so that picker changes
+                // (tip/size/hardness) take effect this frame, not next frame.
+                match self.active_tool {
+                    Tool::Brush | Tool::Eraser => {
+                        self.rebuild_tip_mask(assets);
+                    }
+                    _ => {}
                 }
-                Tool::Gradient => {
-                    self.show_gradient_options(ui, assets, primary_color, secondary_color);
+                match self.active_tool {
+                    // Already handled above
+                    Tool::Brush | Tool::Pencil | Tool::Line | Tool::Eraser => {}
+                    Tool::RectangleSelect | Tool::EllipseSelect => {
+                        self.show_selection_options(ui);
+                    }
+                    Tool::MovePixels => {
+                        self.show_move_options(ui);
+                    }
+                    Tool::MoveSelection => {
+                        self.show_move_options(ui);
+                    }
+                    Tool::MagicWand => {
+                        self.show_magic_wand_options(ui);
+                    }
+                    Tool::Fill => {
+                        self.show_fill_options(ui);
+                    }
+                    Tool::ColorPicker => {
+                        // Hint only ÔÇö no options
+                    }
+                    Tool::Lasso => {
+                        self.show_lasso_options(ui);
+                    }
+                    Tool::Zoom => {
+                        // Toggle button for zoom direction (touch-friendly)
+                        let label = if self.zoom_tool_state.zoom_out_mode {
+                            "\u{1F50D}\u{2796} Zoom Out"
+                        } else {
+                            "\u{1F50D}\u{2795} Zoom In"
+                        };
+                        if ui
+                            .selectable_label(self.zoom_tool_state.zoom_out_mode, label)
+                            .clicked()
+                        {
+                            self.zoom_tool_state.zoom_out_mode =
+                                !self.zoom_tool_state.zoom_out_mode;
+                        }
+                        // Removed inline label ÔÇö zoom hint is in tool_hint
+                    }
+                    Tool::Pan => {
+                        // Hint only ÔÇö no options
+                    }
+                    Tool::PerspectiveCrop => {
+                        self.show_perspective_crop_options(ui);
+                    }
+                    Tool::Gradient => {
+                        self.show_gradient_options(ui, assets, primary_color, secondary_color);
+                    }
+                    Tool::Liquify => {
+                        self.show_liquify_options(ui);
+                    }
+                    Tool::MeshWarp => {
+                        self.show_mesh_warp_options(ui);
+                    }
+                    Tool::ColorRemover => {
+                        self.show_color_remover_options(ui);
+                    }
+                    Tool::Smudge => {
+                        self.show_smudge_options(ui);
+                    }
+                    Tool::Text => {
+                        self.show_text_options(ui, assets);
+                    }
+                    Tool::Shapes => {
+                        self.show_shapes_options(ui, assets);
+                    }
+                    Tool::CloneStamp => {
+                        self.show_clone_stamp_options(ui);
+                    }
+                    Tool::ContentAwareBrush => {
+                        self.show_content_aware_options(ui);
+                    }
                 }
-                Tool::Liquify => {
-                    self.show_liquify_options(ui);
-                }
-                Tool::MeshWarp => {
-                    self.show_mesh_warp_options(ui);
-                }
-                Tool::ColorRemover => {
-                    self.show_color_remover_options(ui);
-                }
-                Tool::Smudge => {
-                    self.show_smudge_options(ui);
-                }
-                Tool::Text => {
-                    self.show_text_options(ui, assets);
-                }
-                Tool::Shapes => {
-                    self.show_shapes_options(ui, assets);
-                }
-                Tool::CloneStamp => {
-                    self.show_clone_stamp_options(ui);
-                }
-                Tool::ContentAwareBrush => {
-                    self.show_content_aware_options(ui);
-                }
-            }
-        });
+                // Share the controls' row so the action uses the same vertical alignment.
+                let icon = crate::assets::Icon::UiStraighten;
+                let button = if let Some(texture) = assets.icon_texture(icon) {
+                    egui::Button::image(
+                        egui::Image::new(texture).fit_to_exact_size(Vec2::splat(20.0)),
+                    )
+                } else {
+                    egui::Button::new(icon.emoji())
+                };
+                // Let the button allocate its full frame instead of constraining
+                // its padded image inside icon_button's smaller add_sized child.
+                let response = ui.add(button);
+                response.widget_info(|| {
+                    egui::WidgetInfo::labeled(
+                        egui::WidgetType::Button,
+                        ui.is_enabled(),
+                        icon.tooltip(),
+                    )
+                });
+                crate::ui::polish::focus(
+                    ui,
+                    &response,
+                    crate::theme::Theme::tool_button_rounding_for(ui),
+                );
+                response.on_hover_text(icon.tooltip()).clicked()
+            },
+        )
+        .inner
     }
 
     fn show_move_options(&mut self, ui: &mut egui::Ui) {

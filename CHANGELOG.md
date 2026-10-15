@@ -6,6 +6,31 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.7] - 2026-10-15
+
+- Fixed filters ignoring selections, Pixel Drag direction and incomplete canvas borders.
+- Added a resizable Tools panel and more control over the tool options bar.
+- Fixed panel positions, file-picker folders and editing behind open dialogs.
+
+### Fixed
+
+- Kept Layers and History in their saved positions when starting with display scaling.
+- Separated remembered folders for images, themes, scripts and AI files.
+- Cleaned up Recent Files paths and reordered the File menu.
+- Corrected History icons and Auto Levels behaviour.
+- Blocked document changes behind adjustment and Save As dialogs while keeping canvas wheel zoom available.
+- Made Glitch, Ink, Oil Painting and Color Filter respect selections. Fixed Pixel Drag direction and Canvas Border drawing on all four sides.
+- Removed the duplicate Straighten Canvas tooltip and centred its button in the toolbar.
+- Recognised AppImage portable settings directories beside the original AppImage.
+
+### Added
+
+- Made Tools resizable in portrait and landscape layouts, with an option to hide its colour controls.
+- Added floating and docked tool options, background opacity, spacing, padding and corner radius controls.
+- Added optional Escape deselection with Undo support, while preserving text-field and tool cancellation behaviour.
+
+Related issues: 155, 165, 166, 167, 168, 169, 170, 171, 172, 173 and 174. These remain open for users to confirm the changes.
+
 ## [1.4.6] - 2026-10-14
 
 - Fixed background-removal edge contrast and faint transparency in solid areas.

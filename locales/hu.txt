@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=A kép
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=A vágólap képe {0} × {1}, amely nagyobb, mint az aktuális vászon ({2} × {3}). Hogyan szeretne továbblépni?
 keybind.clear_selected_pixels=Kijelölt képpontok törlése
 keybind.fill_selected_pixels=Kijelölt képpontok kitöltése
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Az Escape megszünteti a kijelölést
+settings.interface.tools_show_colors=Színvezérlők megjelenítése az Eszközök panelen
+settings.interface.tool_options=Eszközbeállítások sávja
+settings.interface.floating=Lebegő
+settings.interface.docked=Dokkolt
+settings.interface.bar_opacity=Háttér átlátszatlansága
+settings.interface.bar_spacing=Térköz és belső margó
+settings.interface.bar_top=Felső térköz
+settings.interface.bar_link_sides=Bal és jobb térköz összekapcsolása
+settings.interface.bar_left=Bal térköz
+settings.interface.bar_right=Jobb térköz
+settings.interface.bar_padding_x=Vízszintes belső margó
+settings.interface.bar_padding_y=Függőleges belső margó
+settings.interface.bar_radius=Saroksugár

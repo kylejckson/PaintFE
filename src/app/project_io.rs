@@ -410,6 +410,7 @@ impl PaintFEApp {
 
     /// Used by both "Open…" menu and drag-and-drop.
     fn open_file_by_path(&mut self, path: std::path::PathBuf, current_time: f64) {
+        crate::services::file_dialogs::remember(crate::services::file_dialogs::Purpose::Documents, &path);
         let normalized_path = Self::normalize_open_path(&path);
 
         // Check if file is already open in another tab

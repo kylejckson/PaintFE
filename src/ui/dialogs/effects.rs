@@ -112,16 +112,68 @@ macro_rules! effect_dialog_base {
 
 /// Track a slider for deferred preview: the slider value updates instantly
 /// (no lag) but the effect is only applied when the slider is *released*.
-/// Returns `true` when the slider was just released after being dragged.
+/// Returns `true` after a drag or a committed keyboard/numeric edit.
 pub fn track_slider(response: &egui::Response, dragging: &mut bool) -> bool {
-    if response.dragged() || response.changed() {
+    if response.dragged() {
         *dragging = true;
     }
     if response.drag_stopped() {
         *dragging = false;
         return true; // "apply now"
     }
+    // Editing the slider's numeric field or using arrow keys never produces
+    // drag_stopped. Those committed changes must refresh the preview too.
+    if response.changed() && !response.is_pointer_button_down_on() {
+        *dragging = false;
+        return true;
+    }
     false
+}
+
+#[cfg(test)]
+mod slider_preview_tests {
+    use super::*;
+    #[test]
+    fn keyboard_slider_edits_request_a_preview_without_dragging() {
+        let ctx = egui::Context::default();
+        let mut value = 45.0f32;
+        let mut dragging = false;
+        let mut applied = false;
+        for frame in 0..3 {
+            let events = if frame == 2 {
+                vec![egui::Event::Key {
+                    key: egui::Key::ArrowRight,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }]
+            } else {
+                vec![]
+            };
+            let _ = ctx.run_ui(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    let response = ui.add(egui::Slider::new(&mut value, 0.0..=100.0));
+                    if frame == 1 {
+                        response.request_focus();
+                    }
+                    if track_slider(&response, &mut dragging) {
+                        applied = true;
+                    }
+                },
+            );
+        }
+        assert!(value > 45.0);
+        assert!(
+            applied,
+            "keyboard edit must refresh preview without a mouse release"
+        );
+        assert!(!dragging);
+    }
 }
 
 // ============================================================================

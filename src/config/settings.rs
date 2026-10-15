@@ -25,6 +25,68 @@ impl ZoomFilterMode {
     }
 }
 
+/// Appearance of the horizontal tool-options bar. Kept separate from keybindings.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct ToolShelfSettings {
+    pub docked: bool,
+    /// None uses the layout default (90% floating, 100% docked).
+    pub opacity: Option<f32>,
+    pub top: f32,
+    pub left: f32,
+    pub right: f32,
+    pub link_sides: bool,
+    pub padding_x: f32,
+    pub padding_y: f32,
+}
+
+impl Default for ToolShelfSettings {
+    fn default() -> Self {
+        Self {
+            docked: false,
+            opacity: None,
+            top: 8.0,
+            left: 12.0,
+            right: 12.0,
+            link_sides: true,
+            padding_x: 10.0,
+            padding_y: 5.0,
+        }
+    }
+}
+
+impl ToolShelfSettings {
+    pub fn effective_opacity(&self) -> f32 {
+        self.opacity
+            .unwrap_or(if self.docked { 1.0 } else { 0.9 })
+            .clamp(0.0, 1.0)
+    }
+
+    pub fn normalize(&mut self) {
+        let defaults = Self::default();
+        for (value, fallback) in [
+            (&mut self.top, defaults.top),
+            (&mut self.left, defaults.left),
+            (&mut self.right, defaults.right),
+            (&mut self.padding_x, defaults.padding_x),
+            (&mut self.padding_y, defaults.padding_y),
+        ] {
+            *value = if value.is_finite() {
+                value.clamp(0.0, 64.0)
+            } else {
+                fallback
+            };
+        }
+        self.opacity = self
+            .opacity
+            .filter(|v| v.is_finite())
+            .map(|v| v.clamp(0.0, 1.0));
+        if self.link_sides {
+            self.right = self.left;
+        }
+    }
+}
+
 /// Application settings that persist across sessions
 #[derive(Clone, Debug)]
 pub struct AppSettings {
@@ -239,6 +301,10 @@ pub struct AppSettings {
     pub menu_rounding: Option<f32>,
     /// Tool shelf corner radius override (px).
     pub tool_shelf_rounding: Option<f32>,
+    pub tool_shelf: ToolShelfSettings,
+    pub tools_show_colors: bool,
+    pub escape_deselect: bool,
+    pub persist_tools_panel_size: Option<(f32, f32)>,
     pub tool_button_rounding: Option<f32>,
     /// Badge corner radius override (px).
     pub badge_rounding: Option<f32>,
@@ -433,6 +499,10 @@ impl Default for AppSettings {
             window_rounding: None,
             menu_rounding: None,
             tool_shelf_rounding: None,
+            tool_shelf: ToolShelfSettings::default(),
+            tools_show_colors: true,
+            escape_deselect: true,
+            persist_tools_panel_size: None,
             tool_button_rounding: None,
             badge_rounding: None,
             tab_rounding: None,
@@ -667,6 +737,10 @@ impl AppSettings {
         if let Some(v) = self.menu_rounding {
             content.push_str(&format!("menu_rounding={v}\n"));
         }
+        if let Ok(value) = serde_json::to_string(&self.tool_shelf) {
+            content.push_str(&format!("tool_shelf={value}\n"));
+        }
+        content.push_str(&format!("tools_show_colors={}\n", self.tools_show_colors));
         if let Some(v) = self.tool_shelf_rounding {
             content.push_str(&format!("tool_shelf_rounding={v}\n"));
         }
@@ -839,6 +913,15 @@ impl AppSettings {
         }
         if let Some(v) = map.get("menu_rounding") {
             self.menu_rounding = v.parse::<f32>().ok();
+        }
+        if let Some(v) = map.get("tool_shelf")
+            && let Ok(mut shelf) = serde_json::from_str::<ToolShelfSettings>(v)
+        {
+            shelf.normalize();
+            self.tool_shelf = shelf;
+        }
+        if let Some(v) = map.get("tools_show_colors") {
+            self.tools_show_colors = *v == "true";
         }
         if let Some(v) = map.get("tool_shelf_rounding") {
             self.tool_shelf_rounding = v.parse::<f32>().ok();
@@ -1097,6 +1180,11 @@ impl AppSettings {
         content.push_str(&format!(
             "persist_script_editor_visible={}\n",
             self.persist_script_editor_visible
+        ));
+        content.push_str(&format!("escape_deselect={}\n", self.escape_deselect));
+        content.push_str(&format!(
+            "persist_tools_panel_size={}\n",
+            Self::opt_pair_to_str(self.persist_tools_panel_size)
         ));
         content.push_str(&format!(
             "persist_tools_panel_pos={}\n",
@@ -1363,6 +1451,10 @@ impl AppSettings {
         if let Some(v) = self.menu_rounding {
             content.push_str(&format!("menu_rounding={v}\n"));
         }
+        if let Ok(value) = serde_json::to_string(&self.tool_shelf) {
+            content.push_str(&format!("tool_shelf={value}\n"));
+        }
+        content.push_str(&format!("tools_show_colors={}\n", self.tools_show_colors));
         if let Some(v) = self.tool_shelf_rounding {
             content.push_str(&format!("tool_shelf_rounding={v}\n"));
         }
@@ -1944,6 +2036,17 @@ impl AppSettings {
                 "menu_rounding" => {
                     s.menu_rounding = val.parse().ok();
                 }
+                "tool_shelf" => {
+                    if let Ok(mut shelf) = serde_json::from_str::<ToolShelfSettings>(val) {
+                        shelf.normalize();
+                        s.tool_shelf = shelf;
+                    }
+                }
+                "tools_show_colors" => s.tools_show_colors = val == "true",
+                "escape_deselect" => s.escape_deselect = val == "true",
+                "persist_tools_panel_size" => {
+                    s.persist_tools_panel_size = Self::str_to_opt_pair(val)
+                }
                 "tool_shelf_rounding" => {
                     s.tool_shelf_rounding = val.parse().ok();
                 }
@@ -2109,6 +2212,14 @@ mod refinement_tests {
             last_export_directory: "saved exports".into(),
             recent_files: vec!["first.png".into(), "second.pfe".into()],
             persist_colors_panel_size: Some((150.0, 210.0)),
+            persist_tools_panel_size: Some((420.0, 170.0)),
+            tools_show_colors: false,
+            escape_deselect: false,
+            tool_shelf: ToolShelfSettings {
+                docked: true,
+                opacity: Some(0.4),
+                ..Default::default()
+            },
             onnx_graph_optimization: crate::ops::ai::GraphOptimization::Basic,
             onnx_cpu_memory_arena: true,
             ..Default::default()
@@ -2121,6 +2232,11 @@ mod refinement_tests {
         assert_eq!(restored.last_export_directory, "saved exports");
         assert_eq!(restored.recent_files, ["first.png", "second.pfe"]);
         assert_eq!(restored.persist_colors_panel_size, Some((150.0, 210.0)));
+        assert_eq!(restored.persist_tools_panel_size, Some((420.0, 170.0)));
+        assert!(!restored.tools_show_colors);
+        assert!(!restored.escape_deselect);
+        assert!(restored.tool_shelf.docked);
+        assert_eq!(restored.tool_shelf.opacity, Some(0.4));
         assert!(restored.onnx_cpu_memory_arena);
         assert_eq!(
             restored.onnx_graph_optimization,
@@ -2226,5 +2342,57 @@ mod polish_tests {
         let before = settings.ui_polish.clone();
         settings.import_theme_from_string("ui_polish={broken\n");
         assert_eq!(settings.ui_polish, before);
+    }
+}
+
+#[cfg(test)]
+mod tool_shelf_tests {
+    use super::*;
+    #[test]
+    fn shelf_theme_roundtrip_keeps_layout_and_does_not_change_escape_binding() {
+        let source = AppSettings {
+            tools_show_colors: false,
+            tool_shelf_rounding: Some(4.0),
+            tool_shelf: ToolShelfSettings {
+                docked: true,
+                opacity: Some(0.35),
+                left: 6.0,
+                right: 19.0,
+                link_sides: false,
+                padding_x: 14.0,
+                padding_y: 2.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut target = AppSettings::default();
+        target.import_theme_from_string(&source.export_theme_to_string());
+        assert_eq!(source.tool_shelf, target.tool_shelf);
+        assert_eq!(target.tool_shelf_rounding, Some(4.0));
+        assert!(!target.tools_show_colors);
+        assert!(target.escape_deselect);
+    }
+    #[test]
+    fn shelf_defaults_legacy_import_and_invalid_values_are_safe() {
+        let mut settings = AppSettings::default();
+        assert_eq!(settings.tool_shelf.effective_opacity(), 0.9);
+        settings.tool_shelf.docked = true;
+        assert_eq!(settings.tool_shelf.effective_opacity(), 1.0);
+        settings.import_theme_from_string("tool_shelf={broken\n");
+        assert!(settings.tool_shelf.docked);
+        let mut shelf = ToolShelfSettings {
+            top: f32::NAN,
+            left: -100.0,
+            right: 1000.0,
+            padding_x: f32::INFINITY,
+            opacity: Some(f32::NAN),
+            ..Default::default()
+        };
+        shelf.normalize();
+        assert_eq!(shelf.top, 8.0);
+        assert_eq!(shelf.left, 0.0);
+        assert_eq!(shelf.right, 0.0);
+        assert_eq!(shelf.padding_x, 10.0);
+        assert_eq!(shelf.opacity, None);
     }
 }

@@ -756,12 +756,19 @@ impl ScriptEditorPanel {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn load_script_dialog(&mut self) {
-        if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Rhai Script", &["rhai"])
-            .add_filter(crate::t!("ui.all_files"), &["*"])
-            .pick_file()
+        if let Some(path) = crate::services::file_dialogs::dialog(
+            crate::services::file_dialogs::Purpose::Scripts,
+            None,
+        )
+        .add_filter("Rhai Script", &["rhai"])
+        .add_filter(crate::t!("ui.all_files"), &["*"])
+        .pick_file()
             && let Ok(contents) = std::fs::read_to_string(&path)
         {
+            crate::services::file_dialogs::remember(
+                crate::services::file_dialogs::Purpose::Scripts,
+                &path,
+            );
             self.code = contents;
             self.selected_script_idx = None;
         }

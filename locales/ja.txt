@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=画像
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=クリップボード画像は {0} × {1} で、現在のキャンバス ({2} × {3}) よりも大きくなります。どのように進めていきますか?
 keybind.clear_selected_pixels=選択したピクセルを消去
 keybind.fill_selected_pixels=選択したピクセルを塗りつぶす
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape で選択を解除
+settings.interface.tools_show_colors=ツールパネルに色のコントロールを表示
+settings.interface.tool_options=ツールオプションバー
+settings.interface.floating=フローティング
+settings.interface.docked=ドッキング
+settings.interface.bar_opacity=背景の不透明度
+settings.interface.bar_spacing=間隔と余白
+settings.interface.bar_top=上側の間隔
+settings.interface.bar_link_sides=左右の間隔を連動
+settings.interface.bar_left=左側の間隔
+settings.interface.bar_right=右側の間隔
+settings.interface.bar_padding_x=左右の内側余白
+settings.interface.bar_padding_y=上下の内側余白
+settings.interface.bar_radius=角の半径

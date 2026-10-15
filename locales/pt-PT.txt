@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=A imag
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=A imagem da área de transferência é {0} × {1}, que é maior do que o ecrã atual ({2} × {3}). Como gostaria de proceder?
 keybind.clear_selected_pixels=Limpar píxeis selecionados
 keybind.fill_selected_pixels=Preencher píxeis selecionados
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape remove a seleção
+settings.interface.tools_show_colors=Mostrar controlos de cor no painel Ferramentas
+settings.interface.tool_options=Barra de opções da ferramenta
+settings.interface.floating=Flutuante
+settings.interface.docked=Ancorada
+settings.interface.bar_opacity=Opacidade do fundo
+settings.interface.bar_spacing=Espaçamento e margens
+settings.interface.bar_top=Espaço superior
+settings.interface.bar_link_sides=Ligar espaços esquerdo e direito
+settings.interface.bar_left=Espaço esquerdo
+settings.interface.bar_right=Espaço direito
+settings.interface.bar_padding_x=Margem interior horizontal
+settings.interface.bar_padding_y=Margem interior vertical
+settings.interface.bar_radius=Raio dos cantos

@@ -1497,3 +1497,19 @@ ui.the_image_is_0_1_which_is_larger_than_the_current_canvas_2_3_how_would=L'imma
 ui.the_clipboard_image_is_0_1_which_is_larger_than_the_current_canvas_2_3=l'immagine degli appunti è {0} × {1}, che è più grande della tela corrente ({2} × {3}). Come vorresti procedere?
 keybind.clear_selected_pixels=Cancella i pixel selezionati
 keybind.fill_selected_pixels=Riempi i pixel selezionati
+
+# Tool panel and options bar preferences
+settings.interface.escape_deselect=Escape annulla la selezione
+settings.interface.tools_show_colors=Mostra i controlli colore nel pannello Strumenti
+settings.interface.tool_options=Barra delle opzioni strumento
+settings.interface.floating=Mobile
+settings.interface.docked=Ancorata
+settings.interface.bar_opacity=Opacità dello sfondo
+settings.interface.bar_spacing=Spaziatura e margini
+settings.interface.bar_top=Spazio superiore
+settings.interface.bar_link_sides=Collega gli spazi sinistro e destro
+settings.interface.bar_left=Spazio sinistro
+settings.interface.bar_right=Spazio destro
+settings.interface.bar_padding_x=Margine interno orizzontale
+settings.interface.bar_padding_y=Margine interno verticale
+settings.interface.bar_radius=Raggio degli angoli
