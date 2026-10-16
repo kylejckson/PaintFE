@@ -126,7 +126,7 @@ impl ToolsPanel {
 
         // Snapshot before crop for undo (multi-layer + dimension change = full snapshot)
         let snap_before = crate::components::history::SnapshotCommand::new(
-            "Perspective Crop".to_string(),
+            HistoryAction::PerspectiveCrop.label("Perspective Crop".to_string()),
             canvas_state,
         );
 
@@ -609,4 +609,3 @@ impl ToolsPanel {
         self.gradient_state.gpu_readback_buf = full_buf;
     }
 }
-

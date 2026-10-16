@@ -1513,3 +1513,40 @@ settings.interface.bar_right=Khoảng cách bên phải
 settings.interface.bar_padding_x=Lề trong ngang
 settings.interface.bar_padding_y=Lề trong dọc
 settings.interface.bar_radius=Bán kính góc
+
+settings.tab.editing=Chỉnh sửa
+settings.auto_save_hint=Các thay đổi được lưu tự động. Đóng Tùy chọn khi hoàn tất.
+settings.editing.clipboard=Bộ nhớ tạm và thao tác dán
+settings.editing.paste_source=Dán các điểm ảnh đã sao chép vào vị trí ban đầu
+settings.editing.paste_source_hint=Dùng vị trí ban đầu cho nội dung được sao chép trong PaintFE. Tắt để dán tại con trỏ.
+settings.editing.paste_visible=Giữ nội dung được dán trong vùng hiển thị của khung vẽ
+settings.editing.paste_visible_hint=Điều chỉnh vị trí nếu vùng sao chép nằm ngoài màn hình hoặc khung vẽ đích.
+settings.editing.selection_keys=Vùng chọn và bàn phím
+settings.editing.enter_deselect=Enter bỏ vùng chọn
+settings.editing.enter_deselect_hint=Mặc định tắt. Enter vẫn áp dụng công cụ đang dùng và xác nhận hộp thoại.
+settings.editing.legacy_clipboard=Bật phím tắt bộ nhớ tạm truyền thống
+settings.editing.legacy_clipboard_hint=Ctrl+Insert để sao chép, Shift+Insert để dán và Shift+Delete để cắt. Các phím tắt khác vẫn hoạt động.
+settings.ai.invalid_path_kept=Đường dẫn này chưa được lưu. Đường dẫn hợp lệ trước đó được giữ lại.
+settings.ai.file_not_found=Không tìm thấy tệp: {path}
+settings.ai.expected_model=Chọn tệp mô hình ONNX (.onnx).
+settings.ai.expected_runtime=Chọn thư viện ONNX Runtime (.dll, .so hoặc .dylib).
+
+settings.ai.advanced=Cài đặt thời gian chạy nâng cao
+
+settings.tools.configure=Cấu hình công cụ
+settings.tools.title=Bảng công cụ
+settings.tools.visible=Công cụ hiển thị
+settings.tools.visibility_hint=Vẫn có thể dùng công cụ bị ẩn qua phím tắt.
+settings.tools.show_all=Hiện tất cả
+settings.tools.auto=Tự động
+settings.tools.column=Một cột
+settings.tools.row=Một hàng
+settings.tools.grid=Lưới gọn
+settings.tools.fit=Vừa với nội dung
+settings.separator.title=Đường phân cách trên của thanh cố định
+settings.separator.theme=Theo giao diện
+settings.separator.opacity=Độ đục đường phân cách
+settings.save_error=Không thể lưu tùy chọn: {error}
+paste.outside_hint=Các điểm ảnh mờ nằm ngoài khung vẽ.
+
+settings.tools.animate_resize=Tạo hoạt ảnh khi đổi kích thước bảng công cụ

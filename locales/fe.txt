@@ -1513,3 +1513,40 @@ settings.interface.bar_right=Right gap
 settings.interface.bar_padding_x=Horizontal padding
 settings.interface.bar_padding_y=Vertical padding
 settings.interface.bar_radius=Corner radius
+
+settings.tab.editing=Editing
+settings.auto_save_hint=Changes are saved automatically. Close Preferences when finished.
+settings.editing.clipboard=Clipboard and paste
+settings.editing.paste_source=Paste copied pixels at their original position
+settings.editing.paste_source_hint=Uses the source position for copies made in PaintFE. Turn off to paste at the cursor.
+settings.editing.paste_visible=Keep pasted content in the visible canvas area
+settings.editing.paste_visible_hint=Adjusts the position when the copied area would be off-screen or outside the destination canvas.
+settings.editing.selection_keys=Selection and keyboard
+settings.editing.enter_deselect=Enter clears the selection
+settings.editing.enter_deselect_hint=Off by default. Enter still applies active tools and confirms dialogs.
+settings.editing.legacy_clipboard=Enable traditional clipboard shortcuts
+settings.editing.legacy_clipboard_hint=Ctrl+Insert copies, Shift+Insert pastes, and Shift+Delete cuts. Your other shortcuts still work.
+settings.ai.invalid_path_kept=This path has not been saved. The previous valid path is kept.
+settings.ai.file_not_found=File not found: {path}
+settings.ai.expected_model=Choose an ONNX model file (.onnx).
+settings.ai.expected_runtime=Choose an ONNX Runtime library (.dll, .so or .dylib).
+
+settings.ai.advanced=Advanced runtime settings
+
+settings.tools.configure=Configure tools
+settings.tools.title=Tools panel
+settings.tools.visible=Visible tools
+settings.tools.visibility_hint=Hidden tools remain available through shortcuts.
+settings.tools.show_all=Show all
+settings.tools.auto=Automatic
+settings.tools.column=Single column
+settings.tools.row=Single row
+settings.tools.grid=Compact grid
+settings.tools.fit=Fit to contents
+settings.separator.title=Docked top separator
+settings.separator.theme=Follow theme
+settings.separator.opacity=Separator opacity
+settings.save_error=Could not save preferences: {error}
+paste.outside_hint=Faded pixels are outside the canvas.
+
+settings.tools.animate_resize=Animate the resizing of the implements panel

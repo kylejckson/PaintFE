@@ -195,6 +195,11 @@ impl Assets {
             Icon::Shapes,
             include_bytes!("../../assets/icons/tools/shapes.png"),
         );
+        self.load_icon(
+            ctx,
+            Icon::ShapesSmall,
+            include_bytes!("../../assets/icons/tools/shapes_small.png"),
+        );
 
         // === UI icons ===
         self.load_icon(

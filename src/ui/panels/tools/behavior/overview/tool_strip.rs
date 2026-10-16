@@ -1,61 +1,3 @@
-/// Shared geometry for painting, hit testing and the moving selection highlight.
-#[derive(Debug)]
-struct ToolGridLayout {
-    groups: [Vec<egui::Rect>; 4],
-    shapes: egui::Rect,
-    separators: Vec<[egui::Pos2; 2]>,
-    size: egui::Vec2,
-}
-
-fn tool_grid_layout(width: f32) -> ToolGridLayout {
-    let cols = if width < 90.0 { 2 } else { 3 };
-    let group_w = cols as f32 * 26.0 + (cols - 1) as f32 * 6.0;
-    let across = (((width + 11.0) / (group_w + 11.0)).floor() as usize).clamp(1, 4);
-    let group_h = (6_usize.div_ceil(cols) as f32) * 32.0 - 6.0;
-    let mut groups = std::array::from_fn(|_| Vec::new());
-    let mut shapes = egui::Rect::NOTHING;
-    let mut separators = Vec::new();
-    for (g, tools) in groups.iter_mut().enumerate() {
-        let origin = egui::pos2(
-            (g % across) as f32 * (group_w + 11.0),
-            (g / across) as f32 * (group_h + 11.0),
-        );
-        let count = if g == 3 { 4 } else { 6 };
-        for index in 0..count {
-            tools.push(egui::Rect::from_min_size(
-                origin + egui::vec2((index % cols) as f32 * 32.0, (index / cols) as f32 * 32.0),
-                egui::Vec2::splat(26.0),
-            ));
-        }
-        if g == 3 {
-            shapes = egui::Rect::from_min_size(
-                origin + egui::vec2((4 % cols) as f32 * 32.0, (4 / cols) as f32 * 32.0),
-                egui::vec2(58.0, 26.0),
-            );
-        }
-        if g % across != 0 {
-            let x = origin.x - 5.5;
-            separators.push([egui::pos2(x, origin.y), egui::pos2(x, origin.y + group_h)]);
-        }
-        if g % across == 0 && g >= across {
-            let y = origin.y - 5.5;
-            separators.push([
-                egui::pos2(0.0, y),
-                egui::pos2(across as f32 * (group_w + 11.0) - 11.0, y),
-            ]);
-        }
-    }
-    ToolGridLayout {
-        groups,
-        shapes,
-        separators,
-        size: egui::vec2(
-            across as f32 * (group_w + 11.0) - 11.0,
-            4_usize.div_ceil(across) as f32 * (group_h + 11.0) - 11.0,
-        ),
-    }
-}
-
 impl ToolsPanel {
     pub(crate) fn has_escape_operation(&self) -> bool {
         self.stroke_tracker.is_active
@@ -101,11 +43,13 @@ impl ToolsPanel {
         keybindings: &crate::assets::KeyBindings,
         is_text_layer: bool,
         show_colors: bool,
+        palette: &crate::config::settings::ToolsPaletteSettings,
+        layout: &crate::ui::panels::tools::palette::PaletteLayout,
     ) -> ToolsPanelAction {
         let (primary_color, secondary_color) = colors;
         let mut action = ToolsPanelAction::None;
 
-        // Clear tool hint each frame ÔÇö only set when hovering a tool button
+        // Clear tool hint each frame; only set when hovering a tool button
         self.tool_hint.clear();
 
         let btn_size = 26.0; // visual button size
@@ -127,49 +71,23 @@ impl ToolsPanel {
             egui::Color32::from_gray(200)
         };
 
-        // Tool groups ÔÇö 4 groups of 6, each 2 rows ├ù 3 cols, with separators
-        // PAINT: Core painting & fill tools
-        let paint_tools: Vec<(Icon, Tool)> = vec![
-            (Icon::Brush, Tool::Brush),
-            (Icon::Pencil, Tool::Pencil),
-            (Icon::Eraser, Tool::Eraser),
-            (Icon::Line, Tool::Line),
-            (Icon::Fill, Tool::Fill),
-            (Icon::Gradient, Tool::Gradient),
-        ];
-        // SELECT: Region selection & movement
-        let select_tools: Vec<(Icon, Tool)> = vec![
-            (Icon::RectSelect, Tool::RectangleSelect),
-            (Icon::EllipseSelect, Tool::EllipseSelect),
-            (Icon::Lasso, Tool::Lasso),
-            (Icon::MagicWand, Tool::MagicWand),
-            (Icon::MovePixels, Tool::MovePixels),
-            (Icon::MoveSelection, Tool::MoveSelection),
-        ];
-        // RETOUCH & WARP: Repair/clone + distort/transform
-        let retouch_tools: Vec<(Icon, Tool)> = vec![
-            (Icon::CloneStamp, Tool::CloneStamp),
-            (Icon::ContentAwareBrush, Tool::ContentAwareBrush),
-            (Icon::ColorRemover, Tool::ColorRemover),
-            (Icon::Liquify, Tool::Liquify),
-            (Icon::MeshWarp, Tool::MeshWarp),
-            (Icon::PerspectiveCrop, Tool::PerspectiveCrop),
-        ];
-        // UTILITY: Sample, create, navigate
-        let utility_tools: Vec<(Icon, Tool)> = vec![
-            (Icon::ColorPicker, Tool::ColorPicker),
-            (Icon::Text, Tool::Text),
-            (Icon::Zoom, Tool::Zoom),
-            (Icon::Pan, Tool::Pan),
-        ];
-
-        let groups: Vec<&Vec<(Icon, Tool)>> =
-            vec![&paint_tools, &select_tools, &retouch_tools, &utility_tools];
-        let layout = tool_grid_layout(ui.available_width());
-        let grid_w = ui.available_width().max(layout.size.x);
-        let (grid_rect, _) =
-            ui.allocate_exact_size(egui::vec2(grid_w, layout.size.y), egui::Sense::hover());
+        let owned: [Vec<(Icon, Tool)>; 4] =
+            crate::ui::panels::tools::palette::GROUPS.map(|group| {
+                group
+                    .iter()
+                    .filter(|(_, id)| crate::ui::panels::tools::palette::visible(palette, id))
+                    .map(|(tool, _)| (tool.icon(), *tool))
+                    .collect()
+            });
+        let groups: Vec<_> = owned.iter().collect();
+        let (grid_rect, _) = ui.allocate_exact_size(layout.size, egui::Sense::hover());
         let offset = grid_rect.min.to_vec2();
+        if crate::ui::panels::tools::palette::count(palette, show_colors) == 0 {
+            let response = ui.put(grid_rect, egui::Button::new(t!("settings.tools.configure")));
+            if response.clicked() {
+                action = ToolsPanelAction::Configure;
+            }
+        }
         let dark_mode = ui.visuals().dark_mode;
         let tool_btn_fill = crate::theme::Theme::icon_button_bg_for(ui);
         let tool_btn_active = crate::theme::Theme::icon_button_active_for(ui);
@@ -199,17 +117,19 @@ impl ToolsPanel {
             }
         }
         let shapes_rect = layout.shapes.translate(offset);
-        ui.painter().rect_filled(
-            shapes_rect,
-            tool_btn_rounding,
-            if is_text_layer {
-                tool_btn_disabled
-            } else {
-                tool_btn_fill
-            },
-        );
-        if self.active_tool == Tool::Shapes && !is_text_layer {
-            target = Some(shapes_rect);
+        if shapes_rect.is_positive() {
+            ui.painter().rect_filled(
+                shapes_rect,
+                tool_btn_rounding,
+                if is_text_layer {
+                    tool_btn_disabled
+                } else {
+                    tool_btn_fill
+                },
+            );
+            if self.active_tool == Tool::Shapes && !is_text_layer {
+                target = Some(shapes_rect);
+            }
         }
         if let Some(target) = target {
             let local = target.min - grid_rect.min;
@@ -249,8 +169,8 @@ impl ToolsPanel {
                 let selected = self.active_tool == *tool;
 
                 // On text layers, only Text/Zoom/Pan are enabled
-                let tool_disabled =
-                    is_text_layer && !matches!(tool, Tool::Text | Tool::Zoom | Tool::Pan);
+                let tool_disabled = !ui.is_enabled()
+                    || (is_text_layer && !matches!(tool, Tool::Text | Tool::Zoom | Tool::Pan));
 
                 // Manual painting (like Shapes button) for full control over fill/tint
                 let resp = ui.interact(
@@ -334,12 +254,21 @@ impl ToolsPanel {
             );
         }
 
-        {
+        if shapes_rect.is_positive() {
             let shape_rect = shapes_rect;
             let shape_w = shape_rect.width();
-            let icon = Icon::Shapes;
+            let icon = if shape_w > 26. {
+                Icon::Shapes
+            } else {
+                Icon::ShapesSmall
+            };
+            let icon_size = if shape_w > 26. {
+                egui::vec2(44., 22.)
+            } else {
+                egui::Vec2::splat(btn_size * 0.75)
+            };
             let is_shapes = self.active_tool == Tool::Shapes;
-            let shapes_disabled = is_text_layer;
+            let shapes_disabled = is_text_layer || !ui.is_enabled();
 
             let resp = ui.interact(
                 shape_rect,
@@ -371,8 +300,7 @@ impl ToolsPanel {
 
             if let Some(texture) = assets.get_texture(icon) {
                 let sized_texture = egui::load::SizedTexture::from_handle(texture);
-                let img = egui::Image::from_texture(sized_texture)
-                    .fit_to_exact_size(egui::vec2(shape_w * 0.75, btn_size * 0.75));
+                let img = egui::Image::from_texture(sized_texture).fit_to_exact_size(icon_size);
                 let img = if shapes_disabled {
                     img.tint(egui::Color32::from_rgba_unmultiplied(128, 128, 128, 80))
                 } else if dark_mode && !is_shapes {
@@ -380,10 +308,7 @@ impl ToolsPanel {
                 } else {
                     img
                 };
-                let img_rect = egui::Rect::from_center_size(
-                    shape_rect.center(),
-                    egui::vec2(shape_w * 0.75, btn_size * 0.75),
-                );
+                let img_rect = egui::Rect::from_center_size(shape_rect.center(), icon_size);
                 img.paint_at(ui, img_rect);
             } else {
                 let text_color = if shapes_disabled {
@@ -414,71 +339,82 @@ impl ToolsPanel {
             }
         }
 
-        if show_colors {
-            ui.add_space(8.0);
-
-            // Separator line before color swatches
-            let sep_width = grid_w;
-            let (sep_rect, _) =
-                ui.allocate_exact_size(egui::vec2(sep_width, 1.0), egui::Sense::hover());
-            ui.painter().line_segment(
-                [sep_rect.left_center(), sep_rect.right_center()],
-                egui::Stroke::new(1.0, sep_color),
-            );
-            ui.add_space(10.0);
-
-            // Center the complete swatch/swap group, with a single swap control.
-            ui.horizontal(|ui| {
-                let theme = crate::components::color_widgets::theme(ui);
-                ui.add_space(((grid_w - 64.0) / 2.0).max(0.0));
-                if Self::draw_color_swatch_compact(ui, primary_color, secondary_color) {
-                    action = ToolsPanelAction::OpenColors;
-                }
-                ui.add_space(8.0);
-                let (rect, response) =
-                    ui.allocate_exact_size(egui::vec2(24.0, 32.0), egui::Sense::click());
-                if response.hovered() {
-                    ui.painter()
-                        .rect_filled(rect, theme.widget_cr(5), theme.bg2);
-                }
-                if assets.icon_source(Icon::SwapColors).from_pack() {
-                    if let Some(texture) = assets.get_texture(Icon::SwapColors) {
-                        ui.painter().image(
-                            texture.id(),
-                            egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(14.0)),
-                            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-                            egui::Color32::WHITE,
-                        );
-                    }
-                } else {
-                    let c = rect.center();
-                    let stroke = egui::Stroke::new(
-                        1.3,
-                        if response.hovered() {
-                            theme.accent
-                        } else {
-                            theme.text_muted
-                        },
-                    );
-                    for (y, direction) in [(-2.5, 1.0), (2.5, -1.0)] {
-                        ui.painter().line_segment(
-                            [c + egui::vec2(-5.0, y), c + egui::vec2(5.0, y)],
-                            stroke,
-                        );
-                        let end = c + egui::vec2(5.0 * direction, y);
-                        for dy in [-2.0, 2.0] {
-                            ui.painter().line_segment(
-                                [end, end + egui::vec2(-2.0 * direction, dy)],
-                                stroke,
-                            );
-                        }
-                    }
-                }
-                if response.on_hover_text(Icon::SwapColors.tooltip()).clicked() {
-                    action = ToolsPanelAction::SwapColors;
-                }
+        if let Some([swatch, swap]) = layout.colors {
+            let swatch = swatch.translate(offset);
+            let swap = swap.translate(offset);
+            let response = ui.interact(swatch, ui.id().with("tool_colors"), egui::Sense::click());
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(
+                    egui::WidgetType::Button,
+                    ui.is_enabled(),
+                    crate::t!("ui.click_to_open_colors"),
+                )
             });
-            ui.add_space(4.0);
+            ui.painter().rect_filled(
+                egui::Rect::from_min_size(
+                    swatch.min + egui::vec2(8.0, 8.0),
+                    egui::Vec2::splat(24.0),
+                ),
+                3.0,
+                secondary_color,
+            );
+            ui.painter().rect_stroke(
+                egui::Rect::from_min_size(swatch.min + egui::vec2(8., 8.), egui::Vec2::splat(24.)),
+                3.,
+                egui::Stroke::new(1., sep_color),
+                egui::StrokeKind::Inside,
+            );
+            ui.painter().rect_filled(
+                egui::Rect::from_min_size(swatch.min, egui::Vec2::splat(24.0)),
+                3.0,
+                primary_color,
+            );
+            ui.painter().rect_stroke(
+                egui::Rect::from_min_size(swatch.min, egui::Vec2::splat(24.0)),
+                3.0,
+                egui::Stroke::new(1.0, sep_color),
+                egui::StrokeKind::Inside,
+            );
+            if response
+                .on_hover_text(crate::t!("ui.click_to_open_colors"))
+                .clicked()
+            {
+                action = ToolsPanelAction::OpenColors;
+            }
+            let response = ui.interact(swap, ui.id().with("tool_swap"), egui::Sense::click());
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(
+                    egui::WidgetType::Button,
+                    ui.is_enabled(),
+                    Icon::SwapColors.tooltip(),
+                )
+            });
+            let theme = crate::components::color_widgets::theme(ui);
+            if response.hovered() {
+                ui.painter()
+                    .rect_filled(swap, theme.widget_cr(5), theme.bg2);
+            }
+            let c = swap.center();
+            let stroke = egui::Stroke::new(
+                1.3,
+                if response.hovered() {
+                    theme.accent
+                } else {
+                    theme.text_muted
+                },
+            );
+            for (y, direction) in [(-2.5, 1.0), (2.5, -1.0)] {
+                ui.painter()
+                    .line_segment([c + egui::vec2(-5., y), c + egui::vec2(5., y)], stroke);
+                let end = c + egui::vec2(5. * direction, y);
+                for dy in [-2., 2.] {
+                    ui.painter()
+                        .line_segment([end, end + egui::vec2(-2. * direction, dy)], stroke);
+                }
+            }
+            if response.on_hover_text(Icon::SwapColors.tooltip()).clicked() {
+                action = ToolsPanelAction::SwapColors;
+            }
         }
 
         action
@@ -700,43 +636,5 @@ impl ToolsPanel {
             };
             ui.label(egui::RichText::new(tool_name).strong());
         });
-    }
-}
-
-#[cfg(test)]
-mod responsive_tools_tests {
-    use super::*;
-
-    #[test]
-    fn every_tool_fits_without_overlap_in_portrait_and_landscape() {
-        for width in [58.0, 70.0, 89.0, 90.0, 190.0, 191.0, 292.0, 393.0, 800.0] {
-            let layout = tool_grid_layout(width);
-            let all: Vec<_> = layout
-                .groups
-                .iter()
-                .flatten()
-                .copied()
-                .chain(std::iter::once(layout.shapes))
-                .collect();
-            assert_eq!(all.len(), 23);
-            let bounds = egui::Rect::from_min_size(egui::Pos2::ZERO, layout.size);
-            assert!(layout.size.x <= width, "width {width}: {layout:?}");
-            for (i, rect) in all.iter().enumerate() {
-                assert!(bounds.contains_rect(*rect), "width {width}: {rect:?}");
-                assert_eq!(rect.height(), 26.0);
-                for other in &all[..i] {
-                    assert!(!rect.intersects(*other), "overlap at width {width}");
-                }
-            }
-            for group in &layout.groups {
-                for pair in group.windows(2) {
-                    assert!(pair[1].top() > pair[0].top() || pair[1].left() > pair[0].left());
-                }
-            }
-        }
-        let portrait = tool_grid_layout(90.0);
-        let landscape = tool_grid_layout(393.0);
-        assert!(landscape.size.y < portrait.size.y);
-        assert_eq!(landscape.groups[0][0].top(), landscape.groups[3][0].top());
     }
 }

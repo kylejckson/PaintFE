@@ -1513,3 +1513,40 @@ settings.interface.bar_right=ระยะห่างด้านขวา
 settings.interface.bar_padding_x=ระยะขอบภายในแนวนอน
 settings.interface.bar_padding_y=ระยะขอบภายในแนวตั้ง
 settings.interface.bar_radius=รัศมีมุม
+
+settings.tab.editing=การแก้ไข
+settings.auto_save_hint=บันทึกการเปลี่ยนแปลงโดยอัตโนมัติ ปิดหน้าต่างการตั้งค่าเมื่อเสร็จแล้ว
+settings.editing.clipboard=คลิปบอร์ดและการวาง
+settings.editing.paste_source=วางพิกเซลที่คัดลอกไว้ที่ตำแหน่งเดิม
+settings.editing.paste_source_hint=ใช้ตำแหน่งเดิมสำหรับสำเนาที่คัดลอกใน PaintFE ปิดตัวเลือกนี้เพื่อวางที่เคอร์เซอร์
+settings.editing.paste_visible=ให้เนื้อหาที่วางอยู่ในส่วนผืนผ้าใบที่มองเห็น
+settings.editing.paste_visible_hint=ปรับตำแหน่งหากพื้นที่ที่คัดลอกจะอยู่นอกหน้าจอหรือนอกผืนผ้าใบปลายทาง
+settings.editing.selection_keys=พื้นที่เลือกและแป้นพิมพ์
+settings.editing.enter_deselect=กด Enter เพื่อยกเลิกการเลือก
+settings.editing.enter_deselect_hint=ปิดไว้ตามค่าเริ่มต้น Enter ยังคงใช้เพื่อยืนยันเครื่องมือที่ใช้งานและกล่องโต้ตอบ
+settings.editing.legacy_clipboard=เปิดใช้ปุ่มลัดคลิปบอร์ดแบบดั้งเดิม
+settings.editing.legacy_clipboard_hint=Ctrl+Insert เพื่อคัดลอก Shift+Insert เพื่อวาง และ Shift+Delete เพื่อตัด ปุ่มลัดอื่นยังคงใช้งานได้
+settings.ai.invalid_path_kept=ยังไม่ได้บันทึกเส้นทางนี้ โดยจะเก็บเส้นทางที่ถูกต้องก่อนหน้านี้ไว้
+settings.ai.file_not_found=ไม่พบไฟล์: {path}
+settings.ai.expected_model=เลือกไฟล์โมเดล ONNX (.onnx)
+settings.ai.expected_runtime=เลือกไลบรารี ONNX Runtime (.dll, .so หรือ .dylib)
+
+settings.ai.advanced=การตั้งค่ารันไทม์ขั้นสูง
+
+settings.tools.configure=ตั้งค่าเครื่องมือ
+settings.tools.title=แผงเครื่องมือ
+settings.tools.visible=เครื่องมือที่แสดง
+settings.tools.visibility_hint=เครื่องมือที่ซ่อนไว้ยังใช้งานได้ด้วยปุ่มลัด
+settings.tools.show_all=แสดงทั้งหมด
+settings.tools.auto=อัตโนมัติ
+settings.tools.column=คอลัมน์เดียว
+settings.tools.row=แถวเดียว
+settings.tools.grid=ตารางแบบกะทัดรัด
+settings.tools.fit=ปรับให้พอดีกับเนื้อหา
+settings.separator.title=เส้นแบ่งด้านบนของแถบที่ยึดไว้
+settings.separator.theme=ใช้ตามธีม
+settings.separator.opacity=ความทึบของเส้นแบ่ง
+settings.save_error=บันทึกการตั้งค่าไม่ได้: {error}
+paste.outside_hint=พิกเซลที่จางอยู่ด้านนอกผืนผ้าใบ
+
+settings.tools.animate_resize=แสดงภาพเคลื่อนไหวเมื่อปรับขนาดแผงเครื่องมือ

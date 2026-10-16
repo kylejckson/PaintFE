@@ -677,7 +677,8 @@ impl LayersPanel {
                                 }
                                 FolderAction::SetColor(id, color_index) => {
                                     let mut snap = SnapshotCommand::new(
-                                        "Set Folder Color".to_string(),
+                                        HistoryAction::FolderColor
+                                            .label("Set Folder Color".to_string()),
                                         canvas_state,
                                     );
                                     if let Some(folder) = canvas_state.layer_folder_mut(id) {
@@ -955,7 +956,9 @@ impl LayersPanel {
                             }
                             ContextAction::ExtractChannel(channel) => {
                                 let mut snap = SnapshotCommand::new(
-                                    format!("Extract {:?} Channel", channel),
+                                    channel
+                                        .history_action()
+                                        .label(format!("Extract {:?} Channel", channel)),
                                     canvas_state,
                                 );
                                 crate::ops::canvas_ops::extract_channel_to_layer(
@@ -970,7 +973,8 @@ impl LayersPanel {
                             ContextAction::ReplaceAlphaFromBelowLuminance => {
                                 if layer_idx > 0 {
                                     let mut snap = SnapshotCommand::new(
-                                        "Replace Alpha from Layer Below".to_string(),
+                                        HistoryAction::ReplaceAlpha
+                                            .label("Replace Alpha from Layer Below".to_string()),
                                         canvas_state,
                                     );
                                     crate::ops::canvas_ops::replace_channel_from_layer(
@@ -1498,7 +1502,8 @@ impl LayersPanel {
                 }
             }
             if is_this_soloed {
-                eye_response.on_hover_text(crate::t!("ui.soloed_ctrl_click_or_right_click_to_unsolo"));
+                eye_response
+                    .on_hover_text(crate::t!("ui.soloed_ctrl_click_or_right_click_to_unsolo"));
             } else {
                 eye_response.on_hover_text(if layer_visible {
                     crate::t!("ui.hide_layer_ctrl_click_to_solo_right_click_hold_to_peek")
@@ -1668,7 +1673,10 @@ impl LayersPanel {
             ui.separator();
             if !canvas_state.layer_folders.is_empty() {
                 ui.menu_button(
-                    crate::i18n::format_translation("ui.0_move_to_folder", &[("0", Icon::MenuFileOpen.emoji().to_string())]),
+                    crate::i18n::format_translation(
+                        "ui.0_move_to_folder",
+                        &[("0", Icon::MenuFileOpen.emoji().to_string())],
+                    ),
                     |ui| {
                         for folder in &canvas_state.layer_folders {
                             if assets
@@ -1694,16 +1702,22 @@ impl LayersPanel {
                 ui.separator();
             }
             ui.menu_button(
-                crate::i18n::format_translation("ui.0_extract_channel", &[("0", Icon::MenuColorLevels.emoji().to_string())]),
+                crate::i18n::format_translation(
+                    "ui.0_extract_channel",
+                    &[("0", Icon::MenuColorLevels.emoji().to_string())],
+                ),
                 |ui| {
-                    for (label, icon, channel) in [
+                    for (label, _icon, channel) in [
                         ("Red", Icon::MenuColorCurves, ImageChannel::Red),
                         ("Green", Icon::MenuColorHsl, ImageChannel::Green),
                         ("Blue", Icon::MenuFilterColorFilter, ImageChannel::Blue),
                         ("Alpha", Icon::MenuColorInvertAlpha, ImageChannel::Alpha),
                         ("Luminance", Icon::MenuColorLevels, ImageChannel::Luminance),
                     ] {
-                        if assets.menu_item(ui, icon, label).clicked() {
+                        if assets
+                            .menu_item(ui, channel.history_action().icon(), label)
+                            .clicked()
+                        {
                             context_action = Some(ContextAction::ExtractChannel(channel));
                             ui.close();
                         }
@@ -1714,7 +1728,7 @@ impl LayersPanel {
                 && assets
                     .menu_item(
                         ui,
-                        Icon::MergeDownAsMask,
+                        HistoryAction::MergeMask.icon(),
                         "Replace Alpha from Below Luminance",
                     )
                     .clicked()
@@ -1732,7 +1746,11 @@ impl LayersPanel {
                     ui.close();
                 }
                 if assets
-                    .menu_item(ui, Icon::MergeDownAsMask, &t!("layer.merge_down_as_mask"))
+                    .menu_item(
+                        ui,
+                        HistoryAction::MergeMask.icon(),
+                        &t!("layer.merge_down_as_mask"),
+                    )
                     .clicked()
                 {
                     context_action = Some(ContextAction::MergeDownAsMask);
@@ -1745,7 +1763,7 @@ impl LayersPanel {
                 && assets
                     .menu_item(
                         ui,
-                        Icon::AddLayerMaskRevealAll,
+                        HistoryAction::AddMask.icon(),
                         "Add Layer Mask (Reveal All)",
                     )
                     .clicked()
@@ -1757,7 +1775,7 @@ impl LayersPanel {
                 && assets
                     .menu_item(
                         ui,
-                        Icon::AddLayerMaskFromSelection,
+                        HistoryAction::MaskFromSelection.icon(),
                         "Add Layer Mask (From Selection)",
                     )
                     .clicked()
@@ -1787,7 +1805,7 @@ impl LayersPanel {
                 && assets
                     .menu_item(
                         ui,
-                        Icon::ToggleLayerMask,
+                        HistoryAction::ToggleMask.icon(),
                         if canvas_state.layers[layer_idx].mask_enabled {
                             "Disable Layer Mask"
                         } else {
@@ -1801,7 +1819,7 @@ impl LayersPanel {
             }
             if has_mask
                 && assets
-                    .menu_item(ui, Icon::InvertLayerMask, "Invert Layer Mask")
+                    .menu_item(ui, HistoryAction::InvertMask.icon(), "Invert Layer Mask")
                     .clicked()
             {
                 context_action = Some(ContextAction::InvertLayerMask);
@@ -1809,7 +1827,7 @@ impl LayersPanel {
             }
             if has_mask
                 && assets
-                    .menu_item(ui, Icon::ApplyLayerMask, "Apply Layer Mask")
+                    .menu_item(ui, HistoryAction::ApplyMask.icon(), "Apply Layer Mask")
                     .clicked()
             {
                 context_action = Some(ContextAction::ApplyLayerMask);
@@ -1817,7 +1835,7 @@ impl LayersPanel {
             }
             if has_mask
                 && assets
-                    .menu_item(ui, Icon::DeleteLayerMask, "Delete Layer Mask")
+                    .menu_item(ui, HistoryAction::DeleteMask.icon(), "Delete Layer Mask")
                     .clicked()
             {
                 context_action = Some(ContextAction::DeleteLayerMask);
@@ -1866,7 +1884,11 @@ impl LayersPanel {
             }
             ui.separator();
             if assets
-                .menu_item(ui, Icon::ImportLayer, &t!("layer.import_from_file"))
+                .menu_item(
+                    ui,
+                    HistoryAction::ImportLayer.icon(),
+                    &t!("layer.import_from_file"),
+                )
                 .clicked()
             {
                 context_action = Some(ContextAction::ImportFromFile);
@@ -1875,14 +1897,22 @@ impl LayersPanel {
             ui.separator();
             ui.menu_button(t!("layer.transform"), |ui| {
                 if assets
-                    .menu_item(ui, Icon::LayerFlipH, &t!("layer.transform.flip_horizontal"))
+                    .menu_item(
+                        ui,
+                        HistoryAction::FlipLayerH.icon(),
+                        &t!("layer.transform.flip_horizontal"),
+                    )
                     .clicked()
                 {
                     context_action = Some(ContextAction::FlipHorizontal);
                     ui.close();
                 }
                 if assets
-                    .menu_item(ui, Icon::LayerFlipV, &t!("layer.transform.flip_vertical"))
+                    .menu_item(
+                        ui,
+                        HistoryAction::FlipLayerV.icon(),
+                        &t!("layer.transform.flip_vertical"),
+                    )
                     .clicked()
                 {
                     context_action = Some(ContextAction::FlipVertical);
@@ -1898,7 +1928,11 @@ impl LayersPanel {
                 }
                 ui.separator();
                 if assets
-                    .menu_item(ui, Icon::LayerRotate, &t!("layer.transform.rotate_scale"))
+                    .menu_item(
+                        ui,
+                        HistoryAction::LayerTransform.icon(),
+                        &t!("layer.transform.rotate_scale"),
+                    )
                     .clicked()
                 {
                     context_action = Some(ContextAction::RotateScale);

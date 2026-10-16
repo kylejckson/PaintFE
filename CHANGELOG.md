@@ -6,6 +6,34 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.8] - 2026-10-16
+
+- Reworked Tools resizing with compact layouts, smoother movement and tool visibility controls.
+- Corrected History icons and improved keyboard navigation in unsaved-change dialogs.
+- Added paste placement preferences and made Preferences save changes more consistently.
+
+### Fixed
+
+- History icons now follow the action that created an undo entry instead of its displayed name or the currently selected tool. This covers tools, effects, filters, layer operations and selection commands, including Color Range, Invert Selection and Deselect. Applying Color Range with unchanged controls also records the selection for Undo.
+- Replaced rigid Tools layouts with arrangements that fit their contents. Single rows and columns no longer leave large empty areas, the header stays aligned at narrow widths, and the colour controls keep their own divider and spacing. Shapes uses its normal two-slot button when it fits and a compact icon when only one slot is available.
+- Unsaved-change dialogs now support Tab, Shift+Tab and arrow-key navigation. Enter activates the focused choice, and the dialogs can be moved by their heading.
+- Recent Files now sizes its submenu to the paths being shown, capped at 700 pixels or half the application width.
+- Preferences now apply and save changes consistently. Repeated writes are combined, files are replaced atomically, and save failures are shown. Invalid AI paths show a warning while preserving the previous valid configuration.
+- Disabled document-only controls when no image is open, while keeping actions such as New, Open and Preferences available.
+- Fixed fast paste drags losing their starting position or passing through to the brush underneath.
+
+### Added
+
+- Added a Tools visibility checklist with icons, names and a Show all button. Hidden tools remain available through their shortcuts.
+- Added optional resize animation for Tools, following the existing motion and reduced-motion settings.
+- Added preferences for pasting at the copied position and keeping pasted content in view. Editable pasted content outside the canvas is shown faded; committing still clips it to the canvas.
+- Added optional Ctrl+Insert, Shift+Insert and Shift+Delete clipboard shortcuts.
+- Made Enter-to-deselect optional and off by default, without changing Enter confirmation for active tools and dialogs.
+- Added colour and opacity controls for the docked tool-options separator, with follow-theme and reset options.
+- Added built-in and light/dark icon-pack support for the compact Shapes button.
+
+Related issues: 166, 168, 169, 171, 173, 178, 179, 180, 181 and 182. Issues remain open for users to test and confirm the changes. Further testing is continuing.
+
 ## [1.4.7] - 2026-10-15
 
 - Fixed filters ignoring selections, Pixel Drag direction and incomplete canvas borders.

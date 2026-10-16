@@ -546,7 +546,8 @@ impl PaintFEApp {
         project
             .history
             .push(Box::new(SnapshotCommand::from_snapshots(
-                format!("Straighten {:.1}°", session.angle_degrees),
+                HistoryAction::Straighten
+                    .label(format!("Straighten {:.1}°", session.angle_degrees)),
                 before,
                 after,
             )));
@@ -721,6 +722,9 @@ impl PaintFEApp {
         _ctx: &egui::Context,
         cursor_canvas: Option<(f32, f32)>,
     ) {
+        if self.active_project().is_none() {
+            return;
+        }
         #[cfg(target_arch = "wasm32")]
         if let Some(payload) = crate::ops::clipboard::get_clipboard_image_for_paste() {
             self.apply_clipboard_payload(payload, cursor_canvas);
@@ -757,22 +761,38 @@ impl PaintFEApp {
         if resize_canvas {
             let target_w = request.image.width();
             let target_h = request.image.height();
-            self.do_snapshot_op("Resize Canvas to Fit Paste", |s| {
-                let new_w = s.width.max(target_w);
-                let new_h = s.height.max(target_h);
-                // Center the existing canvas content within the new expanded canvas
-                crate::ops::transform::resize_canvas(
-                    s,
-                    new_w,
-                    new_h,
-                    (1, 1),
-                    image::Rgba([0, 0, 0, 0]),
-                );
-            });
+            self.do_snapshot_op(
+                HistoryAction::ResizeCanvas.label("Resize Canvas to Fit Paste"),
+                |s| {
+                    let new_w = s.width.max(target_w);
+                    let new_h = s.height.max(target_h);
+                    // Center the existing canvas content within the new expanded canvas
+                    crate::ops::transform::resize_canvas(
+                        s,
+                        new_w,
+                        new_h,
+                        (1, 1),
+                        image::Rgba([0, 0, 0, 0]),
+                    );
+                },
+            );
         }
 
         let move_interpolation = self.tools_panel.move_interpolation;
         let move_anti_aliasing = self.tools_panel.move_anti_aliasing;
+        let prefer_source = self.settings.paste_at_source_position;
+        let keep_visible = self.settings.paste_keep_visible;
+        let visible = self.active_project().and_then(|project| {
+            self.canvas.last_canvas_rect.map(|rect| {
+                let a =
+                    self.canvas
+                        .screen_to_canvas_unclamped(rect.min, rect, &project.canvas_state);
+                let b =
+                    self.canvas
+                        .screen_to_canvas_unclamped(rect.max, rect, &project.canvas_state);
+                egui::Rect::from_min_max(egui::pos2(a.0, a.1), egui::pos2(b.0, b.1))
+            })
+        });
         if let Some(project) = self.active_project_mut() {
             let (cw, ch) = (project.canvas_state.width, project.canvas_state.height);
             // Performance: if overwrite mode is requested but the source image has no
@@ -781,40 +801,18 @@ impl PaintFEApp {
             // downscaling during interaction).
             let needs_overwrite = request.overwrite_transparent_pixels
                 && (request.overwrite_mask.is_some() || request.image.pixels().any(|p| p[3] < 255));
-            let image_w = request.image.width() as f32;
-            let image_h = request.image.height() as f32;
-            let canvas_center = egui::Pos2::new(cw as f32 / 2.0, ch as f32 / 2.0);
-            let same_size = request.image.width() == cw && request.image.height() == ch;
-            let cursor_center = request.cursor_canvas.and_then(|(x, y)| {
-                (x >= 0.0 && x <= cw as f32 && y >= 0.0 && y <= ch as f32)
-                    .then_some(egui::Pos2::new(x, y))
-            });
-            let source_center = request.source_center.filter(|center| {
-                center.x - image_w * 0.5 >= 0.0
-                    && center.y - image_h * 0.5 >= 0.0
-                    && center.x + image_w * 0.5 <= cw as f32
-                    && center.y + image_h * 0.5 <= ch as f32
-            });
-            // A full-canvas clipboard image belongs at (0, 0). Otherwise put a
-            // paste under the cursor when possible, falling back to the former
-            // source location only when it is fully visible in this document.
-            let placement = if same_size {
-                canvas_center
-            } else {
-                cursor_center.or(source_center).unwrap_or(canvas_center)
-            };
-            let mut overlay = if request.use_source_center || cursor_center.is_some() {
-                let center = placement;
-                let mut o = PasteOverlay::from_image_at(request.image, cw, ch, center);
-                o.overwrite_transparent_pixels = needs_overwrite;
-                o.overwrite_mask = request.overwrite_mask;
-                o
-            } else {
-                let mut o = PasteOverlay::from_image(request.image, cw, ch);
-                o.overwrite_transparent_pixels = needs_overwrite;
-                o.overwrite_mask = request.overwrite_mask;
-                o
-            };
+            let placement = Self::paste_placement(
+                egui::vec2(request.image.width() as f32, request.image.height() as f32),
+                egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(cw as f32, ch as f32)),
+                request.source_center.filter(|_| request.use_source_center),
+                request.cursor_canvas.map(|(x, y)| egui::pos2(x, y)),
+                visible,
+                prefer_source,
+                keep_visible,
+            );
+            let mut overlay = PasteOverlay::from_image_at(request.image, cw, ch, placement);
+            overlay.overwrite_transparent_pixels = needs_overwrite;
+            overlay.overwrite_mask = request.overwrite_mask;
             overlay.interpolation = move_interpolation;
             overlay.anti_aliasing = move_anti_aliasing;
 

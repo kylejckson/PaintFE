@@ -322,7 +322,7 @@ fn save_and_adjustment_dialogs_block_document_shortcuts_but_allow_canvas_wheel()
         app.projects[0]
             .history
             .push(Box::new(crate::components::history::MarkerCommand::new(
-                "Existing edit",
+                HistoryAction::Custom.label("Existing edit"),
             )));
         if save {
             app.save_file_dialog.open = true;
@@ -564,28 +564,6 @@ fn escape_does_not_deselect_behind_popups_or_focused_text_fields() {
         );
         assert_eq!(app.projects[0].history.undo_count(), 0);
     }
-}
-
-#[test]
-fn hiding_tools_colors_reclaims_space_without_changing_tool_geometry() {
-    let mut app = app();
-    let ctx = context();
-    let mut heights = Vec::new();
-    for show_colors in [true, false] {
-        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
-            ui.set_width(90.0);
-            app.tools_panel.show_compact(
-                ui,
-                &app.assets,
-                (egui::Color32::BLACK, egui::Color32::WHITE),
-                &app.settings.keybindings,
-                false,
-                show_colors,
-            );
-            heights.push(ui.min_rect().height());
-        });
-    }
-    assert!(heights[0] - heights[1] >= 50.0, "{heights:?}");
 }
 
 #[test]

@@ -1513,3 +1513,40 @@ settings.interface.bar_right=Jarak kanan
 settings.interface.bar_padding_x=Ruang dalam horizontal
 settings.interface.bar_padding_y=Ruang dalam vertikal
 settings.interface.bar_radius=Radius sudut
+
+settings.tab.editing=Penyuntingan
+settings.auto_save_hint=Perubahan disimpan otomatis. Tutup Preferensi setelah selesai.
+settings.editing.clipboard=Papan klip dan penempelan
+settings.editing.paste_source=Tempel piksel yang disalin pada posisi asalnya
+settings.editing.paste_source_hint=Menggunakan posisi asal untuk salinan dari PaintFE. Nonaktifkan untuk menempel di posisi kursor.
+settings.editing.paste_visible=Pertahankan konten yang ditempel di area kanvas yang terlihat
+settings.editing.paste_visible_hint=Menyesuaikan posisi jika area salinan berada di luar layar atau kanvas tujuan.
+settings.editing.selection_keys=Seleksi dan papan ketik
+settings.editing.enter_deselect=Enter menghapus seleksi
+settings.editing.enter_deselect_hint=Nonaktif secara bawaan. Enter tetap menerapkan alat aktif dan mengonfirmasi dialog.
+settings.editing.legacy_clipboard=Aktifkan pintasan papan klip tradisional
+settings.editing.legacy_clipboard_hint=Ctrl+Insert menyalin, Shift+Insert menempel, dan Shift+Delete memotong. Pintasan lain tetap berfungsi.
+settings.ai.invalid_path_kept=Jalur ini belum disimpan. Jalur valid sebelumnya tetap digunakan.
+settings.ai.file_not_found=Berkas tidak ditemukan: {path}
+settings.ai.expected_model=Pilih berkas model ONNX (.onnx).
+settings.ai.expected_runtime=Pilih pustaka ONNX Runtime (.dll, .so, atau .dylib).
+
+settings.ai.advanced=Pengaturan runtime lanjutan
+
+settings.tools.configure=Atur alat
+settings.tools.title=Panel alat
+settings.tools.visible=Alat yang terlihat
+settings.tools.visibility_hint=Alat tersembunyi tetap dapat diakses melalui pintasan.
+settings.tools.show_all=Tampilkan semua
+settings.tools.auto=Otomatis
+settings.tools.column=Satu kolom
+settings.tools.row=Satu baris
+settings.tools.grid=Kisi ringkas
+settings.tools.fit=Sesuaikan dengan isi
+settings.separator.title=Pemisah atas bilah tertambat
+settings.separator.theme=Ikuti tema
+settings.separator.opacity=Opasitas pemisah
+settings.save_error=Preferensi tidak dapat disimpan: {error}
+paste.outside_hint=Piksel yang dipudarkan berada di luar kanvas.
+
+settings.tools.animate_resize=Animasikan perubahan ukuran panel alat

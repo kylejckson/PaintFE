@@ -792,6 +792,26 @@ impl KeyBindings {
     }
 
     /// Check if a keybinding was triggered this frame
+    pub fn is_pressed_with_legacy(
+        &self,
+        ctx: &egui::Context,
+        action: BindableAction,
+        enabled: bool,
+    ) -> bool {
+        let alias = match action {
+            BindableAction::Copy => Some((egui::Modifiers::CTRL, egui::Key::Insert)),
+            BindableAction::Paste => Some((egui::Modifiers::SHIFT, egui::Key::Insert)),
+            BindableAction::Cut => Some((egui::Modifiers::SHIFT, egui::Key::Delete)),
+            _ => None,
+        };
+        let legacy = enabled
+            && alias
+                .is_some_and(|(modifiers, key)| ctx.input_mut(|i| i.consume_key(modifiers, key)));
+        // Always consume both routes so a platform clipboard event cannot repeat it.
+        self.is_pressed(ctx, action) || legacy
+    }
+
+    /// Check if a keybinding was triggered this frame
     pub fn is_pressed(&self, ctx: &egui::Context, action: BindableAction) -> bool {
         let Some(combo) = self.bindings.get(&action) else {
             return false;

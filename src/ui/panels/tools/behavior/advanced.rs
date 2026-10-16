@@ -2,12 +2,17 @@ impl ToolsPanel {
     fn show_liquify_options(&mut self, ui: &mut egui::Ui) {
         ui.label(t!("ctx.mode"));
         egui::ComboBox::from_id_salt("ctx_liquify_mode")
-            .selected_text(crate::i18n::translate_english(&self.liquify_state.mode.label()))
+            .selected_text(crate::i18n::translate_english(
+                &self.liquify_state.mode.label(),
+            ))
             .width(90.0)
             .show_ui(ui, |ui| {
                 for mode in LiquifyMode::all() {
                     if ui
-                        .selectable_label(self.liquify_state.mode == *mode, crate::i18n::translate_english(&mode.label()))
+                        .selectable_label(
+                            self.liquify_state.mode == *mode,
+                            crate::i18n::translate_english(&mode.label()),
+                        )
                         .clicked()
                     {
                         self.liquify_state.mode = *mode;
@@ -93,7 +98,7 @@ impl ToolsPanel {
             }
         }
         let mut history_cmd = crate::components::history::SingleLayerSnapshotCommand::new_for_layer(
-            "Liquify".to_string(),
+            HistoryAction::Liquify.label("Liquify".to_string()),
             canvas_state,
             target_layer_idx,
         );
@@ -590,7 +595,9 @@ impl ToolsPanel {
                 .shapes_state
                 .selected_custom_shape
                 .clone()
-                .unwrap_or_else(|| crate::i18n::translate_english(&self.shapes_state.selected_shape.label()));
+                .unwrap_or_else(|| {
+                    crate::i18n::translate_english(&self.shapes_state.selected_shape.label())
+                });
             if label_text.chars().count() > 12 {
                 label_text = format!("{}...", label_text.chars().take(12).collect::<String>());
             }
@@ -837,7 +844,9 @@ impl ToolsPanel {
         if icon_resp.clicked() {
             self.shapes_state.fill_mode = self.shapes_state.fill_mode.next();
         }
-        icon_resp.on_hover_text(crate::i18n::translate_english(&self.shapes_state.fill_mode.label()));
+        icon_resp.on_hover_text(crate::i18n::translate_english(
+            &self.shapes_state.fill_mode.label(),
+        ));
 
         // Arrow click → open dropdown popup
         if arrow_resp.clicked() {

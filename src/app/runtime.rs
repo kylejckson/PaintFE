@@ -45,6 +45,7 @@ impl eframe::App for PaintFEApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        if !self.settings_window.open { crate::config::persistence::flush(true); }
         ctx.data_mut(|d| {
             d.insert_temp(
                 egui::Id::new("resize_grip_appearance"),
@@ -85,3 +86,5 @@ include!("runtime/update/lifecycle_async.rs");
 include!("runtime/update/input_shortcuts.rs");
 include!("runtime/update/dialogs_menu.rs");
 include!("runtime/update/canvas_tail.rs");
+
+impl Drop for PaintFEApp { fn drop(&mut self) { crate::config::persistence::flush(true); } }

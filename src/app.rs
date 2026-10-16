@@ -3,6 +3,7 @@ use crate::assets::{
 };
 use crate::canvas::{BlendMode, Canvas, CanvasState, Layer, TiledImage};
 use crate::components::dialogs::{NewFileDialog, SaveFileDialog, SaveFormat, TiffCompression};
+use crate::components::history::HistoryAction;
 use crate::components::history::{
     CanvasSnapshot, SelectionCommand, SingleLayerSnapshotCommand, SnapshotCommand,
 };
@@ -24,6 +25,7 @@ use std::sync::mpsc;
 
 include!("app/types.rs");
 include!("app/bootstrap.rs");
+include!("app/paste_placement.rs");
 include!("app/runtime.rs");
 include!("app/project_io.rs");
 include!("app/ops.rs");
@@ -32,4 +34,8 @@ include!("app/panels.rs");
 #[cfg(test)]
 mod bug_review_tests;
 #[cfg(test)]
+mod history_tests;
+#[cfg(test)]
 mod issue_tests;
+#[cfg(test)]
+mod preferences_review_tests;

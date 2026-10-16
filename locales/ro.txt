@@ -1513,3 +1513,40 @@ settings.interface.bar_right=Spațiu dreapta
 settings.interface.bar_padding_x=Margine interioară orizontală
 settings.interface.bar_padding_y=Margine interioară verticală
 settings.interface.bar_radius=Raza colțurilor
+
+settings.tab.editing=Editare
+settings.auto_save_hint=Modificările sunt salvate automat. Închideți Preferințe când ați terminat.
+settings.editing.clipboard=Clipboard și lipire
+settings.editing.paste_source=Lipește pixelii copiați în poziția inițială
+settings.editing.paste_source_hint=Folosește poziția inițială pentru copiile din PaintFE. Dezactivați pentru a lipi la cursor.
+settings.editing.paste_visible=Păstrează conținutul lipit în zona vizibilă a pânzei
+settings.editing.paste_visible_hint=Ajustează poziția dacă zona copiată ar fi în afara ecranului sau a pânzei destinație.
+settings.editing.selection_keys=Selecție și tastatură
+settings.editing.enter_deselect=Enter anulează selecția
+settings.editing.enter_deselect_hint=Dezactivat implicit. Enter continuă să aplice instrumentele active și să confirme dialogurile.
+settings.editing.legacy_clipboard=Activează comenzile rapide tradiționale pentru clipboard
+settings.editing.legacy_clipboard_hint=Ctrl+Insert copiază, Shift+Insert lipește, iar Shift+Delete decupează. Celelalte comenzi rapide funcționează în continuare.
+settings.ai.invalid_path_kept=Această cale nu a fost salvată. Calea validă anterioară este păstrată.
+settings.ai.file_not_found=Fișier negăsit: {path}
+settings.ai.expected_model=Alegeți un fișier de model ONNX (.onnx).
+settings.ai.expected_runtime=Alegeți o bibliotecă ONNX Runtime (.dll, .so sau .dylib).
+
+settings.ai.advanced=Setări avansate ale mediului de execuție
+
+settings.tools.configure=Configurare instrumente
+settings.tools.title=Panou de instrumente
+settings.tools.visible=Instrumente vizibile
+settings.tools.visibility_hint=Instrumentele ascunse rămân accesibile prin comenzi rapide.
+settings.tools.show_all=Afișează toate
+settings.tools.auto=Automat
+settings.tools.column=O coloană
+settings.tools.row=Un rând
+settings.tools.grid=Grilă compactă
+settings.tools.fit=Potrivire la conținut
+settings.separator.title=Separatorul superior al barei andocate
+settings.separator.theme=Urmează tema
+settings.separator.opacity=Opacitatea separatorului
+settings.save_error=Preferințele nu au putut fi salvate: {error}
+paste.outside_hint=Pixelii estompați sunt în afara pânzei.
+
+settings.tools.animate_resize=Animează redimensionarea panoului de instrumente

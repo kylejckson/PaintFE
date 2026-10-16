@@ -1513,3 +1513,40 @@ settings.interface.bar_right=Odstęp z prawej
 settings.interface.bar_padding_x=Poziomy margines wewnętrzny
 settings.interface.bar_padding_y=Pionowy margines wewnętrzny
 settings.interface.bar_radius=Promień narożników
+
+settings.tab.editing=Edycja
+settings.auto_save_hint=Zmiany są zapisywane automatycznie. Po zakończeniu zamknij Preferencje.
+settings.editing.clipboard=Schowek i wklejanie
+settings.editing.paste_source=Wklejaj skopiowane piksele w pierwotnym położeniu
+settings.editing.paste_source_hint=Używa pierwotnego położenia kopii z PaintFE. Wyłącz, aby wklejać przy kursorze.
+settings.editing.paste_visible=Zachowaj wklejaną zawartość w widocznym obszarze płótna
+settings.editing.paste_visible_hint=Dostosowuje położenie, jeśli kopia znalazłaby się poza ekranem lub docelowym płótnem.
+settings.editing.selection_keys=Zaznaczenie i klawiatura
+settings.editing.enter_deselect=Enter usuwa zaznaczenie
+settings.editing.enter_deselect_hint=Domyślnie wyłączone. Enter nadal zatwierdza aktywne narzędzia i okna dialogowe.
+settings.editing.legacy_clipboard=Włącz tradycyjne skróty schowka
+settings.editing.legacy_clipboard_hint=Ctrl+Insert kopiuje, Shift+Insert wkleja, a Shift+Delete wycina. Pozostałe skróty nadal działają.
+settings.ai.invalid_path_kept=Ta ścieżka nie została zapisana. Zachowano poprzednią poprawną ścieżkę.
+settings.ai.file_not_found=Nie znaleziono pliku: {path}
+settings.ai.expected_model=Wybierz plik modelu ONNX (.onnx).
+settings.ai.expected_runtime=Wybierz bibliotekę ONNX Runtime (.dll, .so lub .dylib).
+
+settings.ai.advanced=Zaawansowane ustawienia środowiska wykonawczego
+
+settings.tools.configure=Konfiguruj narzędzia
+settings.tools.title=Panel narzędzi
+settings.tools.visible=Widoczne narzędzia
+settings.tools.visibility_hint=Ukryte narzędzia są nadal dostępne przez skróty klawiszowe.
+settings.tools.show_all=Pokaż wszystkie
+settings.tools.auto=Automatycznie
+settings.tools.column=Jedna kolumna
+settings.tools.row=Jeden wiersz
+settings.tools.grid=Zwarta siatka
+settings.tools.fit=Dopasuj do zawartości
+settings.separator.title=Górny separator zadokowanego paska
+settings.separator.theme=Zgodnie z motywem
+settings.separator.opacity=Krycie separatora
+settings.save_error=Nie udało się zapisać preferencji: {error}
+paste.outside_hint=Przygaszone piksele znajdują się poza płótnem.
+
+settings.tools.animate_resize=Animuj zmianę rozmiaru panelu narzędzi

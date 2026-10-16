@@ -203,8 +203,10 @@ impl ToolsPanel {
             // Text
             if self.active_tool == Tool::Text && self.text_state.is_editing {
                 if !self.text_state.text.is_empty() {
-                    self.stroke_tracker
-                        .start_preview_tool(canvas_state.active_layer_index, "Text");
+                    self.stroke_tracker.start_preview_tool(
+                        canvas_state.active_layer_index,
+                        HistoryAction::Text.label("Text"),
+                    );
                     self.text_state.commit_pending = true;
                     self.text_state.commit_pending_frame = 0;
                 } else {
@@ -367,8 +369,10 @@ impl ToolsPanel {
         // Auto-commit Text if tool changed away
         if self.active_tool != Tool::Text && self.text_state.is_editing {
             if !self.text_state.text.is_empty() {
-                self.stroke_tracker
-                    .start_preview_tool(canvas_state.active_layer_index, "Text");
+                self.stroke_tracker.start_preview_tool(
+                    canvas_state.active_layer_index,
+                    HistoryAction::Text.label("Text"),
+                );
                 self.commit_text(canvas_state);
             } else {
                 self.text_state.is_editing = false;

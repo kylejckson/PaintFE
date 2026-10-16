@@ -1513,3 +1513,40 @@ settings.interface.bar_right=Spazio destro
 settings.interface.bar_padding_x=Margine interno orizzontale
 settings.interface.bar_padding_y=Margine interno verticale
 settings.interface.bar_radius=Raggio degli angoli
+
+settings.tab.editing=Modifica
+settings.auto_save_hint=Le modifiche vengono salvate automaticamente. Chiudi Preferenze quando hai terminato.
+settings.editing.clipboard=Appunti e incolla
+settings.editing.paste_source=Incolla i pixel copiati nella posizione originale
+settings.editing.paste_source_hint=Usa la posizione originale per le copie effettuate in PaintFE. Disattiva per incollare vicino al cursore.
+settings.editing.paste_visible=Mantieni il contenuto incollato nell’area visibile della tela
+settings.editing.paste_visible_hint=Regola la posizione se la copia si troverebbe fuori dallo schermo o dalla tela di destinazione.
+settings.editing.selection_keys=Selezione e tastiera
+settings.editing.enter_deselect=Invio annulla la selezione
+settings.editing.enter_deselect_hint=Disattivato per impostazione predefinita. Invio continua ad applicare gli strumenti attivi e a confermare le finestre di dialogo.
+settings.editing.legacy_clipboard=Abilita le scorciatoie tradizionali degli appunti
+settings.editing.legacy_clipboard_hint=Ctrl+Ins copia, Maiusc+Ins incolla e Maiusc+Canc taglia. Le altre scorciatoie continuano a funzionare.
+settings.ai.invalid_path_kept=Questo percorso non è stato salvato. Viene mantenuto il percorso valido precedente.
+settings.ai.file_not_found=File non trovato: {path}
+settings.ai.expected_model=Scegli un file di modello ONNX (.onnx).
+settings.ai.expected_runtime=Scegli una libreria ONNX Runtime (.dll, .so o .dylib).
+
+settings.ai.advanced=Impostazioni avanzate del runtime
+
+settings.tools.configure=Configura strumenti
+settings.tools.title=Pannello strumenti
+settings.tools.visible=Strumenti visibili
+settings.tools.visibility_hint=Gli strumenti nascosti restano disponibili tramite scorciatoie.
+settings.tools.show_all=Mostra tutti
+settings.tools.auto=Automatico
+settings.tools.column=Una colonna
+settings.tools.row=Una riga
+settings.tools.grid=Griglia compatta
+settings.tools.fit=Adatta al contenuto
+settings.separator.title=Separatore superiore della barra ancorata
+settings.separator.theme=Segui il tema
+settings.separator.opacity=Opacità del separatore
+settings.save_error=Impossibile salvare le preferenze: {error}
+paste.outside_hint=I pixel attenuati sono fuori dalla tela.
+
+settings.tools.animate_resize=Anima il ridimensionamento del pannello strumenti

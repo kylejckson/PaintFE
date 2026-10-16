@@ -50,9 +50,18 @@ impl PaintFEApp {
                         }
                         ui.menu_button(crate::t!("ui.recent_files"), |ui| {
                             let recent = self.settings.recent_files.clone();
+                            let cap = (ctx.content_rect().width() * 0.5).clamp(1.0, 700.0);
+                            let font = egui::TextStyle::Button.resolve(ui.style());
+                            let text_width = recent.iter().map(|path| {
+                                let label = crate::services::io::display_path(std::path::Path::new(path));
+                                ui.painter().layout_no_wrap(label, font.clone(), ui.visuals().text_color()).size().x
+                            }).fold(0.0_f32, f32::max);
+                            let width = (text_width + 24.0).max(160.0).min(cap);
+                            ui.set_width(width);
                             if recent.is_empty() { ui.weak(crate::t!("ui.no_recent_files")); }
                             for path in recent {
-                                if ui.button(crate::services::io::display_path(std::path::Path::new(&path))).clicked() {
+                                let label = crate::services::io::display_path(std::path::Path::new(&path));
+                                if ui.add_sized([width, 22.0], egui::Button::new(egui::RichText::new(&label)).truncate()).on_hover_text(&label).clicked() {
                                     self.open_file_by_path(PathBuf::from(path), ctx.input(|i| i.time));
                                     ui.close();
                                 }
@@ -205,7 +214,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_shortcut_enabled(
                                 ui,
-                                Icon::MenuEditCut,
+                                HistoryAction::Cut.icon(),
                                 &t!("menu.edit.cut"),
                                 has_sel,
                                 &menu_kb,
@@ -237,7 +246,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_shortcut_enabled(
                                 ui,
-                                Icon::MenuEditPaste,
+                                HistoryAction::Paste.icon(),
                                 &t!("menu.edit.paste"),
                                 has_project && has_clip,
                                 &menu_kb,
@@ -263,7 +272,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuEditPasteLayer,
+                                HistoryAction::PasteLayer.icon(),
                                 &t!("menu.edit.paste_as_layer"),
                                 has_project && has_clip,
                             )
@@ -273,7 +282,7 @@ impl PaintFEApp {
                             let img = crate::ops::clipboard::get_from_system_clipboard()
                                 .or_else(crate::ops::clipboard::get_clipboard_image_pub);
                             if let Some(src) = img {
-                                self.do_snapshot_op("Paste as New Layer", |s| {
+                                self.do_snapshot_op(HistoryAction::PasteLayer.label("Paste as New Layer"), |s| {
                                     crate::ops::adjustments::import_layer_from_image(
                                         s,
                                         &src,
@@ -291,7 +300,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_shortcut_enabled(
                                 ui,
-                                Icon::MenuEditSelectAll,
+                                HistoryAction::SelectAll.icon(),
                                 &t!("menu.edit.select_all"),
                                 has_project,
                                 &menu_kb,
@@ -306,7 +315,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_shortcut_enabled(
                                 ui,
-                                Icon::MenuEditDeselect,
+                                HistoryAction::Deselect.icon(),
                                 &t!("menu.edit.deselect"),
                                 has_sel,
                                 &menu_kb,
@@ -314,42 +323,27 @@ impl PaintFEApp {
                             )
                             .clicked()
                         {
-                            if let Some(project) = self.active_project_mut() {
-                                project.canvas_state.clear_selection();
-                            }
+                            self.clear_selection_with_history();
                             ui.close();
                         }
                         if self
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuEditInvertSel,
+                                HistoryAction::InvertSelection.icon(),
                                 &t!("menu.edit.invert_selection"),
                                 has_sel,
                             )
                             .clicked()
                         {
-                            if let Some(project) = self.active_project_mut() {
-                                let w = project.canvas_state.width;
-                                let h = project.canvas_state.height;
-                                if project.canvas_state.selection_all {
-                                    project.canvas_state.clear_selection();
-                                } else if let Some(ref mask) = project.canvas_state.selection_mask {
-                                    let inverted = image::GrayImage::from_fn(w, h, |x, y| {
-                                        let v = mask.get_pixel(x, y).0[0];
-                                        image::Luma([255u8 - v])
-                                    });
-                                    project.canvas_state.selection_mask = Some(inverted);
-                                }
-                                project.canvas_state.invalidate_selection_overlay();
-                            }
+                            self.invert_selection_with_history();
                             ui.close();
                         }
                         if self
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuEditColorRange,
+                                HistoryAction::ColorRange.icon(),
                                 &format!("{}...", crate::t!("ui.select_color_range")),
                                 has_project,
                             )
@@ -368,7 +362,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuEditSelectAll,
+                                HistoryAction::SelectAll.icon(),
                                 &t!("menu.edit.select_content_bounds"),
                                 has_project,
                             )
@@ -396,7 +390,7 @@ impl PaintFEApp {
 
                     // ==================== CANVAS MENU (was: Image) ====================
                     let no_dialog = !modal_open;
-                    ui.menu_button(t!("menu.canvas"), |ui| {
+                    ui.add_enabled_ui(has_project, |ui| ui.menu_button(t!("menu.canvas"), |ui| {
                         if !has_project {
                             ui.disable();
                         }
@@ -404,7 +398,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_shortcut_below_enabled(
                                 ui,
-                                Icon::MenuCanvasResize,
+                                HistoryAction::ResizeImage.icon(),
                                 &t!("menu.canvas.resize_image"),
                                 no_dialog,
                                 &menu_kb,
@@ -425,7 +419,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_shortcut_below_enabled(
                                 ui,
-                                Icon::MenuCanvasResize,
+                                HistoryAction::ResizeCanvas.icon(),
                                 &t!("menu.canvas.resize_canvas"),
                                 no_dialog,
                                 &menu_kb,
@@ -449,13 +443,13 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuCanvasCrop,
+                                HistoryAction::Crop.icon(),
                                 &t!("menu.canvas.crop_to_selection"),
                                 has_sel,
                             )
                             .clicked()
                         {
-                            self.do_snapshot_op("Crop to Selection", |s| {
+                            self.do_snapshot_op(HistoryAction::Crop.label("Crop to Selection"), |s| {
                                 crate::ops::adjustments::crop_to_selection(s);
                             });
                             ui.close();
@@ -485,7 +479,7 @@ impl PaintFEApp {
                             });
                         let align_resp = self.assets.menu_item_enabled(
                             ui,
-                            Icon::MenuCanvasAlign,
+                            HistoryAction::AlignLayer.icon(),
                             &t!("menu.canvas.align"),
                             align_enabled,
                         );
@@ -512,12 +506,12 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item(
                                     ui,
-                                    Icon::MenuCanvasFlipH,
+                                    HistoryAction::FlipHorizontal.icon(),
                                     &t!("menu.canvas.flip_horizontal"),
                                 )
                                 .clicked()
                             {
-                                self.do_snapshot_op("Flip Horizontal", |s| {
+                                self.do_snapshot_op(HistoryAction::FlipHorizontal.label("Flip Horizontal"), |s| {
                                     crate::ops::transform::flip_canvas_horizontal(s);
                                 });
                                 ui.close();
@@ -526,12 +520,12 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item(
                                     ui,
-                                    Icon::MenuCanvasFlipV,
+                                    HistoryAction::FlipVertical.icon(),
                                     &t!("menu.canvas.flip_vertical"),
                                 )
                                 .clicked()
                             {
-                                self.do_snapshot_op("Flip Vertical", |s| {
+                                self.do_snapshot_op(HistoryAction::FlipVertical.label("Flip Vertical"), |s| {
                                     crate::ops::transform::flip_canvas_vertical(s);
                                 });
                                 ui.close();
@@ -543,12 +537,12 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item(
                                     ui,
-                                    Icon::MenuCanvasRotateCw,
+                                    HistoryAction::RotateCw.icon(),
                                     &t!("menu.canvas.rotate_90cw"),
                                 )
                                 .clicked()
                             {
-                                self.do_snapshot_op("Rotate 90 deg CW", |s| {
+                                self.do_snapshot_op(HistoryAction::RotateCw.label("Rotate 90 deg CW"), |s| {
                                     crate::ops::transform::rotate_canvas_90cw(s);
                                 });
                                 ui.close();
@@ -557,12 +551,12 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item(
                                     ui,
-                                    Icon::MenuCanvasRotateCcw,
+                                    HistoryAction::RotateCcw.icon(),
                                     &t!("menu.canvas.rotate_90ccw"),
                                 )
                                 .clicked()
                             {
-                                self.do_snapshot_op("Rotate 90 deg CCW", |s| {
+                                self.do_snapshot_op(HistoryAction::RotateCcw.label("Rotate 90 deg CCW"), |s| {
                                     crate::ops::transform::rotate_canvas_90ccw(s);
                                 });
                                 ui.close();
@@ -571,12 +565,12 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item(
                                     ui,
-                                    Icon::MenuCanvasRotate180,
+                                    HistoryAction::Rotate180.icon(),
                                     &t!("menu.canvas.rotate_180"),
                                 )
                                 .clicked()
                             {
-                                self.do_snapshot_op("Rotate 180 deg", |s| {
+                                self.do_snapshot_op(HistoryAction::Rotate180.label("Rotate 180 deg"), |s| {
                                     crate::ops::transform::rotate_canvas_180(s);
                                 });
                                 ui.close();
@@ -587,34 +581,34 @@ impl PaintFEApp {
                             .assets
                             .menu_item_shortcut_below(
                                 ui,
-                                Icon::MenuCanvasFlatten,
+                                HistoryAction::Flatten.icon(),
                                 &t!("menu.canvas.flatten_all_layers"),
                                 &menu_kb,
                                 BindableAction::FlattenLayers,
                             )
                             .clicked()
                         {
-                            self.do_snapshot_op("Flatten All Layers", |s| {
+                            self.do_snapshot_op(HistoryAction::Flatten.label("Flatten All Layers"), |s| {
                                 crate::ops::transform::flatten_image(s);
                             });
                             ui.close();
                         }
-                    });
+                    }));
 
                     // (Layers menu removed -- layer operations are now in the Layers Panel context menu)
 
                     // ==================== COLOR MENU (was: Adjustments) ====================
-                    ui.menu_button(t!("menu.color"), |ui| {
+                    ui.add_enabled_ui(has_project, |ui| ui.menu_button(t!("menu.color"), |ui| {
                         if !has_project {
                             ui.disable();
                         }
                         // --- Instant adjustments (no dialog) ---
                         if self
                             .assets
-                            .menu_item(ui, Icon::MenuColorAutoLevels, &t!("menu.color.auto_levels"))
+                            .menu_item(ui, HistoryAction::AutoLevels.icon(), &t!("menu.color.auto_levels"))
                             .clicked()
                         {
-                            self.do_layer_snapshot_op("Auto Levels", |s| {
+                            self.do_layer_snapshot_op(HistoryAction::AutoLevels.label("Auto Levels"), |s| {
                                 let idx = s.active_layer_index;
                                 crate::ops::adjustments::auto_levels(s, idx);
                             });
@@ -622,10 +616,10 @@ impl PaintFEApp {
                         }
                         if self
                             .assets
-                            .menu_item(ui, Icon::MenuColorDesaturate, &t!("menu.color.desaturate"))
+                            .menu_item(ui, HistoryAction::Desaturate.icon(), &t!("menu.color.desaturate"))
                             .clicked()
                         {
-                            self.do_layer_snapshot_op("Desaturate", |s| {
+                            self.do_layer_snapshot_op(HistoryAction::Desaturate.label("Desaturate"), |s| {
                                 let idx = s.active_layer_index;
                                 crate::ops::filters::desaturate_layer(s, idx);
                             });
@@ -633,10 +627,10 @@ impl PaintFEApp {
                         }
                         if self
                             .assets
-                            .menu_item(ui, Icon::MenuColorInvert, &t!("menu.color.invert_colors"))
+                            .menu_item(ui, HistoryAction::InvertColors.icon(), &t!("menu.color.invert_colors"))
                             .clicked()
                         {
-                            self.do_gpu_snapshot_op("Invert Colors", |s, gpu| {
+                            self.do_gpu_snapshot_op(HistoryAction::InvertColors.label("Invert Colors"), |s, gpu| {
                                 let idx = s.active_layer_index;
                                 crate::ops::adjustments::invert_colors_gpu(s, idx, gpu);
                             });
@@ -646,12 +640,12 @@ impl PaintFEApp {
                             .assets
                             .menu_item(
                                 ui,
-                                Icon::MenuColorInvertAlpha,
+                                HistoryAction::InvertAlpha.icon(),
                                 &t!("menu.color.invert_alpha"),
                             )
                             .clicked()
                         {
-                            self.do_layer_snapshot_op("Invert Alpha", |s| {
+                            self.do_layer_snapshot_op(HistoryAction::InvertAlpha.label("Invert Alpha"), |s| {
                                 let idx = s.active_layer_index;
                                 crate::ops::adjustments::invert_alpha(s, idx);
                             });
@@ -661,7 +655,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::ColorRemover,
+                                HistoryAction::ColorToAlpha.icon(),
                                 &t!("menu.color.color_to_alpha"),
                                 no_dialog,
                             )
@@ -682,7 +676,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuColorRecoverTransparency,
+                                HistoryAction::RecoverTransparency.icon(),
                                 &t!("menu.color.recover_transparency"),
                                 no_dialog,
                             )
@@ -701,10 +695,10 @@ impl PaintFEApp {
                         }
                         if self
                             .assets
-                            .menu_item(ui, Icon::MenuColorSepia, &t!("menu.color.sepia_tone"))
+                            .menu_item(ui, HistoryAction::Sepia.icon(), &t!("menu.color.sepia_tone"))
                             .clicked()
                         {
-                            self.do_layer_snapshot_op("Sepia Tone", |s| {
+                            self.do_layer_snapshot_op(HistoryAction::Sepia.label("Sepia Tone"), |s| {
                                 let idx = s.active_layer_index;
                                 crate::ops::adjustments::sepia(s, idx);
                             });
@@ -716,7 +710,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuColorBrightness,
+                                HistoryAction::BrightnessContrast.icon(),
                                 &t!("menu.color.brightness_contrast"),
                                 no_dialog,
                             )
@@ -735,7 +729,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuColorCurves,
+                                HistoryAction::Curves.icon(),
                                 &t!("menu.color.curves"),
                                 no_dialog,
                             )
@@ -752,7 +746,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuColorExposure,
+                                HistoryAction::Exposure.icon(),
                                 &t!("menu.color.exposure"),
                                 no_dialog,
                             )
@@ -769,7 +763,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuColorHighlights,
+                                HistoryAction::HighlightsShadows.icon(),
                                 &t!("menu.color.highlights_shadows"),
                                 no_dialog,
                             )
@@ -788,7 +782,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuColorHsl,
+                                HistoryAction::HueSaturation.icon(),
                                 &t!("menu.color.hue_saturation"),
                                 no_dialog,
                             )
@@ -807,7 +801,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuColorLevels,
+                                HistoryAction::Levels.icon(),
                                 &t!("menu.color.levels"),
                                 no_dialog,
                             )
@@ -824,7 +818,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuColorTemperature,
+                                HistoryAction::TemperatureTint.icon(),
                                 &t!("menu.color.temperature_tint"),
                                 no_dialog,
                             )
@@ -845,7 +839,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuColorHsl,
+                                HistoryAction::Vibrance.icon(),
                                 &t!("menu.color.vibrance"),
                                 no_dialog,
                             )
@@ -862,7 +856,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuColorInvert,
+                                HistoryAction::Threshold.icon(),
                                 &t!("menu.color.threshold"),
                                 no_dialog,
                             )
@@ -881,7 +875,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuColorDesaturate,
+                                HistoryAction::Posterize.icon(),
                                 &t!("menu.color.posterize"),
                                 no_dialog,
                             )
@@ -900,7 +894,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuColorBrightness,
+                                HistoryAction::ColorBalance.icon(),
                                 &t!("menu.color.color_balance"),
                                 no_dialog,
                             )
@@ -919,7 +913,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuColorCurves,
+                                HistoryAction::GradientMap.icon(),
                                 &t!("menu.color.gradient_map"),
                                 no_dialog,
                             )
@@ -938,7 +932,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuColorDesaturate,
+                                HistoryAction::BlackAndWhite.icon(),
                                 &t!("menu.color.black_and_white"),
                                 no_dialog,
                             )
@@ -953,10 +947,10 @@ impl PaintFEApp {
                             }
                             ui.close();
                         }
-                    });
+                    }));
 
                     // ==================== FILTER MENU (was: Effects) ====================
-                    ui.menu_button(t!("menu.filter"), |ui| {
+                    ui.add_enabled_ui(has_project, |ui| ui.menu_button(t!("menu.filter"), |ui| {
                         if !has_project {
                             ui.disable();
                         }
@@ -966,7 +960,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterGaussian,
+                                    HistoryAction::GaussianBlur.icon(),
                                     &t!("menu.filter.blur.gaussian"),
                                     no_dialog,
                                 )
@@ -985,7 +979,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterBokeh,
+                                    HistoryAction::BokehBlur.icon(),
                                     &t!("menu.filter.blur.bokeh"),
                                     no_dialog,
                                 )
@@ -1004,7 +998,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterMotionBlur,
+                                    HistoryAction::MotionBlur.icon(),
                                     &t!("menu.filter.blur.motion"),
                                     no_dialog,
                                 )
@@ -1023,7 +1017,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterBoxBlur,
+                                    HistoryAction::BoxBlur.icon(),
                                     &t!("menu.filter.blur.box"),
                                     no_dialog,
                                 )
@@ -1042,7 +1036,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterZoomBlur,
+                                    HistoryAction::ZoomBlur.icon(),
                                     &t!("menu.filter.blur.zoom"),
                                     no_dialog,
                                 )
@@ -1065,7 +1059,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterSharpenItem,
+                                    HistoryAction::Sharpen.icon(),
                                     &t!("menu.filter.sharpen.sharpen"),
                                     no_dialog,
                                 )
@@ -1084,7 +1078,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterReduceNoise,
+                                    HistoryAction::ReduceNoise.icon(),
                                     &t!("menu.filter.sharpen.reduce_noise"),
                                     no_dialog,
                                 )
@@ -1107,7 +1101,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterCrystallize,
+                                    HistoryAction::Crystallize.icon(),
                                     &t!("menu.filter.distort.crystallize"),
                                     no_dialog,
                                 )
@@ -1126,7 +1120,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterDents,
+                                    HistoryAction::Dents.icon(),
                                     &t!("menu.filter.distort.dents"),
                                     no_dialog,
                                 )
@@ -1145,7 +1139,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterPixelate,
+                                    HistoryAction::Pixelate.icon(),
                                     &t!("menu.filter.distort.pixelate"),
                                     no_dialog,
                                 )
@@ -1164,7 +1158,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterBulge,
+                                    HistoryAction::Bulge.icon(),
                                     &t!("menu.filter.distort.bulge_pinch"),
                                     no_dialog,
                                 )
@@ -1183,7 +1177,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterTwist,
+                                    HistoryAction::Twist.icon(),
                                     &t!("menu.filter.distort.twist"),
                                     no_dialog,
                                 )
@@ -1206,7 +1200,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterAddNoise,
+                                    HistoryAction::AddNoise.icon(),
                                     &t!("menu.filter.noise.add_noise"),
                                     no_dialog,
                                 )
@@ -1225,7 +1219,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterMedian,
+                                    HistoryAction::Median.icon(),
                                     &t!("menu.filter.noise.median"),
                                     no_dialog,
                                 )
@@ -1248,7 +1242,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterGlow,
+                                    HistoryAction::Glow.icon(),
                                     &t!("menu.filter.stylize.glow"),
                                     no_dialog,
                                 )
@@ -1267,7 +1261,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterVignette,
+                                    HistoryAction::Vignette.icon(),
                                     &t!("menu.filter.stylize.vignette"),
                                     no_dialog,
                                 )
@@ -1286,7 +1280,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterHalftone,
+                                    HistoryAction::Halftone.icon(),
                                     &t!("menu.filter.stylize.halftone"),
                                     no_dialog,
                                 )
@@ -1305,7 +1299,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterInk,
+                                    HistoryAction::Ink.icon(),
                                     &t!("menu.filter.stylize.ink"),
                                     no_dialog,
                                 )
@@ -1324,7 +1318,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterOilPainting,
+                                    HistoryAction::OilPainting.icon(),
                                     &t!("menu.filter.stylize.oil_painting"),
                                     no_dialog,
                                 )
@@ -1343,7 +1337,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterColorFilter,
+                                    HistoryAction::ColorFilter.icon(),
                                     &t!("menu.filter.stylize.color_filter"),
                                     no_dialog,
                                 )
@@ -1362,7 +1356,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterCanvasBorder,
+                                    HistoryAction::CanvasBorder.icon(),
                                     &t!("menu.filter.stylize.canvas_border"),
                                     no_dialog,
                                 )
@@ -1381,7 +1375,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterSeamless,
+                                    HistoryAction::SeamlessTexture.icon(),
                                     &t!("menu.filter.stylize.seamless"),
                                     no_dialog,
                                 )
@@ -1465,7 +1459,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterPixelDrag,
+                                    HistoryAction::PixelDrag.icon(),
                                     &t!("menu.filter.glitch.pixel_drag"),
                                     no_dialog,
                                 )
@@ -1484,7 +1478,7 @@ impl PaintFEApp {
                                 .assets
                                 .menu_item_enabled(
                                     ui,
-                                    Icon::MenuFilterRgbDisplace,
+                                    HistoryAction::RgbDisplace.icon(),
                                     &t!("menu.filter.glitch.rgb_displace"),
                                     no_dialog,
                                 )
@@ -1505,7 +1499,7 @@ impl PaintFEApp {
                         ui.separator();
                         let remove_bg_resp = self.assets.menu_item_enabled(
                             ui,
-                            Icon::MenuFilterRemoveBg,
+                            HistoryAction::RemoveBackground.icon(),
                             &t!("menu.filter.remove_background"),
                             no_dialog && self.onnx_available && !self.background_removal_pending,
                         );
@@ -1588,10 +1582,10 @@ impl PaintFEApp {
                                 }
                             });
                         }
-                    });
+                    }));
 
                     // ==================== GENERATE MENU (was: Effects > Render) ====================
-                    ui.menu_button(t!("menu.generate"), |ui| {
+                    ui.add_enabled_ui(has_project, |ui| ui.menu_button(t!("menu.generate"), |ui| {
                         if !has_project {
                             ui.disable();
                         }
@@ -1599,7 +1593,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuGenerateGrid,
+                                HistoryAction::Grid.icon(),
                                 &t!("menu.generate.grid"),
                                 no_dialog,
                             )
@@ -1618,7 +1612,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuGenerateShadow,
+                                HistoryAction::DropShadow.icon(),
                                 &t!("menu.generate.drop_shadow"),
                                 no_dialog,
                             )
@@ -1637,7 +1631,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuGenerateOutline,
+                                HistoryAction::Outline.icon(),
                                 &t!("menu.generate.outline"),
                                 no_dialog,
                             )
@@ -1656,7 +1650,7 @@ impl PaintFEApp {
                             .assets
                             .menu_item_enabled(
                                 ui,
-                                Icon::MenuGenerateContours,
+                                HistoryAction::Contours.icon(),
                                 &t!("menu.generate.contours"),
                                 no_dialog,
                             )
@@ -1671,7 +1665,7 @@ impl PaintFEApp {
                             }
                             ui.close();
                         }
-                    });
+                    }));
 
                     ui.menu_button(t!("menu.view"), |ui| {
                         // Panel toggles
@@ -1704,6 +1698,7 @@ impl PaintFEApp {
 
                         ui.separator();
 
+                        ui.add_enabled_ui(has_project, |ui| {
                         // Pixel grid toggle
                         let show_grid = self
                             .active_project()
@@ -1800,6 +1795,7 @@ impl PaintFEApp {
                             ui.close();
                         }
 
+                        });
                         ui.separator();
 
                         // Theme submenu
@@ -1916,13 +1912,25 @@ impl PaintFEApp {
                     ui.separator();
 
                     // === Zoom Controls ===
-                    if self.assets.small_icon_button(ui, Icon::ZoomIn).clicked() {
+                    if self
+                        .assets
+                        .icon_button_enabled(ui, Icon::ZoomIn, has_project)
+                        .clicked()
+                    {
                         self.canvas.zoom_in();
                     }
-                    if self.assets.small_icon_button(ui, Icon::ZoomOut).clicked() {
+                    if self
+                        .assets
+                        .icon_button_enabled(ui, Icon::ZoomOut, has_project)
+                        .clicked()
+                    {
                         self.canvas.zoom_out();
                     }
-                    if self.assets.small_icon_button(ui, Icon::ResetZoom).clicked() {
+                    if self
+                        .assets
+                        .icon_button_enabled(ui, Icon::ResetZoom, has_project)
+                        .clicked()
+                    {
                         self.canvas.reset_zoom();
                     }
 
@@ -1943,7 +1951,10 @@ impl PaintFEApp {
                             } else {
                                 Icon::GridOff
                             };
-                            if self.assets.small_icon_button(ui, grid_icon).clicked()
+                            if self
+                                .assets
+                                .icon_button_enabled(ui, grid_icon, has_project)
+                                .clicked()
                                 && let Some(project) = self.active_project_mut()
                             {
                                 project.canvas_state.show_pixel_grid =
@@ -1975,7 +1986,10 @@ impl PaintFEApp {
                         } else {
                             Icon::GuidesOff
                         };
-                        if self.assets.small_icon_button(ui, guide_icon).clicked()
+                        if self
+                            .assets
+                            .icon_button_enabled(ui, guide_icon, has_project)
+                            .clicked()
                             && let Some(project) = self.active_project_mut()
                         {
                             project.canvas_state.show_guidelines =
@@ -1996,7 +2010,10 @@ impl PaintFEApp {
                             MirrorMode::Vertical => Icon::MirrorV,
                             MirrorMode::Quarters => Icon::MirrorQ,
                         };
-                        if self.assets.small_icon_button(ui, mirror_icon).clicked()
+                        if self
+                            .assets
+                            .icon_button_enabled(ui, mirror_icon, has_project)
+                            .clicked()
                             && let Some(project) = self.active_project_mut()
                         {
                             project.canvas_state.mirror_mode =
@@ -2017,7 +2034,10 @@ impl PaintFEApp {
                         } else {
                             Icon::WrapPreviewOff
                         };
-                        if self.assets.small_icon_button(ui, wrap_icon).clicked()
+                        if self
+                            .assets
+                            .icon_button_enabled(ui, wrap_icon, has_project)
+                            .clicked()
                             && let Some(project) = self.active_project_mut()
                         {
                             project.canvas_state.show_wrap_preview =

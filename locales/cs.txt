@@ -1513,3 +1513,40 @@ settings.interface.bar_right=Pravá mezera
 settings.interface.bar_padding_x=Vodorovné vnitřní odsazení
 settings.interface.bar_padding_y=Svislé vnitřní odsazení
 settings.interface.bar_radius=Poloměr rohů
+
+settings.tab.editing=Úpravy
+settings.auto_save_hint=Změny se ukládají automaticky. Po dokončení zavřete Předvolby.
+settings.editing.clipboard=Schránka a vkládání
+settings.editing.paste_source=Vkládat zkopírované pixely na původní místo
+settings.editing.paste_source_hint=U kopií z PaintFE se použije původní poloha. Vypněte pro vložení u kurzoru.
+settings.editing.paste_visible=Ponechat vložený obsah ve viditelné oblasti plátna
+settings.editing.paste_visible_hint=Poloha se upraví, pokud by kopie byla mimo obrazovku nebo cílové plátno.
+settings.editing.selection_keys=Výběr a klávesnice
+settings.editing.enter_deselect=Enter zruší výběr
+settings.editing.enter_deselect_hint=Ve výchozím stavu vypnuto. Enter nadále potvrzuje aktivní nástroje a dialogy.
+settings.editing.legacy_clipboard=Povolit tradiční klávesové zkratky schránky
+settings.editing.legacy_clipboard_hint=Ctrl+Insert kopíruje, Shift+Insert vkládá a Shift+Delete vyjímá. Ostatní zkratky fungují dál.
+settings.ai.invalid_path_kept=Tato cesta nebyla uložena. Předchozí platná cesta zůstává zachována.
+settings.ai.file_not_found=Soubor nenalezen: {path}
+settings.ai.expected_model=Vyberte soubor modelu ONNX (.onnx).
+settings.ai.expected_runtime=Vyberte knihovnu ONNX Runtime (.dll, .so nebo .dylib).
+
+settings.ai.advanced=Pokročilé nastavení běhového prostředí
+
+settings.tools.configure=Nastavit nástroje
+settings.tools.title=Panel nástrojů
+settings.tools.visible=Viditelné nástroje
+settings.tools.visibility_hint=Skryté nástroje jsou dostupné pomocí klávesových zkratek.
+settings.tools.show_all=Zobrazit vše
+settings.tools.auto=Automaticky
+settings.tools.column=Jeden sloupec
+settings.tools.row=Jeden řádek
+settings.tools.grid=Kompaktní mřížka
+settings.tools.fit=Přizpůsobit obsahu
+settings.separator.title=Horní oddělovač ukotveného panelu
+settings.separator.theme=Podle motivu
+settings.separator.opacity=Krytí oddělovače
+settings.save_error=Nastavení se nepodařilo uložit: {error}
+paste.outside_hint=Vybledlé pixely jsou mimo plátno.
+
+settings.tools.animate_resize=Animovat změnu velikosti panelu nástrojů

@@ -1513,3 +1513,40 @@ settings.interface.bar_right=Відступ справа
 settings.interface.bar_padding_x=Внутрішній відступ по горизонталі
 settings.interface.bar_padding_y=Внутрішній відступ по вертикалі
 settings.interface.bar_radius=Радіус кутів
+
+settings.tab.editing=Редагування
+settings.auto_save_hint=Зміни зберігаються автоматично. Завершивши налаштування, закрийте вікно параметрів.
+settings.editing.clipboard=Буфер обміну та вставлення
+settings.editing.paste_source=Вставляти скопійовані пікселі в початкову позицію
+settings.editing.paste_source_hint=Для копій із PaintFE використовується початкова позиція. Вимкніть, щоб вставляти біля курсора.
+settings.editing.paste_visible=Залишати вставлений вміст у видимій області полотна
+settings.editing.paste_visible_hint=Позиція коригується, якщо скопійована область опиниться поза екраном або цільовим полотном.
+settings.editing.selection_keys=Виділення та клавіатура
+settings.editing.enter_deselect=Enter знімає виділення
+settings.editing.enter_deselect_hint=Типово вимкнено. Enter і далі застосовує активні інструменти та підтверджує діалоги.
+settings.editing.legacy_clipboard=Увімкнути традиційні сполучення для буфера обміну
+settings.editing.legacy_clipboard_hint=Ctrl+Insert копіює, Shift+Insert вставляє, Shift+Delete вирізає. Інші сполучення працюють і надалі.
+settings.ai.invalid_path_kept=Цей шлях не збережено. Залишено попередній коректний шлях.
+settings.ai.file_not_found=Файл не знайдено: {path}
+settings.ai.expected_model=Виберіть файл моделі ONNX (.onnx).
+settings.ai.expected_runtime=Виберіть бібліотеку ONNX Runtime (.dll, .so або .dylib).
+
+settings.ai.advanced=Додаткові параметри середовища виконання
+
+settings.tools.configure=Налаштувати інструменти
+settings.tools.title=Панель інструментів
+settings.tools.visible=Видимі інструменти
+settings.tools.visibility_hint=Приховані інструменти доступні через сполучення клавіш.
+settings.tools.show_all=Показати всі
+settings.tools.auto=Автоматично
+settings.tools.column=Один стовпець
+settings.tools.row=Один рядок
+settings.tools.grid=Компактна сітка
+settings.tools.fit=За розміром вмісту
+settings.separator.title=Верхній роздільник закріпленої панелі
+settings.separator.theme=За темою
+settings.separator.opacity=Непрозорість роздільника
+settings.save_error=Не вдалося зберегти налаштування: {error}
+paste.outside_hint=Бліді пікселі розташовані за межами полотна.
+
+settings.tools.animate_resize=Анімація зміни розміру панелі інструментів

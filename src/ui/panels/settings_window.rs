@@ -20,7 +20,7 @@ pub struct SettingsWindow {
     active_tab: SettingsTab,
     #[cfg(not(target_arch = "wasm32"))]
     storage_error: Option<(bool, String)>,
-    /// Staging copy of accent colors for the "Interface" tab (applied on "Apply")
+    /// Editing values for Interface; saved through the common automatic apply path.
     staged_accent: AccentColors,
     staged_preset: ThemePreset,
     staged_mode: ThemeMode,
@@ -56,6 +56,7 @@ pub struct SettingsWindow {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum SettingsTab {
     General,
+    Editing,
     Interface,
     Hardware,
     Keybinds,
@@ -139,6 +140,8 @@ impl SettingsWindow {
             return None;
         }
 
+        crate::config::persistence::begin();
+
         // Sync on first frame the window is shown
         let id = egui::Id::new("settings_sync_flag");
         let was_open_last_frame = ctx.data_mut(|d| {
@@ -201,6 +204,15 @@ impl SettingsWindow {
                         accent,
                     );
 
+                    if let Some(error) = crate::config::persistence::error() {
+                        ui.colored_label(
+                            ui.visuals().error_fg_color,
+                            crate::i18n::format_translation(
+                                "settings.save_error",
+                                &[("error", error)],
+                            ),
+                        );
+                    }
                     // X close button on the right
                     let btn_size = Vec2::splat(header_height);
                     let btn_rect = egui::Rect::from_min_size(
@@ -228,6 +240,11 @@ impl SettingsWindow {
                     }
                 }
                 drop(header_scope);
+                ui.label(
+                    egui::RichText::new(t!("settings.auto_save_hint"))
+                        .small()
+                        .weak(),
+                );
                 // Force the window body to use the full allocated height so the
                 // sidebar doesn't collapse the window to just ~165 px.
                 let available_h = ui.available_height();
@@ -246,6 +263,11 @@ impl SettingsWindow {
                                 SettingsTab::General,
                                 Icon::SettingsGeneral,
                                 t!("settings.tab.general"),
+                            ),
+                            (
+                                SettingsTab::Editing,
+                                Icon::MenuEditPaste,
+                                t!("settings.tab.editing"),
                             ),
                             (
                                 SettingsTab::Interface,
@@ -359,6 +381,9 @@ impl SettingsWindow {
                                     SettingsTab::General => {
                                         self.show_general_tab(ui, settings);
                                     }
+                                    SettingsTab::Editing => {
+                                        self.show_editing_tab(ui, settings);
+                                    }
                                     SettingsTab::Interface => {
                                         self.show_interface_tab(ui, ctx, settings, theme, assets);
                                     }
@@ -386,6 +411,7 @@ impl SettingsWindow {
             });
 
         drop(preferences_scope);
+        self.apply_pending_settings(settings, theme, ctx);
         #[cfg(not(target_arch = "wasm32"))]
         let trust_rect = self.show_plugin_trust_modal(ctx);
         #[cfg(target_arch = "wasm32")]
@@ -403,6 +429,17 @@ impl SettingsWindow {
             ctx.data_mut(|d| d.insert_temp(id, false));
         }
 
+        let typing = ctx.input(|i| {
+            i.pointer.any_down()
+                || i.events
+                    .iter()
+                    .any(|e| matches!(e, egui::Event::Text(_) | egui::Event::Paste(_)))
+        });
+        if crate::config::persistence::flush(
+            !self.open || (!typing && ctx.input(|i| i.pointer.any_released())),
+        ) {
+            ctx.request_repaint_after(std::time::Duration::from_millis(250));
+        }
         // The visible window rect(s) — the caller registers them as
         // input-blocking so canvas input (wheel zoom, clicks, strokes) does
         // not leak through the window to the canvas behind it.
@@ -598,6 +635,137 @@ impl SettingsWindow {
     }
 
     // -- General Tab -------------------------------------------
+    fn show_editing_tab(&mut self, ui: &mut egui::Ui, settings: &mut AppSettings) {
+        Self::section_header(ui, &t!("settings.editing.clipboard"));
+        ui.checkbox(
+            &mut settings.paste_at_source_position,
+            t!("settings.editing.paste_source"),
+        );
+        ui.weak(t!("settings.editing.paste_source_hint"));
+        ui.checkbox(
+            &mut settings.paste_keep_visible,
+            t!("settings.editing.paste_visible"),
+        );
+        ui.weak(t!("settings.editing.paste_visible_hint"));
+        ui.add_space(6.0);
+        ui.checkbox(
+            &mut settings.clipboard_copy_transparent_cutout,
+            crate::t!("ui.transparent_pasted_pixels_overwrite_destination"),
+        );
+        ui.label(
+            egui::RichText::new(crate::t!(
+                "ui.when_enabled_pasted_selections_keep_their_original_silhouette_instead_"
+            ))
+            .small()
+            .weak(),
+        );
+
+        ui.add_space(6.0);
+        ui.checkbox(
+            &mut settings.select_after_paste,
+            crate::t!("ui.select_the_pasted_image_after_pasting"),
+        );
+        ui.label(
+            egui::RichText::new(crate::t!(
+                "ui.when_enabled_committing_a_paste_leaves_the_pasted_region_selected_read"
+            ))
+            .small()
+            .weak(),
+        );
+
+        Self::section_header(ui, &t!("settings.editing.selection_keys"));
+        ui.checkbox(
+            &mut settings.escape_deselect,
+            t!("settings.interface.escape_deselect"),
+        );
+        ui.checkbox(
+            &mut settings.enter_deselect,
+            t!("settings.editing.enter_deselect"),
+        );
+        ui.weak(t!("settings.editing.enter_deselect_hint"));
+        ui.checkbox(
+            &mut settings.legacy_clipboard_shortcuts,
+            t!("settings.editing.legacy_clipboard"),
+        );
+        ui.weak(t!("settings.editing.legacy_clipboard_hint"));
+        settings.save();
+    }
+
+    fn validated_ai_path(raw: &str, model: bool) -> Result<String, String> {
+        let value = raw.trim().trim_matches('"');
+        if value.is_empty() {
+            return Ok(String::new());
+        }
+        let path = std::path::Path::new(value);
+        if !path.is_file() {
+            return Err(crate::i18n::format_translation(
+                "settings.ai.file_not_found",
+                &[("path", value.to_owned())],
+            ));
+        }
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_ascii_lowercase();
+        let valid = if model {
+            name.ends_with(".onnx")
+        } else {
+            name.ends_with(".dll")
+                || name.ends_with(".dylib")
+                || name.ends_with(".so")
+                || name.contains(".so.")
+        };
+        if !valid {
+            return Err(t!(if model {
+                "settings.ai.expected_model"
+            } else {
+                "settings.ai.expected_runtime"
+            }));
+        }
+        Ok(value.to_owned())
+    }
+
+    fn apply_pending_settings(
+        &mut self,
+        settings: &mut AppSettings,
+        theme: &mut crate::theme::Theme,
+        ctx: &egui::Context,
+    ) {
+        if self.dirty {
+            self.apply_theme(settings, theme, ctx);
+        }
+        let mut changed = false;
+        if settings.keybindings.bindings != self.staged_keybindings.bindings
+            || settings.keybindings.unbound != self.staged_keybindings.unbound
+        {
+            settings.keybindings = self.staged_keybindings.clone();
+            changed = true;
+        }
+        for (raw, model, saved) in [
+            (
+                &self.staged_onnx_path,
+                false,
+                &mut settings.onnx_runtime_path,
+            ),
+            (
+                &self.staged_model_path,
+                true,
+                &mut settings.birefnet_model_path,
+            ),
+        ] {
+            if let Ok(path) = Self::validated_ai_path(raw, model)
+                && *saved != path
+            {
+                *saved = path;
+                changed = true;
+            }
+        }
+        if changed {
+            settings.save();
+        }
+    }
+
     fn show_general_tab(&mut self, ui: &mut egui::Ui, settings: &mut AppSettings) {
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -831,32 +999,6 @@ impl SettingsWindow {
         ui.label(
             egui::RichText::new(crate::t!(
                 "ui.shows_a_save_prompt_when_quitting_with_unsaved_projects"
-            ))
-            .small()
-            .weak(),
-        );
-
-        ui.add_space(6.0);
-        ui.checkbox(
-            &mut settings.clipboard_copy_transparent_cutout,
-            crate::t!("ui.transparent_pasted_pixels_overwrite_destination"),
-        );
-        ui.label(
-            egui::RichText::new(crate::t!(
-                "ui.when_enabled_pasted_selections_keep_their_original_silhouette_instead_"
-            ))
-            .small()
-            .weak(),
-        );
-
-        ui.add_space(6.0);
-        ui.checkbox(
-            &mut settings.select_after_paste,
-            crate::t!("ui.select_the_pasted_image_after_pasting"),
-        );
-        ui.label(
-            egui::RichText::new(crate::t!(
-                "ui.when_enabled_committing_a_paste_leaves_the_pasted_region_selected_read"
             ))
             .small()
             .weak(),
@@ -1115,6 +1257,61 @@ impl SettingsWindow {
         *value != before
     }
 
+    pub(crate) fn open_tools_settings(&mut self, settings: &AppSettings) {
+        self.sync_from_settings(settings);
+        self.active_tab = SettingsTab::Interface;
+        self.open = true;
+    }
+
+    fn show_tools_visibility(ui: &mut egui::Ui, settings: &mut AppSettings, assets: &Assets) {
+        use crate::ui::panels::tools::palette;
+        egui::CollapsingHeader::new(t!("settings.tools.visible"))
+            .id_salt("tools_visibility")
+            .show(ui, |ui| {
+                let mut changed = false;
+                ui.weak(t!("settings.tools.visibility_hint"));
+                if ui.button(t!("settings.tools.show_all")).clicked() {
+                    settings.tools_palette.hidden.clear();
+                    changed = true;
+                }
+                for (group, tools) in palette::GROUPS.iter().enumerate() {
+                    if group > 0 {
+                        ui.separator();
+                    }
+                    for (tool, id) in tools.iter().copied().chain(
+                        (group == 3).then_some((crate::components::tools::Tool::Shapes, "shapes")),
+                    ) {
+                        ui.horizontal(|ui| {
+                            let icon = if tool == crate::components::tools::Tool::Shapes {
+                                Icon::ShapesSmall
+                            } else {
+                                tool.icon()
+                            };
+                            if let Some(texture) = assets.get_texture(icon) {
+                                ui.add(
+                                    egui::Image::from_texture(
+                                        egui::load::SizedTexture::from_handle(texture),
+                                    )
+                                    .fit_to_exact_size(egui::Vec2::splat(20.)),
+                                );
+                            }
+                            let mut visible = palette::visible(&settings.tools_palette, id);
+                            if ui.checkbox(&mut visible, tool.icon().tooltip()).changed() {
+                                settings.tools_palette.hidden.retain(|hidden| hidden != id);
+                                if !visible {
+                                    settings.tools_palette.hidden.push(id.into());
+                                }
+                                changed = true;
+                            }
+                        });
+                    }
+                }
+                if changed {
+                    settings.save();
+                }
+            });
+    }
+
     // -- Interface Tab ----------------------------------------------
     fn show_interface_tab(
         &mut self,
@@ -1162,18 +1359,36 @@ impl SettingsWindow {
         ui.add_space(8.0);
 
         let mut layout_changed = false;
+        Self::section_header(ui, &t!("settings.tools.title"));
+        Self::show_tools_visibility(ui, settings, assets);
         layout_changed |= ui
             .checkbox(
-                &mut settings.escape_deselect,
-                t!("settings.interface.escape_deselect"),
+                &mut settings.tools_palette.animate_resize,
+                t!("settings.tools.animate_resize"),
             )
             .changed();
+        ui.horizontal(|ui| {
+            for (mode, label) in [
+                ("auto", "settings.tools.auto"),
+                ("column", "settings.tools.column"),
+                ("row", "settings.tools.row"),
+                ("grid", "settings.tools.grid"),
+            ] {
+                layout_changed |= ui
+                    .selectable_value(&mut settings.tools_palette.mode, mode.into(), t!(label))
+                    .changed();
+            }
+        });
+
         layout_changed |= ui
             .checkbox(
                 &mut settings.tools_show_colors,
                 t!("settings.interface.tools_show_colors"),
             )
             .changed();
+        if settings.tools_palette.mode == "grid" && layout_changed {
+            settings.tools_palette.columns = 6;
+        }
         Self::section_header(ui, &t!("settings.interface.tool_options"));
         ui.horizontal(|ui| {
             layout_changed |= ui
@@ -1196,6 +1411,48 @@ impl SettingsWindow {
                 layout_changed = true;
             }
         });
+        if settings.tool_shelf.docked {
+            ui.label(t!("settings.separator.title"));
+            let mut automatic = settings.tool_shelf.top_separator.is_none();
+            if ui
+                .checkbox(&mut automatic, t!("settings.separator.theme"))
+                .changed()
+            {
+                settings.tool_shelf.top_separator = if automatic {
+                    None
+                } else {
+                    Some([
+                        theme.tool_shelf_border.r(),
+                        theme.tool_shelf_border.g(),
+                        theme.tool_shelf_border.b(),
+                    ])
+                };
+                layout_changed = true;
+            }
+            if let Some(rgb) = &mut settings.tool_shelf.top_separator {
+                let mut color = egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
+                if ui.color_edit_button_srgba(&mut color).changed() {
+                    *rgb = [color.r(), color.g(), color.b()];
+                    layout_changed = true;
+                }
+            }
+            let mut opacity = settings.tool_shelf.separator_opacity * 100.;
+            if Self::tool_shelf_slider(
+                ui,
+                &mut opacity,
+                100.,
+                &t!("settings.separator.opacity"),
+                "%",
+            ) {
+                settings.tool_shelf.separator_opacity = opacity / 100.;
+                layout_changed = true;
+            }
+            if ui.button(t!("common.reset")).clicked() {
+                settings.tool_shelf.top_separator = None;
+                settings.tool_shelf.separator_opacity = 1.;
+                layout_changed = true;
+            }
+        }
         let mut opacity = settings.tool_shelf.effective_opacity() * 100.0;
         if Self::tool_shelf_slider(
             ui,
@@ -2233,18 +2490,11 @@ impl SettingsWindow {
             }
         }
 
-        // -- Apply / Reset -------------------------------------------
+        // -- Reset ---------------------------------------------------
         ui.add_space(16.0);
         ui.separator();
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            let apply_btn = ui.add_enabled(
-                self.dirty,
-                egui::Button::new(format!("  {}  ", t!("settings.interface.apply_changes"))),
-            );
-            if apply_btn.clicked() {
-                self.apply_theme(settings, theme, ctx);
-            }
             if ui
                 .button(t!("settings.interface.reset_to_signal"))
                 .clicked()
@@ -2700,53 +2950,22 @@ impl SettingsWindow {
 
     // -- AI Tab -------------------------------------------------------
     fn show_ai_tab(&mut self, ui: &mut egui::Ui, settings: &mut AppSettings) {
-        let old = settings.onnx_graph_optimization;
-        egui::ComboBox::from_label(t!("settings.ai.graph_optimization"))
-            .selected_text(format!("{:?}", old))
-            .show_ui(ui, |ui| {
-                for (value, label) in [
-                    (
-                        crate::ops::ai::GraphOptimization::All,
-                        t!("settings.ai.graph_all"),
-                    ),
-                    (
-                        crate::ops::ai::GraphOptimization::Basic,
-                        t!("settings.ai.graph_basic"),
-                    ),
-                    (
-                        crate::ops::ai::GraphOptimization::Disabled,
-                        t!("settings.ai.graph_disabled"),
-                    ),
-                ] {
-                    ui.selectable_value(&mut settings.onnx_graph_optimization, value, label);
-                }
-            });
-        let arena_changed = ui
-            .checkbox(
-                &mut settings.onnx_cpu_memory_arena,
-                t!("settings.ai.cpu_arena"),
-            )
-            .changed();
-        if old != settings.onnx_graph_optimization || arena_changed {
-            settings.save();
-        }
-        ui.label(
-            egui::RichText::new(t!("settings.ai.memory_hint"))
-                .small()
-                .weak(),
-        );
-        ui.add_space(8.0);
         // -- ONNX Runtime ----------------------------------------------
         Self::section_header(ui, &t!("settings.ai.onnx_runtime"));
 
         ui.label(t!("settings.ai.library_path"));
         ui.horizontal(|ui| {
             let field_w = (ui.available_width() - 38.0).max(120.0);
-            ui.add(
-                egui::TextEdit::singleline(&mut self.staged_onnx_path)
-                    .desired_width(field_w)
-                    .hint_text(t!("settings.ai.onnx_path_placeholder")),
-            );
+            if ui
+                .add(
+                    egui::TextEdit::singleline(&mut self.staged_onnx_path)
+                        .desired_width(field_w)
+                        .hint_text(t!("settings.ai.onnx_path_placeholder")),
+                )
+                .changed()
+            {
+                self.onnx_probe_result = None;
+            }
             #[cfg(not(target_arch = "wasm32"))]
             if ui.button("\u{1F4C2}").clicked()
                 && let Some(path) = crate::services::file_dialogs::dialog(
@@ -2766,6 +2985,10 @@ impl SettingsWindow {
                 self.onnx_probe_result = None;
             }
         });
+        if let Err(error) = Self::validated_ai_path(&self.staged_onnx_path, false) {
+            ui.colored_label(ui.visuals().error_fg_color, error);
+            ui.weak(t!("settings.ai.invalid_path_kept"));
+        }
         ui.label(
             egui::RichText::new(t!("settings.ai.library_hint"))
                 .small()
@@ -2786,18 +3009,15 @@ impl SettingsWindow {
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             if ui.button(t!("settings.ai.test")).clicked() {
-                if self.staged_onnx_path.is_empty() {
-                    self.onnx_probe_result = Some(Err(t!("settings.ai.path_empty")));
-                } else {
-                    match crate::ops::ai::probe_onnx_runtime(&self.staged_onnx_path) {
-                        Ok(version) => {
-                            self.onnx_probe_result = Some(Ok(version));
+                self.onnx_probe_result = Some(
+                    match Self::validated_ai_path(&self.staged_onnx_path, false) {
+                        Ok(path) if path.is_empty() => Err(t!("settings.ai.path_empty")),
+                        Ok(path) => {
+                            crate::ops::ai::probe_onnx_runtime(&path).map_err(|e| e.to_string())
                         }
-                        Err(e) => {
-                            self.onnx_probe_result = Some(Err(format!("{}", e)));
-                        }
-                    }
-                }
+                        Err(error) => Err(error),
+                    },
+                );
             }
             match &self.onnx_probe_result {
                 Some(Ok(version)) => {
@@ -2858,6 +3078,10 @@ impl SettingsWindow {
                 self.staged_model_path = path.display().to_string();
             }
         });
+        if let Err(error) = Self::validated_ai_path(&self.staged_model_path, true) {
+            ui.colored_label(ui.visuals().error_fg_color, error);
+            ui.weak(t!("settings.ai.invalid_path_kept"));
+        }
         ui.label(
             egui::RichText::new(t!("settings.ai.model_hint"))
                 .small()
@@ -2939,17 +3163,51 @@ impl SettingsWindow {
             );
         });
 
-        // -- Apply / Reset -------------------------------------------
+        egui::CollapsingHeader::new(t!("settings.ai.advanced")).show(ui, |ui| {
+            let old = settings.onnx_graph_optimization;
+            egui::ComboBox::from_label(t!("settings.ai.graph_optimization"))
+                .selected_text(format!("{:?}", old))
+                .show_ui(ui, |ui| {
+                    for (value, label) in [
+                        (
+                            crate::ops::ai::GraphOptimization::All,
+                            t!("settings.ai.graph_all"),
+                        ),
+                        (
+                            crate::ops::ai::GraphOptimization::Basic,
+                            t!("settings.ai.graph_basic"),
+                        ),
+                        (
+                            crate::ops::ai::GraphOptimization::Disabled,
+                            t!("settings.ai.graph_disabled"),
+                        ),
+                    ] {
+                        ui.selectable_value(&mut settings.onnx_graph_optimization, value, label);
+                    }
+                });
+            let arena_changed = ui
+                .checkbox(
+                    &mut settings.onnx_cpu_memory_arena,
+                    t!("settings.ai.cpu_arena"),
+                )
+                .changed();
+            if old != settings.onnx_graph_optimization || arena_changed {
+                settings.save();
+            }
+            ui.label(
+                egui::RichText::new(t!("settings.ai.memory_hint"))
+                    .small()
+                    .weak(),
+            );
+            ui.add_space(8.0);
+        });
+
+        // -- Reset ---------------------------------------------------
         ui.add_space(16.0);
         ui.separator();
         ui.add_space(4.0);
 
         ui.horizontal(|ui| {
-            if ui.button(t!("common.apply")).clicked() {
-                settings.onnx_runtime_path = self.staged_onnx_path.clone();
-                settings.birefnet_model_path = self.staged_model_path.clone();
-                settings.save();
-            }
             if ui.button(t!("common.reset")).clicked() {
                 self.staged_onnx_path.clear();
                 self.staged_model_path.clear();
@@ -2962,7 +3220,12 @@ impl SettingsWindow {
 
         ui.add_space(8.0);
         // Show current status
-        if !settings.onnx_runtime_path.is_empty() && !settings.birefnet_model_path.is_empty() {
+        if [&self.staged_onnx_path, &self.staged_model_path]
+            .iter()
+            .all(|p| !p.trim().is_empty())
+            && Self::validated_ai_path(&self.staged_onnx_path, false).is_ok()
+            && Self::validated_ai_path(&self.staged_model_path, true).is_ok()
+        {
             ui.label(
                 egui::RichText::new(t!("settings.ai.configured"))
                     .small()
@@ -3087,7 +3350,7 @@ impl SettingsWindow {
     fn show_keybinds_tab(
         &mut self,
         ui: &mut egui::Ui,
-        settings: &mut AppSettings,
+        _settings: &mut AppSettings,
         _assets: &Assets,
     ) {
         Self::section_header(ui, &t!("settings.keybinds.title"));
@@ -3385,14 +3648,126 @@ impl SettingsWindow {
         ui.add_space(4.0);
 
         ui.horizontal(|ui| {
-            if ui.button(t!("common.apply")).clicked() {
-                settings.keybindings = self.staged_keybindings.clone();
-                settings.save();
-            }
             if ui.button(t!("settings.keybinds.reset_defaults")).clicked() {
                 self.staged_keybindings = KeyBindings::default();
                 self.rebinding_action = None;
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod preference_consistency_tests {
+    use super::*;
+    fn context() -> egui::Context {
+        let ctx = egui::Context::default();
+        let mut fonts = egui::FontDefinitions::default();
+        fonts.families.insert(
+            egui::FontFamily::Name("WidgetTitle".into()),
+            fonts.families[&egui::FontFamily::Proportional].clone(),
+        );
+        ctx.set_fonts(fonts);
+        ctx
+    }
+    #[test]
+    fn ai_paths_validate_file_type_and_preserve_saved_paths_when_invalid() {
+        crate::i18n::init();
+        let dir = std::env::temp_dir().join(format!(
+            "paintfe-ai-path-validation-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in [
+            "model.onnx",
+            "runtime.dll",
+            "libonnxruntime.so.1.30.0",
+            "runtime.dylib",
+            "wrong.txt",
+        ] {
+            std::fs::write(dir.join(name), b"path validation fixture").unwrap();
+        }
+        for name in ["runtime.dll", "libonnxruntime.so.1.30.0", "runtime.dylib"] {
+            assert!(
+                SettingsWindow::validated_ai_path(&dir.join(name).to_string_lossy(), false).is_ok()
+            );
+        }
+        assert!(
+            SettingsWindow::validated_ai_path(&dir.join("model.onnx").to_string_lossy(), true)
+                .is_ok()
+        );
+        assert!(
+            SettingsWindow::validated_ai_path(&dir.join("wrong.txt").to_string_lossy(), true)
+                .is_err()
+        );
+        assert!(SettingsWindow::validated_ai_path(&dir.to_string_lossy(), false).is_err());
+        let model = dir.join("model.onnx").to_string_lossy().into_owned();
+        assert_eq!(
+            SettingsWindow::validated_ai_path(&format!("  \"{model}\"  "), true).unwrap(),
+            model
+        );
+        assert_eq!(SettingsWindow::validated_ai_path("", true).unwrap(), "");
+        let mut settings = AppSettings {
+            onnx_runtime_path: "previous-runtime".into(),
+            birefnet_model_path: model.clone(),
+            ..Default::default()
+        };
+        let mut window = SettingsWindow::default();
+        window.sync_from_settings(&settings);
+        window.staged_onnx_path = dir.join("missing.dll").to_string_lossy().into_owned();
+        window.staged_model_path = dir.join("wrong.txt").to_string_lossy().into_owned();
+        let mut theme = crate::theme::Theme::light();
+        window.apply_pending_settings(&mut settings, &mut theme, &context());
+        assert_eq!(settings.onnx_runtime_path, "previous-runtime");
+        assert_eq!(settings.birefnet_model_path, model);
+        assert!(dir.starts_with(std::env::temp_dir()));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn closing_preferences_saves_pending_theme_and_keybindings() {
+        crate::i18n::init();
+        let ctx = context();
+        let mut settings = AppSettings::default();
+        let mut theme = crate::theme::Theme::light();
+        let mut window = SettingsWindow {
+            open: true,
+            ..Default::default()
+        };
+        window.sync_from_settings(&settings);
+        window.staged_mode = ThemeMode::Dark;
+        window.dirty = true;
+        window
+            .staged_keybindings
+            .set(BindableAction::Copy, KeyCombo::ctrl_key(egui::Key::F8));
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("settings_sync_flag"), true));
+        let mut assets = Assets::new();
+        assets.init(&ctx);
+        let _ = ctx.run_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::Escape,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                ..Default::default()
+            },
+            |_ui| {
+                window.show(&ctx, &mut settings, &mut theme, &assets);
+            },
+        );
+        assert!(!window.open);
+        assert_eq!(settings.theme_mode, ThemeMode::Dark);
+        assert_eq!(
+            settings.keybindings.get(BindableAction::Copy),
+            Some(&KeyCombo::ctrl_key(egui::Key::F8))
+        );
+        let restored = AppSettings::load();
+        assert_eq!(restored.theme_mode, ThemeMode::Dark);
+        assert_eq!(
+            restored.keybindings.get(BindableAction::Copy),
+            settings.keybindings.get(BindableAction::Copy)
+        );
+        AppSettings::default().save();
     }
 }

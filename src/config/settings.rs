@@ -32,6 +32,8 @@ pub struct ToolShelfSettings {
     pub docked: bool,
     /// None uses the layout default (90% floating, 100% docked).
     pub opacity: Option<f32>,
+    pub top_separator: Option<[u8; 3]>,
+    pub separator_opacity: f32,
     pub top: f32,
     pub left: f32,
     pub right: f32,
@@ -45,6 +47,8 @@ impl Default for ToolShelfSettings {
         Self {
             docked: false,
             opacity: None,
+            top_separator: None,
+            separator_opacity: 1.0,
             top: 8.0,
             left: 12.0,
             right: 12.0,
@@ -63,6 +67,11 @@ impl ToolShelfSettings {
     }
 
     pub fn normalize(&mut self) {
+        self.separator_opacity = if self.separator_opacity.is_finite() {
+            self.separator_opacity.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
         let defaults = Self::default();
         for (value, fallback) in [
             (&mut self.top, defaults.top),
@@ -84,6 +93,35 @@ impl ToolShelfSettings {
         if self.link_sides {
             self.right = self.left;
         }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct ToolsPaletteSettings {
+    pub hidden: Vec<String>,
+    pub mode: String,
+    pub columns: usize,
+    pub animate_resize: bool,
+}
+impl Default for ToolsPaletteSettings {
+    fn default() -> Self {
+        Self {
+            hidden: Vec::new(),
+            mode: "auto".into(),
+            columns: 3,
+            animate_resize: true,
+        }
+    }
+}
+impl ToolsPaletteSettings {
+    pub fn normalize(&mut self) {
+        self.columns = self.columns.clamp(1, 26);
+        if !matches!(self.mode.as_str(), "auto" | "column" | "row" | "grid") {
+            self.mode = "auto".into();
+        }
+        self.hidden.sort();
+        self.hidden.dedup();
     }
 }
 
@@ -303,7 +341,12 @@ pub struct AppSettings {
     pub tool_shelf_rounding: Option<f32>,
     pub tool_shelf: ToolShelfSettings,
     pub tools_show_colors: bool,
+    pub tools_palette: ToolsPaletteSettings,
     pub escape_deselect: bool,
+    pub enter_deselect: bool,
+    pub paste_at_source_position: bool,
+    pub paste_keep_visible: bool,
+    pub legacy_clipboard_shortcuts: bool,
     pub persist_tools_panel_size: Option<(f32, f32)>,
     pub tool_button_rounding: Option<f32>,
     /// Badge corner radius override (px).
@@ -501,7 +544,12 @@ impl Default for AppSettings {
             tool_shelf_rounding: None,
             tool_shelf: ToolShelfSettings::default(),
             tools_show_colors: true,
+            tools_palette: ToolsPaletteSettings::default(),
             escape_deselect: true,
+            enter_deselect: false,
+            paste_at_source_position: true,
+            paste_keep_visible: true,
+            legacy_clipboard_shortcuts: true,
             persist_tools_panel_size: None,
             tool_button_rounding: None,
             badge_rounding: None,
@@ -1182,6 +1230,16 @@ impl AppSettings {
             self.persist_script_editor_visible
         ));
         content.push_str(&format!("escape_deselect={}\n", self.escape_deselect));
+        content.push_str(&format!("enter_deselect={}\n", self.enter_deselect));
+        content.push_str(&format!(
+            "paste_at_source_position={}\n",
+            self.paste_at_source_position
+        ));
+        content.push_str(&format!("paste_keep_visible={}\n", self.paste_keep_visible));
+        content.push_str(&format!(
+            "legacy_clipboard_shortcuts={}\n",
+            self.legacy_clipboard_shortcuts
+        ));
         content.push_str(&format!(
             "persist_tools_panel_size={}\n",
             Self::opt_pair_to_str(self.persist_tools_panel_size)
@@ -1455,6 +1513,10 @@ impl AppSettings {
             content.push_str(&format!("tool_shelf={value}\n"));
         }
         content.push_str(&format!("tools_show_colors={}\n", self.tools_show_colors));
+        content.push_str(&format!(
+            "tools_palette={}\n",
+            serde_json::to_string(&self.tools_palette).unwrap()
+        ));
         if let Some(v) = self.tool_shelf_rounding {
             content.push_str(&format!("tool_shelf_rounding={v}\n"));
         }
@@ -1508,19 +1570,9 @@ impl AppSettings {
             }
         }
         #[cfg(not(target_arch = "wasm32"))]
-        if let Err(e) = std::fs::create_dir_all(path.parent().unwrap())
-            .and_then(|_| std::fs::write(&path, &content))
-        {
-            eprintln!(
-                "[PaintFE] Failed to save settings to {}: {}",
-                path.display(),
-                e
-            );
-        }
+        crate::config::persistence::request(path, content);
         #[cfg(target_arch = "wasm32")]
-        if let Err(error) = crate::web_storage::save_settings(&content) {
-            web_sys::console::warn_1(&format!("PaintFE: {error}").into());
-        }
+        crate::config::persistence::request(std::path::PathBuf::from("web-settings"), content);
     }
 
     /// Load settings from disk (returns default if file missing or corrupt)
@@ -2042,8 +2094,18 @@ impl AppSettings {
                         s.tool_shelf = shelf;
                     }
                 }
+                "tools_palette" => {
+                    if let Ok(mut value) = serde_json::from_str::<ToolsPaletteSettings>(val) {
+                        value.normalize();
+                        s.tools_palette = value;
+                    }
+                }
                 "tools_show_colors" => s.tools_show_colors = val == "true",
                 "escape_deselect" => s.escape_deselect = val == "true",
+                "enter_deselect" => s.enter_deselect = val == "true",
+                "paste_at_source_position" => s.paste_at_source_position = val == "true",
+                "paste_keep_visible" => s.paste_keep_visible = val == "true",
+                "legacy_clipboard_shortcuts" => s.legacy_clipboard_shortcuts = val == "true",
                 "persist_tools_panel_size" => {
                     s.persist_tools_panel_size = Self::str_to_opt_pair(val)
                 }
@@ -2167,6 +2229,14 @@ impl AppSettings {
             s.ui_polish.row_motion = false;
         }
 
+        if !content
+            .lines()
+            .any(|line| line.starts_with("tools_palette="))
+            && let Some((width, _)) = s.persist_tools_panel_size
+        {
+            s.tools_palette.columns = ((width - 20. + 6.) / 32.).round().clamp(1., 25.) as usize;
+        }
+
         let language_tag_version = content
             .lines()
             .filter_map(|line| line.split_once('='))
@@ -2214,10 +2284,22 @@ mod refinement_tests {
             persist_colors_panel_size: Some((150.0, 210.0)),
             persist_tools_panel_size: Some((420.0, 170.0)),
             tools_show_colors: false,
+            tools_palette: ToolsPaletteSettings {
+                hidden: vec!["brush".into(), "wand".into()],
+                mode: "grid".into(),
+                columns: 6,
+                animate_resize: false,
+            },
             escape_deselect: false,
+            enter_deselect: true,
+            paste_at_source_position: false,
+            paste_keep_visible: false,
+            legacy_clipboard_shortcuts: false,
             tool_shelf: ToolShelfSettings {
                 docked: true,
                 opacity: Some(0.4),
+                top_separator: Some([10, 120, 230]),
+                separator_opacity: 0.35,
                 ..Default::default()
             },
             onnx_graph_optimization: crate::ops::ai::GraphOptimization::Basic,
@@ -2234,7 +2316,14 @@ mod refinement_tests {
         assert_eq!(restored.persist_colors_panel_size, Some((150.0, 210.0)));
         assert_eq!(restored.persist_tools_panel_size, Some((420.0, 170.0)));
         assert!(!restored.tools_show_colors);
+        assert_eq!(restored.tools_palette, settings.tools_palette);
+        assert_eq!(restored.tool_shelf.top_separator, Some([10, 120, 230]));
+        assert_eq!(restored.tool_shelf.separator_opacity, 0.35);
         assert!(!restored.escape_deselect);
+        assert!(restored.enter_deselect);
+        assert!(!restored.paste_at_source_position);
+        assert!(!restored.paste_keep_visible);
+        assert!(!restored.legacy_clipboard_shortcuts);
         assert!(restored.tool_shelf.docked);
         assert_eq!(restored.tool_shelf.opacity, Some(0.4));
         assert!(restored.onnx_cpu_memory_arena);

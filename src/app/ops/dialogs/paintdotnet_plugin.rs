@@ -16,7 +16,7 @@ impl PaintFEApp {
                 let errors = std::sync::Arc::clone(&plugin_dialog.render_error);
                 self.spawn_preview_job(
                     ctx.input(|i| i.time),
-                    plugin.name.clone(),
+                    HistoryAction::ExternalEffect.label(plugin.name.clone()),
                     plugin_dialog.layer_idx,
                     plugin_dialog.original_pixels.clone(),
                     plugin_dialog.original_flat.clone(),
@@ -51,7 +51,7 @@ impl PaintFEApp {
                 }
                 self.spawn_filter_job(
                     ctx.input(|i| i.time),
-                    plugin.name.clone(),
+                    HistoryAction::ExternalEffect.label(plugin.name.clone()),
                     layer_idx,
                     plugin_dialog.original_pixels.clone(),
                     plugin_dialog.original_flat.clone(),
@@ -74,9 +74,11 @@ impl PaintFEApp {
             }
             DialogResult::Cancel => {
                 self.preview_job_token = self.preview_job_token.wrapping_add(1);
-                self.filter_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+                self.filter_cancel
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
                 if let Some(project) = self.active_project_mut()
-                    && let Some(layer) = project.canvas_state.layers.get_mut(plugin_dialog.layer_idx)
+                    && let Some(layer) =
+                        project.canvas_state.layers.get_mut(plugin_dialog.layer_idx)
                 {
                     layer.pixels = plugin_dialog.original_pixels.clone();
                     project.canvas_state.mark_dirty(None);

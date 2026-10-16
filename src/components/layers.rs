@@ -1,5 +1,6 @@
 use crate::assets::{AppSettings, Assets, Icon};
 use crate::canvas::{BlendMode, CanvasState, Layer, LayerContent, TiledImage};
+use crate::components::history::HistoryAction;
 use crate::components::history::{HistoryManager, LayerOpCommand, LayerOperation, SnapshotCommand};
 use crate::ops::canvas_ops::ImageChannel;
 use crate::ops::dialogs::DialogColors;
@@ -140,6 +141,8 @@ pub struct LayersPanel {
 include!("layers/list.rs");
 include!("layers/settings.rs");
 include!("layers/operations.rs");
+#[cfg(test)]
+mod history_tests;
 
 enum LayerAction {
     Select { additive: bool },

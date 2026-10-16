@@ -1513,3 +1513,40 @@ settings.interface.bar_right=Sağ boşluk
 settings.interface.bar_padding_x=Yatay iç kenar boşluğu
 settings.interface.bar_padding_y=Dikey iç kenar boşluğu
 settings.interface.bar_radius=Köşe yarıçapı
+
+settings.tab.editing=Düzenleme
+settings.auto_save_hint=Değişiklikler otomatik kaydedilir. İşiniz bittiğinde Tercihler'i kapatın.
+settings.editing.clipboard=Pano ve yapıştırma
+settings.editing.paste_source=Kopyalanan pikselleri özgün konumlarına yapıştır
+settings.editing.paste_source_hint=PaintFE içinde oluşturulan kopyaların özgün konumunu kullanır. İmleçte yapıştırmak için kapatın.
+settings.editing.paste_visible=Yapıştırılan içeriği tuvalin görünür alanında tut
+settings.editing.paste_visible_hint=Kopyalanan alan ekranın veya hedef tuvalin dışında kalacaksa konumunu ayarlar.
+settings.editing.selection_keys=Seçim ve klavye
+settings.editing.enter_deselect=Enter seçimi kaldırır
+settings.editing.enter_deselect_hint=Varsayılan olarak kapalıdır. Enter etkin araçları uygulamaya ve iletişim kutularını onaylamaya devam eder.
+settings.editing.legacy_clipboard=Geleneksel pano kısayollarını etkinleştir
+settings.editing.legacy_clipboard_hint=Ctrl+Insert kopyalar, Shift+Insert yapıştırır ve Shift+Delete keser. Diğer kısayollar da çalışır.
+settings.ai.invalid_path_kept=Bu yol kaydedilmedi. Önceki geçerli yol korunur.
+settings.ai.file_not_found=Dosya bulunamadı: {path}
+settings.ai.expected_model=Bir ONNX model dosyası (.onnx) seçin.
+settings.ai.expected_runtime=Bir ONNX Runtime kitaplığı (.dll, .so veya .dylib) seçin.
+
+settings.ai.advanced=Gelişmiş çalışma zamanı ayarları
+
+settings.tools.configure=Araçları yapılandır
+settings.tools.title=Araç paneli
+settings.tools.visible=Görünür araçlar
+settings.tools.visibility_hint=Gizli araçlara kısayollarla erişilebilir.
+settings.tools.show_all=Tümünü göster
+settings.tools.auto=Otomatik
+settings.tools.column=Tek sütun
+settings.tools.row=Tek satır
+settings.tools.grid=Sıkı ızgara
+settings.tools.fit=İçeriğe sığdır
+settings.separator.title=Sabitlenmiş çubuğun üst ayırıcısı
+settings.separator.theme=Temayı izle
+settings.separator.opacity=Ayırıcı opaklığı
+settings.save_error=Tercihler kaydedilemedi: {error}
+paste.outside_hint=Soluk pikseller tuvalin dışındadır.
+
+settings.tools.animate_resize=Araç panelini yeniden boyutlandırırken animasyon kullan

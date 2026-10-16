@@ -82,7 +82,7 @@ impl ToolsPanel {
 
                                 self.stroke_tracker.start_preview_tool(
                                     canvas_state.active_layer_index,
-                                    "Clone Stamp",
+                                    HistoryAction::CloneStamp.label("Clone Stamp"),
                                 );
 
                                 // Init preview layer
@@ -203,8 +203,10 @@ impl ToolsPanel {
                                 }
                             }
 
-                            self.stroke_tracker
-                                .start_preview_tool(canvas_state.active_layer_index, "Heal Brush");
+                            self.stroke_tracker.start_preview_tool(
+                                canvas_state.active_layer_index,
+                                HistoryAction::ContentAwareBrush.label("Heal Brush"),
+                            );
 
                             // Init preview layer
                             if canvas_state.preview_layer.is_none()
@@ -325,8 +327,8 @@ impl ToolsPanel {
                 let is_secondary_pressed =
                     ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary));
 
-                // Esc / Enter: clear selection and cancel any in-progress lasso path.
-                if esc_pressed || enter_pressed {
+                // Idle Enter deselection is handled by the app preference and History.
+                if esc_pressed {
                     if self.lasso_state.dragging {
                         self.lasso_state.dragging = false;
                         self.lasso_state.points.clear();
@@ -418,7 +420,7 @@ impl ToolsPanel {
                     let sel_after_all = canvas_state.selection_all;
                     self.pending_history_commands
                         .push(Box::new(SelectionCommand::new_states(
-                            "Lasso Select",
+                            HistoryAction::Lasso.label("Lasso Select"),
                             sel_before,
                             sel_before_all,
                             sel_after,

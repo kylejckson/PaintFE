@@ -1513,3 +1513,40 @@ settings.interface.bar_right=Espaço direito
 settings.interface.bar_padding_x=Margem interna horizontal
 settings.interface.bar_padding_y=Margem interna vertical
 settings.interface.bar_radius=Raio dos cantos
+
+settings.tab.editing=Edição
+settings.auto_save_hint=As alterações são salvas automaticamente. Feche as Preferências quando terminar.
+settings.editing.clipboard=Área de transferência e colagem
+settings.editing.paste_source=Colar os pixels copiados na posição original
+settings.editing.paste_source_hint=Usa a posição original das cópias feitas no PaintFE. Desative para colar na posição do cursor.
+settings.editing.paste_visible=Manter o conteúdo colado na área visível da tela
+settings.editing.paste_visible_hint=Ajusta a posição se a cópia ficar fora da área visível ou da tela de destino.
+settings.editing.selection_keys=Seleção e teclado
+settings.editing.enter_deselect=Enter desfaz a seleção
+settings.editing.enter_deselect_hint=Desativado por padrão. Enter continua aplicando as ferramentas ativas e confirmando as caixas de diálogo.
+settings.editing.legacy_clipboard=Ativar atalhos tradicionais da área de transferência
+settings.editing.legacy_clipboard_hint=Ctrl+Insert copia, Shift+Insert cola e Shift+Delete recorta. Os outros atalhos continuam funcionando.
+settings.ai.invalid_path_kept=Este caminho não foi salvo. O caminho válido anterior foi mantido.
+settings.ai.file_not_found=Arquivo não encontrado: {path}
+settings.ai.expected_model=Escolha um arquivo de modelo ONNX (.onnx).
+settings.ai.expected_runtime=Escolha uma biblioteca do ONNX Runtime (.dll, .so ou .dylib).
+
+settings.ai.advanced=Configurações avançadas do ambiente de execução
+
+settings.tools.configure=Configurar ferramentas
+settings.tools.title=Painel de ferramentas
+settings.tools.visible=Ferramentas visíveis
+settings.tools.visibility_hint=Ferramentas ocultas continuam disponíveis pelos atalhos.
+settings.tools.show_all=Mostrar todas
+settings.tools.auto=Automático
+settings.tools.column=Uma coluna
+settings.tools.row=Uma linha
+settings.tools.grid=Grade compacta
+settings.tools.fit=Ajustar ao conteúdo
+settings.separator.title=Separador superior da barra acoplada
+settings.separator.theme=Seguir o tema
+settings.separator.opacity=Opacidade do separador
+settings.save_error=Não foi possível salvar as preferências: {error}
+paste.outside_hint=Os pixels esmaecidos estão fora da tela.
+
+settings.tools.animate_resize=Animar o redimensionamento do painel de ferramentas

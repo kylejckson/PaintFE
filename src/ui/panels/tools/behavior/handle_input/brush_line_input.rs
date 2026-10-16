@@ -193,9 +193,9 @@ impl ToolsPanel {
                                 self.stroke_tracker.start_preview_mask_tool(
                                     layer_idx,
                                     if is_eraser {
-                                        "Layer Mask Erase"
+                                        HistoryAction::MaskErase.label("Layer Mask Erase")
                                     } else {
-                                        "Layer Mask Paint"
+                                        HistoryAction::MaskPaint.label("Layer Mask Paint")
                                     },
                                     before_mask,
                                     before_enabled,
@@ -204,14 +204,14 @@ impl ToolsPanel {
                                 // Eraser uses preview layer as an erase mask - capture before at commit time
                                 self.stroke_tracker.start_preview_tool(
                                     canvas_state.active_layer_index,
-                                    "Eraser Stroke",
+                                    HistoryAction::Eraser.label("Eraser Stroke"),
                                 );
                             } else {
                                 // Brush/Pencil uses preview layer - we'll capture before right before commit
                                 let description = if self.active_tool == Tool::Pencil {
-                                    "Pencil Stroke"
+                                    HistoryAction::Pencil.label("Pencil Stroke")
                                 } else {
-                                    "Brush Stroke"
+                                    HistoryAction::Brush.label("Brush Stroke")
                                 };
                                 self.stroke_tracker.start_preview_tool(
                                     canvas_state.active_layer_index,
@@ -651,13 +651,15 @@ impl ToolsPanel {
                                     .unwrap_or((None, true));
                                 self.stroke_tracker.start_preview_mask_tool(
                                     layer_idx,
-                                    "Line Mask",
+                                    HistoryAction::MaskLine.label("Line Mask"),
                                     before_mask,
                                     before_enabled,
                                 );
                             } else {
-                                self.stroke_tracker
-                                    .start_preview_tool(canvas_state.active_layer_index, "Line");
+                                self.stroke_tracker.start_preview_tool(
+                                    canvas_state.active_layer_index,
+                                    HistoryAction::Line.label("Line"),
+                                );
                             }
                             if let Some(bounds) = self.line_state.line_tool.last_bounds {
                                 self.stroke_tracker.expand_bounds(bounds);

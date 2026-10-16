@@ -1223,7 +1223,7 @@ impl Canvas {
     /// canvas image — values can be negative or exceed `(width, height)`.
     /// Used by selection tools and gradient handles so the user can start/drag
     /// from outside the canvas area.
-    fn screen_to_canvas_unclamped(
+    pub(crate) fn screen_to_canvas_unclamped(
         &self,
         screen_pos: Pos2,
         canvas_rect: Rect,

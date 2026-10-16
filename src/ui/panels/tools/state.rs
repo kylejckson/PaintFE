@@ -2,6 +2,7 @@ use crate::assets::{Assets, BRUSH_SIZE_PRESETS, Icon, KeyCombo, TEXT_SIZE_PRESET
 use crate::canvas::{
     BlendMode, CHUNK_SIZE, CanvasState, SelectionMode, SelectionShape, TiledImage,
 };
+use crate::components::history::HistoryAction;
 use crate::components::history::{PixelPatch, SelectionCommand};
 use crate::par_compat::*;
 use crate::time_compat::Instant;
@@ -38,6 +39,70 @@ pub enum Tool {
     Zoom,
     Pan,
     Shapes,
+}
+
+impl Tool {
+    pub const ALL: &'static [Self] = &[
+        Self::Brush,
+        Self::Eraser,
+        Self::Pencil,
+        Self::Line,
+        Self::RectangleSelect,
+        Self::EllipseSelect,
+        Self::MovePixels,
+        Self::MoveSelection,
+        Self::MagicWand,
+        Self::Fill,
+        Self::Gradient,
+        Self::ContentAwareBrush,
+        Self::Liquify,
+        Self::MeshWarp,
+        Self::ColorRemover,
+        Self::Smudge,
+        Self::CloneStamp,
+        Self::Text,
+        Self::PerspectiveCrop,
+        Self::Lasso,
+        Self::Shapes,
+        Self::ColorPicker,
+        Self::Zoom,
+        Self::Pan,
+    ];
+    pub fn history_action(self) -> Option<crate::components::history::HistoryAction> {
+        use crate::components::history::HistoryAction;
+        match self {
+            Self::Brush => Some(HistoryAction::Brush),
+            Self::Eraser => Some(HistoryAction::Eraser),
+            Self::Pencil => Some(HistoryAction::Pencil),
+            Self::Line => Some(HistoryAction::Line),
+            Self::RectangleSelect => Some(HistoryAction::RectangleSelect),
+            Self::EllipseSelect => Some(HistoryAction::EllipseSelect),
+            Self::MovePixels => Some(HistoryAction::MovePixels),
+            Self::MoveSelection => Some(HistoryAction::MoveSelection),
+            Self::MagicWand => Some(HistoryAction::MagicWand),
+            Self::Fill => Some(HistoryAction::Fill),
+            Self::Gradient => Some(HistoryAction::Gradient),
+            Self::ContentAwareBrush => Some(HistoryAction::ContentAwareBrush),
+            Self::Liquify => Some(HistoryAction::Liquify),
+            Self::MeshWarp => Some(HistoryAction::MeshWarp),
+            Self::ColorRemover => Some(HistoryAction::ColorRemover),
+            Self::Smudge => Some(HistoryAction::Smudge),
+            Self::CloneStamp => Some(HistoryAction::CloneStamp),
+            Self::Text => Some(HistoryAction::Text),
+            Self::PerspectiveCrop => Some(HistoryAction::PerspectiveCrop),
+            Self::Lasso => Some(HistoryAction::Lasso),
+            Self::Shapes => Some(HistoryAction::Shapes),
+            Self::ColorPicker | Self::Zoom | Self::Pan => None,
+        }
+    }
+    pub fn icon(self) -> Icon {
+        match self {
+            Self::ColorPicker => Icon::ColorPicker,
+            Self::Zoom => Icon::Zoom,
+            Self::Pan => Icon::Pan,
+            _ => self.history_action().expect("editing tool identity").icon(),
+        }
+    }
 }
 
 /// Identifies a brush tip — either the built-in procedural circle or a named image tip
@@ -375,7 +440,7 @@ pub struct StrokeTracker {
     /// Whether this stroke targets layer pixels or the active layer mask.
     pub target: StrokeTarget,
     /// Description of the stroke (e.g., "Brush Stroke", "Eraser Stroke")
-    pub description: String,
+    pub description: crate::components::history::HistoryLabel,
     /// Pre-stroke mask snapshot for mask-targeted strokes.
     pub mask_before: Option<TiledImage>,
     pub mask_before_enabled: bool,
@@ -383,14 +448,18 @@ pub struct StrokeTracker {
 
 impl StrokeTracker {
     /// Start tracking a new stroke for a tool that uses preview layer (Brush, Line).
-    pub fn start_preview_tool(&mut self, layer_index: usize, description: &str) {
+    pub fn start_preview_tool(
+        &mut self,
+        layer_index: usize,
+        description: crate::components::history::HistoryLabel,
+    ) {
         self.is_active = true;
         self.layer_index = layer_index;
         self.bounds = None;
         self.layer_snapshot = None;
         self.uses_preview_layer = true;
         self.target = StrokeTarget::LayerPixels;
-        self.description = description.to_string();
+        self.description = description;
         self.mask_before = None;
         self.mask_before_enabled = true;
     }
@@ -398,7 +467,7 @@ impl StrokeTracker {
     pub fn start_preview_mask_tool(
         &mut self,
         layer_index: usize,
-        description: &str,
+        description: crate::components::history::HistoryLabel,
         before_mask: Option<TiledImage>,
         before_enabled: bool,
     ) {
@@ -408,7 +477,7 @@ impl StrokeTracker {
         self.layer_snapshot = None;
         self.uses_preview_layer = true;
         self.target = StrokeTarget::LayerMask;
-        self.description = description.to_string();
+        self.description = description;
         self.mask_before = before_mask;
         self.mask_before_enabled = before_enabled;
     }
@@ -417,7 +486,7 @@ impl StrokeTracker {
     pub fn start_direct_tool(
         &mut self,
         layer_index: usize,
-        description: &str,
+        description: crate::components::history::HistoryLabel,
         layer_pixels: &TiledImage,
     ) {
         self.is_active = true;
@@ -426,7 +495,7 @@ impl StrokeTracker {
         self.layer_snapshot = Some(layer_pixels.clone());
         self.uses_preview_layer = false;
         self.target = StrokeTarget::LayerPixels;
-        self.description = description.to_string();
+        self.description = description;
         self.mask_before = None;
         self.mask_before_enabled = true;
     }
@@ -488,7 +557,7 @@ impl StrokeTracker {
         self.layer_snapshot = None;
         self.uses_preview_layer = false;
         self.target = StrokeTarget::LayerPixels;
-        self.description.clear();
+        self.description.title.clear();
         self.mask_before = None;
         self.mask_before_enabled = true;
 
@@ -502,7 +571,7 @@ impl StrokeTracker {
         self.layer_snapshot = None;
         self.uses_preview_layer = false;
         self.target = StrokeTarget::LayerPixels;
-        self.description.clear();
+        self.description.title.clear();
         self.mask_before = None;
         self.mask_before_enabled = true;
     }
@@ -513,7 +582,7 @@ pub struct StrokeEvent {
     pub layer_index: usize,
     pub bounds: Rect,
     pub before_snapshot: Option<PixelPatch>,
-    pub description: String,
+    pub description: crate::components::history::HistoryLabel,
     pub target: StrokeTarget,
     pub before_mask: Option<TiledImage>,
     pub before_mask_enabled: bool,
@@ -1996,6 +2065,7 @@ impl Default for ToolsPanel {
 /// Action returned from tools panel
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum ToolsPanelAction {
+    Configure,
     None,
     OpenColors,
     SwapColors,

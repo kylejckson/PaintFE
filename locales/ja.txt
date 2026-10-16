@@ -1513,3 +1513,40 @@ settings.interface.bar_right=右側の間隔
 settings.interface.bar_padding_x=左右の内側余白
 settings.interface.bar_padding_y=上下の内側余白
 settings.interface.bar_radius=角の半径
+
+settings.tab.editing=編集
+settings.auto_save_hint=変更は自動的に保存されます。設定が終わったら環境設定を閉じてください。
+settings.editing.clipboard=クリップボードと貼り付け
+settings.editing.paste_source=コピーしたピクセルを元の位置に貼り付ける
+settings.editing.paste_source_hint=PaintFE 内でコピーした内容の元の位置を使用します。オフにするとカーソル位置に貼り付けます。
+settings.editing.paste_visible=貼り付ける内容をキャンバスの表示範囲内に収める
+settings.editing.paste_visible_hint=コピーした領域が画面外や貼り付け先のキャンバス外に出る場合、位置を調整します。
+settings.editing.selection_keys=選択範囲とキーボード
+settings.editing.enter_deselect=Enter で選択を解除する
+settings.editing.enter_deselect_hint=初期設定ではオフです。Enter による使用中のツールの適用とダイアログの確定は引き続き有効です。
+settings.editing.legacy_clipboard=従来のクリップボードショートカットを有効にする
+settings.editing.legacy_clipboard_hint=Ctrl+Insert でコピー、Shift+Insert で貼り付け、Shift+Delete で切り取り。他のショートカットも引き続き使えます。
+settings.ai.invalid_path_kept=このパスは保存されていません。以前の有効なパスが保持されます。
+settings.ai.file_not_found=ファイルが見つかりません: {path}
+settings.ai.expected_model=ONNX モデルファイル (.onnx) を選択してください。
+settings.ai.expected_runtime=ONNX Runtime ライブラリ (.dll、.so、.dylib) を選択してください。
+
+settings.ai.advanced=ランタイムの詳細設定
+
+settings.tools.configure=ツールを設定
+settings.tools.title=ツールパネル
+settings.tools.visible=表示するツール
+settings.tools.visibility_hint=非表示のツールもショートカットで使用できます。
+settings.tools.show_all=すべて表示
+settings.tools.auto=自動
+settings.tools.column=1列
+settings.tools.row=1行
+settings.tools.grid=コンパクトなグリッド
+settings.tools.fit=内容に合わせる
+settings.separator.title=ドッキングしたバーの上部区切り線
+settings.separator.theme=テーマに合わせる
+settings.separator.opacity=区切り線の不透明度
+settings.save_error=設定を保存できませんでした: {error}
+paste.outside_hint=薄く表示されたピクセルはキャンバスの外側にあります。
+
+settings.tools.animate_resize=ツールパネルのサイズ変更をアニメーション表示

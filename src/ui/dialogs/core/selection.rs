@@ -11,6 +11,7 @@ pub struct ColorRangeDialog {
     pub mode: crate::canvas::SelectionMode,
     /// Selection mask saved before dialog opened (for Cancel/live-preview).
     pub original_selection: Option<image::GrayImage>,
+    pub original_selection_all: bool,
 }
 
 impl Default for ColorRangeDialog {
@@ -22,6 +23,7 @@ impl Default for ColorRangeDialog {
             fuzziness: 0.3,
             mode: crate::canvas::SelectionMode::Replace,
             original_selection: None,
+            original_selection_all: false,
         }
     }
 }
@@ -30,6 +32,7 @@ impl ColorRangeDialog {
     pub fn new(state: &crate::canvas::CanvasState) -> Self {
         Self {
             original_selection: state.selection_mask.clone(),
+            original_selection_all: state.selection_all,
             ..Default::default()
         }
     }
@@ -84,7 +87,13 @@ impl ColorRangeDialog {
                         ui.horizontal(|ui| {
                             for mode in crate::canvas::SelectionMode::all() {
                                 let selected = self.mode == *mode;
-                                if ui.selectable_label(selected, crate::i18n::translate_english(&mode.label())).clicked() {
+                                if ui
+                                    .selectable_label(
+                                        selected,
+                                        crate::i18n::translate_english(&mode.label()),
+                                    )
+                                    .clicked()
+                                {
                                     self.mode = *mode;
                                     changed = true;
                                 }

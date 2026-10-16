@@ -1513,3 +1513,40 @@ settings.interface.bar_right=Водступ справа
 settings.interface.bar_padding_x=Унутраны водступ па гарызанталі
 settings.interface.bar_padding_y=Унутраны водступ па вертыкалі
 settings.interface.bar_radius=Радыус кутоў
+
+settings.tab.editing=Рэдагаванне
+settings.auto_save_hint=Змены захоўваюцца аўтаматычна. Скончыўшы наладжванне, зачыніце акно налад.
+settings.editing.clipboard=Буфер абмену і ўстаўка
+settings.editing.paste_source=Устаўляць скапіяваныя пікселі ў зыходную пазіцыю
+settings.editing.paste_source_hint=Для копій з PaintFE выкарыстоўваецца зыходная пазіцыя. Адключыце, каб устаўляць каля курсора.
+settings.editing.paste_visible=Пакідаць устаўленае змесціва ў бачнай вобласці палатна
+settings.editing.paste_visible_hint=Пазіцыя карэктуецца, калі скапіяваная вобласць апынецца па-за экранам або мэтавым палатном.
+settings.editing.selection_keys=Вылучэнне і клавіятура
+settings.editing.enter_deselect=Enter здымае вылучэнне
+settings.editing.enter_deselect_hint=Прадвызначана адключана. Enter па-ранейшаму ўжывае актыўныя інструменты і пацвярджае дыялогі.
+settings.editing.legacy_clipboard=Уключыць традыцыйныя спалучэнні для буфера абмену
+settings.editing.legacy_clipboard_hint=Ctrl+Insert капіюе, Shift+Insert устаўляе, Shift+Delete выразае. Іншыя спалучэнні працуюць надалей.
+settings.ai.invalid_path_kept=Гэты шлях не захаваны. Пакінуты папярэдні карэктны шлях.
+settings.ai.file_not_found=Файл не знойдзены: {path}
+settings.ai.expected_model=Выберыце файл мадэлі ONNX (.onnx).
+settings.ai.expected_runtime=Выберыце бібліятэку ONNX Runtime (.dll, .so або .dylib).
+
+settings.ai.advanced=Дадатковыя налады асяроддзя выканання
+
+settings.tools.configure=Наладзіць інструменты
+settings.tools.title=Панэль інструментаў
+settings.tools.visible=Бачныя інструменты
+settings.tools.visibility_hint=Схаваныя інструменты даступныя праз спалучэнні клавіш.
+settings.tools.show_all=Паказаць усе
+settings.tools.auto=Аўтаматычна
+settings.tools.column=Адзін слупок
+settings.tools.row=Адзін радок
+settings.tools.grid=Кампактная сетка
+settings.tools.fit=Паводле памеру змесціва
+settings.separator.title=Верхні раздзяляльнік замацаванай панэлі
+settings.separator.theme=Паводле тэмы
+settings.separator.opacity=Непразрыстасць раздзяляльніка
+settings.save_error=Не ўдалося захаваць налады: {error}
+paste.outside_hint=Бледныя пікселі знаходзяцца па-за межамі палатна.
+
+settings.tools.animate_resize=Анімацыя змянення памеру панэлі інструментаў

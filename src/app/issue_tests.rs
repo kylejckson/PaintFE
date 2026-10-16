@@ -10,7 +10,7 @@ fn preview_burst_keeps_only_latest_request_and_original_document() {
     let (release_tx, release_rx) = mpsc::channel();
     app.spawn_preview_job(
         0.,
-        "blocked".into(),
+        HistoryAction::Custom.label("blocked"),
         0,
         original.clone(),
         flat.clone(),
@@ -30,7 +30,7 @@ fn preview_burst_keeps_only_latest_request_and_original_document() {
         let executed = executed.clone();
         app.spawn_preview_job(
             1.,
-            "latest".into(),
+            HistoryAction::Custom.label("latest"),
             0,
             original.clone(),
             flat.clone(),
@@ -86,7 +86,7 @@ fn cancel_preview_drops_queued_work_and_preserves_pixels() {
     let (release_tx, release_rx) = mpsc::channel();
     app.spawn_preview_job(
         0.,
-        "blocked".into(),
+        HistoryAction::Custom.label("blocked"),
         0,
         original.clone(),
         flat.clone(),
@@ -101,9 +101,14 @@ fn cancel_preview_drops_queued_work_and_preserves_pixels() {
     started_rx
         .recv_timeout(std::time::Duration::from_secs(10))
         .unwrap();
-    app.spawn_preview_job(1., "must not run".into(), 0, original, flat.clone(), |_| {
-        panic!("cancelled queue ran")
-    });
+    app.spawn_preview_job(
+        1.,
+        HistoryAction::Custom.label("must not run"),
+        0,
+        original,
+        flat.clone(),
+        |_| panic!("cancelled queue ran"),
+    );
     app.cancel_preview_jobs();
     release_tx.send(()).unwrap();
     let result = app
@@ -476,7 +481,7 @@ fn failed_ai_job_preserves_pixels_history_and_clean_state() {
     app.background_removal_pending = true;
     app.spawn_fallible_filter_job(
         0.,
-        "Remove Background".into(),
+        HistoryAction::RemoveBackground.label("Remove Background"),
         0,
         original,
         flat.clone(),
@@ -512,7 +517,7 @@ fn closing_a_tab_does_not_redirect_its_pending_filter_result() {
         .to_rgba_image();
     app.spawn_filter_job(
         0.,
-        "Remove Background".into(),
+        HistoryAction::RemoveBackground.label("Remove Background"),
         0,
         original.clone(),
         original.to_rgba_image(),
@@ -549,7 +554,7 @@ fn keyboard_undo_removes_exactly_one_history_entry_per_press() {
         app.projects[0]
             .history
             .push(Box::new(crate::components::history::MarkerCommand::new(
-                format!("{index}"),
+                HistoryAction::Custom.label(format!("{index}")),
             )));
     }
     for remaining in (0..10).rev() {
@@ -600,7 +605,7 @@ fn keyboard_undo_works_with_tool_button_focus_but_preserves_text_field_undo() {
         app.projects[0]
             .history
             .push(Box::new(crate::components::history::MarkerCommand::new(
-                "stroke",
+                HistoryAction::Custom.label("stroke"),
             )));
         let mut text = String::from("editable field");
         let mut focused_id = None;

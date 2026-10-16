@@ -1513,3 +1513,40 @@ settings.interface.bar_right=Espacio derecho
 settings.interface.bar_padding_x=Relleno horizontal
 settings.interface.bar_padding_y=Relleno vertical
 settings.interface.bar_radius=Radio de las esquinas
+
+settings.tab.editing=Edición
+settings.auto_save_hint=Los cambios se guardan automáticamente. Cierra Preferencias cuando termines.
+settings.editing.clipboard=Portapapeles y pegado
+settings.editing.paste_source=Pegar los píxeles copiados en su posición original
+settings.editing.paste_source_hint=Usa la posición original de las copias hechas en PaintFE. Desactívalo para pegar junto al cursor.
+settings.editing.paste_visible=Mantener el contenido pegado en el área visible del lienzo
+settings.editing.paste_visible_hint=Ajusta la posición si la copia quedaría fuera de la pantalla o del lienzo de destino.
+settings.editing.selection_keys=Selección y teclado
+settings.editing.enter_deselect=Intro elimina la selección
+settings.editing.enter_deselect_hint=Desactivado de forma predeterminada. Intro sigue aplicando las herramientas activas y confirmando los diálogos.
+settings.editing.legacy_clipboard=Activar los atajos tradicionales del portapapeles
+settings.editing.legacy_clipboard_hint=Ctrl+Insert copia, Mayús+Insert pega y Mayús+Supr corta. Los demás atajos siguen funcionando.
+settings.ai.invalid_path_kept=Esta ruta no se ha guardado. Se conserva la ruta válida anterior.
+settings.ai.file_not_found=Archivo no encontrado: {path}
+settings.ai.expected_model=Elige un archivo de modelo ONNX (.onnx).
+settings.ai.expected_runtime=Elige una biblioteca de ONNX Runtime (.dll, .so o .dylib).
+
+settings.ai.advanced=Ajustes avanzados del entorno de ejecución
+
+settings.tools.configure=Configurar herramientas
+settings.tools.title=Panel de herramientas
+settings.tools.visible=Herramientas visibles
+settings.tools.visibility_hint=Las herramientas ocultas siguen disponibles mediante atajos.
+settings.tools.show_all=Mostrar todas
+settings.tools.auto=Automático
+settings.tools.column=Una columna
+settings.tools.row=Una fila
+settings.tools.grid=Cuadrícula compacta
+settings.tools.fit=Ajustar al contenido
+settings.separator.title=Separador superior de la barra acoplada
+settings.separator.theme=Seguir el tema
+settings.separator.opacity=Opacidad del separador
+settings.save_error=No se pudieron guardar las preferencias: {error}
+paste.outside_hint=Los píxeles atenuados están fuera del lienzo.
+
+settings.tools.animate_resize=Animar el cambio de tamaño del panel de herramientas

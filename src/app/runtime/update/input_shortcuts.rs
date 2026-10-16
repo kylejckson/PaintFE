@@ -91,7 +91,7 @@ impl PaintFEApp {
                         .last_canvas_rect
                         .is_some_and(|rect| rect.contains(pos))
                 });
-                if mouse_over_canvas && !pointer_over_widget {
+                if mouse_over_canvas && !pointer_over_widget && !self.projects.is_empty() {
                     if i.modifiers.alt {
                         free_amount = i.smooth_scroll_delta.y;
                     } else {
@@ -181,11 +181,17 @@ impl PaintFEApp {
                     .is_some_and(|p| p.canvas_state.has_selection())
                 {
                     if clear {
-                        self.do_snapshot_op("Delete Selection", |s| s.delete_selected_pixels());
+                        self.do_snapshot_op(
+                            HistoryAction::DeleteSelection.label("Delete Selection"),
+                            |s| s.delete_selected_pixels(),
+                        );
                     } else if fill {
                         let pc = self.colors_panel.get_primary_color();
                         let color = image::Rgba([pc.r(), pc.g(), pc.b(), pc.a()]);
-                        self.do_snapshot_op("Fill Selection", |s| s.fill_selected_pixels(color));
+                        self.do_snapshot_op(
+                            HistoryAction::FillSelection.label("Fill Selection"),
+                            |s| s.fill_selected_pixels(color),
+                        );
                     }
                 }
             }
@@ -239,7 +245,7 @@ impl PaintFEApp {
 
             // Ctrl+Shift+F — Flatten All Layers
             if kb.is_pressed(ctx, BindableAction::FlattenLayers) {
-                self.do_snapshot_op("Flatten All Layers", |s| {
+                self.do_snapshot_op(HistoryAction::Flatten.label("Flatten All Layers"), |s| {
                     crate::ops::transform::flatten_image(s);
                 });
             }
@@ -367,7 +373,11 @@ impl PaintFEApp {
             }
 
             // Ctrl+C — Copy
-            let copy_from_binding = kb.is_pressed(ctx, BindableAction::Copy);
+            let copy_from_binding = kb.is_pressed_with_legacy(
+                ctx,
+                BindableAction::Copy,
+                self.settings.legacy_clipboard_shortcuts,
+            );
             let copy_from_event = ctx.input_mut(|i| {
                 let pos = i.events.iter().position(|e| matches!(e, egui::Event::Copy));
                 if let Some(idx) = pos {
@@ -424,7 +434,11 @@ impl PaintFEApp {
             }
 
             // Ctrl+X — Cut
-            let cut_from_binding = kb.is_pressed(ctx, BindableAction::Cut);
+            let cut_from_binding = kb.is_pressed_with_legacy(
+                ctx,
+                BindableAction::Cut,
+                self.settings.legacy_clipboard_shortcuts,
+            );
             let cut_from_event = ctx.input_mut(|i| {
                 let pos = i.events.iter().position(|e| matches!(e, egui::Event::Cut));
                 if let Some(idx) = pos {
@@ -487,7 +501,11 @@ impl PaintFEApp {
             }
 
             // Ctrl+V — Paste
-            let paste_from_binding = kb.is_pressed(ctx, BindableAction::Paste);
+            let paste_from_binding = kb.is_pressed_with_legacy(
+                ctx,
+                BindableAction::Paste,
+                self.settings.legacy_clipboard_shortcuts,
+            );
             let paste_from_event = ctx.input_mut(|i| {
                 let pos = i
                     .events
@@ -663,6 +681,13 @@ impl PaintFEApp {
             let enter_poll_edge = global_probe.4 && !self.prev_enter_down;
             let escape_poll_edge = global_probe.5 && !self.prev_escape_down;
             if enter_or_escape.0 || enter_poll_edge || enter_vk_edge {
+                if self.settings.enter_deselect
+                    && !escape_operation
+                    && !self.tools_panel.magic_wand_has_session()
+                    && ctx.input(|i| i.modifiers.is_none())
+                {
+                    self.clear_selection_with_history();
+                }
                 self.tools_panel.injected_enter_pressed = true;
                 if self.tools_panel.active_tool == crate::components::tools::Tool::MeshWarp
                     && self.tools_panel.mesh_warp_state.is_active
@@ -1077,7 +1102,11 @@ impl PaintFEApp {
                     focused.is_some_and(|id| self.canvas.canvas_widget_id != Some(id))
                 }
             });
-            if !text_tool_active && !other_widget_focused && self.paste_overlay.is_none() {
+            if !text_tool_active
+                && !other_widget_focused
+                && self.paste_overlay.is_none()
+                && !self.projects.is_empty()
+            {
                 use crate::components::tools::Tool;
                 let tool_actions: &[(BindableAction, Tool)] = &[
                     (BindableAction::ToolBrush, Tool::Brush),
@@ -1137,31 +1166,40 @@ impl PaintFEApp {
             // Color — instant adjustments (no dialog)
             if has_project && !text_tool_active && !other_widget_focused {
                 if kb.is_pressed(ctx, BindableAction::ColorAutoLevels) {
-                    self.do_layer_snapshot_op("Auto Levels", |s| {
-                        let idx = s.active_layer_index;
-                        crate::ops::adjustments::auto_levels(s, idx);
-                    });
+                    self.do_layer_snapshot_op(
+                        HistoryAction::AutoLevels.label("Auto Levels"),
+                        |s| {
+                            let idx = s.active_layer_index;
+                            crate::ops::adjustments::auto_levels(s, idx);
+                        },
+                    );
                 }
                 if kb.is_pressed(ctx, BindableAction::ColorDesaturate) {
-                    self.do_layer_snapshot_op("Desaturate", |s| {
+                    self.do_layer_snapshot_op(HistoryAction::Desaturate.label("Desaturate"), |s| {
                         let idx = s.active_layer_index;
                         crate::ops::filters::desaturate_layer(s, idx);
                     });
                 }
                 if kb.is_pressed(ctx, BindableAction::ColorInvertColors) {
-                    self.do_gpu_snapshot_op("Invert Colors", |s, gpu| {
-                        let idx = s.active_layer_index;
-                        crate::ops::adjustments::invert_colors_gpu(s, idx, gpu);
-                    });
+                    self.do_gpu_snapshot_op(
+                        HistoryAction::InvertColors.label("Invert Colors"),
+                        |s, gpu| {
+                            let idx = s.active_layer_index;
+                            crate::ops::adjustments::invert_colors_gpu(s, idx, gpu);
+                        },
+                    );
                 }
                 if kb.is_pressed(ctx, BindableAction::ColorInvertAlpha) {
-                    self.do_layer_snapshot_op("Invert Alpha", |s| {
-                        let idx = s.active_layer_index;
-                        crate::ops::adjustments::invert_alpha(s, idx);
-                    });
+                    self.do_layer_snapshot_op(
+                        HistoryAction::InvertAlpha.label("Invert Alpha"),
+                        |s| {
+                            let idx = s.active_layer_index;
+                            crate::ops::adjustments::invert_alpha(s, idx);
+                        },
+                    );
                 }
                 if kb.is_pressed(ctx, BindableAction::ColorSepiaTone) {
-                    self.do_layer_snapshot_op("Sepia Tone", |s| {
+                    self.do_layer_snapshot_op(HistoryAction::Sepia.label("Sepia Tone"), |s| {
                         let idx = s.active_layer_index;
                         crate::ops::adjustments::sepia(s, idx);
                     });
@@ -1678,7 +1716,7 @@ impl PaintFEApp {
                     if after.as_ref() != Some(&before) {
                         project.history.push(Box::new(
                             crate::components::history::SelectionCommand::new(
-                                "Transform Selection",
+                                HistoryAction::MoveSelection.label("Transform Selection"),
                                 Some(before),
                                 after,
                             ),
@@ -1963,6 +2001,54 @@ impl PaintFEApp {
 }
 
 impl PaintFEApp {
+    fn record_selection_change(
+        &mut self,
+        action: crate::components::history::HistoryAction,
+        title: &str,
+        before: Option<image::GrayImage>,
+        before_all: bool,
+    ) {
+        if let Some(project) = self.active_project_mut() {
+            let state = &project.canvas_state;
+            if before != state.selection_mask || before_all != state.selection_all {
+                project.history.push(Box::new(SelectionCommand::new_states(
+                    action.label(title),
+                    before,
+                    before_all,
+                    state.selection_mask.clone(),
+                    state.selection_all,
+                )));
+            }
+        }
+    }
+
+    fn invert_selection_with_history(&mut self) {
+        self.tools_panel.clear_selection_tool_session();
+        let Some(project) = self.active_project_mut() else {
+            return;
+        };
+        let state = &mut project.canvas_state;
+        let before = state.selection_mask.clone();
+        let before_all = state.selection_all;
+        if before_all {
+            state.clear_selection();
+        } else if let Some(mask) = &before {
+            state.selection_mask = Some(image::GrayImage::from_fn(
+                state.width,
+                state.height,
+                |x, y| image::Luma([255 - mask.get_pixel(x, y)[0]]),
+            ));
+            state.selection_all = false;
+            state.invalidate_selection_overlay();
+        }
+        self.record_selection_change(
+            HistoryAction::InvertSelection,
+            "Invert Selection",
+            before,
+            before_all,
+        );
+    }
+
     fn clear_selection_with_history(&mut self) {
         self.tools_panel.clear_selection_tool_session();
         if let Some(project) = self.active_project_mut() {
@@ -1971,7 +2057,11 @@ impl PaintFEApp {
             if before.is_some() || before_all {
                 project.canvas_state.clear_selection();
                 project.history.push(Box::new(SelectionCommand::new_states(
-                    "Deselect", before, before_all, None, false,
+                    HistoryAction::Deselect.label("Deselect"),
+                    before,
+                    before_all,
+                    None,
+                    false,
                 )));
             }
         }

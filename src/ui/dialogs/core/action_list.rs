@@ -125,11 +125,15 @@ pub fn dialog_card_header(ui: &mut egui::Ui, assets: &Assets, icon: Icon, title:
     ui.horizontal(|ui| {
         icon_tile(ui, assets, icon, tint.accent_text, tint.accent_faint);
         ui.add_space(8.0);
-        ui.label(
-            egui::RichText::new(title)
-                .strong()
-                .size(15.0)
-                .color(tint.text),
+        // A selectable label captures the drag intended to move the window.
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(title)
+                    .strong()
+                    .size(15.0)
+                    .color(tint.text),
+            )
+            .selectable(false),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let resp = close_button(ui, tint.muted);
@@ -164,9 +168,10 @@ fn icon_tile(ui: &mut egui::Ui, assets: &Assets, icon: Icon, icon_color: Color32
 fn close_button(ui: &mut egui::Ui, muted: Color32) -> egui::Response {
     let size = egui::vec2(20.0, 20.0);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-    let t = ui
-        .ctx()
-        .animate_bool(response.id, response.hovered() || response.is_pointer_button_down_on());
+    let t = ui.ctx().animate_bool(
+        response.id,
+        response.hovered() || response.is_pointer_button_down_on(),
+    );
     if t > 0.01 {
         ui.painter()
             .rect_filled(rect, 5.0, muted.gamma_multiply(0.12 * t));
@@ -211,13 +216,42 @@ pub fn action_list(
     ui.add_space(8.0);
 
     let mut chosen = None;
+    let mut responses = Vec::with_capacity(actions.len());
     for (idx, action) in actions.iter().enumerate() {
-        if action_row(ui, assets, idx, action, &tint, fade) {
+        let response = action_row(ui, assets, idx, action, &tint, fade);
+        if response.clicked() {
             chosen = Some(idx);
         }
+        responses.push(response);
         if idx + 1 < actions.len() {
             ui.add_space(5.0);
         }
+    }
+    if responses.is_empty() {
+        return chosen;
+    }
+    // Initialise once on opening, rather than stealing focus back from the
+    // Apply-to-all checkbox each frame. A different queued file gets new focus.
+    let session = ui.id().with(("action_list_focus", question, caption));
+    let frame = ui.ctx().cumulative_frame_nr();
+    let opened = ui.ctx().data_mut(|d| {
+        let previous = d.get_temp::<u64>(session);
+        d.insert_temp(session, frame);
+        previous.is_none_or(|previous| previous.saturating_add(1) < frame)
+    });
+    if opened {
+        let default = actions.iter().position(|action| action.recommended).unwrap_or(0);
+        responses[default].request_focus();
+    }
+    // egui supplies Tab/Shift+Tab and spatial arrow navigation, including the
+    // batch checkbox. Do not run a second navigation step for the same key.
+    if let Some(focused) = responses.iter().position(egui::Response::has_focus)
+        && ui.input_mut(|i| {
+            i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
+                || i.consume_key(egui::Modifiers::NONE, egui::Key::Space)
+        })
+    {
+        chosen.get_or_insert(focused);
     }
     chosen
 }
@@ -230,11 +264,14 @@ fn action_row(
     action: &DialogAction,
     tint: &DialogTint,
     fade: f32,
-) -> bool {
+) -> egui::Response {
     let width = ui.available_width().min(CARD_WIDTH);
     let (rect, response) =
         ui.allocate_exact_size(egui::vec2(width, ROW_HEIGHT), egui::Sense::click());
     let id = response.id;
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &action.title)
+    });
 
     let hover = ui.ctx().animate_bool(id.with("hover"), response.hovered());
     let press = ui
@@ -250,8 +287,7 @@ fn action_row(
         tint.accent.b(),
         (tint_amt * 26.0) as u8,
     );
-    ui.painter()
-        .rect_filled(rect, ROW_RADIUS, fill);
+    ui.painter().rect_filled(rect, ROW_RADIUS, fill);
 
     // Border: saturated accent for the recommended row (brightens on hover),
     // hairline otherwise.
@@ -287,7 +323,7 @@ fn action_row(
             } else {
                 tint.text
             }
-                .gamma_multiply(fade),
+            .gamma_multiply(fade),
         );
     }
 
@@ -335,30 +371,50 @@ fn action_row(
         tint.muted.gamma_multiply(0.7 + 0.3 * hover),
     );
 
-    response.clicked()
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            rect.expand(1.), ROW_RADIUS,
+            Stroke::new(1.5, tint.accent_text), egui::StrokeKind::Outside,
+        );
+    }
+    response
 }
 
 /// Style B — message lines + footer button row.
 ///
 /// Returns the index of the clicked button.
-pub fn confirm_row(
-    ui: &mut egui::Ui,
-    assets: &Assets,
-    buttons: &[ConfirmButton],
-) -> Option<usize> {
+pub fn confirm_row(ui: &mut egui::Ui, assets: &Assets, buttons: &[ConfirmButton]) -> Option<usize> {
     let tint = DialogTint::from_ui(ui);
     ui.add_space(8.0);
     let mut chosen = None;
+    let mut responses = Vec::new();
     ui.horizontal(|ui| {
         for (idx, button) in buttons.iter().enumerate() {
-            if confirm_button(ui, assets, button, &tint) {
+            let response = confirm_button(ui, assets, button, &tint);
+            if response.clicked() {
                 chosen = Some(idx);
             }
+            responses.push(response);
             if idx + 1 < buttons.len() {
                 ui.add_space(7.0);
             }
         }
     });
+    if let Some(focused) = responses.iter().position(egui::Response::has_focus) {
+        // egui provides Tab and spatial arrow navigation. Activating the
+        // focused button must take precedence over the dialog's Save fallback.
+        if chosen.is_none()
+            && ui.input_mut(|i| {
+                i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
+                    || i.consume_key(egui::Modifiers::NONE, egui::Key::Space)
+            })
+        {
+            chosen = Some(focused);
+        }
+    } else if !responses.is_empty() {
+        // Enter defaults to Save; give the same action a visible initial focus.
+        responses[0].request_focus();
+    }
     chosen
 }
 
@@ -368,7 +424,7 @@ fn confirm_button(
     assets: &Assets,
     button: &ConfirmButton,
     tint: &DialogTint,
-) -> bool {
+) -> egui::Response {
     let height = 28.0;
     let pad_x = 14.0;
     let icon_w = if button.icon.is_some() { 20.0 } else { 0.0 };
@@ -378,9 +434,11 @@ fn confirm_button(
         tint.text,
     );
     let width = (galley.size().x + pad_x * 2.0 + icon_w).max(84.0);
-    let (rect, response) =
-        ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
     let id = response.id;
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &button.label)
+    });
 
     let hover = ui.ctx().animate_bool(id.with("hover"), response.hovered());
     let press = ui
@@ -389,12 +447,14 @@ fn confirm_button(
 
     let (fill, fg) = if button.primary {
         (
-            tint.accent_solid.gamma_multiply(0.90 + 0.10 * hover - 0.10 * press),
+            tint.accent_solid
+                .gamma_multiply(0.90 + 0.10 * hover - 0.10 * press),
             Color32::WHITE,
         )
     } else {
         (
-            tint.stroke.gamma_multiply(0.14 + 0.12 * hover - 0.08 * press),
+            tint.stroke
+                .gamma_multiply(0.14 + 0.12 * hover - 0.08 * press),
             tint.text,
         )
     };
@@ -433,5 +493,13 @@ fn confirm_button(
         fg,
     );
 
-    response.clicked()
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            rect.expand(2.0),
+            6.0,
+            Stroke::new(1.5, tint.accent_text),
+            egui::StrokeKind::Outside,
+        );
+    }
+    response
 }

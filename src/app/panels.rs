@@ -10,6 +10,8 @@ impl PaintFEApp {
             Command::Reset => {
                 self.tools_panel_pos = Some((12.0, 128.0));
                 self.tools_panel_size = None;
+                self.settings.tools_palette.mode = "auto".into();
+                self.settings.tools_palette.columns = 3;
                 self.layers_panel_right_offset = Some((264.0, 128.0));
                 self.layers_panel_size = Some((240.0, 200.0));
                 self.history_panel_right_offset = Some((224.0, 380.0));
@@ -53,6 +55,28 @@ impl PaintFEApp {
                         "Tools" => {
                             self.tools_panel_pos = Some((pos.x, pos.y));
                             self.tools_panel_size = Some((size.x, size.y));
+                            // Older workspace files store dimensions, not a column count.
+                            // Restore their nearest useful arrangement using the same planner.
+                            use crate::ui::panels::tools::palette;
+                            let margin = self.theme.floating_window_frame().total_margin().sum();
+                            let scale = self.theme.polish.text_scale;
+                            let fitted = palette::choose(
+                                &self.settings.tools_palette,
+                                self.settings.tools_show_colors,
+                                size,
+                                viewport.size() - egui::Vec2::splat(24.),
+                                self.settings.tools_palette.columns,
+                                3,
+                                |body| {
+                                    body + margin
+                                        + egui::vec2(
+                                            0.,
+                                            palette::header_height(ctx, body.x, scale) + 4.,
+                                        )
+                                },
+                            );
+                            self.settings.tools_palette.mode = "auto".into();
+                            self.settings.tools_palette.columns = fitted.columns;
                             self.window_visibility.tools = panel.visible;
                         }
                         "Layers" => {
@@ -205,150 +229,174 @@ impl PaintFEApp {
 
     /// Show the floating Tools panel (minimalist vertical strip) - anchored to left edge
     fn show_floating_tools_panel(&mut self, ctx: &egui::Context, _screen_size_changed: bool) {
+        use crate::ui::panels::tools::palette;
         let _profile = crate::ui::perf::Scope::new(8);
         self.tools_panel.cursor_blocking_rect = None;
-        let mut show = self.window_visibility.tools;
-        let mut close_clicked = false;
-
-        let _first_show = self.tools_panel_pos.is_none();
-        let screen_rect = ctx.content_rect();
-        let (pos_x, pos_y) = self.tools_panel_pos.unwrap_or((12.0, 128.0));
-
-        let panel_min = egui::vec2(
-            90.0,
-            if self.settings.tools_show_colors {
-                185.0
-            } else {
-                125.0
-            },
-        );
-        let panel_size = self
+        self.settings.tools_palette.normalize();
+        let viewport = ctx.content_rect();
+        let frame = self.theme.floating_window_frame();
+        let margin = frame.total_margin().sum();
+        let scale = self.theme.polish.text_scale;
+        let chrome = |body: egui::Vec2| {
+            body + margin + egui::vec2(0., palette::header_height(ctx, body.x, scale) + 4.)
+        };
+        let preferred = self
             .tools_panel_size
             .map(|(w, h)| egui::vec2(w, h))
-            .unwrap_or(egui::vec2(
-                114.0,
-                if self.settings.tools_show_colors {
-                    400.0
-                } else {
-                    340.0
-                },
-            ))
-            .max(panel_min);
-
-        let hover_id = egui::Id::new("ToolsStrip_hover");
-        let hover_t = crate::ui::polish::panel_hover(ctx, hover_id);
-        let mut window = crate::ui::polish::window(ctx, "ToolsStrip")
+            .unwrap_or(egui::vec2(114., 350.));
+        let plan = palette::choose(
+            &self.settings.tools_palette,
+            self.settings.tools_show_colors,
+            preferred,
+            viewport.size() - egui::Vec2::splat(24.),
+            self.settings.tools_palette.columns,
+            0,
+            chrome,
+        );
+        let panel_size = chrome(plan.size);
+        // Keep resize hysteresis and Automatic anchored to the layout actually shown,
+        // including an explicit row/column preset or a viewport-constrained fallback.
+        self.settings.tools_palette.columns = plan.columns;
+        let animated_plan =
+            palette::animated_layout(ctx, &self.settings.tools_palette, plan.clone());
+        let animated_size = chrome(animated_plan.size);
+        let (x, y) = self.tools_panel_pos.unwrap_or((12., 128.));
+        let pos = crate::ui::workspace::place(ctx, "Tools", egui::pos2(x, y), panel_size);
+        let pos = Self::clamp_floating_pos(pos.x, pos.y, panel_size, viewport);
+        let mut show = self.window_visibility.tools;
+        let mut close = false;
+        let mut next_mode = None;
+        let response = crate::ui::polish::window(ctx, "ToolsStrip")
             .enabled(!self.document_modal_open())
             .open(&mut show)
             .movable(false)
             .resizable(false)
             .collapsible(false)
-            .min_size(panel_min)
-            .fixed_size(panel_size)
             .title_bar(false)
-            .frame(self.theme.floating_window_frame_animated(hover_t));
-
-        // Always enforce anchored position so the panel stays put on resize
-        {
-            let clamped = Self::clamp_floating_pos(pos_x, pos_y, panel_size, screen_rect);
-            window = window.current_pos(clamped);
-        }
-
-        window = window.current_pos(crate::ui::workspace::place(
-            ctx,
-            "Tools",
-            egui::pos2(pos_x, pos_y),
-            panel_size,
-        ));
-        if let Some(size) = ctx.data_mut(|d| {
-            d.remove_temp::<egui::Vec2>(egui::Id::new(("workspace_size_request", "Tools")))
-        }) {
-            window = window.fixed_size(size);
-        }
-        let resp = window.show(ctx, |ui| {
-            // Constrain content width to match the tool grid (3×26 + 2×6 = 90px)
-            // so the header doesn't inflate the window wider than the buttons.
-            ui.set_max_width(90.0);
-
-            // Signal Grid panel header
-            if signal_widgets::panel_header(
-                ui,
-                &self.theme,
-                "Tools",
-                Some(("TOOLS", self.theme.accent3)),
-            ) {
-                close_clicked = true;
-            }
-            // Make all text in this window slightly smaller
-            ui.style_mut().override_text_style = Some(egui::TextStyle::Small);
-            let primary = self.colors_panel.get_primary_color();
-            let secondary = self.colors_panel.get_secondary_color();
-
-            let is_text_layer = self
-                .projects
-                .get(self.active_project_index)
-                .map(|p| {
+            .frame(frame)
+            .min_size(egui::Vec2::ZERO)
+            .fixed_size(animated_size)
+            .current_pos(pos)
+            .show(ctx, |ui| {
+                ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+                ui.set_width(animated_plan.size.x);
+                let (closed, header) = palette::header(ui, &self.theme);
+                close = closed;
+                header.context_menu(|ui| {
+                    if ui.button(crate::t!("settings.tools.configure")).clicked() {
+                        next_mode = Some("configure");
+                        ui.close();
+                    }
+                    for (mode, label) in [
+                        ("auto", "settings.tools.auto"),
+                        ("column", "settings.tools.column"),
+                        ("row", "settings.tools.row"),
+                        ("grid", "settings.tools.grid"),
+                    ] {
+                        if ui
+                            .selectable_label(
+                                self.settings.tools_palette.mode == mode,
+                                crate::t!(label),
+                            )
+                            .clicked()
+                        {
+                            next_mode = Some(mode);
+                            ui.close();
+                        }
+                    }
+                    if ui.button(crate::t!("settings.tools.fit")).clicked() {
+                        next_mode = Some("auto");
+                        ui.close();
+                    }
+                });
+                let is_text_layer = self.active_project().is_some_and(|p| {
                     p.canvas_state
                         .layers
                         .get(p.canvas_state.active_layer_index)
                         .is_some_and(|l| l.is_text_layer())
-                })
-                .unwrap_or(false);
-
-            let action = egui::ScrollArea::vertical()
-                .id_salt("tools_scroll")
-                .max_height(ui.available_height())
-                .show(ui, |ui| {
+                });
+                let mut draw = |ui: &mut egui::Ui| {
+                    if self.projects.is_empty()
+                        && palette::count(
+                            &self.settings.tools_palette,
+                            self.settings.tools_show_colors,
+                        ) > 0
+                    {
+                        ui.disable();
+                    }
                     self.tools_panel.show_compact(
                         ui,
                         &self.assets,
-                        (primary, secondary),
+                        (
+                            self.colors_panel.get_primary_color(),
+                            self.colors_panel.get_secondary_color(),
+                        ),
                         &self.settings.keybindings,
                         is_text_layer,
                         self.settings.tools_show_colors,
+                        &self.settings.tools_palette,
+                        &animated_plan,
                     )
-                })
-                .inner;
-
-            match action {
-                tools::ToolsPanelAction::OpenColors => {
-                    self.window_visibility.colors = !self.window_visibility.colors;
+                };
+                // Only an impossibly small viewport may need the accessible fallback.
+                let action = if panel_size.y > viewport.height() - 12. {
+                    egui::ScrollArea::vertical()
+                        .max_height(ui.available_height())
+                        .show(ui, draw)
+                        .inner
+                } else {
+                    draw(ui)
+                };
+                match action {
+                    tools::ToolsPanelAction::OpenColors => {
+                        self.window_visibility.colors = !self.window_visibility.colors
+                    }
+                    tools::ToolsPanelAction::SwapColors => self.colors_panel.swap_colors(),
+                    tools::ToolsPanelAction::Configure => {
+                        self.settings_window.open_tools_settings(&self.settings)
+                    }
+                    tools::ToolsPanelAction::None => {}
                 }
-                tools::ToolsPanelAction::SwapColors => {
-                    self.colors_panel.swap_colors();
-                }
-                tools::ToolsPanelAction::None => {}
-            }
-        });
-
-        if let Some(inner_resp) = resp {
-            let win_rect = inner_resp.response.rect;
-            crate::ui::workspace::register(ctx, "Tools", win_rect);
-            self.remember_ui_cursor_rect(win_rect);
-            if let Some(size) =
-                signal_widgets::floating_resize(ctx, &inner_resp.response, "Tools", panel_min)
-            {
-                self.tools_panel_size = Some((size.x, size.y));
-                ctx.data_mut(|d| {
-                    d.insert_temp(egui::Id::new(("workspace_size_request", "Tools")), size)
-                });
-                ctx.request_repaint();
-            }
+            });
+        if let Some(response) = response {
+            let rect = response.response.rect;
+            crate::ui::workspace::register(ctx, "Tools", rect);
+            self.remember_ui_cursor_rect(rect);
+            self.tools_panel_size = Some((panel_size.x, panel_size.y));
             if self.palette_reposition_settle_frames == 0 {
-                self.tools_panel_pos = Some((win_rect.min.x, win_rect.min.y));
+                self.tools_panel_pos = Some((rect.left(), rect.top()));
             }
-            let hovered =
-                ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| win_rect.contains(p)));
-            crate::ui::polish::remember_hover(ctx, hover_id, hovered);
+            if let Some((target, columns)) = palette::resize(
+                ctx,
+                &response.response,
+                &self.settings.tools_palette,
+                self.settings.tools_show_colors,
+                chrome,
+            ) {
+                self.settings.tools_palette.columns = columns;
+                self.settings.tools_palette.mode = "auto".into();
+                self.tools_panel_pos = Some((target.left(), target.top()));
+                self.tools_panel_size = Some((target.width(), target.height()));
+                if !ctx.input(|i| i.pointer.any_down()) {
+                    self.settings.save();
+                }
+            }
         }
+        if let Some(mode) = next_mode {
+            if mode == "configure" {
+                self.settings_window.open_tools_settings(&self.settings);
+            } else {
+                self.settings.tools_palette.mode = mode.into();
+                if mode == "grid" {
+                    self.settings.tools_palette.columns = 6;
+                }
+                self.settings.save();
+            }
+        }
+        self.window_visibility.tools = show && !close;
         if let Some(rect) = self.tools_panel.cursor_blocking_rect {
             self.remember_ui_cursor_rect(rect);
         }
-
-        if close_clicked {
-            show = false;
-        }
-        self.window_visibility.tools = show;
     }
 
     /// Show the floating Layers panel
@@ -486,133 +534,7 @@ impl PaintFEApp {
             }
             // Handle pending app-level actions from layers context menu
             if let Some(action) = self.layers_panel.pending_app_action.take() {
-                match action {
-                    // Not available on web — drag & drop an image onto the
-                    // canvas to import it as a new layer instead.
-                    crate::components::layers::LayerAppAction::ImportFromFile => {
-                        #[cfg(not(target_arch = "wasm32"))]
-                        if let Some(path) = rfd::FileDialog::new()
-                            .add_filter(
-                                crate::t!("ui.image"),
-                                &[
-                                    "png", "jpg", "jpeg", "bmp", "gif", "webp", "tiff", "tif",
-                                    "tga", "ico",
-                                ],
-                            )
-                            .pick_file()
-                            && let Ok(img) = image::open(&path)
-                        {
-                            let rgba = img.to_rgba8();
-                            let name = path
-                                .file_stem()
-                                .map(|s| s.to_string_lossy().to_string())
-                                .unwrap_or_else(|| "Imported".to_string());
-                            self.do_snapshot_op("Import Layer", |s| {
-                                crate::ops::adjustments::import_layer_from_image(s, &rgba, &name);
-                            });
-                        }
-                    }
-                    crate::components::layers::LayerAppAction::FlipHorizontal => {
-                        self.do_layer_snapshot_op("Flip Layer H", |s| {
-                            let idx = s.active_layer_index;
-                            crate::ops::transform::flip_layer_horizontal(s, idx);
-                        });
-                    }
-                    crate::components::layers::LayerAppAction::FlipVertical => {
-                        self.do_layer_snapshot_op("Flip Layer V", |s| {
-                            let idx = s.active_layer_index;
-                            crate::ops::transform::flip_layer_vertical(s, idx);
-                        });
-                    }
-                    crate::components::layers::LayerAppAction::RotateScale => {
-                        if let Some(project) = self.projects.get(self.active_project_index) {
-                            self.active_dialog = ActiveDialog::LayerTransform(
-                                crate::ops::dialogs::LayerTransformDialog::new(
-                                    &project.canvas_state,
-                                ),
-                            );
-                        }
-                    }
-                    crate::components::layers::LayerAppAction::AlignLayer => {
-                        if let Some(project) = self.projects.get(self.active_project_index) {
-                            self.active_dialog = ActiveDialog::AlignLayer(
-                                crate::ops::dialogs::AlignLayerDialog::new(&project.canvas_state),
-                            );
-                        }
-                    }
-                    crate::components::layers::LayerAppAction::MergeDownAsMask(layer_idx) => {
-                        self.do_snapshot_op("Merge Down as Mono-Mask", |s| {
-                            crate::ops::canvas_ops::merge_down_as_mask(s, layer_idx);
-                        });
-                        self.layers_panel.pending_gpu_clear = true;
-                    }
-                    crate::components::layers::LayerAppAction::AddLayerMaskRevealAll(layer_idx) => {
-                        self.do_layer_snapshot_op("Add Layer Mask", |s| {
-                            crate::ops::canvas_ops::add_layer_mask_reveal_all(s, layer_idx);
-                        });
-                        self.layers_panel.pending_gpu_clear = true;
-                    }
-                    crate::components::layers::LayerAppAction::AddLayerMaskFromSelection(
-                        layer_idx,
-                    ) => {
-                        self.do_layer_snapshot_op("Mask From Selection", |s| {
-                            crate::ops::canvas_ops::add_layer_mask_from_selection(s, layer_idx);
-                        });
-                        self.layers_panel.pending_gpu_clear = true;
-                    }
-                    crate::components::layers::LayerAppAction::ToggleLayerMaskEdit(layer_idx) => {
-                        if let Some(project) = self.projects.get_mut(self.active_project_index)
-                            && layer_idx < project.canvas_state.layers.len()
-                        {
-                            project.canvas_state.active_layer_index = layer_idx;
-                            let has_mask = project.canvas_state.layers[layer_idx].has_live_mask();
-                            if has_mask {
-                                let currently_editing = project.canvas_state.edit_layer_mask
-                                    && project.canvas_state.active_layer_index == layer_idx;
-                                project.canvas_state.edit_layer_mask = !currently_editing;
-                            } else {
-                                project.canvas_state.edit_layer_mask = false;
-                            }
-                        }
-                    }
-                    crate::components::layers::LayerAppAction::ToggleLayerMask(layer_idx) => {
-                        self.do_layer_snapshot_op("Toggle Layer Mask", |s| {
-                            crate::ops::canvas_ops::toggle_layer_mask(s, layer_idx);
-                        });
-                        self.layers_panel.pending_gpu_clear = true;
-                    }
-                    crate::components::layers::LayerAppAction::InvertLayerMask(layer_idx) => {
-                        self.do_layer_snapshot_op("Invert Layer Mask", |s| {
-                            crate::ops::canvas_ops::invert_layer_mask(s, layer_idx);
-                        });
-                        self.layers_panel.pending_gpu_clear = true;
-                    }
-                    crate::components::layers::LayerAppAction::ApplyLayerMask(layer_idx) => {
-                        self.do_layer_snapshot_op("Apply Layer Mask", |s| {
-                            crate::ops::canvas_ops::apply_layer_mask(s, layer_idx);
-                        });
-                        self.layers_panel.pending_gpu_clear = true;
-                    }
-                    crate::components::layers::LayerAppAction::DeleteLayerMask(layer_idx) => {
-                        self.do_layer_snapshot_op("Delete Layer Mask", |s| {
-                            crate::ops::canvas_ops::delete_layer_mask(s, layer_idx);
-                        });
-                        self.layers_panel.pending_gpu_clear = true;
-                    }
-                    crate::components::layers::LayerAppAction::RasterizeTextLayer(layer_idx) => {
-                        if let Some(project) = self.projects.get_mut(self.active_project_index) {
-                            self.layers_panel.rasterize_text_layer_from_app(
-                                layer_idx,
-                                &mut project.canvas_state,
-                                &mut project.history,
-                            );
-                            // Clean up any active text editing session so the text tool
-                            // does not remain in editing mode on the now-raster layer.
-                            self.tools_panel
-                                .cancel_text_editing(&mut project.canvas_state);
-                        }
-                    }
-                }
+                self.handle_layer_app_action(action);
             }
         });
 
@@ -1288,5 +1210,150 @@ impl PaintFEApp {
             cancel_flag,
             self.script_sender.clone(),
         );
+    }
+}
+
+impl PaintFEApp {
+    fn handle_layer_app_action(&mut self, action: crate::components::layers::LayerAppAction) {
+        match action {
+            // Not available on web — drag & drop an image onto the
+            // canvas to import it as a new layer instead.
+            crate::components::layers::LayerAppAction::ImportFromFile => {
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter(
+                        crate::t!("ui.image"),
+                        &[
+                            "png", "jpg", "jpeg", "bmp", "gif", "webp", "tiff", "tif", "tga", "ico",
+                        ],
+                    )
+                    .pick_file()
+                    && let Ok(img) = image::open(&path)
+                {
+                    let rgba = img.to_rgba8();
+                    let name = path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "Imported".to_string());
+                    self.do_snapshot_op(HistoryAction::ImportLayer.label("Import Layer"), |s| {
+                        crate::ops::adjustments::import_layer_from_image(s, &rgba, &name);
+                    });
+                }
+            }
+            crate::components::layers::LayerAppAction::FlipHorizontal => {
+                self.do_layer_snapshot_op(HistoryAction::FlipLayerH.label("Flip Layer H"), |s| {
+                    let idx = s.active_layer_index;
+                    crate::ops::transform::flip_layer_horizontal(s, idx);
+                });
+            }
+            crate::components::layers::LayerAppAction::FlipVertical => {
+                self.do_layer_snapshot_op(HistoryAction::FlipLayerV.label("Flip Layer V"), |s| {
+                    let idx = s.active_layer_index;
+                    crate::ops::transform::flip_layer_vertical(s, idx);
+                });
+            }
+            crate::components::layers::LayerAppAction::RotateScale => {
+                if let Some(project) = self.projects.get(self.active_project_index) {
+                    self.active_dialog = ActiveDialog::LayerTransform(
+                        crate::ops::dialogs::LayerTransformDialog::new(&project.canvas_state),
+                    );
+                }
+            }
+            crate::components::layers::LayerAppAction::AlignLayer => {
+                if let Some(project) = self.projects.get(self.active_project_index) {
+                    self.active_dialog = ActiveDialog::AlignLayer(
+                        crate::ops::dialogs::AlignLayerDialog::new(&project.canvas_state),
+                    );
+                }
+            }
+            crate::components::layers::LayerAppAction::MergeDownAsMask(layer_idx) => {
+                self.do_snapshot_op(
+                    HistoryAction::MergeMask.label("Merge Down as Mono-Mask"),
+                    |s| {
+                        crate::ops::canvas_ops::merge_down_as_mask(s, layer_idx);
+                    },
+                );
+                self.layers_panel.pending_gpu_clear = true;
+            }
+            crate::components::layers::LayerAppAction::AddLayerMaskRevealAll(layer_idx) => {
+                self.do_layer_snapshot_op(HistoryAction::AddMask.label("Add Layer Mask"), |s| {
+                    crate::ops::canvas_ops::add_layer_mask_reveal_all(s, layer_idx);
+                });
+                self.layers_panel.pending_gpu_clear = true;
+            }
+            crate::components::layers::LayerAppAction::AddLayerMaskFromSelection(layer_idx) => {
+                self.do_layer_snapshot_op(
+                    HistoryAction::MaskFromSelection.label("Mask From Selection"),
+                    |s| {
+                        crate::ops::canvas_ops::add_layer_mask_from_selection(s, layer_idx);
+                    },
+                );
+                self.layers_panel.pending_gpu_clear = true;
+            }
+            crate::components::layers::LayerAppAction::ToggleLayerMaskEdit(layer_idx) => {
+                if let Some(project) = self.projects.get_mut(self.active_project_index)
+                    && layer_idx < project.canvas_state.layers.len()
+                {
+                    project.canvas_state.active_layer_index = layer_idx;
+                    let has_mask = project.canvas_state.layers[layer_idx].has_live_mask();
+                    if has_mask {
+                        let currently_editing = project.canvas_state.edit_layer_mask
+                            && project.canvas_state.active_layer_index == layer_idx;
+                        project.canvas_state.edit_layer_mask = !currently_editing;
+                    } else {
+                        project.canvas_state.edit_layer_mask = false;
+                    }
+                }
+            }
+            crate::components::layers::LayerAppAction::ToggleLayerMask(layer_idx) => {
+                self.do_layer_snapshot_op(
+                    HistoryAction::ToggleMask.label("Toggle Layer Mask"),
+                    |s| {
+                        crate::ops::canvas_ops::toggle_layer_mask(s, layer_idx);
+                    },
+                );
+                self.layers_panel.pending_gpu_clear = true;
+            }
+            crate::components::layers::LayerAppAction::InvertLayerMask(layer_idx) => {
+                self.do_layer_snapshot_op(
+                    HistoryAction::InvertMask.label("Invert Layer Mask"),
+                    |s| {
+                        crate::ops::canvas_ops::invert_layer_mask(s, layer_idx);
+                    },
+                );
+                self.layers_panel.pending_gpu_clear = true;
+            }
+            crate::components::layers::LayerAppAction::ApplyLayerMask(layer_idx) => {
+                self.do_layer_snapshot_op(
+                    HistoryAction::ApplyMask.label("Apply Layer Mask"),
+                    |s| {
+                        crate::ops::canvas_ops::apply_layer_mask(s, layer_idx);
+                    },
+                );
+                self.layers_panel.pending_gpu_clear = true;
+            }
+            crate::components::layers::LayerAppAction::DeleteLayerMask(layer_idx) => {
+                self.do_layer_snapshot_op(
+                    HistoryAction::DeleteMask.label("Delete Layer Mask"),
+                    |s| {
+                        crate::ops::canvas_ops::delete_layer_mask(s, layer_idx);
+                    },
+                );
+                self.layers_panel.pending_gpu_clear = true;
+            }
+            crate::components::layers::LayerAppAction::RasterizeTextLayer(layer_idx) => {
+                if let Some(project) = self.projects.get_mut(self.active_project_index) {
+                    self.layers_panel.rasterize_text_layer_from_app(
+                        layer_idx,
+                        &mut project.canvas_state,
+                        &mut project.history,
+                    );
+                    // Clean up any active text editing session so the text tool
+                    // does not remain in editing mode on the now-raster layer.
+                    self.tools_panel
+                        .cancel_text_editing(&mut project.canvas_state);
+                }
+            }
+        }
     }
 }

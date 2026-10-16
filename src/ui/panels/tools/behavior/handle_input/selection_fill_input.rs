@@ -36,8 +36,8 @@ impl ToolsPanel {
                 let is_secondary_pressed =
                     ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary));
 
-                // Esc or Enter: deselect
-                if esc_pressed || enter_pressed {
+                // Idle Enter deselection is handled by the app preference and History.
+                if esc_pressed {
                     canvas_state.clear_selection();
                     self.selection_state.dragging = false;
                     self.selection_state.drag_start = None;
@@ -168,8 +168,10 @@ impl ToolsPanel {
                         let sel_after = canvas_state.selection_mask.clone();
                         let sel_after_all = canvas_state.selection_all;
                         let tool_name = match self.active_tool {
-                            Tool::RectangleSelect => "Rectangle Select",
-                            _ => "Ellipse Select",
+                            Tool::RectangleSelect => {
+                                HistoryAction::RectangleSelect.label("Rectangle Select")
+                            }
+                            _ => HistoryAction::EllipseSelect.label("Ellipse Select"),
                         };
                         self.pending_history_commands
                             .push(Box::new(SelectionCommand::new_states(

@@ -5,6 +5,10 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use crate::assets::{Assets, Icon};
+mod action;
+pub use action::{HistoryAction, HistoryLabel};
+#[cfg(test)]
+mod tests;
 use crate::canvas::{CanvasState, LayerContent, LayerFolder, TiledImage};
 
 // ============================================================================
@@ -17,14 +21,16 @@ pub trait Command: Send + Sync {
     fn redo(&self, canvas: &mut CanvasState);
     fn description(&self) -> String;
     fn memory_size(&self) -> usize;
+    fn action(&self) -> HistoryAction;
     /// Optional display metadata; commands without it retain their original descriptions.
     fn presentation(&self) -> Option<HistoryPresentation> {
-        None
+        Some(HistoryPresentation::for_command(self))
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct HistoryPresentation {
+    pub action: HistoryAction,
     pub title: String,
     pub icon: Icon,
     pub detail: Option<String>,
@@ -34,26 +40,14 @@ pub struct HistoryPresentation {
 mod refinement_tests {
     use super::*;
     #[test]
-    fn effects_and_selection_deletion_use_their_own_icons() {
-        for (name, icon) in [
-            ("Auto Levels", Icon::MenuColorAutoLevels),
-            ("Outline", Icon::MenuGenerateOutline),
-            ("Gaussian Blur", Icon::MenuFilterGaussian),
-            ("Canvas Border", Icon::MenuFilterCanvasBorder),
-            ("Delete Selection", Icon::Delete),
-        ] {
-            assert_eq!(
-                HistoryPresentation::fallback(name.into()).icon,
-                icon,
-                "{name}"
-            );
-        }
-    }
-    #[test]
     fn presentation_tracks_revert_and_redo_without_changing_commands() {
         let mut history = HistoryManager::new(20);
         let mut canvas = CanvasState::new(2, 2);
-        for label in ["Brush Stroke", "Fill", "Rectangle Selection"] {
+        for label in [
+            HistoryAction::Brush.label("Brush Stroke"),
+            HistoryAction::Fill.label("Fill"),
+            HistoryAction::RectangleSelect.label("Rectangle Selection"),
+        ] {
             history.push(Box::new(MarkerCommand::new(label)));
         }
         assert_eq!(history.presentation_history()[0].icon, Icon::RectSelect);
@@ -62,160 +56,46 @@ mod refinement_tests {
         assert_eq!(history.redo_count(), 2);
         history.redo(&mut canvas);
         assert_eq!(history.presentation_history()[0].icon, Icon::Fill);
-        history.push(Box::new(MarkerCommand::new("Custom operation")));
+        history.push(Box::new(MarkerCommand::new(
+            crate::components::history::HistoryAction::Custom.label("Custom operation"),
+        )));
         assert_eq!(history.redo_count(), 0);
-        assert_eq!(history.presentation_history()[0].icon, Icon::Settings);
+        assert_eq!(history.presentation_history()[0].icon, Icon::Info);
     }
 }
 
 impl HistoryPresentation {
-    fn fallback(title: String) -> Self {
-        let lower = title.to_lowercase();
-        let canonical: String = lower.chars().filter(|c| c.is_alphanumeric()).collect();
-        let operation_icon = match canonical.as_str() {
-            "180" => Some(Icon::MenuCanvasRotate180),
-            "90clockwise" => Some(Icon::MenuCanvasRotateCw),
-            "90counterclockwise" => Some(Icon::MenuCanvasRotateCcw),
-            "addlayer" => Some(Icon::NewLayer),
-            "addnoise" => Some(Icon::MenuFilterAddNoise),
-            "align" | "alignlayer" => Some(Icon::MenuCanvasAlign),
-            "autolevels" => Some(Icon::MenuColorAutoLevels),
-            "blackwhite" => Some(Icon::MenuColorDesaturate),
-            "bokehblur" => Some(Icon::MenuFilterBokeh),
-            "boxblur" => Some(Icon::MenuFilterBoxBlur),
-            "brightnesscontrast" => Some(Icon::MenuColorBrightness),
-            "bulgepinch" | "bulge" => Some(Icon::MenuFilterBulge),
-            "canvasborder" => Some(Icon::MenuFilterCanvasBorder),
-            "colorbalance" => Some(Icon::MenuColorBrightness),
-            "colorfilter" => Some(Icon::MenuFilterColorFilter),
-            "colortoalpha" => Some(Icon::MenuColorInvertAlpha),
-            "layertransform" => Some(Icon::MovePixels),
-            "medianfilter" => Some(Icon::MenuFilterMedian),
-            "pasteasnewlayer" => Some(Icon::MenuEditPasteLayer),
-            "rotate180deg" => Some(Icon::MenuCanvasRotate180),
-            "rotate90degcw" => Some(Icon::MenuCanvasRotateCw),
-            "rotate90degccw" => Some(Icon::MenuCanvasRotateCcw),
-            "contours" => Some(Icon::MenuGenerateContours),
-            "croptoselection" => Some(Icon::MenuCanvasCrop),
-            "crystallize" => Some(Icon::MenuFilterCrystallize),
-            "curves" => Some(Icon::MenuColorCurves),
-            "deletelayer" => Some(Icon::Delete),
-            "deleteselection" => Some(Icon::Delete),
-            "dents" => Some(Icon::MenuFilterDents),
-            "desaturate" => Some(Icon::MenuColorDesaturate),
-            "deselect" => Some(Icon::RectSelect),
-            "dropshadow" => Some(Icon::MenuGenerateShadow),
-            "duplicatelayer" => Some(Icon::Duplicate),
-            "exposure" => Some(Icon::MenuColorExposure),
-            "fillselection" => Some(Icon::Fill),
-            "flatten" => Some(Icon::Flatten),
-            "flattenalllayers" => Some(Icon::MenuCanvasFlatten),
-            "fliphorizontal" => Some(Icon::MenuCanvasFlipH),
-            "flipvertical" => Some(Icon::MenuCanvasFlipV),
-            "gaussianblur" => Some(Icon::MenuFilterGaussian),
-            "glow" => Some(Icon::MenuFilterGlow),
-            "gradientmap" => Some(Icon::MenuColorCurves),
-            "grid" => Some(Icon::MenuGenerateGrid),
-            "halftone" => Some(Icon::MenuFilterHalftone),
-            "highlightsshadows" => Some(Icon::MenuColorHighlights),
-            "huesaturation" => Some(Icon::MenuColorHsl),
-            "ink" => Some(Icon::MenuFilterInk),
-            "invertalpha" => Some(Icon::MenuColorInvertAlpha),
-            "invertcolors" => Some(Icon::MenuColorInvert),
-            "invertselection" => Some(Icon::MenuEditInvertSel),
-            "layermask" => Some(Icon::ToggleLayerMask),
-            "levels" => Some(Icon::MenuColorLevels),
-            "makeseamlesstexture" => Some(Icon::MenuFilterSeamless),
-            "median" => Some(Icon::MenuFilterMedian),
-            "merge" => Some(Icon::MergeDown),
-            "motionblur" => Some(Icon::MenuFilterMotionBlur),
-            "newlayer" => Some(Icon::NewLayer),
-            "oilpainting" => Some(Icon::MenuFilterOilPainting),
-            "outline" => Some(Icon::MenuGenerateOutline),
-            "pixelate" => Some(Icon::MenuFilterPixelate),
-            "pixeldrag" => Some(Icon::MenuFilterPixelDrag),
-            "posterize" => Some(Icon::MenuColorDesaturate),
-            "recovertransparency" => Some(Icon::MenuColorRecoverTransparency),
-            "reducenoise" => Some(Icon::MenuFilterReduceNoise),
-            "removebackground" => Some(Icon::MenuFilterRemoveBg),
-            "renamelayer" => Some(Icon::Rename),
-            "resizecanvas" => Some(Icon::MenuCanvasResize),
-            "resizeimage" => Some(Icon::MenuCanvasResize),
-            "rgbdisplace" => Some(Icon::MenuFilterRgbDisplace),
-            "selectall" => Some(Icon::RectSelect),
-            "sepiatone" => Some(Icon::MenuColorSepia),
-            "sharpen" => Some(Icon::MenuFilterSharpenItem),
-            "temperaturetint" => Some(Icon::MenuColorTemperature),
-            "threshold" => Some(Icon::MenuColorLevels),
-            "twist" => Some(Icon::MenuFilterTwist),
-            "vibrance" => Some(Icon::MenuColorHsl),
-            "vignette" => Some(Icon::MenuFilterVignette),
-            "zoomblur" => Some(Icon::MenuFilterZoomBlur),
-            _ => None,
-        };
-        let icon = if let Some(icon) = operation_icon {
-            icon
-        } else if lower.contains("eraser") {
-            Icon::Eraser
-        } else if lower.contains("pencil") {
-            Icon::Pencil
-        } else if lower.contains("clone") {
-            Icon::CloneStamp
-        } else if lower.contains("smudge") {
-            Icon::Smudge
-        } else if lower.contains("liquify") {
-            Icon::Liquify
-        } else if lower.contains("shape") {
-            Icon::Shapes
-        } else if lower.contains("fill") {
-            Icon::Fill
-        } else if lower.contains("gradient") {
-            Icon::Gradient
-        } else if lower.contains("selection") || lower.contains("select") {
-            Icon::RectSelect
-        } else if lower.contains("text") {
-            Icon::Text
-        } else if lower.contains("flatten") {
-            Icon::Flatten
-        } else if lower.contains("merge") {
-            Icon::MergeDown
-        } else if lower.contains("delete") {
-            Icon::Delete
-        } else if lower.contains("layer") || lower.contains("duplicate") {
-            Icon::Layers
-        } else if lower.contains("line") {
-            Icon::Line
-        } else if lower.contains("brush") || lower.contains("stroke") {
-            Icon::Brush
-        } else {
-            Icon::Settings
-        };
+    fn for_command(command: &(impl Command + ?Sized)) -> Self {
         Self {
-            title,
-            icon,
+            action: command.action(),
+            title: command.description(),
+            icon: command.action().icon(),
             detail: None,
         }
     }
 }
 
 pub struct MarkerCommand {
-    desc: String,
+    desc: HistoryLabel,
 }
 
 impl MarkerCommand {
-    pub fn new(desc: impl Into<String>) -> Self {
-        Self { desc: desc.into() }
+    pub fn new(desc: HistoryLabel) -> Self {
+        Self { desc }
     }
 }
 
 impl Command for MarkerCommand {
+    fn action(&self) -> HistoryAction {
+        self.desc.action
+    }
     fn undo(&self, _canvas: &mut CanvasState) {}
     fn redo(&self, _canvas: &mut CanvasState) {}
     fn description(&self) -> String {
-        self.desc.clone()
+        self.desc.title.clone()
     }
     fn memory_size(&self) -> usize {
-        std::mem::size_of::<Self>() + self.desc.len()
+        std::mem::size_of::<Self>() + self.desc.title.len()
     }
 }
 
@@ -366,7 +246,7 @@ impl PixelPatch {
 }
 
 pub struct BrushCommand {
-    description: String,
+    description: HistoryLabel,
     /// The pixels before the modification (for undo)
     before_patch: PixelPatch,
     /// The pixels after the modification (for redo) - optional, can be recalculated
@@ -374,7 +254,11 @@ pub struct BrushCommand {
 }
 
 impl BrushCommand {
-    pub fn new(description: String, before_patch: PixelPatch, after_patch: PixelPatch) -> Self {
+    pub fn new(
+        description: HistoryLabel,
+        before_patch: PixelPatch,
+        after_patch: PixelPatch,
+    ) -> Self {
         Self {
             description,
             before_patch,
@@ -383,7 +267,7 @@ impl BrushCommand {
     }
 
     /// Create a brush command storing only the before patch (redo recaptures)
-    pub fn with_before_only(description: String, before_patch: PixelPatch) -> Self {
+    pub fn with_before_only(description: HistoryLabel, before_patch: PixelPatch) -> Self {
         Self {
             description,
             before_patch,
@@ -393,6 +277,9 @@ impl BrushCommand {
 }
 
 impl Command for BrushCommand {
+    fn action(&self) -> HistoryAction {
+        self.description.action
+    }
     fn undo(&self, canvas: &mut CanvasState) {
         self.before_patch.apply(canvas);
     }
@@ -411,11 +298,11 @@ impl Command for BrushCommand {
     }
 
     fn description(&self) -> String {
-        self.description.clone()
+        self.description.title.clone()
     }
 
     fn presentation(&self) -> Option<HistoryPresentation> {
-        let mut entry = HistoryPresentation::fallback(self.description.clone());
+        let mut entry = HistoryPresentation::for_command(self);
         entry.detail = Some(format!(
             "{} × {} px bounds",
             self.before_patch.width, self.before_patch.height
@@ -430,7 +317,7 @@ impl Command for BrushCommand {
 
 /// Undo/redo for mask painting strokes (stores mask image before/after).
 pub struct LayerMaskCommand {
-    description: String,
+    description: HistoryLabel,
     layer_index: usize,
     before_mask: Option<TiledImage>,
     after_mask: Option<TiledImage>,
@@ -440,7 +327,7 @@ pub struct LayerMaskCommand {
 
 impl LayerMaskCommand {
     pub fn new(
-        description: String,
+        description: HistoryLabel,
         layer_index: usize,
         before_mask: Option<TiledImage>,
         after_mask: Option<TiledImage>,
@@ -459,6 +346,9 @@ impl LayerMaskCommand {
 }
 
 impl Command for LayerMaskCommand {
+    fn action(&self) -> HistoryAction {
+        self.description.action
+    }
     fn undo(&self, canvas: &mut CanvasState) {
         if let Some(layer) = canvas.layers.get_mut(self.layer_index) {
             layer.mask = self.before_mask.clone();
@@ -476,7 +366,7 @@ impl Command for LayerMaskCommand {
     }
 
     fn description(&self) -> String {
-        self.description.clone()
+        self.description.title.clone()
     }
 
     fn memory_size(&self) -> usize {
@@ -556,15 +446,48 @@ pub enum LayerOperation {
 /// Command for layer structure operations
 pub struct LayerOpCommand {
     operation: LayerOperation,
+    action: HistoryAction,
 }
 
 impl LayerOpCommand {
     pub fn new(operation: LayerOperation) -> Self {
-        Self { operation }
+        let action = match &operation {
+            LayerOperation::Add { .. } => HistoryAction::AddLayer,
+            LayerOperation::Delete { .. } => HistoryAction::DeleteLayer,
+            LayerOperation::Move {
+                from_index,
+                to_index,
+            } => {
+                if to_index > from_index {
+                    HistoryAction::MoveLayer
+                } else {
+                    HistoryAction::MoveLayerDown
+                }
+            }
+            LayerOperation::Opacity { .. } => HistoryAction::LayerOpacity,
+            LayerOperation::Visibility { was_visible, .. } => {
+                if *was_visible {
+                    HistoryAction::HideLayer
+                } else {
+                    HistoryAction::ShowLayer
+                }
+            }
+            LayerOperation::Rename { .. } => HistoryAction::RenameLayer,
+            LayerOperation::Duplicate { .. } => HistoryAction::DuplicateLayer,
+        };
+        Self::new_for_action(action, operation)
+    }
+
+    pub fn new_for_action(action: HistoryAction, operation: LayerOperation) -> Self {
+        Self { operation, action }
     }
 }
 
 impl Command for LayerOpCommand {
+    fn action(&self) -> HistoryAction {
+        self.action
+    }
+
     fn undo(&self, canvas: &mut CanvasState) {
         use crate::canvas::Layer;
 
@@ -938,7 +861,7 @@ impl HistoryManager {
             .rev()
             .map(|c| {
                 c.presentation()
-                    .unwrap_or_else(|| HistoryPresentation::fallback(c.description()))
+                    .unwrap_or_else(|| HistoryPresentation::for_command(c.as_ref()))
             })
             .collect()
     }
@@ -1005,7 +928,7 @@ impl HistoryManager {
 
 /// Stores a complete canvas snapshot for undo/redo of destructive operations.
 pub struct SnapshotCommand {
-    description: String,
+    description: HistoryLabel,
     before: CanvasSnapshot,
     after: Option<CanvasSnapshot>,
 }
@@ -1123,7 +1046,7 @@ impl CanvasSnapshot {
 impl SnapshotCommand {
     /// Create a snapshot command. Call BEFORE performing the operation.
     /// After the operation, call `set_after()`.
-    pub fn new(description: String, state: &CanvasState) -> Self {
+    pub fn new(description: HistoryLabel, state: &CanvasState) -> Self {
         Self {
             description,
             before: CanvasSnapshot::capture(state),
@@ -1137,7 +1060,7 @@ impl SnapshotCommand {
     }
 
     pub fn from_snapshots(
-        description: String,
+        description: HistoryLabel,
         before: CanvasSnapshot,
         after: CanvasSnapshot,
     ) -> Self {
@@ -1150,6 +1073,9 @@ impl SnapshotCommand {
 }
 
 impl Command for SnapshotCommand {
+    fn action(&self) -> HistoryAction {
+        self.description.action
+    }
     fn undo(&self, canvas: &mut CanvasState) {
         self.before.restore_into(canvas);
     }
@@ -1161,7 +1087,7 @@ impl Command for SnapshotCommand {
     }
 
     fn description(&self) -> String {
-        self.description.clone()
+        self.description.title.clone()
     }
 
     fn memory_size(&self) -> usize {
@@ -1176,7 +1102,7 @@ impl Command for SnapshotCommand {
 /// Captures only the active layer's pixels and metadata before/after an
 /// operation. For a 5-layer 4K image, this stores ~66MB instead of ~330MB.
 pub struct SingleLayerSnapshotCommand {
-    description: String,
+    description: HistoryLabel,
     layer_index: usize,
     before_pixels: TiledImage,
     after_pixels: Option<TiledImage>,
@@ -1204,13 +1130,13 @@ pub struct SingleLayerSnapshotCommand {
 
 impl SingleLayerSnapshotCommand {
     /// Create before performing the operation. Call `set_after()` when done.
-    pub fn new(description: String, state: &CanvasState) -> Self {
+    pub fn new(description: HistoryLabel, state: &CanvasState) -> Self {
         Self::new_for_layer(description, state, state.active_layer_index)
     }
 
     /// Create for a specific layer index (when the active layer may differ from
     /// the layer being modified, e.g., dialog commits store layer_idx at open time).
-    pub fn new_for_layer(description: String, state: &CanvasState, layer_idx: usize) -> Self {
+    pub fn new_for_layer(description: HistoryLabel, state: &CanvasState, layer_idx: usize) -> Self {
         let safe_idx = if state.layers.is_empty() {
             0
         } else {
@@ -1304,6 +1230,9 @@ impl SingleLayerSnapshotCommand {
 }
 
 impl Command for SingleLayerSnapshotCommand {
+    fn action(&self) -> HistoryAction {
+        self.description.action
+    }
     fn undo(&self, canvas: &mut CanvasState) {
         if let Some(layer) = canvas.layers.get_mut(self.layer_index) {
             layer.pixels = self.before_pixels.clone();
@@ -1341,7 +1270,7 @@ impl Command for SingleLayerSnapshotCommand {
     }
 
     fn description(&self) -> String {
-        self.description.clone()
+        self.description.title.clone()
     }
 
     fn memory_size(&self) -> usize {
@@ -1360,7 +1289,7 @@ impl Command for SingleLayerSnapshotCommand {
 /// Stores only vector data (TextLayerData, typically 1–50 KB) instead of
 /// rasterized pixels (~66 MB for a single 4K layer). ~1000× more efficient.
 pub struct TextLayerEditCommand {
-    description: String,
+    description: HistoryLabel,
     layer_index: usize,
     before: crate::ops::text_layer::TextLayerData,
     after: Option<crate::ops::text_layer::TextLayerData>,
@@ -1368,7 +1297,7 @@ pub struct TextLayerEditCommand {
 
 impl TextLayerEditCommand {
     /// Create before the text edit operation. Call `set_after()` when done.
-    pub fn new(description: String, layer_index: usize, state: &CanvasState) -> Self {
+    pub fn new(description: HistoryLabel, layer_index: usize, state: &CanvasState) -> Self {
         let before = if let Some(layer) = state.layers.get(layer_index)
             && let LayerContent::Text(ref td) = layer.content
         {
@@ -1386,7 +1315,7 @@ impl TextLayerEditCommand {
 
     /// Create from an already-captured TextLayerData snapshot.
     pub fn new_from(
-        description: String,
+        description: HistoryLabel,
         layer_index: usize,
         before: crate::ops::text_layer::TextLayerData,
     ) -> Self {
@@ -1414,6 +1343,9 @@ impl TextLayerEditCommand {
 }
 
 impl Command for TextLayerEditCommand {
+    fn action(&self) -> HistoryAction {
+        self.description.action
+    }
     fn undo(&self, canvas: &mut CanvasState) {
         if let Some(layer) = canvas.layers.get_mut(self.layer_index) {
             layer.content = LayerContent::Text(self.before.clone());
@@ -1442,7 +1374,7 @@ impl Command for TextLayerEditCommand {
     }
 
     fn description(&self) -> String {
-        self.description.clone()
+        self.description.title.clone()
     }
 
     fn memory_size(&self) -> usize {
@@ -1473,7 +1405,7 @@ impl Command for TextLayerEditCommand {
 /// Command that stores the selection-mask state before and after an operation.
 /// The `Arc<image::GrayImage>` wrapper lets before/after share heap storage cheaply.
 pub struct SelectionCommand {
-    description: String,
+    description: HistoryLabel,
     before: Option<Arc<image::GrayImage>>,
     after: Option<Arc<image::GrayImage>>,
     before_all: bool,
@@ -1482,7 +1414,7 @@ pub struct SelectionCommand {
 
 impl SelectionCommand {
     pub fn new(
-        description: impl Into<String>,
+        description: HistoryLabel,
         before: Option<image::GrayImage>,
         after: Option<image::GrayImage>,
     ) -> Self {
@@ -1490,14 +1422,14 @@ impl SelectionCommand {
     }
 
     pub fn new_states(
-        description: impl Into<String>,
+        description: HistoryLabel,
         before: Option<image::GrayImage>,
         before_all: bool,
         after: Option<image::GrayImage>,
         after_all: bool,
     ) -> Self {
         Self {
-            description: description.into(),
+            description,
             before: before.map(Arc::new),
             after: after.map(Arc::new),
             before_all,
@@ -1506,7 +1438,7 @@ impl SelectionCommand {
     }
 
     pub fn new_all(
-        description: impl Into<String>,
+        description: HistoryLabel,
         before: Option<image::GrayImage>,
         before_all: bool,
     ) -> Self {
@@ -1515,6 +1447,9 @@ impl SelectionCommand {
 }
 
 impl Command for SelectionCommand {
+    fn action(&self) -> HistoryAction {
+        self.description.action
+    }
     fn undo(&self, canvas: &mut CanvasState) {
         canvas.selection_mask = self.before.as_ref().map(|a| (**a).clone());
         canvas.selection_all = self.before_all;
@@ -1528,7 +1463,7 @@ impl Command for SelectionCommand {
     }
 
     fn description(&self) -> String {
-        self.description.clone()
+        self.description.title.clone()
     }
 
     fn memory_size(&self) -> usize {
@@ -1578,6 +1513,9 @@ impl CutSelectionCommand {
 }
 
 impl Command for CutSelectionCommand {
+    fn action(&self) -> HistoryAction {
+        HistoryAction::Cut
+    }
     fn undo(&self, canvas: &mut CanvasState) {
         if let Some(layer) = canvas.layers.get_mut(self.layer_index) {
             layer.pixels = self.before_pixels.clone();
@@ -1745,6 +1683,7 @@ impl HistoryPanel {
                             assets,
                             theme,
                             &HistoryPresentation {
+                                action: HistoryAction::Custom,
                                 title: String::new(),
                                 icon,
                                 detail: None,
@@ -1886,6 +1825,14 @@ impl HistoryPanel {
                 egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
                 egui::Color32::WHITE.gamma_multiply(opacity),
             );
+        } else if !empty {
+            p.text(
+                badge.center(),
+                egui::Align2::CENTER_CENTER,
+                entry.icon.emoji(),
+                egui::FontId::proportional(14.0),
+                theme.text_color,
+            );
         }
         let text_left = badge.right() + 9.0;
         if empty {
@@ -1959,7 +1906,9 @@ mod mega_pass_history_tests {
         let mut history = HistoryManager::new(2);
         let mut canvas = CanvasState::new(2, 2);
         for _ in 0..3 {
-            history.push(Box::new(MarkerCommand::new("Brush Stroke")));
+            history.push(Box::new(MarkerCommand::new(
+                crate::components::history::HistoryAction::Brush.label("Brush Stroke"),
+            )));
         }
         assert_eq!(
             history.undo_ids.iter().copied().collect::<Vec<_>>(),
@@ -1973,7 +1922,9 @@ mod mega_pass_history_tests {
         assert_eq!(history.undo_ids.back(), Some(&3));
         assert!(history.revision > revision);
         history.undo(&mut canvas);
-        history.push(Box::new(MarkerCommand::new("Fill")));
+        history.push(Box::new(MarkerCommand::new(
+            crate::components::history::HistoryAction::Fill.label("Fill"),
+        )));
         assert_eq!(history.undo_ids.back(), Some(&4));
         assert!(history.redo_ids.is_empty());
         history.clear();
@@ -1999,11 +1950,17 @@ mod mega_pass_history_tests {
                 },
             );
         };
-        history.push(Box::new(MarkerCommand::new("Brush Stroke")));
-        history.push(Box::new(MarkerCommand::new("Fill")));
+        history.push(Box::new(MarkerCommand::new(
+            crate::components::history::HistoryAction::Brush.label("Brush Stroke"),
+        )));
+        history.push(Box::new(MarkerCommand::new(
+            crate::components::history::HistoryAction::Fill.label("Fill"),
+        )));
         draw(0.0, &mut panel, &mut history);
         assert!(panel.insertion_start.is_none());
-        history.push(Box::new(MarkerCommand::new("Brush Stroke")));
+        history.push(Box::new(MarkerCommand::new(
+            crate::components::history::HistoryAction::Brush.label("Brush Stroke"),
+        )));
         draw(0.1, &mut panel, &mut history);
         assert!(panel.insertion_start.is_some());
         assert_eq!(panel.cached_entries.len(), 2);

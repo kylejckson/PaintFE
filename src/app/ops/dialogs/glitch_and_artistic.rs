@@ -20,93 +20,12 @@ impl PaintFEApp {
         }
 
         match dialog {
-            ActiveDialog::PixelDrag(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
-                DialogResult::Changed => {
-                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
-                    dlg.first_open = false;
-                    let idx = dlg.layer_idx;
-                    if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
-                    {
-                        let (seed, amount) = (dlg.seed, dlg.amount);
-                        let distance = dlg.distance as u32;
-                        let direction = dlg.direction;
-                        self.spawn_preview_job(
-                            ctx.input(|i| i.time),
-                            "Pixel Drag".to_string(),
-                            idx,
-                            original.clone(),
-                            flat.clone(),
-                            move |img| {
-                                crate::ops::effects::pixel_drag_core(
-                                    img, seed, amount, distance, direction, selection_mask.as_ref(),
-                                )
-                            },
-                        );
-                    }
-                }
-                DialogResult::Ok(_) => {
-                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
-                    crate::ui::dialogs::remember::mark_applied(ctx);
-                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
-                    let idx = dlg.layer_idx;
-                    if let Some(flat) = &dlg.original_flat {
-                        let (seed, amount) = (dlg.seed, dlg.amount);
-                        let distance = dlg.distance as u32;
-                        let direction = dlg.direction;
-                        if let Some(project) = self.active_project_mut() {
-                            Self::apply_fullres_effect(
-                                &mut project.canvas_state,
-                                idx,
-                                flat,
-                                |img| {
-                                    crate::ops::effects::pixel_drag_core(
-                                        img, seed, amount, distance, direction, selection_mask.as_ref(),
-                                    )
-                                },
-                            );
-                        }
-                    }
-                    self.active_dialog = ActiveDialog::None;
-                    if let Some(project) = self.active_project_mut() {
-                        let idx = dlg.layer_idx;
-                        if let Some(original) = &dlg.original_pixels
-                            && idx < project.canvas_state.layers.len()
-                        {
-                            let adjusted = project.canvas_state.layers[idx].pixels.clone();
-                            project.canvas_state.layers[idx].pixels = original.clone();
-                            let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
-                                "Pixel Drag".to_string(),
-                                &project.canvas_state,
-                                idx,
-                            );
-                            project.canvas_state.layers[idx].pixels = adjusted;
-                            cmd.set_after(&project.canvas_state);
-                            project.history.push(Box::new(cmd));
-                        }
-                        project.mark_dirty();
-                    }
-                    return true;
-                }
-                DialogResult::Cancel => {
-                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
-                    self.filter_cancel
-                        .store(true, std::sync::atomic::Ordering::Relaxed);
-                    let idx = dlg.layer_idx;
-                    if let Some(original) = &dlg.original_pixels
-                        && let Some(project) = self.active_project_mut()
-                    {
-                        if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
-                            layer.pixels = original.clone();
-                        }
-                        project.canvas_state.mark_dirty(None);
-                    }
-                    self.active_dialog = ActiveDialog::None;
-                    return true;
-                }
-                _ => {
-                    dlg.poll_flat();
-                    if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
-                        let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
+            ActiveDialog::PixelDrag(dlg) => {
+                match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
+                    DialogResult::Changed => {
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         dlg.first_open = false;
                         let idx = dlg.layer_idx;
                         if let (Some(original), Some(flat)) =
@@ -117,108 +36,132 @@ impl PaintFEApp {
                             let direction = dlg.direction;
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
-                                "Pixel Drag".to_string(),
+                                HistoryAction::PixelDrag.label("Pixel Drag".to_string()),
                                 idx,
                                 original.clone(),
                                 flat.clone(),
                                 move |img| {
                                     crate::ops::effects::pixel_drag_core(
-                                        img, seed, amount, distance, direction, selection_mask.as_ref(),
+                                        img,
+                                        seed,
+                                        amount,
+                                        distance,
+                                        direction,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
                         }
                     }
-                }
-            },
-
-            ActiveDialog::RgbDisplace(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
-                DialogResult::Changed => {
-                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
-                    dlg.first_open = false;
-                    let idx = dlg.layer_idx;
-                    if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
-                    {
-                        let r_off = (dlg.r_x as i32, dlg.r_y as i32);
-                        let g_off = (dlg.g_x as i32, dlg.g_y as i32);
-                        let b_off = (dlg.b_x as i32, dlg.b_y as i32);
-                        self.spawn_preview_job(
-                            ctx.input(|i| i.time),
-                            "RGB Displace".to_string(),
-                            idx,
-                            original.clone(),
-                            flat.clone(),
-                            move |img| {
-                                crate::ops::effects::rgb_displace_core(
-                                    img, r_off, g_off, b_off, selection_mask.as_ref(),
-                                )
-                            },
-                        );
-                    }
-                }
-                DialogResult::Ok(_) => {
-                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
-                    crate::ui::dialogs::remember::mark_applied(ctx);
-                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
-                    let idx = dlg.layer_idx;
-                    if let Some(flat) = &dlg.original_flat {
-                        let r_off = (dlg.r_x as i32, dlg.r_y as i32);
-                        let g_off = (dlg.g_x as i32, dlg.g_y as i32);
-                        let b_off = (dlg.b_x as i32, dlg.b_y as i32);
+                    DialogResult::Ok(_) => {
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
+                        crate::ui::dialogs::remember::mark_applied(ctx);
+                        self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                        let idx = dlg.layer_idx;
+                        if let Some(flat) = &dlg.original_flat {
+                            let (seed, amount) = (dlg.seed, dlg.amount);
+                            let distance = dlg.distance as u32;
+                            let direction = dlg.direction;
+                            if let Some(project) = self.active_project_mut() {
+                                Self::apply_fullres_effect(
+                                    &mut project.canvas_state,
+                                    idx,
+                                    flat,
+                                    |img| {
+                                        crate::ops::effects::pixel_drag_core(
+                                            img,
+                                            seed,
+                                            amount,
+                                            distance,
+                                            direction,
+                                            selection_mask.as_ref(),
+                                        )
+                                    },
+                                );
+                            }
+                        }
+                        self.active_dialog = ActiveDialog::None;
                         if let Some(project) = self.active_project_mut() {
-                            Self::apply_fullres_effect(
-                                &mut project.canvas_state,
-                                idx,
-                                flat,
-                                |img| {
-                                    crate::ops::effects::rgb_displace_core(
-                                        img, r_off, g_off, b_off, selection_mask.as_ref(),
-                                    )
-                                },
-                            );
+                            let idx = dlg.layer_idx;
+                            if let Some(original) = &dlg.original_pixels
+                                && idx < project.canvas_state.layers.len()
+                            {
+                                let adjusted = project.canvas_state.layers[idx].pixels.clone();
+                                project.canvas_state.layers[idx].pixels = original.clone();
+                                let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
+                                    HistoryAction::PixelDrag.label("Pixel Drag".to_string()),
+                                    &project.canvas_state,
+                                    idx,
+                                );
+                                project.canvas_state.layers[idx].pixels = adjusted;
+                                cmd.set_after(&project.canvas_state);
+                                project.history.push(Box::new(cmd));
+                            }
+                            project.mark_dirty();
                         }
+                        return true;
                     }
-                    self.active_dialog = ActiveDialog::None;
-                    if let Some(project) = self.active_project_mut() {
+                    DialogResult::Cancel => {
+                        self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                        self.filter_cancel
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
                         let idx = dlg.layer_idx;
                         if let Some(original) = &dlg.original_pixels
-                            && idx < project.canvas_state.layers.len()
+                            && let Some(project) = self.active_project_mut()
                         {
-                            let adjusted = project.canvas_state.layers[idx].pixels.clone();
-                            project.canvas_state.layers[idx].pixels = original.clone();
-                            let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
-                                "RGB Displace".to_string(),
-                                &project.canvas_state,
-                                idx,
-                            );
-                            project.canvas_state.layers[idx].pixels = adjusted;
-                            cmd.set_after(&project.canvas_state);
-                            project.history.push(Box::new(cmd));
+                            if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
+                                layer.pixels = original.clone();
+                            }
+                            project.canvas_state.mark_dirty(None);
                         }
-                        project.mark_dirty();
+                        self.active_dialog = ActiveDialog::None;
+                        return true;
                     }
-                    return true;
-                }
-                DialogResult::Cancel => {
-                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
-                    self.filter_cancel
-                        .store(true, std::sync::atomic::Ordering::Relaxed);
-                    let idx = dlg.layer_idx;
-                    if let Some(original) = &dlg.original_pixels
-                        && let Some(project) = self.active_project_mut()
-                    {
-                        if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
-                            layer.pixels = original.clone();
+                    _ => {
+                        dlg.poll_flat();
+                        if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
+                            dlg.first_open = false;
+                            let idx = dlg.layer_idx;
+                            if let (Some(original), Some(flat)) =
+                                (&dlg.original_pixels, &dlg.original_flat)
+                            {
+                                let (seed, amount) = (dlg.seed, dlg.amount);
+                                let distance = dlg.distance as u32;
+                                let direction = dlg.direction;
+                                self.spawn_preview_job(
+                                    ctx.input(|i| i.time),
+                                    HistoryAction::PixelDrag.label("Pixel Drag".to_string()),
+                                    idx,
+                                    original.clone(),
+                                    flat.clone(),
+                                    move |img| {
+                                        crate::ops::effects::pixel_drag_core(
+                                            img,
+                                            seed,
+                                            amount,
+                                            distance,
+                                            direction,
+                                            selection_mask.as_ref(),
+                                        )
+                                    },
+                                );
+                            }
                         }
-                        project.canvas_state.mark_dirty(None);
                     }
-                    self.active_dialog = ActiveDialog::None;
-                    return true;
                 }
-                _ => {
-                    dlg.poll_flat();
-                    if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
-                        let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
+            }
+
+            ActiveDialog::RgbDisplace(dlg) => {
+                match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
+                    DialogResult::Changed => {
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         dlg.first_open = false;
                         let idx = dlg.layer_idx;
                         if let (Some(original), Some(flat)) =
@@ -229,105 +172,129 @@ impl PaintFEApp {
                             let b_off = (dlg.b_x as i32, dlg.b_y as i32);
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
-                                "RGB Displace".to_string(),
+                                HistoryAction::RgbDisplace.label("RGB Displace".to_string()),
                                 idx,
                                 original.clone(),
                                 flat.clone(),
                                 move |img| {
                                     crate::ops::effects::rgb_displace_core(
-                                        img, r_off, g_off, b_off, selection_mask.as_ref(),
-                                    )
-                                },
-                            );
-                        }
-                    }
-                }
-            },
-
-            ActiveDialog::Ink(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
-                DialogResult::Changed => {
-                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
-                    dlg.first_open = false;
-                    let idx = dlg.layer_idx;
-                    if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
-                    {
-                        let (edge_strength, threshold) = (dlg.edge_strength, dlg.threshold);
-                        self.spawn_preview_job(
-                            ctx.input(|i| i.time),
-                            "Ink".to_string(),
-                            idx,
-                            original.clone(),
-                            flat.clone(),
-                            move |img| {
-                                crate::ops::effects::ink_core(img, edge_strength, threshold, selection_mask.as_ref())
-                            },
-                        );
-                    }
-                }
-                DialogResult::Ok(_) => {
-                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
-                    crate::ui::dialogs::remember::mark_applied(ctx);
-                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
-                    let idx = dlg.layer_idx;
-                    if let Some(flat) = &dlg.original_flat {
-                        let (edge_strength, threshold) = (dlg.edge_strength, dlg.threshold);
-                        if let Some(project) = self.active_project_mut() {
-                            Self::apply_fullres_effect(
-                                &mut project.canvas_state,
-                                idx,
-                                flat,
-                                |img| {
-                                    crate::ops::effects::ink_core(
                                         img,
-                                        edge_strength,
-                                        threshold,
+                                        r_off,
+                                        g_off,
+                                        b_off,
                                         selection_mask.as_ref(),
                                     )
                                 },
                             );
                         }
                     }
-                    self.active_dialog = ActiveDialog::None;
-                    if let Some(project) = self.active_project_mut() {
+                    DialogResult::Ok(_) => {
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
+                        crate::ui::dialogs::remember::mark_applied(ctx);
+                        self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                        let idx = dlg.layer_idx;
+                        if let Some(flat) = &dlg.original_flat {
+                            let r_off = (dlg.r_x as i32, dlg.r_y as i32);
+                            let g_off = (dlg.g_x as i32, dlg.g_y as i32);
+                            let b_off = (dlg.b_x as i32, dlg.b_y as i32);
+                            if let Some(project) = self.active_project_mut() {
+                                Self::apply_fullres_effect(
+                                    &mut project.canvas_state,
+                                    idx,
+                                    flat,
+                                    |img| {
+                                        crate::ops::effects::rgb_displace_core(
+                                            img,
+                                            r_off,
+                                            g_off,
+                                            b_off,
+                                            selection_mask.as_ref(),
+                                        )
+                                    },
+                                );
+                            }
+                        }
+                        self.active_dialog = ActiveDialog::None;
+                        if let Some(project) = self.active_project_mut() {
+                            let idx = dlg.layer_idx;
+                            if let Some(original) = &dlg.original_pixels
+                                && idx < project.canvas_state.layers.len()
+                            {
+                                let adjusted = project.canvas_state.layers[idx].pixels.clone();
+                                project.canvas_state.layers[idx].pixels = original.clone();
+                                let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
+                                    HistoryAction::RgbDisplace.label("RGB Displace".to_string()),
+                                    &project.canvas_state,
+                                    idx,
+                                );
+                                project.canvas_state.layers[idx].pixels = adjusted;
+                                cmd.set_after(&project.canvas_state);
+                                project.history.push(Box::new(cmd));
+                            }
+                            project.mark_dirty();
+                        }
+                        return true;
+                    }
+                    DialogResult::Cancel => {
+                        self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                        self.filter_cancel
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
                         let idx = dlg.layer_idx;
                         if let Some(original) = &dlg.original_pixels
-                            && idx < project.canvas_state.layers.len()
+                            && let Some(project) = self.active_project_mut()
                         {
-                            let adjusted = project.canvas_state.layers[idx].pixels.clone();
-                            project.canvas_state.layers[idx].pixels = original.clone();
-                            let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
-                                "Ink".to_string(),
-                                &project.canvas_state,
-                                idx,
-                            );
-                            project.canvas_state.layers[idx].pixels = adjusted;
-                            cmd.set_after(&project.canvas_state);
-                            project.history.push(Box::new(cmd));
+                            if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
+                                layer.pixels = original.clone();
+                            }
+                            project.canvas_state.mark_dirty(None);
                         }
-                        project.mark_dirty();
+                        self.active_dialog = ActiveDialog::None;
+                        return true;
                     }
-                    return true;
-                }
-                DialogResult::Cancel => {
-                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
-                    self.filter_cancel
-                        .store(true, std::sync::atomic::Ordering::Relaxed);
-                    let idx = dlg.layer_idx;
-                    if let Some(original) = &dlg.original_pixels
-                        && let Some(project) = self.active_project_mut()
-                    {
-                        if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
-                            layer.pixels = original.clone();
+                    _ => {
+                        dlg.poll_flat();
+                        if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
+                            dlg.first_open = false;
+                            let idx = dlg.layer_idx;
+                            if let (Some(original), Some(flat)) =
+                                (&dlg.original_pixels, &dlg.original_flat)
+                            {
+                                let r_off = (dlg.r_x as i32, dlg.r_y as i32);
+                                let g_off = (dlg.g_x as i32, dlg.g_y as i32);
+                                let b_off = (dlg.b_x as i32, dlg.b_y as i32);
+                                self.spawn_preview_job(
+                                    ctx.input(|i| i.time),
+                                    HistoryAction::RgbDisplace.label("RGB Displace".to_string()),
+                                    idx,
+                                    original.clone(),
+                                    flat.clone(),
+                                    move |img| {
+                                        crate::ops::effects::rgb_displace_core(
+                                            img,
+                                            r_off,
+                                            g_off,
+                                            b_off,
+                                            selection_mask.as_ref(),
+                                        )
+                                    },
+                                );
+                            }
                         }
-                        project.canvas_state.mark_dirty(None);
                     }
-                    self.active_dialog = ActiveDialog::None;
-                    return true;
                 }
-                _ => {
-                    dlg.poll_flat();
-                    if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
-                        let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
+            }
+
+            ActiveDialog::Ink(dlg) => {
+                match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
+                    DialogResult::Changed => {
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         dlg.first_open = false;
                         let idx = dlg.layer_idx;
                         if let (Some(original), Some(flat)) =
@@ -336,7 +303,7 @@ impl PaintFEApp {
                             let (edge_strength, threshold) = (dlg.edge_strength, dlg.threshold);
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
-                                "Ink".to_string(),
+                                HistoryAction::Ink.label("Ink".to_string()),
                                 idx,
                                 original.clone(),
                                 flat.clone(),
@@ -351,90 +318,107 @@ impl PaintFEApp {
                             );
                         }
                     }
-                }
-            },
-
-            ActiveDialog::OilPainting(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
-                DialogResult::Changed => {
-                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
-                    dlg.first_open = false;
-                    let idx = dlg.layer_idx;
-                    if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
-                    {
-                        let (radius, levels) = (dlg.radius as u32, dlg.levels as u32);
-                        self.spawn_preview_job(
-                            ctx.input(|i| i.time),
-                            "Oil Painting".to_string(),
-                            idx,
-                            original.clone(),
-                            flat.clone(),
-                            move |img| {
-                                crate::ops::effects::oil_painting_core(img, radius, levels, selection_mask.as_ref())
-                            },
-                        );
-                    }
-                }
-                DialogResult::Ok(_) => {
-                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
-                    crate::ui::dialogs::remember::mark_applied(ctx);
-                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
-                    let idx = dlg.layer_idx;
-                    if let Some(flat) = &dlg.original_flat {
-                        let (radius, levels) = (dlg.radius as u32, dlg.levels as u32);
-                        if let Some(project) = self.active_project_mut() {
-                            Self::apply_fullres_effect(
-                                &mut project.canvas_state,
-                                idx,
-                                flat,
-                                |img| {
-                                    crate::ops::effects::oil_painting_core(
-                                        img, radius, levels, selection_mask.as_ref(),
-                                    )
-                                },
-                            );
+                    DialogResult::Ok(_) => {
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
+                        crate::ui::dialogs::remember::mark_applied(ctx);
+                        self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                        let idx = dlg.layer_idx;
+                        if let Some(flat) = &dlg.original_flat {
+                            let (edge_strength, threshold) = (dlg.edge_strength, dlg.threshold);
+                            if let Some(project) = self.active_project_mut() {
+                                Self::apply_fullres_effect(
+                                    &mut project.canvas_state,
+                                    idx,
+                                    flat,
+                                    |img| {
+                                        crate::ops::effects::ink_core(
+                                            img,
+                                            edge_strength,
+                                            threshold,
+                                            selection_mask.as_ref(),
+                                        )
+                                    },
+                                );
+                            }
                         }
+                        self.active_dialog = ActiveDialog::None;
+                        if let Some(project) = self.active_project_mut() {
+                            let idx = dlg.layer_idx;
+                            if let Some(original) = &dlg.original_pixels
+                                && idx < project.canvas_state.layers.len()
+                            {
+                                let adjusted = project.canvas_state.layers[idx].pixels.clone();
+                                project.canvas_state.layers[idx].pixels = original.clone();
+                                let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
+                                    HistoryAction::Ink.label("Ink".to_string()),
+                                    &project.canvas_state,
+                                    idx,
+                                );
+                                project.canvas_state.layers[idx].pixels = adjusted;
+                                cmd.set_after(&project.canvas_state);
+                                project.history.push(Box::new(cmd));
+                            }
+                            project.mark_dirty();
+                        }
+                        return true;
                     }
-                    self.active_dialog = ActiveDialog::None;
-                    if let Some(project) = self.active_project_mut() {
+                    DialogResult::Cancel => {
+                        self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                        self.filter_cancel
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
                         let idx = dlg.layer_idx;
                         if let Some(original) = &dlg.original_pixels
-                            && idx < project.canvas_state.layers.len()
+                            && let Some(project) = self.active_project_mut()
                         {
-                            let adjusted = project.canvas_state.layers[idx].pixels.clone();
-                            project.canvas_state.layers[idx].pixels = original.clone();
-                            let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
-                                "Oil Painting".to_string(),
-                                &project.canvas_state,
-                                idx,
-                            );
-                            project.canvas_state.layers[idx].pixels = adjusted;
-                            cmd.set_after(&project.canvas_state);
-                            project.history.push(Box::new(cmd));
+                            if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
+                                layer.pixels = original.clone();
+                            }
+                            project.canvas_state.mark_dirty(None);
                         }
-                        project.mark_dirty();
+                        self.active_dialog = ActiveDialog::None;
+                        return true;
                     }
-                    return true;
-                }
-                DialogResult::Cancel => {
-                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
-                    self.filter_cancel
-                        .store(true, std::sync::atomic::Ordering::Relaxed);
-                    let idx = dlg.layer_idx;
-                    if let Some(original) = &dlg.original_pixels
-                        && let Some(project) = self.active_project_mut()
-                    {
-                        if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
-                            layer.pixels = original.clone();
+                    _ => {
+                        dlg.poll_flat();
+                        if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
+                            dlg.first_open = false;
+                            let idx = dlg.layer_idx;
+                            if let (Some(original), Some(flat)) =
+                                (&dlg.original_pixels, &dlg.original_flat)
+                            {
+                                let (edge_strength, threshold) = (dlg.edge_strength, dlg.threshold);
+                                self.spawn_preview_job(
+                                    ctx.input(|i| i.time),
+                                    HistoryAction::Ink.label("Ink".to_string()),
+                                    idx,
+                                    original.clone(),
+                                    flat.clone(),
+                                    move |img| {
+                                        crate::ops::effects::ink_core(
+                                            img,
+                                            edge_strength,
+                                            threshold,
+                                            selection_mask.as_ref(),
+                                        )
+                                    },
+                                );
+                            }
                         }
-                        project.canvas_state.mark_dirty(None);
                     }
-                    self.active_dialog = ActiveDialog::None;
-                    return true;
                 }
-                _ => {
-                    dlg.poll_flat();
-                    if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
-                        let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
+            }
+
+            ActiveDialog::OilPainting(dlg) => {
+                match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
+                    DialogResult::Changed => {
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         dlg.first_open = false;
                         let idx = dlg.layer_idx;
                         if let (Some(original), Some(flat)) =
@@ -443,118 +427,122 @@ impl PaintFEApp {
                             let (radius, levels) = (dlg.radius as u32, dlg.levels as u32);
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
-                                "Oil Painting".to_string(),
+                                HistoryAction::OilPainting.label("Oil Painting".to_string()),
                                 idx,
                                 original.clone(),
                                 flat.clone(),
                                 move |img| {
                                     crate::ops::effects::oil_painting_core(
-                                        img, radius, levels, selection_mask.as_ref(),
+                                        img,
+                                        radius,
+                                        levels,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
                         }
                     }
-                }
-            },
-
-            ActiveDialog::ColorFilter(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
-                DialogResult::Changed => {
-                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
-                    dlg.first_open = false;
-                    let idx = dlg.layer_idx;
-                    if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
-                    {
-                        let fc = [
-                            (dlg.color[0] * 255.0) as u8,
-                            (dlg.color[1] * 255.0) as u8,
-                            (dlg.color[2] * 255.0) as u8,
-                            255,
-                        ];
-                        let intensity = dlg.intensity;
-                        let mode = dlg.filter_mode();
-                        self.spawn_preview_job(
-                            ctx.input(|i| i.time),
-                            "Color Filter".to_string(),
-                            idx,
-                            original.clone(),
-                            flat.clone(),
-                            move |img| {
-                                crate::ops::effects::color_filter_core(
-                                    img, fc, intensity, mode, selection_mask.as_ref(),
-                                )
-                            },
-                        );
-                    }
-                }
-                DialogResult::Ok(_) => {
-                    let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
-                    crate::ui::dialogs::remember::mark_applied(ctx);
-                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
-                    let idx = dlg.layer_idx;
-                    if let Some(flat) = &dlg.original_flat {
-                        let fc = [
-                            (dlg.color[0] * 255.0) as u8,
-                            (dlg.color[1] * 255.0) as u8,
-                            (dlg.color[2] * 255.0) as u8,
-                            255,
-                        ];
-                        let intensity = dlg.intensity;
-                        let mode = dlg.filter_mode();
+                    DialogResult::Ok(_) => {
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
+                        crate::ui::dialogs::remember::mark_applied(ctx);
+                        self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                        let idx = dlg.layer_idx;
+                        if let Some(flat) = &dlg.original_flat {
+                            let (radius, levels) = (dlg.radius as u32, dlg.levels as u32);
+                            if let Some(project) = self.active_project_mut() {
+                                Self::apply_fullres_effect(
+                                    &mut project.canvas_state,
+                                    idx,
+                                    flat,
+                                    |img| {
+                                        crate::ops::effects::oil_painting_core(
+                                            img,
+                                            radius,
+                                            levels,
+                                            selection_mask.as_ref(),
+                                        )
+                                    },
+                                );
+                            }
+                        }
+                        self.active_dialog = ActiveDialog::None;
                         if let Some(project) = self.active_project_mut() {
-                            Self::apply_fullres_effect(
-                                &mut project.canvas_state,
-                                idx,
-                                flat,
-                                |img| {
-                                    crate::ops::effects::color_filter_core(
-                                        img, fc, intensity, mode, selection_mask.as_ref(),
-                                    )
-                                },
-                            );
+                            let idx = dlg.layer_idx;
+                            if let Some(original) = &dlg.original_pixels
+                                && idx < project.canvas_state.layers.len()
+                            {
+                                let adjusted = project.canvas_state.layers[idx].pixels.clone();
+                                project.canvas_state.layers[idx].pixels = original.clone();
+                                let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
+                                    HistoryAction::OilPainting.label("Oil Painting".to_string()),
+                                    &project.canvas_state,
+                                    idx,
+                                );
+                                project.canvas_state.layers[idx].pixels = adjusted;
+                                cmd.set_after(&project.canvas_state);
+                                project.history.push(Box::new(cmd));
+                            }
+                            project.mark_dirty();
                         }
+                        return true;
                     }
-                    self.active_dialog = ActiveDialog::None;
-                    if let Some(project) = self.active_project_mut() {
+                    DialogResult::Cancel => {
+                        self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                        self.filter_cancel
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
                         let idx = dlg.layer_idx;
                         if let Some(original) = &dlg.original_pixels
-                            && idx < project.canvas_state.layers.len()
+                            && let Some(project) = self.active_project_mut()
                         {
-                            let adjusted = project.canvas_state.layers[idx].pixels.clone();
-                            project.canvas_state.layers[idx].pixels = original.clone();
-                            let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
-                                "Color Filter".to_string(),
-                                &project.canvas_state,
-                                idx,
-                            );
-                            project.canvas_state.layers[idx].pixels = adjusted;
-                            cmd.set_after(&project.canvas_state);
-                            project.history.push(Box::new(cmd));
+                            if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
+                                layer.pixels = original.clone();
+                            }
+                            project.canvas_state.mark_dirty(None);
                         }
-                        project.mark_dirty();
+                        self.active_dialog = ActiveDialog::None;
+                        return true;
                     }
-                    return true;
-                }
-                DialogResult::Cancel => {
-                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
-                    self.filter_cancel
-                        .store(true, std::sync::atomic::Ordering::Relaxed);
-                    let idx = dlg.layer_idx;
-                    if let Some(original) = &dlg.original_pixels
-                        && let Some(project) = self.active_project_mut()
-                    {
-                        if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
-                            layer.pixels = original.clone();
+                    _ => {
+                        dlg.poll_flat();
+                        if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
+                            dlg.first_open = false;
+                            let idx = dlg.layer_idx;
+                            if let (Some(original), Some(flat)) =
+                                (&dlg.original_pixels, &dlg.original_flat)
+                            {
+                                let (radius, levels) = (dlg.radius as u32, dlg.levels as u32);
+                                self.spawn_preview_job(
+                                    ctx.input(|i| i.time),
+                                    HistoryAction::OilPainting.label("Oil Painting".to_string()),
+                                    idx,
+                                    original.clone(),
+                                    flat.clone(),
+                                    move |img| {
+                                        crate::ops::effects::oil_painting_core(
+                                            img,
+                                            radius,
+                                            levels,
+                                            selection_mask.as_ref(),
+                                        )
+                                    },
+                                );
+                            }
                         }
-                        project.canvas_state.mark_dirty(None);
                     }
-                    self.active_dialog = ActiveDialog::None;
-                    return true;
                 }
-                _ => {
-                    dlg.poll_flat();
-                    if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
-                        let selection_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
+            }
+
+            ActiveDialog::ColorFilter(dlg) => {
+                match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
+                    DialogResult::Changed => {
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
                         dlg.first_open = false;
                         let idx = dlg.layer_idx;
                         if let (Some(original), Some(flat)) =
@@ -570,25 +558,140 @@ impl PaintFEApp {
                             let mode = dlg.filter_mode();
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
-                                "Color Filter".to_string(),
+                                HistoryAction::ColorFilter.label("Color Filter".to_string()),
                                 idx,
                                 original.clone(),
                                 flat.clone(),
                                 move |img| {
                                     crate::ops::effects::color_filter_core(
-                                        img, fc, intensity, mode, selection_mask.as_ref(),
+                                        img,
+                                        fc,
+                                        intensity,
+                                        mode,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
                         }
                     }
+                    DialogResult::Ok(_) => {
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|p| p.canvas_state.selection_mask.clone());
+                        crate::ui::dialogs::remember::mark_applied(ctx);
+                        self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                        let idx = dlg.layer_idx;
+                        if let Some(flat) = &dlg.original_flat {
+                            let fc = [
+                                (dlg.color[0] * 255.0) as u8,
+                                (dlg.color[1] * 255.0) as u8,
+                                (dlg.color[2] * 255.0) as u8,
+                                255,
+                            ];
+                            let intensity = dlg.intensity;
+                            let mode = dlg.filter_mode();
+                            if let Some(project) = self.active_project_mut() {
+                                Self::apply_fullres_effect(
+                                    &mut project.canvas_state,
+                                    idx,
+                                    flat,
+                                    |img| {
+                                        crate::ops::effects::color_filter_core(
+                                            img,
+                                            fc,
+                                            intensity,
+                                            mode,
+                                            selection_mask.as_ref(),
+                                        )
+                                    },
+                                );
+                            }
+                        }
+                        self.active_dialog = ActiveDialog::None;
+                        if let Some(project) = self.active_project_mut() {
+                            let idx = dlg.layer_idx;
+                            if let Some(original) = &dlg.original_pixels
+                                && idx < project.canvas_state.layers.len()
+                            {
+                                let adjusted = project.canvas_state.layers[idx].pixels.clone();
+                                project.canvas_state.layers[idx].pixels = original.clone();
+                                let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
+                                    HistoryAction::ColorFilter.label("Color Filter".to_string()),
+                                    &project.canvas_state,
+                                    idx,
+                                );
+                                project.canvas_state.layers[idx].pixels = adjusted;
+                                cmd.set_after(&project.canvas_state);
+                                project.history.push(Box::new(cmd));
+                            }
+                            project.mark_dirty();
+                        }
+                        return true;
+                    }
+                    DialogResult::Cancel => {
+                        self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                        self.filter_cancel
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                        let idx = dlg.layer_idx;
+                        if let Some(original) = &dlg.original_pixels
+                            && let Some(project) = self.active_project_mut()
+                        {
+                            if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
+                                layer.pixels = original.clone();
+                            }
+                            project.canvas_state.mark_dirty(None);
+                        }
+                        self.active_dialog = ActiveDialog::None;
+                        return true;
+                    }
+                    _ => {
+                        dlg.poll_flat();
+                        if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
+                            dlg.first_open = false;
+                            let idx = dlg.layer_idx;
+                            if let (Some(original), Some(flat)) =
+                                (&dlg.original_pixels, &dlg.original_flat)
+                            {
+                                let fc = [
+                                    (dlg.color[0] * 255.0) as u8,
+                                    (dlg.color[1] * 255.0) as u8,
+                                    (dlg.color[2] * 255.0) as u8,
+                                    255,
+                                ];
+                                let intensity = dlg.intensity;
+                                let mode = dlg.filter_mode();
+                                self.spawn_preview_job(
+                                    ctx.input(|i| i.time),
+                                    HistoryAction::ColorFilter.label("Color Filter".to_string()),
+                                    idx,
+                                    original.clone(),
+                                    flat.clone(),
+                                    move |img| {
+                                        crate::ops::effects::color_filter_core(
+                                            img,
+                                            fc,
+                                            intensity,
+                                            mode,
+                                            selection_mask.as_ref(),
+                                        )
+                                    },
+                                );
+                            }
+                        }
+                    }
                 }
-            },
+            }
 
-            ActiveDialog::ColorToAlpha(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(
+            ActiveDialog::ColorToAlpha(dlg) => match crate::ui::dialogs::remember::show_result(
                 ctx,
-                self.assets.icon_texture(crate::assets::Icon::ColorRemover),
-            )) {
+                dlg.show(
+                    ctx,
+                    self.assets.icon_texture(crate::assets::Icon::ColorRemover),
+                ),
+            ) {
                 DialogResult::Changed => {
                     dlg.first_open = false;
                     let idx = dlg.layer_idx;
@@ -600,7 +703,7 @@ impl PaintFEApp {
                             .and_then(|project| project.canvas_state.selection_mask.clone());
                         self.spawn_preview_job(
                             ctx.input(|i| i.time),
-                            "Color to Alpha".to_string(),
+                            HistoryAction::ColorToAlpha.label("Color to Alpha".to_string()),
                             idx,
                             original.clone(),
                             flat.clone(),
@@ -641,7 +744,7 @@ impl PaintFEApp {
                             let adjusted = project.canvas_state.layers[idx].pixels.clone();
                             project.canvas_state.layers[idx].pixels = original.clone();
                             let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
-                                "Color to Alpha".to_string(),
+                                HistoryAction::ColorToAlpha.label("Color to Alpha".to_string()),
                                 &project.canvas_state,
                                 idx,
                             );
@@ -683,7 +786,7 @@ impl PaintFEApp {
                                 .and_then(|project| project.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
-                                "Color to Alpha".to_string(),
+                                HistoryAction::ColorToAlpha.label("Color to Alpha".to_string()),
                                 idx,
                                 original.clone(),
                                 flat.clone(),
@@ -700,96 +803,16 @@ impl PaintFEApp {
                 }
             },
 
-            ActiveDialog::RecoverTransparency(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(
-                ctx,
-                self.assets
-                    .icon_texture(crate::assets::Icon::MenuColorRecoverTransparency),
-            )) {
-                DialogResult::Changed => {
-                    dlg.first_open = false;
-                    let idx = dlg.layer_idx;
-                    if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
-                    {
-                        let settings = dlg.settings();
-                        let preview = dlg.preview_kind();
-                        let selection_mask = self
-                            .active_project()
-                            .and_then(|project| project.canvas_state.selection_mask.clone());
-                        self.spawn_preview_job(
-                            ctx.input(|i| i.time),
-                            "Recover Transparency".to_string(),
-                            idx,
-                            original.clone(),
-                            flat.clone(),
-                            move |img| {
-                                crate::ops::color_removal::recover_transparency_preview_core(
-                                    img,
-                                    &settings,
-                                    selection_mask.as_ref(),
-                                    preview,
-                                )
-                            },
-                        );
-                    }
-                }
-                DialogResult::Ok(settings) => {
-                    crate::ui::dialogs::remember::mark_applied(ctx);
-                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
-                    let idx = dlg.layer_idx;
-                    let selection_mask = self
-                        .active_project()
-                        .and_then(|project| project.canvas_state.selection_mask.clone());
-                    if let Some(flat) = &dlg.original_flat
-                        && let Some(project) = self.active_project_mut()
-                    {
-                        Self::apply_fullres_effect(&mut project.canvas_state, idx, flat, |img| {
-                            crate::ops::color_removal::recover_transparency_core(
-                                img,
-                                &settings,
-                                selection_mask.as_ref(),
-                            )
-                        });
-                    }
-                    self.active_dialog = ActiveDialog::None;
-                    if let Some(project) = self.active_project_mut() {
-                        let idx = dlg.layer_idx;
-                        if let Some(original) = &dlg.original_pixels
-                            && idx < project.canvas_state.layers.len()
-                        {
-                            let adjusted = project.canvas_state.layers[idx].pixels.clone();
-                            project.canvas_state.layers[idx].pixels = original.clone();
-                            let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
-                                "Recover Transparency".to_string(),
-                                &project.canvas_state,
-                                idx,
-                            );
-                            project.canvas_state.layers[idx].pixels = adjusted;
-                            cmd.set_after(&project.canvas_state);
-                            project.history.push(Box::new(cmd));
-                        }
-                        project.mark_dirty();
-                    }
-                    return true;
-                }
-                DialogResult::Cancel => {
-                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
-                    self.filter_cancel
-                        .store(true, std::sync::atomic::Ordering::Relaxed);
-                    let idx = dlg.layer_idx;
-                    if let Some(original) = &dlg.original_pixels
-                        && let Some(project) = self.active_project_mut()
-                    {
-                        if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
-                            layer.pixels = original.clone();
-                        }
-                        project.canvas_state.mark_dirty(None);
-                    }
-                    self.active_dialog = ActiveDialog::None;
-                    return true;
-                }
-                _ => {
-                    dlg.poll_flat();
-                    if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
+            ActiveDialog::RecoverTransparency(dlg) => {
+                match crate::ui::dialogs::remember::show_result(
+                    ctx,
+                    dlg.show(
+                        ctx,
+                        self.assets
+                            .icon_texture(crate::assets::Icon::MenuColorRecoverTransparency),
+                    ),
+                ) {
+                    DialogResult::Changed => {
                         dlg.first_open = false;
                         let idx = dlg.layer_idx;
                         if let (Some(original), Some(flat)) =
@@ -802,7 +825,8 @@ impl PaintFEApp {
                                 .and_then(|project| project.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
-                                "Recover Transparency".to_string(),
+                                HistoryAction::RecoverTransparency
+                                    .label("Recover Transparency".to_string()),
                                 idx,
                                 original.clone(),
                                 flat.clone(),
@@ -817,122 +841,104 @@ impl PaintFEApp {
                             );
                         }
                     }
-                }
-            },
-
-            ActiveDialog::Contours(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
-                DialogResult::Changed => {
-                    dlg.first_open = false;
-                    let idx = dlg.layer_idx;
-                    if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
-                    {
-                        let (contour_scale, frequency, line_width) =
-                            (dlg.scale, dlg.frequency, dlg.line_width);
-                        let lc = [
-                            (dlg.line_color[0] * 255.0) as u8,
-                            (dlg.line_color[1] * 255.0) as u8,
-                            (dlg.line_color[2] * 255.0) as u8,
-                            255u8,
-                        ];
-                        let (seed, octaves, blend) = (dlg.seed, dlg.octaves as u32, dlg.blend);
-                        self.spawn_cancellable_preview_job(
-                            ctx.input(|i| i.time),
-                            "Contours".to_string(),
-                            idx,
-                            original.clone(),
-                            flat.clone(),
-                            move |img, cancel| {
-                                crate::ops::effects::contours_core_cancellable(
-                                    img,
-                                    contour_scale,
-                                    frequency,
-                                    line_width,
-                                    lc,
-                                    seed,
-                                    octaves,
-                                    blend,
-                                    None,
-                                    Some(cancel),
-                                )
-                            },
-                        );
-                    }
-                }
-                DialogResult::Ok(_) => {
-                    crate::ui::dialogs::remember::mark_applied(ctx);
-                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
-                    let idx = dlg.layer_idx;
-                    if let Some(flat) = &dlg.original_flat {
-                        let (contour_scale, frequency, line_width) =
-                            (dlg.scale, dlg.frequency, dlg.line_width);
-                        let lc = [
-                            (dlg.line_color[0] * 255.0) as u8,
-                            (dlg.line_color[1] * 255.0) as u8,
-                            (dlg.line_color[2] * 255.0) as u8,
-                            255u8,
-                        ];
-                        let (seed, octaves, blend) = (dlg.seed, dlg.octaves as u32, dlg.blend);
-                        if let Some(project) = self.active_project_mut() {
+                    DialogResult::Ok(settings) => {
+                        crate::ui::dialogs::remember::mark_applied(ctx);
+                        self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                        let idx = dlg.layer_idx;
+                        let selection_mask = self
+                            .active_project()
+                            .and_then(|project| project.canvas_state.selection_mask.clone());
+                        if let Some(flat) = &dlg.original_flat
+                            && let Some(project) = self.active_project_mut()
+                        {
                             Self::apply_fullres_effect(
                                 &mut project.canvas_state,
                                 idx,
                                 flat,
                                 |img| {
-                                    crate::ops::effects::contours_core(
+                                    crate::ops::color_removal::recover_transparency_core(
                                         img,
-                                        contour_scale,
-                                        frequency,
-                                        line_width,
-                                        lc,
-                                        seed,
-                                        octaves,
-                                        blend,
-                                        None,
+                                        &settings,
+                                        selection_mask.as_ref(),
                                     )
                                 },
                             );
                         }
+                        self.active_dialog = ActiveDialog::None;
+                        if let Some(project) = self.active_project_mut() {
+                            let idx = dlg.layer_idx;
+                            if let Some(original) = &dlg.original_pixels
+                                && idx < project.canvas_state.layers.len()
+                            {
+                                let adjusted = project.canvas_state.layers[idx].pixels.clone();
+                                project.canvas_state.layers[idx].pixels = original.clone();
+                                let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
+                                    HistoryAction::RecoverTransparency
+                                        .label("Recover Transparency".to_string()),
+                                    &project.canvas_state,
+                                    idx,
+                                );
+                                project.canvas_state.layers[idx].pixels = adjusted;
+                                cmd.set_after(&project.canvas_state);
+                                project.history.push(Box::new(cmd));
+                            }
+                            project.mark_dirty();
+                        }
+                        return true;
                     }
-                    self.active_dialog = ActiveDialog::None;
-                    if let Some(project) = self.active_project_mut() {
+                    DialogResult::Cancel => {
+                        self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                        self.filter_cancel
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
                         let idx = dlg.layer_idx;
                         if let Some(original) = &dlg.original_pixels
-                            && idx < project.canvas_state.layers.len()
+                            && let Some(project) = self.active_project_mut()
                         {
-                            let adjusted = project.canvas_state.layers[idx].pixels.clone();
-                            project.canvas_state.layers[idx].pixels = original.clone();
-                            let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
-                                "Contours".to_string(),
-                                &project.canvas_state,
+                            if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
+                                layer.pixels = original.clone();
+                            }
+                            project.canvas_state.mark_dirty(None);
+                        }
+                        self.active_dialog = ActiveDialog::None;
+                        return true;
+                    }
+                    _ => {
+                        dlg.poll_flat();
+                        if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
+                            dlg.first_open = false;
+                            let idx = dlg.layer_idx;
+                            if let (Some(original), Some(flat)) =
+                                (&dlg.original_pixels, &dlg.original_flat)
+                            {
+                                let settings = dlg.settings();
+                                let preview = dlg.preview_kind();
+                                let selection_mask = self.active_project().and_then(|project| {
+                                    project.canvas_state.selection_mask.clone()
+                                });
+                                self.spawn_preview_job(
+                                ctx.input(|i| i.time),
+                                HistoryAction::RecoverTransparency.label("Recover Transparency".to_string()),
                                 idx,
+                                original.clone(),
+                                flat.clone(),
+                                move |img| {
+                                    crate::ops::color_removal::recover_transparency_preview_core(
+                                        img,
+                                        &settings,
+                                        selection_mask.as_ref(),
+                                        preview,
+                                    )
+                                },
                             );
-                            project.canvas_state.layers[idx].pixels = adjusted;
-                            cmd.set_after(&project.canvas_state);
-                            project.history.push(Box::new(cmd));
+                            }
                         }
-                        project.mark_dirty();
                     }
-                    return true;
                 }
-                DialogResult::Cancel => {
-                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
-                    self.filter_cancel
-                        .store(true, std::sync::atomic::Ordering::Relaxed);
-                    let idx = dlg.layer_idx;
-                    if let Some(original) = &dlg.original_pixels
-                        && let Some(project) = self.active_project_mut()
-                    {
-                        if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
-                            layer.pixels = original.clone();
-                        }
-                        project.canvas_state.mark_dirty(None);
-                    }
-                    self.active_dialog = ActiveDialog::None;
-                    return true;
-                }
-                _ => {
-                    dlg.poll_flat();
-                    if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
+            }
+
+            ActiveDialog::Contours(dlg) => {
+                match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
+                    DialogResult::Changed => {
                         dlg.first_open = false;
                         let idx = dlg.layer_idx;
                         if let (Some(original), Some(flat)) =
@@ -947,14 +953,14 @@ impl PaintFEApp {
                                 255u8,
                             ];
                             let (seed, octaves, blend) = (dlg.seed, dlg.octaves as u32, dlg.blend);
-                            self.spawn_preview_job(
+                            self.spawn_cancellable_preview_job(
                                 ctx.input(|i| i.time),
-                                "Contours".to_string(),
+                                HistoryAction::Contours.label("Contours".to_string()),
                                 idx,
                                 original.clone(),
                                 flat.clone(),
-                                move |img| {
-                                    crate::ops::effects::contours_core(
+                                move |img, cancel| {
+                                    crate::ops::effects::contours_core_cancellable(
                                         img,
                                         contour_scale,
                                         frequency,
@@ -964,13 +970,127 @@ impl PaintFEApp {
                                         octaves,
                                         blend,
                                         None,
+                                        Some(cancel),
                                     )
                                 },
                             );
                         }
                     }
+                    DialogResult::Ok(_) => {
+                        crate::ui::dialogs::remember::mark_applied(ctx);
+                        self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                        let idx = dlg.layer_idx;
+                        if let Some(flat) = &dlg.original_flat {
+                            let (contour_scale, frequency, line_width) =
+                                (dlg.scale, dlg.frequency, dlg.line_width);
+                            let lc = [
+                                (dlg.line_color[0] * 255.0) as u8,
+                                (dlg.line_color[1] * 255.0) as u8,
+                                (dlg.line_color[2] * 255.0) as u8,
+                                255u8,
+                            ];
+                            let (seed, octaves, blend) = (dlg.seed, dlg.octaves as u32, dlg.blend);
+                            if let Some(project) = self.active_project_mut() {
+                                Self::apply_fullres_effect(
+                                    &mut project.canvas_state,
+                                    idx,
+                                    flat,
+                                    |img| {
+                                        crate::ops::effects::contours_core(
+                                            img,
+                                            contour_scale,
+                                            frequency,
+                                            line_width,
+                                            lc,
+                                            seed,
+                                            octaves,
+                                            blend,
+                                            None,
+                                        )
+                                    },
+                                );
+                            }
+                        }
+                        self.active_dialog = ActiveDialog::None;
+                        if let Some(project) = self.active_project_mut() {
+                            let idx = dlg.layer_idx;
+                            if let Some(original) = &dlg.original_pixels
+                                && idx < project.canvas_state.layers.len()
+                            {
+                                let adjusted = project.canvas_state.layers[idx].pixels.clone();
+                                project.canvas_state.layers[idx].pixels = original.clone();
+                                let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
+                                    HistoryAction::Contours.label("Contours".to_string()),
+                                    &project.canvas_state,
+                                    idx,
+                                );
+                                project.canvas_state.layers[idx].pixels = adjusted;
+                                cmd.set_after(&project.canvas_state);
+                                project.history.push(Box::new(cmd));
+                            }
+                            project.mark_dirty();
+                        }
+                        return true;
+                    }
+                    DialogResult::Cancel => {
+                        self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                        self.filter_cancel
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                        let idx = dlg.layer_idx;
+                        if let Some(original) = &dlg.original_pixels
+                            && let Some(project) = self.active_project_mut()
+                        {
+                            if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
+                                layer.pixels = original.clone();
+                            }
+                            project.canvas_state.mark_dirty(None);
+                        }
+                        self.active_dialog = ActiveDialog::None;
+                        return true;
+                    }
+                    _ => {
+                        dlg.poll_flat();
+                        if dlg.first_open && dlg.live_preview && dlg.original_flat.is_some() {
+                            dlg.first_open = false;
+                            let idx = dlg.layer_idx;
+                            if let (Some(original), Some(flat)) =
+                                (&dlg.original_pixels, &dlg.original_flat)
+                            {
+                                let (contour_scale, frequency, line_width) =
+                                    (dlg.scale, dlg.frequency, dlg.line_width);
+                                let lc = [
+                                    (dlg.line_color[0] * 255.0) as u8,
+                                    (dlg.line_color[1] * 255.0) as u8,
+                                    (dlg.line_color[2] * 255.0) as u8,
+                                    255u8,
+                                ];
+                                let (seed, octaves, blend) =
+                                    (dlg.seed, dlg.octaves as u32, dlg.blend);
+                                self.spawn_preview_job(
+                                    ctx.input(|i| i.time),
+                                    HistoryAction::Contours.label("Contours".to_string()),
+                                    idx,
+                                    original.clone(),
+                                    flat.clone(),
+                                    move |img| {
+                                        crate::ops::effects::contours_core(
+                                            img,
+                                            contour_scale,
+                                            frequency,
+                                            line_width,
+                                            lc,
+                                            seed,
+                                            octaves,
+                                            blend,
+                                            None,
+                                        )
+                                    },
+                                );
+                            }
+                        }
+                    }
                 }
-            },
+            }
 
             _ => unreachable!(),
         }

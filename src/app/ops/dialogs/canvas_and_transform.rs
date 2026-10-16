@@ -1,83 +1,98 @@
 impl PaintFEApp {
-    fn process_canvas_and_transform_dialog(&mut self, ctx: &egui::Context, dialog: &mut ActiveDialog) -> bool {
-        let matched = matches!(dialog, ActiveDialog::None | ActiveDialog::ResizeImage(_) | ActiveDialog::ResizeCanvas(_) | ActiveDialog::AlignLayer(_) | ActiveDialog::GaussianBlur(_) | ActiveDialog::LayerTransform(_));
+    fn process_canvas_and_transform_dialog(
+        &mut self,
+        ctx: &egui::Context,
+        dialog: &mut ActiveDialog,
+    ) -> bool {
+        let matched = matches!(
+            dialog,
+            ActiveDialog::None
+                | ActiveDialog::ResizeImage(_)
+                | ActiveDialog::ResizeCanvas(_)
+                | ActiveDialog::AlignLayer(_)
+                | ActiveDialog::GaussianBlur(_)
+                | ActiveDialog::LayerTransform(_)
+        );
         if !matched {
             return false;
         }
 
         match dialog {
-
             ActiveDialog::None => {}
 
-            ActiveDialog::ResizeImage(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
-                DialogResult::Ok((w, h, options)) => {
-                    crate::ui::dialogs::remember::mark_applied(ctx);
-                    self.settings.persist_resize_lock_aspect = dlg.lock_aspect;
-                    self.active_dialog = ActiveDialog::None;
-                    if let Some(project) = self.active_project_mut() {
-                        // Rasterize text layers before extracting pixels for resize
-                        project.canvas_state.ensure_all_text_layers_rasterized();
-                        for layer in &mut project.canvas_state.layers {
-                            if layer.is_text_layer() {
-                                layer.content = crate::canvas::LayerContent::Raster;
+            ActiveDialog::ResizeImage(dlg) => {
+                match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
+                    DialogResult::Ok((w, h, options)) => {
+                        crate::ui::dialogs::remember::mark_applied(ctx);
+                        self.settings.persist_resize_lock_aspect = dlg.lock_aspect;
+                        self.active_dialog = ActiveDialog::None;
+                        if let Some(project) = self.active_project_mut() {
+                            // Rasterize text layers before extracting pixels for resize
+                            project.canvas_state.ensure_all_text_layers_rasterized();
+                            for layer in &mut project.canvas_state.layers {
+                                if layer.is_text_layer() {
+                                    layer.content = crate::canvas::LayerContent::Raster;
+                                }
                             }
-                        }
-                        let before = CanvasSnapshot::capture(&project.canvas_state);
-                        let flat_layers: Vec<RgbaImage> = project
-                            .canvas_state
-                            .layers
-                            .iter()
-                            .map(|l| l.pixels.to_rgba_image())
-                            .collect();
-                        let protection_mask = if options.method
-                            == crate::ops::transform::ResizeMethod::PixelArtRetarget
-                            && options.retarget.use_selection_as_protection
-                        {
-                            project.canvas_state.selection_mask.clone()
-                        } else {
-                            None
-                        };
-                        let sender = self.canvas_op_sender.clone();
-                        let project_index = self.active_project_index;
-                        let current_time = ctx.input(|i| i.time);
-                        if self.pending_filter_jobs == 0 {
-                            self.filter_ops_start_time = Some(current_time);
-                        }
-                        self.filter_status_description = "Resize Image".to_string();
-                        self.pending_filter_jobs += 1;
-                        crate::par_compat::spawn(move || {
-                            let result_layers = crate::ops::transform::resize_layers_with_options(
-                                flat_layers,
-                                w,
-                                h,
-                                options,
-                                protection_mask,
-                            );
-                            let _ = sender.send(CanvasOpResult {
-                                project_index,
-                                before,
-                                result_layers,
-                                new_width: w,
-                                new_height: h,
-                                description: "Resize Image".to_string(),
+                            let before = CanvasSnapshot::capture(&project.canvas_state);
+                            let flat_layers: Vec<RgbaImage> = project
+                                .canvas_state
+                                .layers
+                                .iter()
+                                .map(|l| l.pixels.to_rgba_image())
+                                .collect();
+                            let protection_mask = if options.method
+                                == crate::ops::transform::ResizeMethod::PixelArtRetarget
+                                && options.retarget.use_selection_as_protection
+                            {
+                                project.canvas_state.selection_mask.clone()
+                            } else {
+                                None
+                            };
+                            let sender = self.canvas_op_sender.clone();
+                            let project_index = self.active_project_index;
+                            let current_time = ctx.input(|i| i.time);
+                            if self.pending_filter_jobs == 0 {
+                                self.filter_ops_start_time = Some(current_time);
+                            }
+                            self.filter_status_description = "Resize Image".to_string();
+                            self.pending_filter_jobs += 1;
+                            crate::par_compat::spawn(move || {
+                                let result_layers =
+                                    crate::ops::transform::resize_layers_with_options(
+                                        flat_layers,
+                                        w,
+                                        h,
+                                        options,
+                                        protection_mask,
+                                    );
+                                let _ = sender.send(CanvasOpResult {
+                                    project_index,
+                                    before,
+                                    result_layers,
+                                    new_width: w,
+                                    new_height: h,
+                                    description: HistoryAction::ResizeImage
+                                        .label("Resize Image".to_string()),
+                                });
                             });
-                        });
+                        }
+                        return true;
                     }
-                    return true;
+                    DialogResult::Cancel => {
+                        self.settings.persist_resize_lock_aspect = dlg.lock_aspect;
+                        self.active_dialog = ActiveDialog::None;
+                        return true;
+                    }
+                    _ => {}
                 }
-                DialogResult::Cancel => {
-                    self.settings.persist_resize_lock_aspect = dlg.lock_aspect;
-                    self.active_dialog = ActiveDialog::None;
-                    return true;
-                }
-                _ => {}
-            },
+            }
 
             ActiveDialog::ResizeCanvas(dlg) => {
                 let secondary = self.colors_panel.get_secondary_color_f32();
                 match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx, secondary)) {
                     DialogResult::Ok((w, h, anchor, fill)) => {
-                    crate::ui::dialogs::remember::mark_applied(ctx);
+                        crate::ui::dialogs::remember::mark_applied(ctx);
                         self.settings.persist_resize_lock_aspect = dlg.lock_aspect;
                         self.active_dialog = ActiveDialog::None;
                         let fill = if dlg.fill_transparent {
@@ -126,7 +141,8 @@ impl PaintFEApp {
                                     result_layers,
                                     new_width: w,
                                     new_height: h,
-                                    description: "Resize Canvas".to_string(),
+                                    description: HistoryAction::ResizeCanvas
+                                        .label("Resize Canvas".to_string()),
                                 });
                             });
                         }
@@ -141,68 +157,70 @@ impl PaintFEApp {
                 }
             }
 
-            ActiveDialog::AlignLayer(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
-                DialogResult::Changed => {
-                    let idx = dlg.layer_idx;
-                    if let Some(flat) = &dlg.original_flat
-                        && let Some(project) = self.active_project_mut()
-                        && idx < project.canvas_state.layers.len()
-                        && !project.canvas_state.layers[idx].is_text_layer()
-                    {
-                        let target_bounds = if dlg.align_to_selection {
-                            project.canvas_state.selection_mask_bounds()
-                        } else {
-                            None
-                        };
-                        crate::ops::transform::align_layer_to_anchor_from_flat(
-                            &mut project.canvas_state,
-                            idx,
-                            (dlg.anchor_x, dlg.anchor_y),
-                            flat,
-                            target_bounds,
-                        );
+            ActiveDialog::AlignLayer(dlg) => {
+                match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
+                    DialogResult::Changed => {
+                        let idx = dlg.layer_idx;
+                        if let Some(flat) = &dlg.original_flat
+                            && let Some(project) = self.active_project_mut()
+                            && idx < project.canvas_state.layers.len()
+                            && !project.canvas_state.layers[idx].is_text_layer()
+                        {
+                            let target_bounds = if dlg.align_to_selection {
+                                project.canvas_state.selection_mask_bounds()
+                            } else {
+                                None
+                            };
+                            crate::ops::transform::align_layer_to_anchor_from_flat(
+                                &mut project.canvas_state,
+                                idx,
+                                (dlg.anchor_x, dlg.anchor_y),
+                                flat,
+                                target_bounds,
+                            );
+                        }
                     }
-                }
-                DialogResult::Ok((_ax, _ay, _selection_target)) => {
-                    crate::ui::dialogs::remember::mark_applied(ctx);
-                    self.active_dialog = ActiveDialog::None;
-                    if let Some(project) = self.active_project_mut() {
+                    DialogResult::Ok((_ax, _ay, _selection_target)) => {
+                        crate::ui::dialogs::remember::mark_applied(ctx);
+                        self.active_dialog = ActiveDialog::None;
+                        if let Some(project) = self.active_project_mut() {
+                            let idx = dlg.layer_idx;
+                            if let Some(original) = &dlg.original_pixels
+                                && idx < project.canvas_state.layers.len()
+                            {
+                                let aligned = project.canvas_state.layers[idx].pixels.clone();
+                                project.canvas_state.layers[idx].pixels = original.clone();
+                                let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
+                                    HistoryAction::AlignLayer.label("Align Layer".to_string()),
+                                    &project.canvas_state,
+                                    idx,
+                                );
+                                project.canvas_state.layers[idx].pixels = aligned;
+                                cmd.set_after(&project.canvas_state);
+                                project.history.push(Box::new(cmd));
+                            }
+                            project.mark_dirty();
+                        }
+                        return true;
+                    }
+                    DialogResult::Cancel => {
+                        self.filter_cancel
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
                         let idx = dlg.layer_idx;
                         if let Some(original) = &dlg.original_pixels
-                            && idx < project.canvas_state.layers.len()
+                            && let Some(project) = self.active_project_mut()
                         {
-                            let aligned = project.canvas_state.layers[idx].pixels.clone();
-                            project.canvas_state.layers[idx].pixels = original.clone();
-                            let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
-                                "Align Layer".to_string(),
-                                &project.canvas_state,
-                                idx,
-                            );
-                            project.canvas_state.layers[idx].pixels = aligned;
-                            cmd.set_after(&project.canvas_state);
-                            project.history.push(Box::new(cmd));
+                            if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
+                                layer.pixels = original.clone();
+                            }
+                            project.canvas_state.mark_dirty(None);
                         }
-                        project.mark_dirty();
+                        self.active_dialog = ActiveDialog::None;
+                        return true;
                     }
-                    return true;
+                    _ => {}
                 }
-                DialogResult::Cancel => {
-                    self.filter_cancel
-                        .store(true, std::sync::atomic::Ordering::Relaxed);
-                    let idx = dlg.layer_idx;
-                    if let Some(original) = &dlg.original_pixels
-                        && let Some(project) = self.active_project_mut()
-                    {
-                        if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
-                            layer.pixels = original.clone();
-                        }
-                        project.canvas_state.mark_dirty(None);
-                    }
-                    self.active_dialog = ActiveDialog::None;
-                    return true;
-                }
-                _ => {}
-            },
+            }
 
             ActiveDialog::GaussianBlur(dlg) => {
                 match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
@@ -218,7 +236,7 @@ impl PaintFEApp {
                                 .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
-                                "Gaussian Blur".to_string(),
+                                HistoryAction::GaussianBlur.label("Gaussian Blur".to_string()),
                                 idx,
                                 original.clone(),
                                 flat.clone(),
@@ -233,7 +251,7 @@ impl PaintFEApp {
                         }
                     }
                     DialogResult::Ok(_sigma) => {
-                    crate::ui::dialogs::remember::mark_applied(ctx);
+                        crate::ui::dialogs::remember::mark_applied(ctx);
                         self.preview_job_token = self.preview_job_token.wrapping_add(1);
                         // Spawn full-resolution blur on background thread.
                         self.filter_cancel
@@ -258,7 +276,7 @@ impl PaintFEApp {
                                 .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_filter_job(
                                 ctx.input(|i| i.time),
-                                "Gaussian Blur".to_string(),
+                                HistoryAction::GaussianBlur.label("Gaussian Blur".to_string()),
                                 idx,
                                 orig_clone,
                                 flat_clone,
@@ -321,7 +339,7 @@ impl PaintFEApp {
                         }
                     }
                     DialogResult::Ok((_rot_z, _rot_x, _rot_y, _scale, _offset)) => {
-                    crate::ui::dialogs::remember::mark_applied(ctx);
+                        crate::ui::dialogs::remember::mark_applied(ctx);
                         // Accept current preview - push undo.
                         self.active_dialog = ActiveDialog::None;
                         if let Some(project) = self.active_project_mut() {
@@ -332,7 +350,8 @@ impl PaintFEApp {
                                 let transformed = project.canvas_state.layers[idx].pixels.clone();
                                 project.canvas_state.layers[idx].pixels = original.clone();
                                 let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
-                                    "Layer Transform".to_string(),
+                                    HistoryAction::LayerTransform
+                                        .label("Layer Transform".to_string()),
                                     &project.canvas_state,
                                     idx,
                                 );
@@ -367,7 +386,6 @@ impl PaintFEApp {
             // ================================================================
             // BRIGHTNESS / CONTRAST
             // ================================================================
-
             _ => unreachable!(),
         }
 
@@ -375,5 +393,3 @@ impl PaintFEApp {
         true
     }
 }
-
-

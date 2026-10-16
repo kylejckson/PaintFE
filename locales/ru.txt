@@ -1513,3 +1513,40 @@ settings.interface.bar_right=Отступ справа
 settings.interface.bar_padding_x=Внутренний отступ по горизонтали
 settings.interface.bar_padding_y=Внутренний отступ по вертикали
 settings.interface.bar_radius=Радиус углов
+
+settings.tab.editing=Редактирование
+settings.auto_save_hint=Изменения сохраняются автоматически. Закончив настройку, закройте окно параметров.
+settings.editing.clipboard=Буфер обмена и вставка
+settings.editing.paste_source=Вставлять скопированные пиксели в исходную позицию
+settings.editing.paste_source_hint=Для копий из PaintFE используется исходная позиция. Отключите, чтобы вставлять у курсора.
+settings.editing.paste_visible=Оставлять вставляемое содержимое в видимой области холста
+settings.editing.paste_visible_hint=Позиция корректируется, если скопированная область окажется вне экрана или целевого холста.
+settings.editing.selection_keys=Выделение и клавиатура
+settings.editing.enter_deselect=Enter снимает выделение
+settings.editing.enter_deselect_hint=По умолчанию отключено. Enter по-прежнему применяет активные инструменты и подтверждает диалоги.
+settings.editing.legacy_clipboard=Включить традиционные сочетания для буфера обмена
+settings.editing.legacy_clipboard_hint=Ctrl+Insert копирует, Shift+Insert вставляет, Shift+Delete вырезает. Другие сочетания продолжают работать.
+settings.ai.invalid_path_kept=Этот путь не сохранён. Сохранён предыдущий корректный путь.
+settings.ai.file_not_found=Файл не найден: {path}
+settings.ai.expected_model=Выберите файл модели ONNX (.onnx).
+settings.ai.expected_runtime=Выберите библиотеку ONNX Runtime (.dll, .so или .dylib).
+
+settings.ai.advanced=Дополнительные параметры среды выполнения
+
+settings.tools.configure=Настроить инструменты
+settings.tools.title=Панель инструментов
+settings.tools.visible=Видимые инструменты
+settings.tools.visibility_hint=Скрытые инструменты доступны через сочетания клавиш.
+settings.tools.show_all=Показать все
+settings.tools.auto=Автоматически
+settings.tools.column=Один столбец
+settings.tools.row=Одна строка
+settings.tools.grid=Компактная сетка
+settings.tools.fit=По размеру содержимого
+settings.separator.title=Верхний разделитель закреплённой панели
+settings.separator.theme=По теме
+settings.separator.opacity=Непрозрачность разделителя
+settings.save_error=Не удалось сохранить настройки: {error}
+paste.outside_hint=Бледные пиксели находятся за пределами холста.
+
+settings.tools.animate_resize=Анимация изменения размера панели инструментов

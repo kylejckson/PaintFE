@@ -1513,3 +1513,40 @@ settings.interface.bar_right=Rechterruimte
 settings.interface.bar_padding_x=Horizontale binnenruimte
 settings.interface.bar_padding_y=Verticale binnenruimte
 settings.interface.bar_radius=Hoekradius
+
+settings.tab.editing=Bewerken
+settings.auto_save_hint=Wijzigingen worden automatisch opgeslagen. Sluit Voorkeuren wanneer u klaar bent.
+settings.editing.clipboard=Klembord en plakken
+settings.editing.paste_source=Gekopieerde pixels op hun oorspronkelijke positie plakken
+settings.editing.paste_source_hint=Gebruikt de oorspronkelijke positie voor kopieën uit PaintFE. Schakel uit om bij de cursor te plakken.
+settings.editing.paste_visible=Geplakte inhoud binnen het zichtbare canvasgebied houden
+settings.editing.paste_visible_hint=Past de positie aan als de kopie buiten beeld of buiten het doelcanvas zou vallen.
+settings.editing.selection_keys=Selectie en toetsenbord
+settings.editing.enter_deselect=Enter heft de selectie op
+settings.editing.enter_deselect_hint=Standaard uitgeschakeld. Enter blijft actieve gereedschappen toepassen en dialoogvensters bevestigen.
+settings.editing.legacy_clipboard=Traditionele klembordsneltoetsen inschakelen
+settings.editing.legacy_clipboard_hint=Ctrl+Insert kopieert, Shift+Insert plakt en Shift+Delete knipt. Andere sneltoetsen blijven werken.
+settings.ai.invalid_path_kept=Dit pad is niet opgeslagen. Het vorige geldige pad blijft behouden.
+settings.ai.file_not_found=Bestand niet gevonden: {path}
+settings.ai.expected_model=Kies een ONNX-modelbestand (.onnx).
+settings.ai.expected_runtime=Kies een ONNX Runtime-bibliotheek (.dll, .so of .dylib).
+
+settings.ai.advanced=Geavanceerde runtime-instellingen
+
+settings.tools.configure=Gereedschappen instellen
+settings.tools.title=Gereedschapspaneel
+settings.tools.visible=Zichtbare gereedschappen
+settings.tools.visibility_hint=Verborgen gereedschappen blijven beschikbaar via sneltoetsen.
+settings.tools.show_all=Alles tonen
+settings.tools.auto=Automatisch
+settings.tools.column=Eén kolom
+settings.tools.row=Eén rij
+settings.tools.grid=Compact raster
+settings.tools.fit=Aan inhoud aanpassen
+settings.separator.title=Bovenste scheidingslijn van vastgezette balk
+settings.separator.theme=Thema volgen
+settings.separator.opacity=Dekking scheidingslijn
+settings.save_error=Voorkeuren konden niet worden opgeslagen: {error}
+paste.outside_hint=Vervaagde pixels liggen buiten het canvas.
+
+settings.tools.animate_resize=Formaatwijziging van het gereedschapspaneel animeren

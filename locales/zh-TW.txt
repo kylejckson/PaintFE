@@ -1513,3 +1513,40 @@ settings.interface.bar_right=右側間距
 settings.interface.bar_padding_x=水平內距
 settings.interface.bar_padding_y=垂直內距
 settings.interface.bar_radius=圓角半徑
+
+settings.tab.editing=編輯
+settings.auto_save_hint=變更會自動儲存。完成後請關閉偏好設定。
+settings.editing.clipboard=剪貼簿與貼上
+settings.editing.paste_source=將複製的像素貼到原始位置
+settings.editing.paste_source_hint=對在 PaintFE 中複製的內容使用原始位置。關閉後會貼到游標位置。
+settings.editing.paste_visible=將貼上的內容保持在畫布可見區域內
+settings.editing.paste_visible_hint=如果複製區域超出螢幕或目標畫布，則調整貼上位置。
+settings.editing.selection_keys=選取範圍與鍵盤
+settings.editing.enter_deselect=按 Enter 取消選取範圍
+settings.editing.enter_deselect_hint=預設關閉。Enter 仍可套用使用中的工具並確認對話方塊。
+settings.editing.legacy_clipboard=啟用傳統剪貼簿快速鍵
+settings.editing.legacy_clipboard_hint=Ctrl+Insert 複製、Shift+Insert 貼上、Shift+Delete 剪下。其他快速鍵仍然有效。
+settings.ai.invalid_path_kept=此路徑未儲存。保留先前的有效路徑。
+settings.ai.file_not_found=找不到檔案：{path}
+settings.ai.expected_model=請選擇 ONNX 模型檔案（.onnx）。
+settings.ai.expected_runtime=請選擇 ONNX Runtime 程式庫（.dll、.so 或 .dylib）。
+
+settings.ai.advanced=進階執行階段設定
+
+settings.tools.configure=設定工具
+settings.tools.title=工具面板
+settings.tools.visible=顯示的工具
+settings.tools.visibility_hint=隱藏的工具仍可透過快速鍵使用。
+settings.tools.show_all=全部顯示
+settings.tools.auto=自動
+settings.tools.column=單欄
+settings.tools.row=單列
+settings.tools.grid=緊湊網格
+settings.tools.fit=符合內容
+settings.separator.title=停駐列頂部分隔線
+settings.separator.theme=跟隨佈景主題
+settings.separator.opacity=分隔線不透明度
+settings.save_error=無法儲存偏好設定：{error}
+paste.outside_hint=淡化顯示的像素位於畫布之外。
+
+settings.tools.animate_resize=工具面板縮放動畫

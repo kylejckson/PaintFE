@@ -194,7 +194,10 @@ impl PaintFEApp {
         let decoded = match image::load_from_memory(bytes) {
             Ok(decoded) => decoded,
             Err(error) => {
-                self.report_open_error(name_hint.as_deref().unwrap_or("Dropped image"), &error.to_string());
+                self.report_open_error(
+                    name_hint.as_deref().unwrap_or("Dropped image"),
+                    &error.to_string(),
+                );
                 return;
             }
         };
@@ -203,7 +206,10 @@ impl PaintFEApp {
         let width = image.width();
         let height = image.height();
         if let Err(error) = crate::io::validate_open_dimensions(width, height) {
-            self.report_open_error(name_hint.as_deref().unwrap_or("Dropped image"), &error.to_string());
+            self.report_open_error(
+                name_hint.as_deref().unwrap_or("Dropped image"),
+                &error.to_string(),
+            );
             return;
         }
 
@@ -299,14 +305,24 @@ impl PaintFEApp {
                 let result = (|| -> Result<_, String> {
                     let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
                     let reader = image::ImageReader::new(std::io::Cursor::new(&bytes))
-                        .with_guessed_format().map_err(|e| e.to_string())?;
+                        .with_guessed_format()
+                        .map_err(|e| e.to_string())?;
                     let (width, height) = reader.into_dimensions().map_err(|e| e.to_string())?;
-                    crate::io::validate_open_dimensions(width, height).map_err(|e| e.to_string())?;
+                    crate::io::validate_open_dimensions(width, height)
+                        .map_err(|e| e.to_string())?;
                     Ok((bytes, width, height))
                 })();
                 let message = match result {
-                    Ok((bytes, width, height)) => IoResult::ImportReady { bytes, path, width, height },
-                    Err(error) => IoResult::LoadFailed { path: Some(path), error },
+                    Ok((bytes, width, height)) => IoResult::ImportReady {
+                        bytes,
+                        path,
+                        width,
+                        height,
+                    },
+                    Err(error) => IoResult::LoadFailed {
+                        path: Some(path),
+                        error,
+                    },
                 };
                 let _ = sender.send(message);
             });
@@ -316,9 +332,15 @@ impl PaintFEApp {
     }
 
     fn report_open_error(&mut self, name: &str, reason: &str) {
-        let message = crate::i18n::format_translation("ui.could_not_open_0_the_file_may_be_damaged_unreadable_or_unsupported_1", &[("0", name.to_string()), ("1", reason.to_string())]);
+        let message = crate::i18n::format_translation(
+            "ui.could_not_open_0_the_file_may_be_damaged_unreadable_or_unsupported_1",
+            &[("0", name.to_string()), ("1", reason.to_string())],
+        );
         match &mut self.filter_error {
-            Some(errors) => { errors.push_str("\n\n"); errors.push_str(&message); }
+            Some(errors) => {
+                errors.push_str("\n\n");
+                errors.push_str(&message);
+            }
             None => self.filter_error = Some(message),
         }
     }
@@ -392,25 +414,31 @@ impl PaintFEApp {
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "Imported Layer".to_string());
         let src = img.clone();
-        self.do_snapshot_op("Import as New Layer", move |s| {
-            if expand_canvas {
-                let new_w = s.width.max(src.width());
-                let new_h = s.height.max(src.height());
-                crate::ops::transform::resize_canvas(
-                    s,
-                    new_w,
-                    new_h,
-                    (1, 1),
-                    image::Rgba([0, 0, 0, 0]),
-                );
-            }
-            crate::ops::adjustments::import_layer_from_image(s, &src, &layer_name);
-        });
+        self.do_snapshot_op(
+            HistoryAction::ImportLayer.label("Import as New Layer"),
+            move |s| {
+                if expand_canvas {
+                    let new_w = s.width.max(src.width());
+                    let new_h = s.height.max(src.height());
+                    crate::ops::transform::resize_canvas(
+                        s,
+                        new_w,
+                        new_h,
+                        (1, 1),
+                        image::Rgba([0, 0, 0, 0]),
+                    );
+                }
+                crate::ops::adjustments::import_layer_from_image(s, &src, &layer_name);
+            },
+        );
     }
 
     /// Used by both "Open…" menu and drag-and-drop.
     fn open_file_by_path(&mut self, path: std::path::PathBuf, current_time: f64) {
-        crate::services::file_dialogs::remember(crate::services::file_dialogs::Purpose::Documents, &path);
+        crate::services::file_dialogs::remember(
+            crate::services::file_dialogs::Purpose::Documents,
+            &path,
+        );
         let normalized_path = Self::normalize_open_path(&path);
 
         // Check if file is already open in another tab

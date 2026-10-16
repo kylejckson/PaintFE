@@ -1513,3 +1513,40 @@ settings.interface.bar_right=Abstand rechts
 settings.interface.bar_padding_x=Horizontaler Innenabstand
 settings.interface.bar_padding_y=Vertikaler Innenabstand
 settings.interface.bar_radius=Eckenradius
+
+settings.tab.editing=Bearbeitung
+settings.auto_save_hint=Änderungen werden automatisch gespeichert. Schließen Sie anschließend die Einstellungen.
+settings.editing.clipboard=Zwischenablage und Einfügen
+settings.editing.paste_source=Kopierte Pixel an ihrer ursprünglichen Position einfügen
+settings.editing.paste_source_hint=Verwendet die ursprüngliche Position für Kopien aus PaintFE. Ausschalten, um am Mauszeiger einzufügen.
+settings.editing.paste_visible=Eingefügten Inhalt im sichtbaren Leinwandbereich halten
+settings.editing.paste_visible_hint=Passt die Position an, wenn die Kopie außerhalb des Bildschirms oder der Zielleinwand liegen würde.
+settings.editing.selection_keys=Auswahl und Tastatur
+settings.editing.enter_deselect=Enter hebt die Auswahl auf
+settings.editing.enter_deselect_hint=Standardmäßig ausgeschaltet. Enter wendet weiterhin aktive Werkzeuge an und bestätigt Dialoge.
+settings.editing.legacy_clipboard=Klassische Tastenkürzel für die Zwischenablage aktivieren
+settings.editing.legacy_clipboard_hint=Strg+Einfg kopiert, Umschalt+Einfg fügt ein und Umschalt+Entf schneidet aus. Andere Tastenkürzel funktionieren weiterhin.
+settings.ai.invalid_path_kept=Dieser Pfad wurde nicht gespeichert. Der vorherige gültige Pfad bleibt erhalten.
+settings.ai.file_not_found=Datei nicht gefunden: {path}
+settings.ai.expected_model=Wählen Sie eine ONNX-Modelldatei (.onnx).
+settings.ai.expected_runtime=Wählen Sie eine ONNX-Runtime-Bibliothek (.dll, .so oder .dylib).
+
+settings.ai.advanced=Erweiterte Laufzeiteinstellungen
+
+settings.tools.configure=Werkzeuge einrichten
+settings.tools.title=Werkzeugleiste
+settings.tools.visible=Sichtbare Werkzeuge
+settings.tools.visibility_hint=Ausgeblendete Werkzeuge bleiben über Tastenkürzel erreichbar.
+settings.tools.show_all=Alle anzeigen
+settings.tools.auto=Automatisch
+settings.tools.column=Eine Spalte
+settings.tools.row=Eine Zeile
+settings.tools.grid=Kompaktes Raster
+settings.tools.fit=An Inhalt anpassen
+settings.separator.title=Obere Trennlinie der angedockten Leiste
+settings.separator.theme=Dem Design folgen
+settings.separator.opacity=Deckkraft der Trennlinie
+settings.save_error=Einstellungen konnten nicht gespeichert werden: {error}
+paste.outside_hint=Verblasste Pixel liegen außerhalb der Leinwand.
+
+settings.tools.animate_resize=Größenänderung der Werkzeugleiste animieren

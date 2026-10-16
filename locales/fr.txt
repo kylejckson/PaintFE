@@ -1513,3 +1513,40 @@ settings.interface.bar_right=Espace droit
 settings.interface.bar_padding_x=Marge intérieure horizontale
 settings.interface.bar_padding_y=Marge intérieure verticale
 settings.interface.bar_radius=Rayon des angles
+
+settings.tab.editing=Édition
+settings.auto_save_hint=Les modifications sont enregistrées automatiquement. Fermez les Préférences lorsque vous avez terminé.
+settings.editing.clipboard=Presse-papiers et collage
+settings.editing.paste_source=Coller les pixels copiés à leur position d’origine
+settings.editing.paste_source_hint=Utilise la position d’origine pour les copies faites dans PaintFE. Désactivez pour coller au niveau du curseur.
+settings.editing.paste_visible=Garder le contenu collé dans la zone visible du canevas
+settings.editing.paste_visible_hint=Ajuste la position si la copie se trouve hors écran ou hors du canevas de destination.
+settings.editing.selection_keys=Sélection et clavier
+settings.editing.enter_deselect=Entrée annule la sélection
+settings.editing.enter_deselect_hint=Désactivé par défaut. Entrée continue d’appliquer les outils actifs et de confirmer les boîtes de dialogue.
+settings.editing.legacy_clipboard=Activer les raccourcis traditionnels du presse-papiers
+settings.editing.legacy_clipboard_hint=Ctrl+Inser copie, Maj+Inser colle et Maj+Suppr coupe. Les autres raccourcis restent disponibles.
+settings.ai.invalid_path_kept=Ce chemin n’a pas été enregistré. Le chemin valide précédent est conservé.
+settings.ai.file_not_found=Fichier introuvable : {path}
+settings.ai.expected_model=Choisissez un fichier de modèle ONNX (.onnx).
+settings.ai.expected_runtime=Choisissez une bibliothèque ONNX Runtime (.dll, .so ou .dylib).
+
+settings.ai.advanced=Paramètres avancés du moteur d’exécution
+
+settings.tools.configure=Configurer les outils
+settings.tools.title=Panneau des outils
+settings.tools.visible=Outils visibles
+settings.tools.visibility_hint=Les outils masqués restent accessibles par raccourci clavier.
+settings.tools.show_all=Tout afficher
+settings.tools.auto=Automatique
+settings.tools.column=Une colonne
+settings.tools.row=Une ligne
+settings.tools.grid=Grille compacte
+settings.tools.fit=Ajuster au contenu
+settings.separator.title=Séparateur supérieur de la barre ancrée
+settings.separator.theme=Suivre le thème
+settings.separator.opacity=Opacité du séparateur
+settings.save_error=Impossible d’enregistrer les préférences : {error}
+paste.outside_hint=Les pixels estompés sont en dehors du canevas.
+
+settings.tools.animate_resize=Animer le redimensionnement du panneau Outils

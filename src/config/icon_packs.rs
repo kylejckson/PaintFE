@@ -519,6 +519,7 @@ mod tests {
 
     #[test]
     fn pack_ids_are_category_prefixed() {
+        assert_eq!(Icon::ShapesSmall.pack_id(), "tool_shapes_small");
         assert_eq!(Icon::Pencil.pack_id(), "tool_pencil");
         assert_eq!(Icon::New.pack_id(), "toolbar_new");
         assert_eq!(Icon::MenuFileOpen.pack_id(), "menu_file_open");
@@ -528,6 +529,24 @@ mod tests {
         assert_eq!(Icon::ShapeFilled.pack_id(), "shape_filled");
         assert_eq!(Icon::Delete.pack_id(), "ui_delete");
         assert_eq!(shape_pack_id(ShapeKind::Heart), "shape_heart");
+    }
+
+    #[test]
+    fn compact_shapes_artwork_resolves_for_both_themes_and_builtin_fallback() {
+        let pack = IconPack::luminous().unwrap();
+        for dark in [false, true] {
+            let (image, source) = pack.resolve(Icon::ShapesSmall, dark, true).unwrap();
+            assert_eq!(source, IconSource::PackTheme);
+            assert_eq!(image.dimensions(), (32, 32));
+            let (wide, source) = pack.resolve(Icon::Shapes, dark, true).unwrap();
+            assert_eq!(source, IconSource::PackTheme);
+            assert_eq!(wide.dimensions(), (64, 32));
+        }
+        let fallback =
+            image::load_from_memory(include_bytes!("../../assets/icons/tools/shapes_small.png"))
+                .unwrap();
+        assert_eq!((fallback.width(), fallback.height()), (32, 32));
+        assert_eq!(Icon::ShapesSmall.tooltip(), Icon::Shapes.tooltip());
     }
 
     #[test]

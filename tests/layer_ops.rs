@@ -193,7 +193,10 @@ fn folder_snapshot_undo_redo_restores_membership() {
         .push(Layer::new("Paint".into(), 16, 16, Rgba([0, 0, 0, 0])));
     let mut hist = history();
 
-    let mut snap = SnapshotCommand::new("Add Folder".into(), &state);
+    let mut snap = SnapshotCommand::new(
+        paintfe::components::history::HistoryAction::AddFolder.label("Add Folder"),
+        &state,
+    );
     state.layer_folders.push(LayerFolder {
         id: 1,
         name: "Group".into(),

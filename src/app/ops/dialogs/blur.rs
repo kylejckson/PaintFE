@@ -1,12 +1,17 @@
 impl PaintFEApp {
     fn process_blur_dialog(&mut self, ctx: &egui::Context, dialog: &mut ActiveDialog) -> bool {
-        let matched = matches!(dialog, ActiveDialog::BokehBlur(_) | ActiveDialog::MotionBlur(_) | ActiveDialog::BoxBlur(_) | ActiveDialog::ZoomBlur(_));
+        let matched = matches!(
+            dialog,
+            ActiveDialog::BokehBlur(_)
+                | ActiveDialog::MotionBlur(_)
+                | ActiveDialog::BoxBlur(_)
+                | ActiveDialog::ZoomBlur(_)
+        );
         if !matched {
             return false;
         }
 
         match dialog {
-
             ActiveDialog::BokehBlur(dlg) => {
                 match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
                     DialogResult::Changed => {
@@ -22,7 +27,7 @@ impl PaintFEApp {
                                 .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
-                                "Bokeh Blur".to_string(),
+                                HistoryAction::BokehBlur.label("Bokeh Blur".to_string()),
                                 idx,
                                 original.clone(),
                                 flat.clone(),
@@ -37,7 +42,7 @@ impl PaintFEApp {
                         }
                     }
                     DialogResult::Ok(_) => {
-                    crate::ui::dialogs::remember::mark_applied(ctx);
+                        crate::ui::dialogs::remember::mark_applied(ctx);
                         self.preview_job_token = self.preview_job_token.wrapping_add(1);
                         // Apply at full resolution
                         let idx = dlg.layer_idx;
@@ -70,7 +75,7 @@ impl PaintFEApp {
                                 let adjusted = project.canvas_state.layers[idx].pixels.clone();
                                 project.canvas_state.layers[idx].pixels = original.clone();
                                 let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
-                                    "Bokeh Blur".to_string(),
+                                    HistoryAction::BokehBlur.label("Bokeh Blur".to_string()),
                                     &project.canvas_state,
                                     idx,
                                 );
@@ -119,7 +124,7 @@ impl PaintFEApp {
                                 .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
-                                "Motion Blur".to_string(),
+                                HistoryAction::MotionBlur.label("Motion Blur".to_string()),
                                 idx,
                                 original.clone(),
                                 flat.clone(),
@@ -135,7 +140,7 @@ impl PaintFEApp {
                         }
                     }
                     DialogResult::Ok(_) => {
-                    crate::ui::dialogs::remember::mark_applied(ctx);
+                        crate::ui::dialogs::remember::mark_applied(ctx);
                         self.preview_job_token = self.preview_job_token.wrapping_add(1);
                         let idx = dlg.layer_idx;
                         if let Some(flat) = &dlg.original_flat {
@@ -149,7 +154,7 @@ impl PaintFEApp {
                                     idx,
                                     flat,
                                     |img| {
-                                    crate::ops::effects::motion_blur_core(
+                                        crate::ops::effects::motion_blur_core(
                                             img,
                                             angle,
                                             distance,
@@ -168,7 +173,7 @@ impl PaintFEApp {
                                 let adjusted = project.canvas_state.layers[idx].pixels.clone();
                                 project.canvas_state.layers[idx].pixels = original.clone();
                                 let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
-                                    "Motion Blur".to_string(),
+                                    HistoryAction::MotionBlur.label("Motion Blur".to_string()),
                                     &project.canvas_state,
                                     idx,
                                 );
@@ -217,7 +222,7 @@ impl PaintFEApp {
                                 .and_then(|p| p.canvas_state.selection_mask.clone());
                             self.spawn_preview_job(
                                 ctx.input(|i| i.time),
-                                "Box Blur".to_string(),
+                                HistoryAction::BoxBlur.label("Box Blur".to_string()),
                                 idx,
                                 original.clone(),
                                 flat.clone(),
@@ -232,7 +237,7 @@ impl PaintFEApp {
                         }
                     }
                     DialogResult::Ok(_) => {
-                    crate::ui::dialogs::remember::mark_applied(ctx);
+                        crate::ui::dialogs::remember::mark_applied(ctx);
                         self.preview_job_token = self.preview_job_token.wrapping_add(1);
                         let idx = dlg.layer_idx;
                         if let Some(flat) = &dlg.original_flat {
@@ -264,7 +269,7 @@ impl PaintFEApp {
                                 let adjusted = project.canvas_state.layers[idx].pixels.clone();
                                 project.canvas_state.layers[idx].pixels = original.clone();
                                 let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
-                                    "Box Blur".to_string(),
+                                    HistoryAction::BoxBlur.label("Box Blur".to_string()),
                                     &project.canvas_state,
                                     idx,
                                 );
@@ -298,52 +303,25 @@ impl PaintFEApp {
                 }
             }
 
-            ActiveDialog::ZoomBlur(dlg) => match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
-                DialogResult::Changed => {
-                    dlg.poll_flat();
-                    let idx = dlg.layer_idx;
-                    if let (Some(original), Some(flat)) = (&dlg.original_pixels, &dlg.original_flat)
-                    {
-                        let (cx, cy, strength, samples, tint, ts) = dlg.current_params();
-                        let selection_mask = self
-                            .active_project()
-                            .and_then(|p| p.canvas_state.selection_mask.clone());
-                        self.spawn_preview_job(
-                            ctx.input(|i| i.time),
-                            "Zoom Blur".to_string(),
-                            idx,
-                            original.clone(),
-                            flat.clone(),
-                            move |img| {
-                                crate::ops::effects::zoom_blur_core(
-                                    img,
-                                    cx,
-                                    cy,
-                                    strength,
-                                    samples,
-                                    tint,
-                                    ts,
-                                    selection_mask.as_ref(),
-                                )
-                            },
-                        );
-                    }
-                }
-                DialogResult::Ok(_) => {
-                    crate::ui::dialogs::remember::mark_applied(ctx);
-                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
-                    let idx = dlg.layer_idx;
-                    if let Some(flat) = &dlg.original_flat {
-                        let (cx, cy, strength, samples, tint, ts) = dlg.current_params();
-                        let selection_mask = self
-                            .active_project()
-                            .and_then(|p| p.canvas_state.selection_mask.clone());
-                        if let Some(project) = self.active_project_mut() {
-                            Self::apply_fullres_effect(
-                                &mut project.canvas_state,
+            ActiveDialog::ZoomBlur(dlg) => {
+                match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {
+                    DialogResult::Changed => {
+                        dlg.poll_flat();
+                        let idx = dlg.layer_idx;
+                        if let (Some(original), Some(flat)) =
+                            (&dlg.original_pixels, &dlg.original_flat)
+                        {
+                            let (cx, cy, strength, samples, tint, ts) = dlg.current_params();
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
+                            self.spawn_preview_job(
+                                ctx.input(|i| i.time),
+                                HistoryAction::ZoomBlur.label("Zoom Blur".to_string()),
                                 idx,
-                                flat,
-                                |img| {
+                                original.clone(),
+                                flat.clone(),
+                                move |img| {
                                     crate::ops::effects::zoom_blur_core(
                                         img,
                                         cx,
@@ -358,48 +336,77 @@ impl PaintFEApp {
                             );
                         }
                     }
-                    self.active_dialog = ActiveDialog::None;
-                    if let Some(project) = self.active_project_mut() {
+                    DialogResult::Ok(_) => {
+                        crate::ui::dialogs::remember::mark_applied(ctx);
+                        self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                        let idx = dlg.layer_idx;
+                        if let Some(flat) = &dlg.original_flat {
+                            let (cx, cy, strength, samples, tint, ts) = dlg.current_params();
+                            let selection_mask = self
+                                .active_project()
+                                .and_then(|p| p.canvas_state.selection_mask.clone());
+                            if let Some(project) = self.active_project_mut() {
+                                Self::apply_fullres_effect(
+                                    &mut project.canvas_state,
+                                    idx,
+                                    flat,
+                                    |img| {
+                                        crate::ops::effects::zoom_blur_core(
+                                            img,
+                                            cx,
+                                            cy,
+                                            strength,
+                                            samples,
+                                            tint,
+                                            ts,
+                                            selection_mask.as_ref(),
+                                        )
+                                    },
+                                );
+                            }
+                        }
+                        self.active_dialog = ActiveDialog::None;
+                        if let Some(project) = self.active_project_mut() {
+                            let idx = dlg.layer_idx;
+                            if let Some(original) = &dlg.original_pixels
+                                && idx < project.canvas_state.layers.len()
+                            {
+                                let adjusted = project.canvas_state.layers[idx].pixels.clone();
+                                project.canvas_state.layers[idx].pixels = original.clone();
+                                let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
+                                    HistoryAction::ZoomBlur.label("Zoom Blur".to_string()),
+                                    &project.canvas_state,
+                                    idx,
+                                );
+                                project.canvas_state.layers[idx].pixels = adjusted;
+                                cmd.set_after(&project.canvas_state);
+                                project.history.push(Box::new(cmd));
+                            }
+                            project.mark_dirty();
+                        }
+                        return true;
+                    }
+                    DialogResult::Cancel => {
+                        self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                        self.filter_cancel
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
                         let idx = dlg.layer_idx;
                         if let Some(original) = &dlg.original_pixels
-                            && idx < project.canvas_state.layers.len()
+                            && let Some(project) = self.active_project_mut()
                         {
-                            let adjusted = project.canvas_state.layers[idx].pixels.clone();
-                            project.canvas_state.layers[idx].pixels = original.clone();
-                            let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
-                                "Zoom Blur".to_string(),
-                                &project.canvas_state,
-                                idx,
-                            );
-                            project.canvas_state.layers[idx].pixels = adjusted;
-                            cmd.set_after(&project.canvas_state);
-                            project.history.push(Box::new(cmd));
+                            if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
+                                layer.pixels = original.clone();
+                            }
+                            project.canvas_state.mark_dirty(None);
                         }
-                        project.mark_dirty();
+                        self.active_dialog = ActiveDialog::None;
+                        return true;
                     }
-                    return true;
-                }
-                DialogResult::Cancel => {
-                    self.preview_job_token = self.preview_job_token.wrapping_add(1);
-                    self.filter_cancel
-                        .store(true, std::sync::atomic::Ordering::Relaxed);
-                    let idx = dlg.layer_idx;
-                    if let Some(original) = &dlg.original_pixels
-                        && let Some(project) = self.active_project_mut()
-                    {
-                        if let Some(layer) = project.canvas_state.layers.get_mut(idx) {
-                            layer.pixels = original.clone();
-                        }
-                        project.canvas_state.mark_dirty(None);
+                    _ => {
+                        dlg.poll_flat();
                     }
-                    self.active_dialog = ActiveDialog::None;
-                    return true;
                 }
-                _ => {
-                    dlg.poll_flat();
-                }
-            },
-
+            }
 
             _ => unreachable!(),
         }
@@ -408,4 +415,3 @@ impl PaintFEApp {
         true
     }
 }
-

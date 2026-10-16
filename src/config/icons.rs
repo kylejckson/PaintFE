@@ -28,6 +28,7 @@ pub enum Icon {
     ColorRemover,
     Smudge,
     Shapes,
+    ShapesSmall,
 
     // === UI (toolbar, panels, misc) ===
     Undo,
@@ -247,6 +248,7 @@ impl Icon {
             | Self::ColorRemover
             | Self::Smudge
             | Self::Shapes
+            | Self::ShapesSmall
             | Self::UiBrushDynamics => "tool",
             // Top toolbar quick actions (and their toggle states).
             Self::New
@@ -408,7 +410,7 @@ impl Icon {
             Icon::MeshWarp => "[W]",
             Icon::ColorRemover => "[R]",
             Icon::Smudge => "[Sm]",
-            Icon::Shapes => "[Sh]",
+            Icon::Shapes | Icon::ShapesSmall => "[Sh]",
             // UI
             Icon::Undo => "<-",
             Icon::Redo => "->",
@@ -611,7 +613,7 @@ impl Icon {
             Icon::MeshWarp => "Mesh Warp",
             Icon::ColorRemover => "Color Remover",
             Icon::Smudge => "Smudge Tool",
-            Icon::Shapes => "Shapes Tool",
+            Icon::Shapes | Icon::ShapesSmall => "Shapes Tool",
             // UI
             Icon::Undo => "Undo",
             Icon::Redo => "Redo",
@@ -723,7 +725,7 @@ impl Icon {
             Icon::Lasso => Some(BindableAction::ToolLasso),
             Icon::ColorRemover => Some(BindableAction::ToolColorRemover),
             Icon::MeshWarp => Some(BindableAction::ToolMeshWarp),
-            Icon::Shapes => Some(BindableAction::ToolShapes),
+            Icon::Shapes | Icon::ShapesSmall => Some(BindableAction::ToolShapes),
             Icon::Undo => Some(BindableAction::Undo),
             Icon::Redo => Some(BindableAction::Redo),
             _ => None,

@@ -923,6 +923,66 @@ mod selection {
 }
 pub use selection::*;
 
+impl ActiveDialog {
+    pub fn history_action(&self) -> Option<crate::components::history::HistoryAction> {
+        use crate::components::history::HistoryAction;
+        match self {
+            Self::None | Self::AddBrushTip(_) | Self::AddShape(_) => None,
+            Self::ResizeImage(..) => Some(HistoryAction::ResizeImage),
+            Self::ResizeCanvas(..) => Some(HistoryAction::ResizeCanvas),
+            Self::AlignLayer(..) => Some(HistoryAction::AlignLayer),
+            Self::GaussianBlur(..) => Some(HistoryAction::GaussianBlur),
+            Self::LayerTransform(..) => Some(HistoryAction::LayerTransform),
+            Self::BrightnessContrast(..) => Some(HistoryAction::BrightnessContrast),
+            Self::HueSaturation(..) => Some(HistoryAction::HueSaturation),
+            Self::Exposure(..) => Some(HistoryAction::Exposure),
+            Self::HighlightsShadows(..) => Some(HistoryAction::HighlightsShadows),
+            Self::Levels(..) => Some(HistoryAction::Levels),
+            Self::Curves(..) => Some(HistoryAction::Curves),
+            Self::TemperatureTint(..) => Some(HistoryAction::TemperatureTint),
+            Self::BokehBlur(..) => Some(HistoryAction::BokehBlur),
+            Self::MotionBlur(..) => Some(HistoryAction::MotionBlur),
+            Self::BoxBlur(..) => Some(HistoryAction::BoxBlur),
+            Self::ZoomBlur(..) => Some(HistoryAction::ZoomBlur),
+            Self::Crystallize(..) => Some(HistoryAction::Crystallize),
+            Self::Dents(..) => Some(HistoryAction::Dents),
+            Self::Pixelate(..) => Some(HistoryAction::Pixelate),
+            Self::Bulge(..) => Some(HistoryAction::Bulge),
+            Self::Twist(..) => Some(HistoryAction::Twist),
+            Self::AddNoise(..) => Some(HistoryAction::AddNoise),
+            Self::ReduceNoise(..) => Some(HistoryAction::ReduceNoise),
+            Self::Median(..) => Some(HistoryAction::Median),
+            Self::Glow(..) => Some(HistoryAction::Glow),
+            Self::Sharpen(..) => Some(HistoryAction::Sharpen),
+            Self::Vignette(..) => Some(HistoryAction::Vignette),
+            Self::Halftone(..) => Some(HistoryAction::Halftone),
+            Self::Grid(..) => Some(HistoryAction::Grid),
+            Self::DropShadow(..) => Some(HistoryAction::DropShadow),
+            Self::Outline(..) => Some(HistoryAction::Outline),
+            Self::PixelDrag(..) => Some(HistoryAction::PixelDrag),
+            Self::RgbDisplace(..) => Some(HistoryAction::RgbDisplace),
+            Self::Ink(..) => Some(HistoryAction::Ink),
+            Self::OilPainting(..) => Some(HistoryAction::OilPainting),
+            Self::ColorFilter(..) => Some(HistoryAction::ColorFilter),
+            Self::ColorToAlpha(..) => Some(HistoryAction::ColorToAlpha),
+            Self::RecoverTransparency(..) => Some(HistoryAction::RecoverTransparency),
+            Self::CanvasBorder(..) => Some(HistoryAction::CanvasBorder),
+            Self::SeamlessTexture(..) => Some(HistoryAction::SeamlessTexture),
+            Self::Contours(..) => Some(HistoryAction::Contours),
+            Self::RemoveBackground(..) => Some(HistoryAction::RemoveBackground),
+            Self::Threshold(..) => Some(HistoryAction::Threshold),
+            Self::Posterize(..) => Some(HistoryAction::Posterize),
+            Self::ColorBalance(..) => Some(HistoryAction::ColorBalance),
+            Self::GradientMap(..) => Some(HistoryAction::GradientMap),
+            Self::BlackAndWhite(..) => Some(HistoryAction::BlackAndWhite),
+            Self::Vibrance(..) => Some(HistoryAction::Vibrance),
+            Self::ColorRange(..) => Some(HistoryAction::ColorRange),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::PaintDotNetPlugin(..) => Some(HistoryAction::ExternalEffect),
+        }
+    }
+}
+
 #[cfg(test)]
 mod footer_keyboard_tests {
     use super::*;

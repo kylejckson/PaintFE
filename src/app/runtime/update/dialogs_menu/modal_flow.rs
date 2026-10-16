@@ -183,13 +183,11 @@ impl PaintFEApp {
             }
             self.import_apply_to_all = apply_all;
 
-            // Keyboard: Enter = recommended, Esc = cancel.
-            if import_choice.is_none() {
-                if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    import_choice = Some(0);
-                } else if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    import_choice = Some(2);
-                }
+            // Enter/Space activate the focused row; Escape always cancels.
+            if import_choice.is_none()
+                && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+            {
+                import_choice = Some(2);
             }
 
             if let Some(choice) = import_choice {
@@ -265,12 +263,10 @@ impl PaintFEApp {
             if let Some(response) = window_response {
                 self.remember_ui_cursor_rect(response.response.rect);
             }
-            if oversize_choice.is_none() {
-                if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    oversize_choice = Some(0);
-                } else if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    oversize_choice = Some(2);
-                }
+            if oversize_choice.is_none()
+                && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+            {
+                oversize_choice = Some(2);
             }
             if let Some(choice) = oversize_choice {
                 self.pending_oversized_import = None;
@@ -348,12 +344,10 @@ impl PaintFEApp {
             if let Some(response) = window_response {
                 self.remember_ui_cursor_rect(response.response.rect);
             }
-            if choice.is_none() {
-                if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    choice = Some(0);
-                } else if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    choice = Some(2);
-                }
+            if choice.is_none()
+                && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+            {
+                choice = Some(2);
             }
             match choice {
                 Some(0) => {
@@ -389,10 +383,12 @@ impl PaintFEApp {
                 ConfirmButton::new(crate::t!("common.cancel")),
             ];
             let window_response = crate::ui::polish::window(ctx, "Unsaved Changes")
+                .id(egui::Id::new("Unsaved Changes"))
                 .title_bar(false)
                 .collapsible(false)
                 .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .movable(true)
+                .default_pos(ctx.content_rect().center() - egui::vec2(200.0, 85.0))
                 .frame(self.theme.dialog_frame())
                 .show(ctx, |ui| {
                     ui.set_min_width(380.0);
@@ -466,10 +462,12 @@ impl PaintFEApp {
                     ConfirmButton::new(crate::t!("common.cancel")),
                 ];
                 let window_response = crate::ui::polish::window(ctx, "Exit PaintFE")
+                    .id(egui::Id::new("Exit PaintFE"))
                     .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
-                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .movable(true)
+                    .default_pos(ctx.content_rect().center() - egui::vec2(200.0, 100.0))
                     .frame(self.theme.dialog_frame())
                     .show(ctx, |ui| {
                         ui.set_min_width(380.0);

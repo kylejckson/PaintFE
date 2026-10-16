@@ -504,8 +504,10 @@ impl ToolsPanel {
         canvas_state.force_rasterize_text_layer(idx);
         canvas_state.mark_dirty(None);
 
-        self.stroke_tracker
-            .start_preview_tool(canvas_state.active_layer_index, "Text");
+        self.stroke_tracker.start_preview_tool(
+            canvas_state.active_layer_index,
+            HistoryAction::Text.label("Text"),
+        );
     }
 
     fn commit_text(&mut self, canvas_state: &mut CanvasState) {
@@ -1278,7 +1280,7 @@ impl ToolsPanel {
                 && let crate::canvas::LayerContent::Text(ref after_td) = layer.content
             {
                 let mut cmd = crate::components::history::TextLayerEditCommand::new_from(
-                    "Text Edit".to_string(),
+                    HistoryAction::Text.label("Text Edit".to_string()),
                     layer_idx,
                     before_td,
                 );

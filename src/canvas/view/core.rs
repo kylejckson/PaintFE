@@ -1428,6 +1428,15 @@ impl Canvas {
             {
                 paste_cursor = overlay.cursor_icon(pos, image_rect, self.zoom);
             }
+            if overlay.draw_overflow(&painter, image_rect, canvas_rect, self.zoom) {
+                painter.with_clip_rect(canvas_rect).text(
+                    canvas_rect.center_bottom() + egui::vec2(0., -12.),
+                    egui::Align2::CENTER_BOTTOM,
+                    crate::t!("paste.outside_hint"),
+                    egui::FontId::proportional(12.),
+                    ui.visuals().weak_text_color(),
+                );
+            }
             if overlay.overwrite_transparent_pixels {
                 if self.paste_layers_below_cache.is_none()
                     && let Some(below_image) = state.composite_layers_below_active()
@@ -2089,6 +2098,7 @@ impl Canvas {
                     || tools.shapes_state.placed.is_some()
                     || tools.perspective_crop_state.active);
             let allow_input = !modal_open
+                && paste_overlay.is_none()
                 && !paste_consumed_input
                 && (!ui_blocking
                     || raw_pointer_button_on_canvas

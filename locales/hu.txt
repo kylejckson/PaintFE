@@ -1513,3 +1513,40 @@ settings.interface.bar_right=Jobb térköz
 settings.interface.bar_padding_x=Vízszintes belső margó
 settings.interface.bar_padding_y=Függőleges belső margó
 settings.interface.bar_radius=Saroksugár
+
+settings.tab.editing=Szerkesztés
+settings.auto_save_hint=A módosítások automatikusan mentődnek. Ha végzett, zárja be a Beállításokat.
+settings.editing.clipboard=Vágólap és beillesztés
+settings.editing.paste_source=Másolt képpontok beillesztése az eredeti helyükre
+settings.editing.paste_source_hint=A PaintFE-ben készült másolatok eredeti helyét használja. Kikapcsolva a kurzornál illeszt be.
+settings.editing.paste_visible=A beillesztett tartalom maradjon a vászon látható részén
+settings.editing.paste_visible_hint=Módosítja a helyet, ha a másolt terület a képernyőn vagy a célvásznon kívülre kerülne.
+settings.editing.selection_keys=Kijelölés és billentyűzet
+settings.editing.enter_deselect=Az Enter megszünteti a kijelölést
+settings.editing.enter_deselect_hint=Alapértelmezés szerint kikapcsolva. Az Enter továbbra is alkalmazza az aktív eszközöket és jóváhagyja a párbeszédablakokat.
+settings.editing.legacy_clipboard=Hagyományos vágólap-billentyűparancsok engedélyezése
+settings.editing.legacy_clipboard_hint=Ctrl+Insert: másolás, Shift+Insert: beillesztés, Shift+Delete: kivágás. A többi billentyűparancs is működik.
+settings.ai.invalid_path_kept=Ez az elérési út nem lett mentve. A korábbi érvényes útvonal megmarad.
+settings.ai.file_not_found=A fájl nem található: {path}
+settings.ai.expected_model=Válasszon ONNX-modellfájlt (.onnx).
+settings.ai.expected_runtime=Válasszon ONNX Runtime-könyvtárfájlt (.dll, .so vagy .dylib).
+
+settings.ai.advanced=Speciális futtatókörnyezet-beállítások
+
+settings.tools.configure=Eszközök beállítása
+settings.tools.title=Eszközpanel
+settings.tools.visible=Látható eszközök
+settings.tools.visibility_hint=A rejtett eszközök továbbra is elérhetők gyorsbillentyűkkel.
+settings.tools.show_all=Összes megjelenítése
+settings.tools.auto=Automatikus
+settings.tools.column=Egy oszlop
+settings.tools.row=Egy sor
+settings.tools.grid=Kompakt rács
+settings.tools.fit=Tartalomhoz igazítás
+settings.separator.title=Dokkolt sáv felső elválasztója
+settings.separator.theme=Téma követése
+settings.separator.opacity=Elválasztó fedettsége
+settings.save_error=A beállítások mentése nem sikerült: {error}
+paste.outside_hint=A halvány képpontok a vásznon kívül vannak.
+
+settings.tools.animate_resize=Az eszközpanel átméretezésének animálása

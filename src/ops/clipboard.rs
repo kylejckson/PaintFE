@@ -1527,6 +1527,10 @@ impl PasteOverlay {
     /// Draw the paste overlay image using GPU-accelerated textured mesh.
     /// The GPU handles rotation and translation — no per-pixel CPU work needed.
     pub fn draw_gpu(&self, painter: &egui::Painter, image_rect: Rect, zoom: f32) {
+        self.draw_gpu_tinted(painter, image_rect, zoom, Color32::WHITE);
+    }
+
+    fn draw_gpu_tinted(&self, painter: &egui::Painter, image_rect: Rect, zoom: f32, tint: Color32) {
         let tex = match &self.gpu_texture {
             Some(t) => t,
             None => return,
@@ -1540,7 +1544,7 @@ impl PasteOverlay {
         let s_br = self.canvas_to_screen(corners[3], image_rect, zoom);
 
         // Build a textured quad (two triangles).
-        let white = Color32::WHITE;
+        let white = tint;
         let mut mesh = egui::Mesh::with_texture(tex.id());
 
         // UVs map the uploaded source texture to the cropped content rect, so
@@ -1574,6 +1578,37 @@ impl PasteOverlay {
         mesh.indices.extend_from_slice(&[0, 1, 2, 1, 3, 2]);
 
         painter.add(egui::Shape::mesh(mesh));
+    }
+
+    /// Show only the editable overflow; committed pixels still obey canvas bounds.
+    pub fn draw_overflow(
+        &mut self,
+        painter: &egui::Painter,
+        image_rect: Rect,
+        workspace: Rect,
+        zoom: f32,
+    ) -> bool {
+        let bounds = self
+            .corners_canvas()
+            .into_iter()
+            .map(|p| self.canvas_to_screen(p, image_rect, zoom))
+            .fold(Rect::NOTHING, |mut rect, p| {
+                rect.extend_with(p);
+                rect
+            });
+        if image_rect.contains_rect(bounds) {
+            return false;
+        }
+        self.ensure_gpu_texture(painter.ctx());
+        for region in paste_overflow_regions(workspace.intersect(painter.clip_rect()), image_rect) {
+            self.draw_gpu_tinted(
+                &painter.with_clip_rect(region),
+                image_rect,
+                zoom,
+                Color32::WHITE.gamma_multiply(0.2),
+            );
+        }
+        true
     }
 
     // -----------------------------------------------------------------------
@@ -1937,29 +1972,97 @@ impl PasteOverlay {
         zoom: f32,
         input_blocked: bool,
     ) -> bool {
-        let mouse_pos = match ui.input(|i| {
-            i.pointer.interact_pos().or_else(|| {
-                i.events.iter().rev().find_map(|e| match e {
-                    egui::Event::PointerButton {
-                        pressed: true, pos, ..
-                    } => Some(*pos),
-                    egui::Event::Touch {
-                        phase: egui::TouchPhase::Start | egui::TouchPhase::Move,
+        let mut consumed = false;
+        let mut saw_pointer = false;
+        let mut down = self.active_handle.is_some();
+        let shift = ui.input(|i| i.modifiers.shift);
+        for event in ui.input(|i| i.events.clone()) {
+            match event {
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    ..
+                } => {
+                    saw_pointer = true;
+                    if !pressed && self.active_handle.is_some() {
+                        consumed |= self.pointer_sample(
+                            image_rect,
+                            workspace_rect,
+                            zoom,
+                            input_blocked,
+                            pos,
+                            true,
+                            false,
+                            false,
+                            shift,
+                        );
+                    }
+                    down = pressed;
+                    consumed |= self.pointer_sample(
+                        image_rect,
+                        workspace_rect,
+                        zoom,
+                        input_blocked,
                         pos,
-                        ..
-                    } => Some(*pos),
-                    _ => None,
-                })
-            })
-        }) {
-            Some(p) => p,
-            None => return false,
-        };
-        let primary_down = ui.input(|i| i.pointer.primary_down());
-        let primary_pressed = ui.input(|i| i.pointer.primary_pressed());
-        let primary_released = ui.input(|i| i.pointer.any_released());
-        self.shift_held = ui.input(|i| i.modifiers.shift);
+                        down,
+                        pressed,
+                        !pressed,
+                        shift,
+                    );
+                }
+                egui::Event::PointerMoved(pos) => {
+                    saw_pointer = true;
+                    consumed |= self.pointer_sample(
+                        image_rect,
+                        workspace_rect,
+                        zoom,
+                        input_blocked,
+                        pos,
+                        down,
+                        false,
+                        false,
+                        shift,
+                    );
+                }
+                egui::Event::PointerGone | egui::Event::WindowFocused(false) => {
+                    consumed |= self.active_handle.is_some();
+                    self.active_handle = None;
+                    self.drag_start_mouse = None;
+                }
+                _ => {}
+            }
+        }
+        if !saw_pointer && let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
+            consumed |= self.pointer_sample(
+                image_rect,
+                workspace_rect,
+                zoom,
+                input_blocked,
+                pos,
+                ui.input(|i| i.pointer.primary_down()),
+                ui.input(|i| i.pointer.primary_pressed()),
+                ui.input(|i| i.pointer.any_released()),
+                shift,
+            );
+        }
+        consumed
+    }
 
+    #[allow(clippy::too_many_arguments)]
+    fn pointer_sample(
+        &mut self,
+        image_rect: Rect,
+        workspace_rect: Rect,
+        zoom: f32,
+        input_blocked: bool,
+        mouse_pos: Pos2,
+        primary_down: bool,
+        primary_pressed: bool,
+        primary_released: bool,
+        shift: bool,
+    ) -> bool {
+        self.shift_held = shift;
         // New grabs are allowed anywhere in the unobstructed workspace, even
         // outside the document. An active grab keeps pointer capture to release.
         if self.active_handle.is_none() && (input_blocked || !workspace_rect.contains(mouse_pos)) {
@@ -2787,3 +2890,139 @@ mod web_clipboard {
 
 #[cfg(target_arch = "wasm32")]
 pub use web_clipboard::install_paste_listener;
+
+/// Four disjoint rectangles partition the workspace outside the image.
+pub(crate) fn paste_overflow_regions(workspace: Rect, image: Rect) -> Vec<Rect> {
+    let inside = workspace.intersect(image);
+    if !inside.is_positive() {
+        return vec![workspace]
+            .into_iter()
+            .filter(Rect::is_positive)
+            .collect();
+    }
+    [
+        Rect::from_min_max(workspace.min, Pos2::new(workspace.right(), inside.top())),
+        Rect::from_min_max(Pos2::new(workspace.left(), inside.bottom()), workspace.max),
+        Rect::from_min_max(
+            Pos2::new(workspace.left(), inside.top()),
+            Pos2::new(inside.left(), inside.bottom()),
+        ),
+        Rect::from_min_max(
+            Pos2::new(inside.right(), inside.top()),
+            Pos2::new(workspace.right(), inside.bottom()),
+        ),
+    ]
+    .into_iter()
+    .filter(Rect::is_positive)
+    .collect()
+}
+
+#[cfg(test)]
+mod overflow_tests {
+    use super::*;
+    #[test]
+    fn fast_paste_drag_captures_press_position_and_final_release() {
+        let ctx = egui::Context::default();
+        let canvas = Rect::from_min_max(Pos2::new(100., 100.), Pos2::new(200., 200.));
+        let workspace = Rect::from_min_size(Pos2::ZERO, Vec2::splat(400.));
+        let mut paste = PasteOverlay::new(
+            RgbaImage::from_pixel(80, 80, Rgba([180, 90, 40, 255])),
+            100,
+            100,
+        );
+        let start = Pos2::new(125., 125.);
+        let end = Pos2::new(45., 35.);
+        let input = egui::RawInput {
+            screen_rect: Some(workspace),
+            events: vec![
+                egui::Event::PointerMoved(start),
+                egui::Event::PointerButton {
+                    pos: start,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                },
+                egui::Event::PointerMoved(end),
+                egui::Event::PointerButton {
+                    pos: end,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+            ..Default::default()
+        };
+        let _ = ctx.run_ui(input, |ui| {
+            assert!(paste.handle_input(ui, canvas, workspace, 1., false));
+        });
+        assert_eq!(paste.center, Pos2::new(-30., -40.));
+        assert!(paste.active_handle.is_none());
+        assert!(paste.pending_transform_checkpoint.is_some());
+    }
+    #[test]
+    fn overflow_render_uses_faded_meshes_with_transforms_and_alpha() {
+        let ctx = egui::Context::default();
+        let mut paste = PasteOverlay::new(
+            RgbaImage::from_pixel(40, 30, Rgba([180, 90, 40, 128])),
+            100,
+            100,
+        );
+        paste.center = Pos2::new(-5., 40.);
+        paste.rotation = 0.4;
+        let canvas = Rect::from_min_max(Pos2::new(100., 100.), Pos2::new(200., 200.));
+        let workspace = Rect::from_min_max(Pos2::ZERO, Pos2::new(400., 400.));
+        let out = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(workspace),
+                ..Default::default()
+            },
+            |ui| {
+                assert!(paste.draw_overflow(ui.painter(), canvas, workspace, 1.));
+            },
+        );
+        let meshes: Vec<_> = out
+            .shapes
+            .iter()
+            .filter_map(|s| {
+                if let egui::Shape::Mesh(mesh) = &s.shape {
+                    Some((s.clip_rect, mesh))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert!(!meshes.is_empty());
+        for (clip, mesh) in meshes {
+            assert!(!clip.intersect(canvas).is_positive());
+            assert!(
+                mesh.vertices
+                    .iter()
+                    .all(|v| v.color == Color32::WHITE.gamma_multiply(0.2))
+            );
+        }
+        assert_eq!(paste.source.get_pixel(0, 0).0, [180, 90, 40, 128]);
+    }
+    #[test]
+    fn overflow_clips_cover_only_outside_and_never_overlap() {
+        let workspace = Rect::from_min_max(Pos2::ZERO, Pos2::new(200., 150.));
+        for image in [
+            Rect::from_min_max(Pos2::new(40., 30.), Pos2::new(160., 120.)),
+            workspace,
+            workspace.translate(Vec2::new(300., 0.)),
+            workspace.translate(Vec2::new(-80., 60.)),
+        ] {
+            let regions = paste_overflow_regions(workspace, image);
+            for (i, r) in regions.iter().enumerate() {
+                assert!(workspace.contains_rect(*r));
+                assert!(!r.intersect(image).is_positive());
+                for other in &regions[..i] {
+                    assert!(!r.intersect(*other).is_positive());
+                }
+            }
+            let total: f32 = regions.iter().map(Rect::area).sum();
+            assert!(
+                (total - workspace.area() + workspace.intersect(image).area().max(0.)).abs() < 0.1
+            );
+        }
+    }
+}

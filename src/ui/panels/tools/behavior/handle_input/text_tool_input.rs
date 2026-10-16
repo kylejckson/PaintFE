@@ -132,8 +132,10 @@ impl ToolsPanel {
             // Ctrl+Enter: commit text
             if ctrl_enter && self.text_state.is_editing && !self.text_state.text.is_empty() {
                 // Use deferred commit for loading bar
-                self.stroke_tracker
-                    .start_preview_tool(canvas_state.active_layer_index, "Text");
+                self.stroke_tracker.start_preview_tool(
+                    canvas_state.active_layer_index,
+                    HistoryAction::Text.label("Text"),
+                );
                 self.text_state.commit_pending = true;
                 self.text_state.commit_pending_frame = 0;
             }
@@ -1448,7 +1450,7 @@ impl ToolsPanel {
                                     // Different block or empty area - commit and load new
                                     self.stroke_tracker.start_preview_tool(
                                         canvas_state.active_layer_index,
-                                        "Text",
+                                        HistoryAction::Text.label("Text"),
                                     );
                                     self.commit_text(canvas_state);
                                     if self.pending_stroke_event.is_none()
@@ -1466,8 +1468,10 @@ impl ToolsPanel {
                                 // Skip the default click-to-place behavior
                             } else {
                                 // Commit raster text and start new
-                                self.stroke_tracker
-                                    .start_preview_tool(canvas_state.active_layer_index, "Text");
+                                self.stroke_tracker.start_preview_tool(
+                                    canvas_state.active_layer_index,
+                                    HistoryAction::Text.label("Text"),
+                                );
                                 self.commit_text(canvas_state);
                                 if self.pending_stroke_event.is_none()
                                     && let Some(evt) = stroke_event.take()
@@ -1485,13 +1489,17 @@ impl ToolsPanel {
                                 self.text_state.cursor_pos = 0;
                                 self.text_state.preview_dirty = true;
                                 self.restore_raster_style();
-                                self.stroke_tracker
-                                    .start_preview_tool(canvas_state.active_layer_index, "Text");
+                                self.stroke_tracker.start_preview_tool(
+                                    canvas_state.active_layer_index,
+                                    HistoryAction::Text.label("Text"),
+                                );
                             }
                         } else {
                             // Raster text mode: commit current text first
-                            self.stroke_tracker
-                                .start_preview_tool(canvas_state.active_layer_index, "Text");
+                            self.stroke_tracker.start_preview_tool(
+                                canvas_state.active_layer_index,
+                                HistoryAction::Text.label("Text"),
+                            );
                             self.commit_text(canvas_state);
                             if self.pending_stroke_event.is_none()
                                 && let Some(evt) = stroke_event.take()
@@ -1509,8 +1517,10 @@ impl ToolsPanel {
                             self.text_state.cursor_pos = 0;
                             self.text_state.preview_dirty = true;
                             self.restore_raster_style();
-                            self.stroke_tracker
-                                .start_preview_tool(canvas_state.active_layer_index, "Text");
+                            self.stroke_tracker.start_preview_tool(
+                                canvas_state.active_layer_index,
+                                HistoryAction::Text.label("Text"),
+                            );
                         }
                     } else if self.text_state.is_editing && self.text_state.text.is_empty() {
                         // Already editing but empty - for text layers, switch block
@@ -1558,8 +1568,10 @@ impl ToolsPanel {
                             self.text_state.cursor_pos = 0;
                             self.text_state.preview_dirty = true;
                             self.restore_raster_style();
-                            self.stroke_tracker
-                                .start_preview_tool(canvas_state.active_layer_index, "Text");
+                            self.stroke_tracker.start_preview_tool(
+                                canvas_state.active_layer_index,
+                                HistoryAction::Text.label("Text"),
+                            );
                         }
                     }
                 }

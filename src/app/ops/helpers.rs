@@ -40,7 +40,7 @@ impl PaintFEApp {
     fn spawn_filter_job(
         &mut self,
         current_time: f64,
-        description: String,
+        description: crate::components::history::HistoryLabel,
         layer_idx: usize,
         original_pixels: TiledImage,
         original_flat: image::RgbaImage,
@@ -63,7 +63,7 @@ impl PaintFEApp {
     fn spawn_preview_job(
         &mut self,
         current_time: f64,
-        description: String,
+        description: crate::components::history::HistoryLabel,
         layer_idx: usize,
         original_pixels: TiledImage,
         original_flat: image::RgbaImage,
@@ -82,7 +82,7 @@ impl PaintFEApp {
     fn spawn_cancellable_preview_job(
         &mut self,
         current_time: f64,
-        description: String,
+        description: crate::components::history::HistoryLabel,
         layer_idx: usize,
         original_pixels: TiledImage,
         original_flat: image::RgbaImage,
@@ -155,7 +155,7 @@ impl PaintFEApp {
     fn spawn_filter_job_with_token(
         &mut self,
         current_time: f64,
-        description: String,
+        description: crate::components::history::HistoryLabel,
         layer_idx: usize,
         original_pixels: TiledImage,
         original_flat: image::RgbaImage,
@@ -177,7 +177,7 @@ impl PaintFEApp {
     fn spawn_fallible_filter_job(
         &mut self,
         current_time: f64,
-        description: String,
+        description: crate::components::history::HistoryLabel,
         layer_idx: usize,
         original_pixels: TiledImage,
         original_flat: image::RgbaImage,
@@ -198,7 +198,7 @@ impl PaintFEApp {
     fn spawn_filter_job_internal(
         &mut self,
         current_time: f64,
-        description: String,
+        description: crate::components::history::HistoryLabel,
         layer_idx: usize,
         original_pixels: TiledImage,
         original_flat: image::RgbaImage,
@@ -226,7 +226,7 @@ impl PaintFEApp {
         &mut self,
         project_id: uuid::Uuid,
         current_time: f64,
-        description: String,
+        description: crate::components::history::HistoryLabel,
         layer_idx: usize,
         original_pixels: TiledImage,
         original_flat: image::RgbaImage,
@@ -238,7 +238,7 @@ impl PaintFEApp {
         if self.pending_filter_jobs == 0 {
             self.filter_ops_start_time = Some(current_time);
         }
-        self.filter_status_description = description.clone();
+        self.filter_status_description = description.title.clone();
         self.pending_filter_jobs += 1;
         crate::par_compat::spawn(move || {
             let result_flat = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -308,7 +308,11 @@ impl PaintFEApp {
 
     /// Perform a canvas operation with full-snapshot undo.
     /// The closure receives `&mut CanvasState` and should apply the operation.
-    fn do_snapshot_op(&mut self, description: &str, op: impl FnOnce(&mut CanvasState)) {
+    fn do_snapshot_op(
+        &mut self,
+        description: crate::components::history::HistoryLabel,
+        op: impl FnOnce(&mut CanvasState),
+    ) {
         if let Some(project) = self.active_project_mut() {
             // Rasterize all text layers before any canvas-wide destructive op
             project.canvas_state.ensure_all_text_layers_rasterized();
@@ -317,7 +321,7 @@ impl PaintFEApp {
                     layer.content = crate::canvas::LayerContent::Raster;
                 }
             }
-            let mut cmd = SnapshotCommand::new(description.to_string(), &project.canvas_state);
+            let mut cmd = SnapshotCommand::new(description, &project.canvas_state);
             op(&mut project.canvas_state);
             cmd.set_after(&project.canvas_state);
             project.history.push(Box::new(cmd));
@@ -366,9 +370,9 @@ impl PaintFEApp {
             self.paste_transform_undo.clear();
             self.paste_transform_redo.clear();
             let desc = if self.is_move_pixels_active {
-                "Move Pixels"
+                HistoryAction::MovePixels.label("Move Pixels")
             } else {
-                "Paste"
+                HistoryAction::Paste.label("Paste")
             };
             let keep_selection =
                 leave_selected && !self.is_move_pixels_active && self.settings.select_after_paste;
@@ -396,9 +400,7 @@ impl PaintFEApp {
                     crate::components::history::CanvasSnapshot::capture(&project.canvas_state);
                 project.history.push(Box::new(
                     crate::components::history::SnapshotCommand::from_snapshots(
-                        desc.to_string(),
-                        before,
-                        after,
+                        desc, before, after,
                     ),
                 ));
                 if let Some(mut mask) = select_mask {
@@ -495,7 +497,11 @@ impl PaintFEApp {
 
     /// Same as do_snapshot_op, but only captures the active layer (not all layers).
     /// Much more memory-efficient for single-layer operations.
-    fn do_layer_snapshot_op(&mut self, description: &str, op: impl FnOnce(&mut CanvasState)) {
+    fn do_layer_snapshot_op(
+        &mut self,
+        description: crate::components::history::HistoryLabel,
+        op: impl FnOnce(&mut CanvasState),
+    ) {
         if let Some(project) = self.active_project_mut() {
             // Auto-rasterize the active text layer before any destructive single-layer op
             let idx = project.canvas_state.active_layer_index;
@@ -505,8 +511,7 @@ impl PaintFEApp {
                 project.canvas_state.ensure_all_text_layers_rasterized();
                 project.canvas_state.layers[idx].content = crate::canvas::LayerContent::Raster;
             }
-            let mut cmd =
-                SingleLayerSnapshotCommand::new(description.to_string(), &project.canvas_state);
+            let mut cmd = SingleLayerSnapshotCommand::new(description, &project.canvas_state);
             op(&mut project.canvas_state);
             cmd.set_after(&project.canvas_state);
             project.history.push(Box::new(cmd));
@@ -541,7 +546,7 @@ impl PaintFEApp {
             project.canvas_state.selection_overlay_bounds =
                 (w > 0 && h > 0).then_some((0, 0, w - 1, h - 1));
             project.history.push(Box::new(SelectionCommand::new_all(
-                "Select All",
+                HistoryAction::SelectAll.label("Select All"),
                 sel_before,
                 sel_before_all,
             )));
@@ -552,7 +557,7 @@ impl PaintFEApp {
     /// access the GPU renderer for compute-shader operations.
     fn do_gpu_snapshot_op(
         &mut self,
-        description: &str,
+        description: crate::components::history::HistoryLabel,
         op: impl FnOnce(&mut CanvasState, &crate::gpu::GpuRenderer),
     ) {
         let active_idx = self.active_project_index;
@@ -565,8 +570,7 @@ impl PaintFEApp {
                 project.canvas_state.ensure_all_text_layers_rasterized();
                 project.canvas_state.layers[idx].content = crate::canvas::LayerContent::Raster;
             }
-            let mut cmd =
-                SingleLayerSnapshotCommand::new(description.to_string(), &project.canvas_state);
+            let mut cmd = SingleLayerSnapshotCommand::new(description, &project.canvas_state);
             op(&mut project.canvas_state, &self.canvas.gpu_renderer);
             cmd.set_after(&project.canvas_state);
             project.history.push(Box::new(cmd));

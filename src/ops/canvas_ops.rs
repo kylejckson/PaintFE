@@ -16,6 +16,17 @@ pub enum ImageChannel {
 }
 
 impl ImageChannel {
+    pub fn history_action(self) -> crate::components::history::HistoryAction {
+        use crate::components::history::HistoryAction;
+        match self {
+            Self::Red => HistoryAction::ExtractRed,
+            Self::Green => HistoryAction::ExtractGreen,
+            Self::Blue => HistoryAction::ExtractBlue,
+            Self::Alpha => HistoryAction::ExtractAlpha,
+            Self::Luminance => HistoryAction::ExtractLuminance,
+        }
+    }
+
     fn sample(self, p: Rgba<u8>) -> u8 {
         match self {
             ImageChannel::Red => p[0],
@@ -329,13 +340,16 @@ pub fn add_text_layer(state: &mut CanvasState, history: &mut HistoryManager) {
     state.layers.insert(idx, layer);
     state.active_layer_index = idx;
 
-    history.push(Box::new(LayerOpCommand::new(LayerOperation::Add {
-        index: idx,
-        name,
-        width: state.width,
-        height: state.height,
-        folder_id: state.layers[idx].folder_id,
-    })));
+    history.push(Box::new(LayerOpCommand::new_for_action(
+        crate::components::history::HistoryAction::AddTextLayer,
+        LayerOperation::Add {
+            index: idx,
+            name,
+            width: state.width,
+            height: state.height,
+            folder_id: state.layers[idx].folder_id,
+        },
+    )));
 
     state.mark_dirty(None);
 }

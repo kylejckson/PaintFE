@@ -80,8 +80,10 @@ impl ToolsPanel {
                                     canvas_state.width,
                                     canvas_state.height,
                                 ));
-                            self.stroke_tracker
-                                .start_preview_tool(canvas_state.active_layer_index, "Liquify");
+                            self.stroke_tracker.start_preview_tool(
+                                canvas_state.active_layer_index,
+                                HistoryAction::Liquify.label("Liquify"),
+                            );
                             // Tell GPU pipeline the source snapshot changed
                             if let Some(gpu) = gpu_renderer {
                                 gpu.liquify_pipeline.invalidate_source();
@@ -200,8 +202,10 @@ impl ToolsPanel {
                 // Auto-initialize grid as soon as tool is selected
                 if !self.mesh_warp_state.is_active {
                     self.init_mesh_warp_grid(canvas_state);
-                    self.stroke_tracker
-                        .start_preview_tool(canvas_state.active_layer_index, "Mesh Warp");
+                    self.stroke_tracker.start_preview_tool(
+                        canvas_state.active_layer_index,
+                        HistoryAction::MeshWarp.label("Mesh Warp"),
+                    );
                 } else {
                     // Detect stale snapshot (layer changed since snapshot was taken)
                     let cur_layer_idx = canvas_state.active_layer_index;
@@ -215,8 +219,10 @@ impl ToolsPanel {
                     {
                         // Re-snapshot: layer content or active layer changed
                         self.init_mesh_warp_grid(canvas_state);
-                        self.stroke_tracker
-                            .start_preview_tool(cur_layer_idx, "Mesh Warp");
+                        self.stroke_tracker.start_preview_tool(
+                            cur_layer_idx,
+                            HistoryAction::MeshWarp.label("Mesh Warp"),
+                        );
                     }
                 }
                 if self.mesh_warp_state.is_active {
@@ -322,7 +328,7 @@ impl ToolsPanel {
                         if let Some(pixels) = layer_pixels {
                             self.stroke_tracker.start_direct_tool(
                                 canvas_state.active_layer_index,
-                                "Smudge",
+                                HistoryAction::Smudge.label("Smudge"),
                                 &pixels,
                             );
                         }
@@ -386,8 +392,10 @@ impl ToolsPanel {
 
                 // Enter: commit placed shape
                 if enter_pressed && self.shapes_state.placed.is_some() {
-                    self.stroke_tracker
-                        .start_preview_tool(canvas_state.active_layer_index, "Shape");
+                    self.stroke_tracker.start_preview_tool(
+                        canvas_state.active_layer_index,
+                        HistoryAction::Shapes.label("Shape"),
+                    );
                     self.commit_shape(canvas_state);
                 }
 
@@ -541,8 +549,10 @@ impl ToolsPanel {
                         }
 
                         if should_commit {
-                            self.stroke_tracker
-                                .start_preview_tool(canvas_state.active_layer_index, "Shape");
+                            self.stroke_tracker.start_preview_tool(
+                                canvas_state.active_layer_index,
+                                HistoryAction::Shapes.label("Shape"),
+                            );
                             self.commit_shape(canvas_state);
                             if self.pending_stroke_event.is_none()
                                 && let Some(evt) = stroke_event.take()
@@ -679,8 +689,10 @@ impl ToolsPanel {
                             self.shapes_state.draw_end = Some([pos_f.0, pos_f.1]);
                             self.shapes_state.source_layer_index =
                                 Some(canvas_state.active_layer_index);
-                            self.stroke_tracker
-                                .start_preview_tool(canvas_state.active_layer_index, "Shape");
+                            self.stroke_tracker.start_preview_tool(
+                                canvas_state.active_layer_index,
+                                HistoryAction::Shapes.label("Shape"),
+                            );
                         }
 
                         if is_primary_down && self.shapes_state.is_drawing {
@@ -732,8 +744,14 @@ impl ToolsPanel {
                                             hh,
                                             rotation: 0.0,
                                             kind: self.shapes_state.selected_shape,
-                                            custom_shape: self.shapes_state.selected_custom_shape.clone(),
-                                            custom_shape_data: self.shapes_state.selected_custom_shape_data.clone(),
+                                            custom_shape: self
+                                                .shapes_state
+                                                .selected_custom_shape
+                                                .clone(),
+                                            custom_shape_data: self
+                                                .shapes_state
+                                                .selected_custom_shape_data
+                                                .clone(),
                                             fill_mode: self.shapes_state.fill_mode,
                                             outline_width: self.properties.size,
                                             primary_color: primary,
@@ -903,8 +921,10 @@ impl ToolsPanel {
                             Some(canvas_state.active_layer_index);
 
                         // Start stroke tracking
-                        self.stroke_tracker
-                            .start_preview_tool(canvas_state.active_layer_index, "Gradient");
+                        self.stroke_tracker.start_preview_tool(
+                            canvas_state.active_layer_index,
+                            HistoryAction::Gradient.label("Gradient"),
+                        );
                         self.stroke_tracker.expand_bounds(egui::Rect::from_min_max(
                             egui::pos2(0.0, 0.0),
                             egui::pos2(canvas_state.width as f32, canvas_state.height as f32),
@@ -962,9 +982,7 @@ impl ToolsPanel {
             }
 
             // ================================================================
-
             _ => {}
         }
     }
 }
-

@@ -106,7 +106,7 @@ impl ToolsPanel {
         self.magic_wand_state.cached_flat_rgba = None;
     }
 
-    fn magic_wand_has_session(&self) -> bool {
+    pub(crate) fn magic_wand_has_session(&self) -> bool {
         self.magic_wand_state.computing
             || self.magic_wand_state.pending_operation.is_some()
             || !self.magic_wand_state.operations.is_empty()
@@ -124,7 +124,7 @@ impl ToolsPanel {
         if before != after {
             self.pending_history_commands
                 .push(Box::new(SelectionCommand::new(
-                    "Magic Wand Select",
+                    HistoryAction::MagicWand.label("Magic Wand Select"),
                     before,
                     after,
                 )));
@@ -1249,7 +1249,7 @@ impl ToolsPanel {
         }
 
         let mut history_cmd = crate::components::history::SingleLayerSnapshotCommand::new_for_layer(
-            "Fill".to_string(),
+            HistoryAction::Fill.label("Fill".to_string()),
             canvas_state,
             active_layer_index,
         );
@@ -1366,8 +1366,10 @@ impl ToolsPanel {
 
         // Start stroke tracking for undo/redo
         if let Some(_layer) = canvas_state.layers.get(canvas_state.active_layer_index) {
-            self.stroke_tracker
-                .start_preview_tool(canvas_state.active_layer_index, "Fill");
+            self.stroke_tracker.start_preview_tool(
+                canvas_state.active_layer_index,
+                HistoryAction::Fill.label("Fill"),
+            );
         }
 
         canvas_state.preview_blend_mode = BlendMode::Normal;

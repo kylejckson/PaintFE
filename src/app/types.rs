@@ -1,7 +1,7 @@
 struct PreviewJob {
     project_id: uuid::Uuid,
     current_time: f64,
-    description: String,
+    description: crate::components::history::HistoryLabel,
     layer_idx: usize,
     original_pixels: TiledImage,
     original_flat: image::RgbaImage,
@@ -21,7 +21,7 @@ pub struct FilterResult {
     /// The processed full-resolution pixels.
     pub result_pixels: TiledImage,
     /// Human-readable name for the undo history entry.
-    pub description: String,
+    pub description: crate::components::history::HistoryLabel,
     /// Non-zero for live-preview jobs; result is discarded when token != current preview_job_token.
     pub preview_token: u64,
 }
@@ -38,7 +38,7 @@ pub struct CanvasOpResult {
     pub new_width: u32,
     pub new_height: u32,
     /// Human-readable name for the undo history entry.
-    pub description: String,
+    pub description: crate::components::history::HistoryLabel,
 }
 
 // ============================================================================

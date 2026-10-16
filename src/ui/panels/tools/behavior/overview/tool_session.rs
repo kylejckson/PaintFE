@@ -42,9 +42,9 @@ impl ToolsPanel {
             self.stroke_tracker.start_preview_mask_tool(
                 layer_idx,
                 if is_eraser {
-                    "Layer Mask Erase"
+                    HistoryAction::MaskErase.label("Layer Mask Erase")
                 } else {
-                    "Layer Mask Paint"
+                    HistoryAction::MaskPaint.label("Layer Mask Paint")
                 },
                 before_mask,
                 before_enabled,
@@ -53,15 +53,15 @@ impl ToolsPanel {
             if let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index) {
                 self.stroke_tracker.start_direct_tool(
                     canvas_state.active_layer_index,
-                    "Eraser Line",
+                    HistoryAction::Eraser.label("Eraser Line"),
                     &layer.pixels,
                 );
             }
         } else {
             let description = if self.active_tool == Tool::Pencil {
-                "Pencil Line"
+                HistoryAction::Pencil.label("Pencil Line")
             } else {
-                "Brush Line"
+                HistoryAction::Brush.label("Brush Line")
             };
             self.stroke_tracker
                 .start_preview_tool(canvas_state.active_layer_index, description);
@@ -415,8 +415,10 @@ impl ToolsPanel {
             }
             Tool::Text if self.text_state.is_editing => {
                 if !self.text_state.text.is_empty() {
-                    self.stroke_tracker
-                        .start_preview_tool(canvas_state.active_layer_index, "Text");
+                    self.stroke_tracker.start_preview_tool(
+                        canvas_state.active_layer_index,
+                        HistoryAction::Text.label("Text"),
+                    );
                     self.commit_text(canvas_state);
                 } else {
                     self.text_state.is_editing = false;

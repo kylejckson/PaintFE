@@ -158,7 +158,7 @@ impl PaintFEApp {
                 self.filter_ops_start_time = None;
                 self.filter_status_description.clear();
             }
-            if result.description == "Remove Background" {
+            if result.description.action == HistoryAction::RemoveBackground {
                 self.background_removal_pending = false;
             }
             // Discard stale live-preview results (token mismatch = superseded by newer job)
@@ -278,7 +278,7 @@ impl PaintFEApp {
                         if canvas_ops.is_empty() {
                             // Layer-only script: lightweight single-layer snapshot
                             let mut cmd = SingleLayerSnapshotCommand::new_for_layer(
-                                "Script".to_string(),
+                                HistoryAction::Script.label("Script".to_string()),
                                 &project.canvas_state,
                                 layer_idx,
                             );
@@ -289,8 +289,10 @@ impl PaintFEApp {
                             project.history.push(Box::new(cmd));
                         } else {
                             // Canvas-wide transform: full snapshot (dimensions may change)
-                            let mut cmd =
-                                SnapshotCommand::new("Script".to_string(), &project.canvas_state);
+                            let mut cmd = SnapshotCommand::new(
+                                HistoryAction::Script.label("Script".to_string()),
+                                &project.canvas_state,
+                            );
 
                             // Apply result to active layer
                             let result_tiled =

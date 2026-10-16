@@ -41,7 +41,7 @@ impl PaintFEApp {
         };
         let shelf_anchor = viewport_rect.min + egui::vec2(left, top);
         let mut show_shelf = |ui: &mut egui::Ui| {
-            if modal_open {
+            if modal_open || !has_project {
                 ui.disable();
             }
             let bar_w = if docked {
@@ -66,6 +66,7 @@ impl PaintFEApp {
                 }) as u8);
             if docked {
                 shelf_frame.shadow = egui::epaint::Shadow::NONE;
+                shelf_frame.stroke = egui::Stroke::NONE;
             }
             let content_w = (bar_w - shelf_frame.total_margin().sum().x).max(0.0);
             let shelf_inner = shelf_frame.show(ui, |ui| {
@@ -225,6 +226,17 @@ impl PaintFEApp {
                     });
             });
             shelf_ui_rect = shelf_inner.response.rect;
+            if docked {
+                let color = appearance
+                    .top_separator
+                    .map(|[r, g, b]| egui::Color32::from_rgb(r, g, b))
+                    .unwrap_or(self.theme.tool_shelf_border)
+                    .gamma_multiply(appearance.separator_opacity);
+                ui.painter().line_segment(
+                    [shelf_ui_rect.left_top(), shelf_ui_rect.right_top()],
+                    egui::Stroke::new(1., color),
+                );
+            }
         };
         if docked {
             egui::Panel::top("docked_tool_options")
@@ -465,7 +477,9 @@ impl PaintFEApp {
                         self.paste_transform_undo.push(before);
                         self.paste_transform_redo.clear();
                         project.history.push(Box::new(
-                            crate::components::history::MarkerCommand::new("Move Paste"),
+                            crate::components::history::MarkerCommand::new(
+                                HistoryAction::MovePaste.label("Move Paste"),
+                            ),
                         ));
                     }
 
@@ -493,9 +507,9 @@ impl PaintFEApp {
                                     self.paste_transform_undo.clear();
                                     self.paste_transform_redo.clear();
                                     let desc = if self.is_move_pixels_active {
-                                        "Move Pixels"
+                                        HistoryAction::MovePixels.label("Move Pixels")
                                     } else {
-                                        "Paste"
+                                        HistoryAction::Paste.label("Paste")
                                     };
                                     let move_before = if self.is_move_pixels_active {
                                         self.move_pixels_before.take()
@@ -503,10 +517,10 @@ impl PaintFEApp {
                                         None
                                     };
                                     let mut cmd = move_before
-                                        .map(|before| (desc.to_string(), before))
+                                        .map(|before| (desc.clone(), before))
                                         .or_else(|| {
                                             Some((
-                                                desc.to_string(),
+                                                desc,
                                                 crate::components::history::CanvasSnapshot::capture(
                                                     &project.canvas_state,
                                                 ),
@@ -569,7 +583,7 @@ impl PaintFEApp {
                                         }
                                     }
                                     let mut cmd = SnapshotCommand::new(
-                                        "Crop to Selection".to_string(),
+                                        HistoryAction::Crop.label("Crop to Selection".to_string()),
                                         &project.canvas_state,
                                     );
                                     crate::ops::adjustments::crop_to_selection(
@@ -706,7 +720,7 @@ impl PaintFEApp {
                     // Snapshot before rasterization for undo
                     let mut cmd =
                         crate::components::history::SingleLayerSnapshotCommand::new_for_layer(
-                            "Rasterize Text Layer".to_string(),
+                            HistoryAction::RasterizeText.label("Rasterize Text Layer".to_string()),
                             &project.canvas_state,
                             layer_idx,
                         );
@@ -729,6 +743,16 @@ impl PaintFEApp {
             }
         }
 
+        self.dispatch_pending_tool_jobs(ctx);
+
+        // --- Continuous Repaint While Painting ---
+        // Request repaint during active brush/eraser strokes for smooth 60fps.
+        // This ensures we don't miss mouse input events and get jittery results.
+    }
+}
+
+impl PaintFEApp {
+    fn dispatch_pending_tool_jobs(&mut self, ctx: &egui::Context) {
         // --- Async Color Removal ---
         // Check if a color removal was requested and dispatch via spawn_filter_job
         if let Some(req) = self.tools_panel.take_pending_color_removal()
@@ -741,7 +765,7 @@ impl PaintFEApp {
                 let current_time = ctx.input(|i| i.time);
                 self.spawn_filter_job(
                     current_time,
-                    "Color Remover".to_string(),
+                    HistoryAction::ColorRemover.label("Color Remover".to_string()),
                     idx,
                     original_pixels,
                     original_flat,
@@ -777,7 +801,7 @@ impl PaintFEApp {
                 let current_time = ctx.input(|i| i.time);
                 self.spawn_filter_job(
                     current_time,
-                    "Content-Aware Brush".to_string(),
+                    HistoryAction::ContentAwareBrush.label("Content-Aware Brush".to_string()),
                     idx,
                     original_pixels,
                     original_flat,
@@ -789,9 +813,5 @@ impl PaintFEApp {
                 );
             }
         }
-
-        // --- Continuous Repaint While Painting ---
-        // Request repaint during active brush/eraser strokes for smooth 60fps.
-        // This ensures we don't miss mouse input events and get jittery results.
     }
 }
