@@ -1550,3 +1550,10 @@ settings.save_error=No se pudieron guardar las preferencias: {error}
 paste.outside_hint=Los píxeles atenuados están fuera del lienzo.
 
 settings.tools.animate_resize=Animar el cambio de tamaño del panel de herramientas
+
+info.selection_bounds=Límites de la selección
+info.font_size=Tamaño de letra de la información de imagen
+settings.search.placeholder=Buscar preferencias en español o inglés
+settings.search.empty=No se encontraron preferencias
+
+info.appearance=Apariencia de la información de la imagen

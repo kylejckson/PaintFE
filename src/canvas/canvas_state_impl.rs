@@ -13,6 +13,7 @@
             preview_targets_mask: false,
             preview_mask_reveal: false,
             dirty_generation: 0,
+            gpu_layers_invalid: true,
             selection_mask: None,
             lod_composite_cache: None,
             lod_generation: 0,

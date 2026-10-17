@@ -253,7 +253,7 @@ pub(super) fn tool_frame(
         |ui| {
             if matches!(
                 app.tools_panel.active_tool,
-                Tool::MovePixels | Tool::MoveSelection
+                Tool::MovePixels | Tool::MoveSelection | Tool::Text
             ) {
                 app.update_runtime_input(ui.ctx());
             }

@@ -1550,3 +1550,10 @@ settings.save_error=Preferensi tidak dapat disimpan: {error}
 paste.outside_hint=Piksel yang dipudarkan berada di luar kanvas.
 
 settings.tools.animate_resize=Animasikan perubahan ukuran panel alat
+
+info.selection_bounds=Batas seleksi
+info.font_size=Ukuran font informasi gambar
+settings.search.placeholder=Cari preferensi dalam bahasa Indonesia atau Inggris
+settings.search.empty=Tidak ada preferensi yang cocok
+
+info.appearance=Tampilan informasi gambar

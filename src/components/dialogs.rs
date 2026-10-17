@@ -1463,8 +1463,15 @@ impl SaveFileDialog {
                 ctx.request_repaint();
             }
 
-            crate::ui::polish::window(ctx, "save_file_dialog_internal")
+            let position_id = egui::Id::new("save_as_heading_position");
+            let position = ctx
+                .data(|d| d.get_temp::<egui::Pos2>(position_id))
+                .unwrap_or(ctx.content_rect().center() - egui::vec2(330.0, 230.0));
+            let mut moved_position = None;
+            let response = crate::ui::polish::window(ctx, "save_file_dialog_internal")
                 .title_bar(false)
+                .movable(false)
+                .current_pos(position)
                 .collapsible(false)
                 .resizable(true)
                 .default_size(egui::vec2(660.0, 520.0))
@@ -1475,7 +1482,15 @@ impl SaveFileDialog {
                     ui.set_min_width(640.0);
 
                     // ── Header ──────────────────────────────────────────────
+                    let header_min = ui.cursor().min;
+                    let header_height = 32.0 * crate::ui::polish::settings(ctx).spacing_scale;
+                    let header_rect = egui::Rect::from_min_size(header_min, egui::vec2((ui.available_width() - header_height * 3.0).max(1.0), header_height));
                     should_close |= paint_dialog_header(ui, &colors, "\u{1F4BE}", &crate::t!("keybind.save_as"));
+                    let heading = ui.interact(header_rect, ui.id().with("save_as_heading_drag"), egui::Sense::drag());
+                    if heading.dragged() {
+                        moved_position = Some(position + ui.input(|i| i.pointer.delta()));
+                        ctx.request_repaint();
+                    }
                     ui.add_space(8.0);
 
                     // ── Two-column layout ────────────────────────────────────
@@ -1667,10 +1682,12 @@ impl SaveFileDialog {
                                 if ui.small_button("\u{2212}").clicked() {
                                     self.preview_zoom = (self.preview_zoom / 1.25).max(0.05);
                                 }
-                                let zoom_pct = (self.preview_zoom * 100.0).round() as u32;
-                                if ui.small_button(format!("{}%", zoom_pct)).clicked() {
-                                    // Click zoom label → jump to 100 %
-                                    self.preview_zoom = 1.0;
+                                let mut zoom_pct = (self.preview_zoom * 100.0).round();
+                                let zoom_response = ui.add(crate::ui::numeric::Numeric::new(&mut zoom_pct).range(5.0..=6400.0).speed(1.0).suffix("%"));
+                                #[cfg(test)]
+                                ctx.data_mut(|d| d.insert_temp(egui::Id::new("save_as_zoom_rect"), zoom_response.rect));
+                                if zoom_response.changed() {
+                                    self.preview_zoom = zoom_pct / 100.0;
                                     if let Some(texture) = display_texture {
                                         let ts = texture.size_vec2();
                                         let vis_w = PREVIEW_PANEL_SIZE / self.preview_zoom;
@@ -1764,7 +1781,9 @@ impl SaveFileDialog {
                                 }
                                 if self.format != SaveFormat::Webp || !self.webp_lossless {
                                     section_label(ui, &colors, &crate::t!("dialog.resize_image.quality"));
-                                    if ui.add(egui::Slider::new(&mut self.quality, 1..=100).suffix("%")).changed() {
+                                    let mut quality = self.quality as f32;
+                                    if crate::ui::dialogs::core::numeric_field_with_buttons(ui, &mut quality, 1.0, 1.0..=100.0, "%", 1.0) {
+                                        self.quality = quality.round() as u8;
                                         ctx.request_repaint();
                                     }
                                 }
@@ -1917,6 +1936,14 @@ impl SaveFileDialog {
                         });
                     });
                 });
+            if let Some(response) = response {
+                ctx.data_mut(|d| {
+                    d.insert_temp(
+                        position_id,
+                        moved_position.unwrap_or(response.response.rect.min),
+                    )
+                });
+            }
         }
 
         if should_close {
@@ -1992,5 +2019,97 @@ mod preview_mapping_tests {
         assert_close(uv.min.y, 0.125);
         assert_close(uv.max.x, 0.4375);
         assert_close(uv.max.y, 0.75);
+    }
+}
+
+#[cfg(test)]
+mod save_as_controls_tests {
+    use super::*;
+
+    fn frame(ctx: &egui::Context, dialog: &mut SaveFileDialog, events: Vec<egui::Event>) {
+        let _ = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1000.0, 800.0),
+                )),
+                events,
+                ..Default::default()
+            },
+            |_| {
+                dialog.show(ctx);
+            },
+        );
+    }
+    fn drag(
+        ctx: &egui::Context,
+        dialog: &mut SaveFileDialog,
+        start: egui::Pos2,
+        delta: egui::Vec2,
+    ) {
+        frame(ctx, dialog, vec![egui::Event::PointerMoved(start)]);
+        frame(
+            ctx,
+            dialog,
+            vec![egui::Event::PointerButton {
+                pos: start,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        frame(ctx, dialog, vec![egui::Event::PointerMoved(start + delta)]);
+        frame(
+            ctx,
+            dialog,
+            vec![egui::Event::PointerButton {
+                pos: start + delta,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+    }
+
+    #[test]
+    fn issue_185_save_as_zoom_owns_drag_and_heading_still_moves() {
+        let ctx = egui::Context::default();
+        let mut fonts = egui::FontDefinitions::default();
+        fonts.families.insert(
+            egui::FontFamily::Name("WidgetTitle".into()),
+            fonts.families[&egui::FontFamily::Proportional].clone(),
+        );
+        ctx.set_fonts(fonts);
+        let mut dialog = SaveFileDialog {
+            open: true,
+            preview_zoom: 1.0,
+            ..Default::default()
+        };
+        for _ in 0..3 {
+            frame(&ctx, &mut dialog, Vec::new());
+        }
+        let position_id = egui::Id::new("save_as_heading_position");
+        let before = ctx.data(|d| d.get_temp::<egui::Pos2>(position_id)).unwrap();
+        let zoom_rect = ctx
+            .data(|d| d.get_temp::<egui::Rect>(egui::Id::new("save_as_zoom_rect")))
+            .unwrap();
+        drag(&ctx, &mut dialog, zoom_rect.center(), egui::vec2(32.0, 0.0));
+        assert!(
+            dialog.preview_zoom > 1.0,
+            "zoom control did not receive drag"
+        );
+        assert_eq!(
+            ctx.data(|d| d.get_temp::<egui::Pos2>(position_id)),
+            Some(before),
+            "percentage drag moved dialog"
+        );
+        drag(
+            &ctx,
+            &mut dialog,
+            before + egui::vec2(100.0, 20.0),
+            egui::vec2(25.0, 15.0),
+        );
+        let after = ctx.data(|d| d.get_temp::<egui::Pos2>(position_id)).unwrap();
+        assert!((after - before - egui::vec2(25.0, 15.0)).length() < 1.0);
     }
 }

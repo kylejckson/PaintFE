@@ -1550,3 +1550,10 @@ settings.save_error=Nastavení se nepodařilo uložit: {error}
 paste.outside_hint=Vybledlé pixely jsou mimo plátno.
 
 settings.tools.animate_resize=Animovat změnu velikosti panelu nástrojů
+
+info.selection_bounds=Rozměry výběru
+info.font_size=Velikost písma informací o obrázku
+settings.search.placeholder=Hledat v nastavení česky nebo anglicky
+settings.search.empty=Žádná odpovídající nastavení
+
+info.appearance=Vzhled informací o obrázku

@@ -3,6 +3,24 @@ impl LayersPanel {
     /// For text layers this includes Effects and Warp tabs.
     fn show_layer_settings_popup(&mut self, ui: &mut egui::Ui, canvas_state: &mut CanvasState) {
         self.settings_popup_rect = None;
+        if self.settings_state.editing_layer.is_some() {
+            let index = canvas_state.active_layer_index;
+            let Some(layer) = canvas_state.layers.get(index) else {
+                self.settings_state.editing_layer = None;
+                return;
+            };
+            if self.settings_state.editing_layer != Some(index)
+                || self.settings_state.source_canvas != canvas_state as *const CanvasState as usize
+                || self.settings_state.source_layer_count != canvas_state.layers.len()
+                || (self.settings_state.editing_name != layer.name && !self.settings_state.editing_name.is_empty())
+                || self.settings_state.editing_opacity != layer.opacity
+                || self.settings_state.editing_blend_mode != layer.blend_mode
+                || canvas_state.gpu_layers_invalid
+            {
+                let tab = self.settings_state.tab;
+                self.open_settings_for_layer(index, canvas_state, tab);
+            }
+        }
         if let Some(layer_idx) = self.settings_state.editing_layer {
             if layer_idx >= canvas_state.layers.len() {
                 self.settings_state.editing_layer = None;

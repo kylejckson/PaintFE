@@ -207,6 +207,10 @@ pub struct AppSettings {
     pub show_tool_info: bool,
     pub debug_show_canvas_size: bool,
     pub debug_show_zoom: bool,
+    pub info_font_size: f32,
+    pub info_opacity: f32,
+    pub info_text_color: Option<[u8; 3]>,
+    pub info_background_color: Option<[u8; 3]>,
     pub debug_show_fps: bool,
     pub debug_show_gpu: bool,
     pub debug_show_operations: bool,
@@ -444,6 +448,10 @@ impl Default for AppSettings {
             show_tool_info: true,
             debug_show_canvas_size: true,
             debug_show_zoom: true,
+            info_font_size: 12.0,
+            info_opacity: 1.0,
+            info_text_color: None,
+            info_background_color: None,
             debug_show_fps: false,
             debug_show_gpu: false,
             debug_show_operations: true,
@@ -1145,6 +1153,19 @@ impl AppSettings {
         );
         // Append keybinding lines
         let mut content = content;
+        content.push_str(&format!("info_font_size={}\n", self.info_font_size));
+        content.push_str(&format!("info_opacity={}\n", self.info_opacity));
+        for (key, color) in [
+            ("info_text_color", self.info_text_color),
+            ("info_background_color", self.info_background_color),
+        ] {
+            if let Some(color) = color {
+                content.push_str(&format!(
+                    "{key}={}\n",
+                    serde_json::to_string(&color).unwrap()
+                ));
+            }
+        }
         content.push_str(&format!(
             "onnx_cpu_memory_arena={}\nonnx_graph_optimization={}\n",
             self.onnx_cpu_memory_arena,
@@ -1805,6 +1826,28 @@ impl AppSettings {
                 "select_after_paste" => {
                     s.select_after_paste = val == "true";
                 }
+                "info_opacity" => {
+                    s.info_opacity = val
+                        .parse::<f32>()
+                        .ok()
+                        .filter(|n| n.is_finite())
+                        .unwrap_or(1.0)
+                        .clamp(0.0, 1.0);
+                }
+                "info_text_color" => {
+                    s.info_text_color = serde_json::from_str(val).ok();
+                }
+                "info_background_color" => {
+                    s.info_background_color = serde_json::from_str(val).ok();
+                }
+                "info_font_size" => {
+                    s.info_font_size = val
+                        .parse::<f32>()
+                        .ok()
+                        .filter(|n| n.is_finite())
+                        .unwrap_or(12.0)
+                        .clamp(10.0, 24.0);
+                }
                 "onnx_runtime_path" => {
                     s.onnx_runtime_path = val.to_string();
                 }
@@ -2276,6 +2319,10 @@ mod refinement_tests {
     #[test]
     fn preferences_roundtrip_preserves_tab_and_onnx_options() {
         let settings = AppSettings {
+            info_font_size: 18.0,
+            info_opacity: 0.65,
+            info_text_color: Some([12, 34, 56]),
+            info_background_color: Some([210, 220, 230]),
             middle_click_close_tabs: false,
             tooltip_delay: 0.0,
             last_export_format: "webp".into(),
@@ -2308,6 +2355,10 @@ mod refinement_tests {
         };
         settings.save();
         let restored = AppSettings::load();
+        assert_eq!(restored.info_font_size, 18.0);
+        assert_eq!(restored.info_opacity, 0.65);
+        assert_eq!(restored.info_text_color, Some([12, 34, 56]));
+        assert_eq!(restored.info_background_color, Some([210, 220, 230]));
         assert!(!restored.middle_click_close_tabs);
         assert_eq!(restored.tooltip_delay, 0.0);
         assert_eq!(restored.last_export_format, "webp");

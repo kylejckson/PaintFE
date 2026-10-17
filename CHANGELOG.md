@@ -6,6 +6,33 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.9] - 2026-10-17
+
+- Fixed text editing, crop undo redraws and layer settings getting out of sync.
+- Improved resize dialogs, Save As controls and pasted-image handling.
+- Added Preferences search and appearance settings for image information.
+
+### Fixed
+
+- Text editing now keeps clipboard, selection and delete shortcuts with the text editor, preventing them from changing canvas pixels underneath.
+- Undoing and redoing a crop now refreshes the GPU layer contents, preventing stale pixels from appearing.
+- Layer settings now follow the active layer and document instead of showing values from a previous selection.
+- Pasted content stays editable while using navigation tools and commits when switching to a painting tool.
+- Selection dimensions include single-pixel selections and remain visible after releasing the mouse.
+- Document Info now shows readable Windows paths without the extended-path prefix. Recent Files entries are left-aligned.
+- Resize dialogs select the initial width properly, use consistent drag adjustments and keep the canvas anchor preview within its bounds.
+- Dialog resets restore the original resize dimensions and colour-sampling position. Duplicate reset controls are hidden where a shared header reset is available.
+- Save As and Preferences now move only by their headings, preventing numeric controls from dragging the whole window.
+- Fixed the Preferences search row expanding vertically and pushing the settings out of view.
+
+### Added
+
+- Added Preferences search using English and translated setting names, with navigation to matching sections.
+- Added font size, opacity, text colour and background colour controls for the bottom-right image information panel, with theme defaults and a reset button.
+- Added direct percentage editing for Save As preview zoom and consistent numeric controls for export quality.
+
+Related issues: 168, 185, 186, 188, 189, 190, 191, 192 and 193. Issues remain open for users to test and confirm. Further testing is continuing.
+
 ## [1.4.8] - 2026-10-16
 
 - Reworked Tools resizing with compact layouts, smoother movement and tool visibility controls.

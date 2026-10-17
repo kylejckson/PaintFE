@@ -1550,3 +1550,10 @@ settings.save_error=无法保存偏好设置：{error}
 paste.outside_hint=淡化显示的像素位于画布之外。
 
 settings.tools.animate_resize=工具面板缩放动画
+
+info.selection_bounds=选区边界
+info.font_size=图像信息字号
+settings.search.placeholder=用中文或英文搜索偏好设置
+settings.search.empty=没有匹配的偏好设置
+
+info.appearance=图像信息外观

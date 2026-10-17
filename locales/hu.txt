@@ -1550,3 +1550,10 @@ settings.save_error=A beállítások mentése nem sikerült: {error}
 paste.outside_hint=A halvány képpontok a vásznon kívül vannak.
 
 settings.tools.animate_resize=Az eszközpanel átméretezésének animálása
+
+info.selection_bounds=Kijelölés méretei
+info.font_size=Képinformációk betűmérete
+settings.search.placeholder=Beállítások keresése magyarul vagy angolul
+settings.search.empty=Nincs megfelelő beállítás
+
+info.appearance=Képinformációk megjelenése

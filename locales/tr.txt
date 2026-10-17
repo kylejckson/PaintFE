@@ -1550,3 +1550,10 @@ settings.save_error=Tercihler kaydedilemedi: {error}
 paste.outside_hint=Soluk pikseller tuvalin dışındadır.
 
 settings.tools.animate_resize=Araç panelini yeniden boyutlandırırken animasyon kullan
+
+info.selection_bounds=Seçim sınırları
+info.font_size=Görüntü bilgilerinin yazı tipi boyutu
+settings.search.placeholder=Tercihlerde Türkçe veya İngilizce ara
+settings.search.empty=Eşleşen tercih bulunamadı
+
+info.appearance=Görüntü bilgisi görünümü

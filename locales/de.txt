@@ -1550,3 +1550,10 @@ settings.save_error=Einstellungen konnten nicht gespeichert werden: {error}
 paste.outside_hint=Verblasste Pixel liegen außerhalb der Leinwand.
 
 settings.tools.animate_resize=Größenänderung der Werkzeugleiste animieren
+
+info.selection_bounds=Auswahlabmessungen
+info.font_size=Schriftgröße der Bildinformationen
+settings.search.placeholder=Einstellungen auf Deutsch oder Englisch suchen
+settings.search.empty=Keine passenden Einstellungen
+
+info.appearance=Darstellung der Bildinformationen

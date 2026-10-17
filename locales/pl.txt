@@ -1550,3 +1550,10 @@ settings.save_error=Nie udało się zapisać preferencji: {error}
 paste.outside_hint=Przygaszone piksele znajdują się poza płótnem.
 
 settings.tools.animate_resize=Animuj zmianę rozmiaru panelu narzędzi
+
+info.selection_bounds=Wymiary zaznaczenia
+info.font_size=Rozmiar czcionki informacji o obrazie
+settings.search.placeholder=Szukaj ustawień po polsku lub angielsku
+settings.search.empty=Brak pasujących ustawień
+
+info.appearance=Wygląd informacji o obrazie

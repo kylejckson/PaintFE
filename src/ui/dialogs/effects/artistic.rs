@@ -282,6 +282,8 @@ effect_dialog_base!(ColorToAlphaDialog {
 });
 
 impl ColorToAlphaDialog {
+    pub(crate) fn reset_sample(&mut self) { self.sample_x = 0; self.sample_y = 0; }
+
     pub fn new_with_target(state: &CanvasState, target: Color32) -> Self {
         let mut dlg = Self::new(state);
         dlg.target_color = [
@@ -307,17 +309,6 @@ impl ColorToAlphaDialog {
             alpha_ceiling: self.alpha_ceiling,
             protect_luminance: self.protect_luminance,
         }
-    }
-
-    fn set_preset(&mut self, color: [f32; 3]) {
-        self.target_color = color;
-        self.tolerance = 18.0;
-        self.softness = 35.0;
-        self.strength = 1.0;
-        self.spill_suppression = 0.35;
-        self.alpha_floor = 0.0;
-        self.alpha_ceiling = 1.0;
-        self.protect_luminance = 0.15;
     }
 
     pub fn show(
@@ -402,12 +393,7 @@ impl ColorToAlphaDialog {
                         });
                         ui.end_row();
 
-                        ui.label(crate::t!("common.reset"));
-                        if ui.small_button("\u{21BA}").clicked() {
-                            self.set_preset([1.0, 0.0, 0.0]);
-                            changed = true;
-                        }
-                        ui.end_row();
+
                     });
 
                 ui.add_space(4.0);

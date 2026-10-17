@@ -18,6 +18,7 @@ pub struct SettingsWindow {
     /// Set when icon display options changed and textures must be re-uploaded.
     pub pending_icon_pack_reload: bool,
     active_tab: SettingsTab,
+    search_query: String,
     #[cfg(not(target_arch = "wasm32"))]
     storage_error: Option<(bool, String)>,
     /// Editing values for Interface; saved through the common automatic apply path.
@@ -67,6 +68,29 @@ enum SettingsTab {
     Fonts,
 }
 
+struct SearchEntry {
+    tab: SettingsTab,
+    key: &'static str,
+    english: &'static str,
+    section: &'static str,
+}
+include!("settings_search_catalog.rs");
+
+impl SearchEntry {
+    fn matches(&self, query: &str) -> bool {
+        let text = format!(
+            "{} {} {}",
+            self.english,
+            crate::i18n::translate(self.key),
+            self.key.replace(['.', '_'], " ")
+        )
+        .to_lowercase();
+        query
+            .split_whitespace()
+            .all(|word| text.contains(&word.to_lowercase()))
+    }
+}
+
 impl Default for SettingsWindow {
     fn default() -> Self {
         let preset = ThemePreset::Signal;
@@ -77,6 +101,7 @@ impl Default for SettingsWindow {
             pending_icon_pack_clear: false,
             pending_icon_pack_reload: false,
             active_tab: SettingsTab::General,
+            search_query: String::new(),
             #[cfg(not(target_arch = "wasm32"))]
             storage_error: None,
             staged_accent: preset.accent_colors(),
@@ -157,9 +182,17 @@ impl SettingsWindow {
         let was_rebinding = self.rebinding_action.is_some();
         let mut should_close = false;
 
+        let position_id = egui::Id::new("preferences_heading_position");
+        let position = ctx
+            .data(|d| d.get_temp::<egui::Pos2>(position_id))
+            .unwrap_or(ctx.content_rect().center() - egui::vec2(340.0, 270.0));
+        let mut moved_position = None;
+
         let preferences_scope = crate::ui::perf::Scope::new(19);
         let window_response = crate::ui::polish::window(ctx, "settings_window_internal")
             .title_bar(false)
+            .movable(false)
+            .current_pos(position)
             .resizable(true)
             .collapsible(false)
             .default_width(680.0)
@@ -189,6 +222,19 @@ impl SettingsWindow {
                         Vec2::new(available_width, header_height),
                         Sense::hover(),
                     );
+                    let heading_rect = egui::Rect::from_min_max(
+                        rect.min,
+                        egui::pos2(rect.right() - header_height, rect.bottom()),
+                    );
+                    let heading = ui.interact(
+                        heading_rect,
+                        ui.id().with("preferences_heading_drag"),
+                        Sense::drag(),
+                    );
+                    if heading.dragged() {
+                        moved_position = Some(position + ui.input(|i| i.pointer.delta()));
+                        ctx.request_repaint();
+                    }
                     let painter = ui.painter();
                     painter.rect_filled(rect, egui::CornerRadius::ZERO, accent_faint);
                     painter.rect_filled(
@@ -245,6 +291,7 @@ impl SettingsWindow {
                         .small()
                         .weak(),
                 );
+                self.show_search(ui);
                 // Force the window body to use the full allocated height so the
                 // sidebar doesn't collapse the window to just ~165 px.
                 let available_h = ui.available_height();
@@ -444,9 +491,72 @@ impl SettingsWindow {
         // input-blocking so canvas input (wheel zoom, clicks, strokes) does
         // not leak through the window to the canvas behind it.
         let window_rect = window_response.map(|r| r.response.rect);
+        if let Some(rect) = window_rect {
+            ctx.data_mut(|d| d.insert_temp(position_id, moved_position.unwrap_or(rect.min)));
+        }
         match (window_rect, trust_rect) {
             (Some(a), Some(b)) => Some(a.union(b)),
             (a, b) => a.or(b),
+        }
+    }
+
+    fn show_search(&mut self, ui: &mut egui::Ui) {
+        // Bound the row's height: with_layout alone consumes all remaining
+        // vertical space and pushes the navigation and content off screen.
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), ui.spacing().interact_size.y),
+            egui::Layout::right_to_left(egui::Align::Center),
+            |ui| {
+                if !self.search_query.is_empty() && ui.small_button("×").clicked() {
+                    self.search_query.clear();
+                }
+                let width = 210.0_f32.min(ui.available_width());
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.search_query)
+                        .hint_text(crate::t!("ctx.text.search"))
+                        .desired_width(width),
+                );
+            },
+        );
+        if self.search_query.trim().is_empty() {
+            return;
+        }
+        let matches: Vec<_> = SEARCH_ENTRIES
+            .iter()
+            .filter(|entry| entry.matches(&self.search_query))
+            .collect();
+        if matches.is_empty() {
+            ui.weak(crate::t!("settings.search.empty"));
+        }
+        let mut picked = None;
+        egui::ScrollArea::vertical()
+            .id_salt("preferences_search_results")
+            .max_height(150.0)
+            .show(ui, |ui| {
+                for entry in matches {
+                    let label = format!(
+                        "{}  ›  {}",
+                        crate::i18n::translate(entry.section),
+                        crate::i18n::translate(entry.key)
+                    );
+                    if ui.selectable_label(false, label).clicked() {
+                        picked = Some(entry);
+                    }
+                }
+            });
+        if let Some(entry) = picked {
+            self.active_tab = entry.tab;
+            let section = crate::i18n::translate(entry.section);
+            let until = ui.input(|i| i.time) + 3.0;
+            ui.ctx().data_mut(|d| {
+                d.insert_temp(egui::Id::new("preferences_search_jump"), section.clone());
+                d.insert_temp(egui::Id::new("preferences_search_jump_frames"), 3_u32);
+                d.insert_temp(
+                    egui::Id::new("preferences_search_highlight"),
+                    (section, until),
+                );
+            });
+            self.search_query.clear();
         }
     }
 
@@ -454,7 +564,36 @@ impl SettingsWindow {
     /// Used consistently across all settings tabs.
     fn section_header(ui: &mut egui::Ui, label: &str) {
         ui.add_space(10.0);
-        ui.label(egui::RichText::new(label).strong().size(13.0));
+        let highlighted = ui
+            .ctx()
+            .data(|d| d.get_temp::<(String, f64)>(egui::Id::new("preferences_search_highlight")))
+            .is_some_and(|(target, until)| target == label && ui.input(|i| i.time) < until);
+        let text = egui::RichText::new(label).strong().size(13.0);
+        let response = ui.label(if highlighted {
+            text.background_color(ui.visuals().selection.bg_fill)
+        } else {
+            text
+        });
+        if ui
+            .ctx()
+            .data(|d| d.get_temp::<String>(egui::Id::new("preferences_search_jump")))
+            .as_deref()
+            == Some(label)
+        {
+            response.scroll_to_me_animation(
+                Some(egui::Align::Min),
+                egui::style::ScrollAnimation::none(),
+            );
+            ui.ctx().request_repaint();
+            ui.ctx().data_mut(|d| {
+                let id = egui::Id::new("preferences_search_jump_frames");
+                let frames = d.get_temp::<u32>(id).unwrap_or(1).saturating_sub(1);
+                d.insert_temp(id, frames);
+                if frames == 0 {
+                    d.remove::<String>(egui::Id::new("preferences_search_jump"));
+                }
+            });
+        }
         ui.separator();
         ui.add_space(3.0);
     }
@@ -1016,7 +1155,6 @@ impl SettingsWindow {
                 .weak(),
         );
         if settings.show_debug_panel {
-            ui.add_space(4.0);
             ui.indent("debug_options", |ui| {
                 ui.checkbox(
                     &mut settings.debug_show_canvas_size,
@@ -1267,6 +1405,16 @@ impl SettingsWindow {
         use crate::ui::panels::tools::palette;
         egui::CollapsingHeader::new(t!("settings.tools.visible"))
             .id_salt("tools_visibility")
+            .open(
+                ui.ctx()
+                    .data(|d| {
+                        d.get_temp::<(String, f64)>(egui::Id::new("preferences_search_highlight"))
+                    })
+                    .filter(|(section, until)| {
+                        section == &t!("settings.tools.title") && *until > ui.input(|i| i.time)
+                    })
+                    .map(|_| true),
+            )
             .show(ui, |ui| {
                 let mut changed = false;
                 ui.weak(t!("settings.tools.visibility_hint"));
@@ -2059,6 +2207,68 @@ impl SettingsWindow {
             .small()
             .weak(),
         );
+
+        ui.group(|ui| {
+            Self::section_header(ui, &crate::t!("info.appearance"));
+            ui.horizontal(|ui| {
+                ui.label(crate::t!("info.font_size"));
+                if crate::ui::dialogs::core::numeric_field_with_buttons(
+                    ui,
+                    &mut settings.info_font_size,
+                    0.2,
+                    10.0..=24.0,
+                    " pt",
+                    1.0,
+                ) {
+                    settings.save();
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label(crate::t!("settings.interface.resize_grip_opacity"));
+                if Self::settings_slider(ui, &mut settings.info_opacity, 0.0..=1.0, 0.05, 1.0) {
+                    settings.save();
+                }
+            });
+            for (label, value, default) in [
+                (
+                    crate::t!("ui.primary_text"),
+                    &mut settings.info_text_color,
+                    ui.visuals().strong_text_color(),
+                ),
+                (
+                    crate::t!("ui.background"),
+                    &mut settings.info_background_color,
+                    ui.visuals().panel_fill,
+                ),
+            ] {
+                ui.horizontal(|ui| {
+                    let mut enabled = value.is_some();
+                    let mut color = value.unwrap_or([default.r(), default.g(), default.b()]);
+                    if ui.checkbox(&mut enabled, label).changed() {
+                        *value = enabled.then_some(color);
+                        self.dirty = true;
+                    }
+                    if enabled && ui.color_edit_button_srgb(&mut color).changed() {
+                        *value = Some(color);
+                        self.dirty = true;
+                    }
+                    if !enabled {
+                        ui.weak(crate::t!("ui.preset_default"));
+                    }
+                });
+            }
+            if ui
+                .small_button("↺")
+                .on_hover_text(crate::t!("common.reset"))
+                .clicked()
+            {
+                settings.info_font_size = 12.0;
+                settings.info_opacity = 1.0;
+                settings.info_text_color = None;
+                settings.info_background_color = None;
+                settings.save();
+            }
+        });
 
         if settings.advanced_customization {
             ui.add_space(6.0);
@@ -3659,6 +3869,146 @@ impl SettingsWindow {
 #[cfg(test)]
 mod preference_consistency_tests {
     use super::*;
+
+    #[test]
+    fn preferences_numeric_drag_keeps_window_still_and_heading_moves_it() {
+        crate::i18n::init();
+        let ctx = context();
+        let mut settings = AppSettings::default();
+        let mut theme = crate::theme::Theme::light();
+        let mut assets = Assets::new();
+        assets.init(&ctx);
+        let mut window = SettingsWindow {
+            open: true,
+            active_tab: SettingsTab::Interface,
+            ..Default::default()
+        };
+        ctx.data_mut(|d| {
+            d.insert_temp(
+                egui::Id::new("preferences_search_jump"),
+                crate::t!("info.appearance"),
+            );
+            d.insert_temp(egui::Id::new("preferences_search_jump_frames"), 3_u32);
+        });
+        let mut run = |events| {
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1200.0, 900.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |_| {
+                    window.show(&ctx, &mut settings, &mut theme, &assets);
+                },
+            )
+        };
+        run(Vec::new());
+        run(Vec::new());
+        let output = run(Vec::new());
+        fn text_rect(shape: &egui::Shape, text: &str) -> Option<egui::Rect> {
+            match shape {
+                egui::Shape::Text(s) if s.galley.text().contains(text) => {
+                    Some(egui::Rect::from_min_size(s.pos, s.galley.size()))
+                }
+                egui::Shape::Vec(shapes) => shapes.iter().find_map(|s| text_rect(s, text)),
+                _ => None,
+            }
+        }
+        let numeric = output
+            .shapes
+            .iter()
+            .find_map(|s| text_rect(&s.shape, " pt"))
+            .expect("font-size numeric field is visible");
+        let position_id = egui::Id::new("preferences_heading_position");
+        let before = ctx.data(|d| d.get_temp::<egui::Pos2>(position_id)).unwrap();
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            pressed,
+            button: egui::PointerButton::Primary,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let start = numeric.center();
+        run(vec![egui::Event::PointerMoved(start)]);
+        run(vec![button(start, true)]);
+        for offset in [8.0, 16.0, 24.0, 32.0] {
+            run(vec![egui::Event::PointerMoved(
+                start + egui::vec2(offset, 0.0),
+            )]);
+        }
+        run(vec![button(start + egui::vec2(32.0, 0.0), false)]);
+        assert_eq!(
+            ctx.data(|d| d.get_temp::<egui::Pos2>(position_id)),
+            Some(before)
+        );
+        let heading = before + egui::vec2(100.0, 20.0);
+        run(vec![egui::Event::PointerMoved(heading)]);
+        run(vec![button(heading, true)]);
+        run(vec![egui::Event::PointerMoved(
+            heading + egui::vec2(30.0, 10.0),
+        )]);
+        run(vec![button(heading + egui::vec2(30.0, 10.0), false)]);
+        assert!(
+            settings.info_font_size > 12.0,
+            "drag changed the numeric value"
+        );
+        let after = ctx.data(|d| d.get_temp::<egui::Pos2>(position_id)).unwrap();
+        assert!((after - before - egui::vec2(30.0, 10.0)).length() < 2.0);
+        AppSettings::default().save();
+    }
+
+    #[test]
+    fn preferences_search_stays_in_a_compact_row_in_both_themes() {
+        crate::i18n::init();
+        for dark in [false, true] {
+            for width in [420.0, 680.0, 1000.0] {
+                let ctx = context();
+                ctx.set_visuals(if dark {
+                    egui::Visuals::dark()
+                } else {
+                    egui::Visuals::light()
+                });
+                let mut settings = SettingsWindow::default();
+                for query in ["", "theme", "no such purple elephant", ""] {
+                    settings.search_query = query.into();
+                    for _ in 0..3 {
+                        let _ = ctx.run_ui(egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, 800.0))),
+                            ..Default::default()
+                        }, |ui| {
+                                let top = ui.cursor().top();
+                                settings.show_search(ui);
+                                let content = ui.label("Settings content remains visible");
+                                let maximum = if query.is_empty() { 50.0 } else { 300.0 };
+                                assert!(content.rect.top() - top < maximum,
+                                    "search consumed the content area: dark={dark}, width={width}, query={query}");
+                                assert!(content.rect.bottom() < 800.0);
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn issue_186_search_matches_english_and_selected_language() {
+        crate::i18n::init();
+        let previous = crate::i18n::current_language();
+        crate::i18n::set_language("ru");
+        let entry = SEARCH_ENTRIES
+            .iter()
+            .find(|entry| entry.key == "settings.editing.paste_source")
+            .unwrap();
+        assert!(entry.matches("original position"));
+        assert!(entry.matches(&crate::i18n::translate(entry.key)));
+        assert!(!entry.matches("no such purple elephant"));
+        assert_eq!(entry.tab, SettingsTab::Editing);
+        assert_eq!(entry.section, "settings.editing.clipboard");
+        crate::i18n::set_language(&previous);
+    }
+
     fn context() -> egui::Context {
         let ctx = egui::Context::default();
         let mut fonts = egui::FontDefinitions::default();

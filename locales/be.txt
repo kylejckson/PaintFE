@@ -1550,3 +1550,10 @@ settings.save_error=Не ўдалося захаваць налады: {error}
 paste.outside_hint=Бледныя пікселі знаходзяцца па-за межамі палатна.
 
 settings.tools.animate_resize=Анімацыя змянення памеру панэлі інструментаў
+
+info.selection_bounds=Межы вылучэння
+info.font_size=Памер шрыфту звестак пра відарыс
+settings.search.placeholder=Пошук налад па-беларуску або па-англійску
+settings.search.empty=Адпаведныя налады не знойдзены
+
+info.appearance=Выгляд звестак пра відарыс

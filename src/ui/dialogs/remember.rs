@@ -124,6 +124,12 @@ pub(crate) fn begin(
     }
     if state.reset {
         dialog.restore_parameters(&state.defaults);
+        match dialog {
+            ActiveDialog::ResizeImage(d) => d.reset_dimensions(),
+            ActiveDialog::ResizeCanvas(d) => d.reset_dimensions(),
+            ActiveDialog::ColorToAlpha(d) => d.reset_sample(),
+            _ => {}
+        }
         state.reset = false;
         state.changed = true;
     }
@@ -191,6 +197,10 @@ pub(crate) fn finish(
     *preferences != old
 }
 
+pub(crate) fn has_header_reset(ctx: &Context) -> bool {
+    ctx.data(|d| d.get_temp::<Session>(id()).is_some_and(|s| s.supported))
+}
+
 pub(crate) fn header(ui: &mut egui::Ui, rect: egui::Rect, height: f32) {
     let mut state = ui
         .ctx()
@@ -233,6 +243,53 @@ pub(crate) fn header(ui: &mut egui::Ui, rect: egui::Rect, height: f32) {
 mod tests {
     use super::*;
     use crate::ui::dialogs::RemoveBackgroundDialog;
+
+    #[test]
+    fn issue_185_reset_restores_dimensions_and_sampling_without_persisting_them() {
+        let ctx = Context::default();
+        let state = crate::canvas::CanvasState::new(80, 60);
+        let preferences = DialogPreferences::default();
+        for mut dialog in [
+            ActiveDialog::ResizeImage(ResizeImageDialog::new(&state)),
+            ActiveDialog::ResizeCanvas(ResizeCanvasDialog::new(&state)),
+            ActiveDialog::ColorToAlpha(ColorToAlphaDialog::new(&state)),
+        ] {
+            begin(&ctx, &mut dialog, &preferences, true);
+            match &mut dialog {
+                ActiveDialog::ResizeImage(d) => {
+                    d.width = 5.0;
+                    d.height = 3.0;
+                }
+                ActiveDialog::ResizeCanvas(d) => {
+                    d.width = 5.0;
+                    d.height = 3.0;
+                }
+                ActiveDialog::ColorToAlpha(d) => {
+                    d.sample_x = 22;
+                    d.sample_y = 33;
+                }
+                _ => unreachable!(),
+            }
+            ctx.data_mut(|data| {
+                let mut session = data.get_temp::<Session>(id()).unwrap();
+                session.reset = true;
+                data.insert_temp(id(), session);
+            });
+            begin(&ctx, &mut dialog, &preferences, false);
+            assert!(dialog.parameters().get("width").is_none());
+            assert!(dialog.parameters().get("sample_x").is_none());
+            match dialog {
+                ActiveDialog::ResizeImage(d) => {
+                    assert_eq!((d.width, d.height, d.scale_percent), (80.0, 60.0, 100.0));
+                }
+                ActiveDialog::ResizeCanvas(d) => {
+                    assert_eq!((d.width, d.height, d.scale_percent), (80.0, 60.0, 100.0));
+                }
+                ActiveDialog::ColorToAlpha(d) => assert_eq!((d.sample_x, d.sample_y), (0, 0)),
+                _ => unreachable!(),
+            }
+        }
+    }
 
     #[test]
     fn old_saved_model_override_does_not_replace_automatic_detection() {

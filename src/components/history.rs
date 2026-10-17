@@ -1003,6 +1003,7 @@ impl CanvasSnapshot {
         state.active_layer_index = self.active_layer_index;
         state.layer_folders = self.layer_folders.clone();
         state.next_layer_folder_id = self.next_layer_folder_id;
+        state.gpu_layers_invalid = true;
         state.layers.clear();
         for snap in &self.layers {
             let mut layer = crate::canvas::Layer::new(

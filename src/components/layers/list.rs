@@ -2369,6 +2369,8 @@ impl LayersPanel {
             return;
         }
         let layer = &canvas_state.layers[idx];
+        self.settings_state.source_canvas = canvas_state as *const CanvasState as usize;
+        self.settings_state.source_layer_count = canvas_state.layers.len();
         self.settings_state.editing_layer = Some(idx);
         self.settings_state.editing_name = layer.name.clone();
         self.settings_state.editing_opacity = layer.opacity;

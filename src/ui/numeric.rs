@@ -161,6 +161,9 @@ impl<T: Number> Widget for Numeric<'_, T> {
             widget = widget.max_decimals(decimals);
         }
         let mut response = ui.add(widget);
+        if !response.has_focus() {
+            response = response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+        }
         if ui.is_enabled()
             && settings.numeric_wheel
             && response.hovered()

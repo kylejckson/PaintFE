@@ -1550,3 +1550,10 @@ settings.save_error=Impossibile salvare le preferenze: {error}
 paste.outside_hint=I pixel attenuati sono fuori dalla tela.
 
 settings.tools.animate_resize=Anima il ridimensionamento del pannello strumenti
+
+info.selection_bounds=Dimensioni della selezione
+info.font_size=Dimensione del testo delle informazioni immagine
+settings.search.placeholder=Cerca preferenze in italiano o inglese
+settings.search.empty=Nessuna preferenza corrispondente
+
+info.appearance=Aspetto delle informazioni immagine

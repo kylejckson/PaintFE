@@ -1550,3 +1550,10 @@ settings.save_error=บันทึกการตั้งค่าไม่ไ
 paste.outside_hint=พิกเซลที่จางอยู่ด้านนอกผืนผ้าใบ
 
 settings.tools.animate_resize=แสดงภาพเคลื่อนไหวเมื่อปรับขนาดแผงเครื่องมือ
+
+info.selection_bounds=ขอบเขตการเลือก
+info.font_size=ขนาดตัวอักษรข้อมูลภาพ
+settings.search.placeholder=ค้นหาการตั้งค่าด้วยภาษาไทยหรือภาษาอังกฤษ
+settings.search.empty=ไม่พบการตั้งค่าที่ตรงกัน
+
+info.appearance=รูปแบบข้อมูลภาพ

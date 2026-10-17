@@ -86,3 +86,27 @@ fn layer_and_folder_producers_emit_their_own_history_identity() {
     case(HistoryAction::MergeDown, |p, s, h, _| p.merge_down(1, s, h));
     case(HistoryAction::Flatten, |p, s, h, _| p.flatten_image(s, h));
 }
+
+#[test]
+fn issue_192_options_follow_active_layer_and_document() {
+    let mut panel = LayersPanel::default();
+    let mut state = CanvasState::new(8, 8);
+    let mut history = HistoryManager::new(20);
+    panel.open_settings_for_layer(0, &state, LayerSettingsTab::General);
+    panel.add_new_layer(&mut state, &mut history);
+    state.layers[1].opacity = 0.35;
+    let ctx = egui::Context::default();
+    let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+        panel.show_layer_settings_popup(ui, &mut state);
+    });
+    assert_eq!(panel.settings_state.editing_layer, Some(1));
+    assert_eq!(panel.settings_state.editing_opacity, 0.35);
+    assert_eq!(state.layers[0].opacity, 1.0);
+    let mut other = CanvasState::new(4, 4);
+    other.layers[0].name = "Other document".into();
+    let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+        panel.show_layer_settings_popup(ui, &mut other);
+    });
+    assert_eq!(panel.settings_state.editing_layer, Some(0));
+    assert_eq!(panel.settings_state.editing_name, "Other document");
+}

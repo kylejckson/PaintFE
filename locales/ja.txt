@@ -1550,3 +1550,10 @@ settings.save_error=設定を保存できませんでした: {error}
 paste.outside_hint=薄く表示されたピクセルはキャンバスの外側にあります。
 
 settings.tools.animate_resize=ツールパネルのサイズ変更をアニメーション表示
+
+info.selection_bounds=選択範囲の大きさ
+info.font_size=画像情報の文字サイズ
+settings.search.placeholder=日本語または英語で設定を検索
+settings.search.empty=一致する設定はありません
+
+info.appearance=画像情報の表示設定

@@ -61,7 +61,7 @@ impl PaintFEApp {
                             if recent.is_empty() { ui.weak(crate::t!("ui.no_recent_files")); }
                             for path in recent {
                                 let label = crate::services::io::display_path(std::path::Path::new(&path));
-                                if ui.add_sized([width, 22.0], egui::Button::new(egui::RichText::new(&label)).truncate()).on_hover_text(&label).clicked() {
+                                if ui.add_sized([width, 22.0], egui::Button::new("").left_text(egui::RichText::new(&label)).truncate()).on_hover_text(&label).clicked() {
                                     self.open_file_by_path(PathBuf::from(path), ctx.input(|i| i.time));
                                     ui.close();
                                 }
@@ -2737,7 +2737,7 @@ impl PaintFEApp {
                             project
                                 .path
                                 .as_ref()
-                                .map(|p| p.display().to_string())
+                                .map(|p| crate::services::io::display_path(p))
                                 .unwrap_or_else(|| "Unsaved document".into()),
                         );
                     });

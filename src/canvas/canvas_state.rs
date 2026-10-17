@@ -48,6 +48,7 @@ pub struct CanvasState {
     pub preview_mask_reveal: bool,
     /// Monotonically increasing counter, bumped on each mark_dirty call
     pub dirty_generation: u64,
+    pub gpu_layers_invalid: bool,
     /// Selection mask – 0 = unselected, 255 = fully selected.
     /// Dimensions must match (width, height).
     pub selection_mask: Option<GrayImage>,
@@ -175,6 +176,7 @@ impl CanvasState {
             preview_targets_mask: false,
             preview_mask_reveal: false,
             dirty_generation: 0,
+            gpu_layers_invalid: true,
             selection_mask: None,
             selection_all: false,
             lod_composite_cache: None,
@@ -1648,6 +1650,10 @@ impl CanvasState {
     }
 
     /// Return tight bounds of the current selection mask as (min_x, min_y, max_x, max_y).
+    pub fn selection_dimensions(&self) -> Option<(u32, u32)> {
+        self.selection_mask_bounds().map(|(x0, y0, x1, y1)| (x1 - x0 + 1, y1 - y0 + 1))
+    }
+
     pub fn selection_mask_bounds(&self) -> Option<(u32, u32, u32, u32)> {
         if self.selection_all {
             return (self.width > 0 && self.height > 0).then_some((

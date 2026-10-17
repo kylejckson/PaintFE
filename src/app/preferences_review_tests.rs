@@ -472,3 +472,178 @@ fn unsaved_dialogs_can_be_dragged_by_their_heading() {
         );
     }
 }
+
+#[test]
+fn issue_193_text_editing_owns_delete_and_remapped_fill_keys() {
+    use crate::config::keybindings::{BindableAction, KeyCombo};
+    for (pressed, custom) in [
+        (egui::Key::Backspace, false),
+        (egui::Key::Delete, false),
+        (egui::Key::F9, true),
+    ] {
+        let mut app = app();
+        let ctx = context();
+        app.tools_panel.change_tool(Tool::Text);
+        app.tools_panel.text_state.is_editing = true;
+        app.tools_panel.text_state.text = "Editing".into();
+        app.projects[0].canvas_state.selection_all = true;
+        let before = app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image();
+        let history = app.projects[0].history.undo_count();
+        if custom {
+            app.settings.keybindings.bindings.insert(
+                BindableAction::FillSelectedPixels,
+                KeyCombo {
+                    key: Some(pressed),
+                    text_char: None,
+                    ctrl: false,
+                    shift: false,
+                    alt: false,
+                },
+            );
+        }
+        let _ = ctx.run_ui(key(pressed, egui::Modifiers::NONE), |ui| {
+            app.update_runtime_input(ui.ctx());
+            assert!(
+                ui.input(|i| i.key_pressed(pressed)),
+                "text lost {pressed:?}"
+            );
+        });
+        assert_eq!(
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image(),
+            before
+        );
+        assert_eq!(app.projects[0].history.undo_count(), history);
+    }
+}
+
+#[test]
+fn issue_188_navigation_preserves_transform_and_painting_commits_it_once() {
+    let mut app = app();
+    let ctx = context();
+    app.tools_panel.change_tool(Tool::MovePixels);
+    app.paste_overlay = Some(PasteOverlay::new(
+        RgbaImage::from_pixel(4, 4, image::Rgba([255, 0, 0, 255])),
+        32,
+        24,
+    ));
+    for tool in [Tool::MovePixels, Tool::Pan, Tool::MovePixels, Tool::Pan] {
+        app.tools_panel.change_tool(tool);
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            app.update_runtime_input(ui.ctx());
+        });
+        assert!(app.paste_overlay.is_some());
+    }
+    let count = app.projects[0].history.undo_count();
+    app.tools_panel.change_tool(Tool::Brush);
+    for _ in 0..2 {
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            app.update_runtime_input(ui.ctx());
+        });
+    }
+    assert!(app.paste_overlay.is_none());
+    assert_eq!(app.projects[0].history.undo_count(), count + 1);
+}
+
+#[test]
+fn issue_189_repeated_snapshot_restore_reuploads_actual_cropped_pixels() {
+    use crate::components::history::{CanvasSnapshot, SnapshotCommand};
+    let mut app = app();
+    let ctx = context();
+    let state = &mut app.projects[0].canvas_state;
+    let before = CanvasSnapshot::capture(state);
+    crate::ops::transform::resize_canvas(state, 32, 12, (0, 0), image::Rgba([0, 0, 0, 0]));
+    let expected = state.layers[0].pixels.to_rgba_image();
+    let after = CanvasSnapshot::capture(state);
+    app.projects[0]
+        .history
+        .push(Box::new(SnapshotCommand::from_snapshots(
+            HistoryAction::ResizeCanvas.label("Resize Canvas"),
+            before,
+            after,
+        )));
+    for _ in 0..3 {
+        {
+            let project = &mut app.projects[0];
+            project.history.undo(&mut project.canvas_state);
+        }
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            app.canvas.show(ui, &mut app.projects[0].canvas_state);
+        });
+        {
+            let project = &mut app.projects[0];
+            project.history.redo(&mut project.canvas_state);
+        }
+        assert!(app.projects[0].canvas_state.gpu_layers_invalid);
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            app.canvas.show(ui, &mut app.projects[0].canvas_state);
+        });
+        let gpu = app.canvas.gpu_renderer_for_sync_readback().unwrap();
+        let rendered = gpu
+            .composite(32, 12, &[(0, 1.0, true, 0)])
+            .expect("GPU render");
+        assert_eq!(rendered, expected.as_raw().as_slice());
+    }
+}
+
+#[test]
+fn issue_191_selection_dimensions_include_single_pixels_and_survive_release() {
+    let mut state = CanvasState::new(32, 24);
+    assert_eq!(state.selection_dimensions(), None);
+    let mut mask = image::GrayImage::new(32, 24);
+    mask.put_pixel(7, 9, image::Luma([255]));
+    state.selection_mask = Some(mask);
+    assert_eq!(state.selection_dimensions(), Some((1, 1)));
+    state
+        .selection_mask
+        .as_mut()
+        .unwrap()
+        .put_pixel(12, 14, image::Luma([128]));
+    assert_eq!(state.selection_dimensions(), Some((6, 6)));
+    state.selection_all = true;
+    assert_eq!(state.selection_dimensions(), Some((32, 24)));
+}
+
+#[test]
+fn issue_193_text_paste_typing_and_backspace_reach_the_editor() {
+    let mut app = app();
+    let ctx = context();
+    app.tools_panel.change_tool(Tool::Text);
+    tool_frame(&mut app, &ctx, (8.0, 8.0), Vec::new());
+    app.tools_panel.text_state.is_editing = true;
+    app.tools_panel.text_state.origin = Some([4.0, 4.0]);
+    app.projects[0].canvas_state.selection_all = true;
+    let before = app.projects[0].canvas_state.layers[0]
+        .pixels
+        .to_rgba_image();
+    tool_frame(
+        &mut app,
+        &ctx,
+        (8.0, 8.0),
+        vec![egui::Event::Paste("HELLO".into())],
+    );
+    assert_eq!(app.tools_panel.text_state.text, "HELLO");
+    tool_frame(
+        &mut app,
+        &ctx,
+        (8.0, 8.0),
+        vec![egui::Event::Text("!".into())],
+    );
+    assert_eq!(app.tools_panel.text_state.text, "HELLO!");
+    tool_frame(
+        &mut app,
+        &ctx,
+        (8.0, 8.0),
+        key(egui::Key::Backspace, egui::Modifiers::NONE).events,
+    );
+    assert_eq!(app.tools_panel.text_state.text, "HELLO");
+    assert_eq!(
+        app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image(),
+        before
+    );
+}

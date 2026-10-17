@@ -575,6 +575,9 @@ impl Canvas {
             }
         };
 
+        if std::mem::take(&mut state.gpu_layers_invalid) {
+            self.gpu_clear_layers();
+        }
         // Check if filter changed (zoom crossed the 2.0 threshold)
         let prev_filter_was_linear = self.last_filter_was_linear;
         let filter_changed = prev_filter_was_linear.is_some_and(|last| last != use_linear_filter);
@@ -663,7 +666,8 @@ impl Canvas {
 
                     let has_live_mask = layer.mask_enabled && layer.mask.is_some();
 
-                    if gpu.layer_is_current(idx, layer.gpu_generation) {
+                    if gpu.layer_is_current(idx, layer.gpu_generation)
+                        && gpu.layer_has_texture(idx, layer.pixels.width(), layer.pixels.height()) {
                         continue;
                     }
 
@@ -1417,7 +1421,8 @@ impl Canvas {
 
             // Handle interaction (move, resize, rotate) BEFORE drawing below, so
             // drags update the overlay in the same frame as the pointer event.
-            let paste_input_blocked = modal_open
+            let paste_input_blocked = tools.as_ref().is_some_and(|t| t.active_tool == crate::components::tools::Tool::Pan)
+                || modal_open
                 || egui::Popup::is_any_open(ui.ctx())
                 || pointer_over_blocking_ui
                 || ui_blocks_canvas_input;
@@ -2098,7 +2103,7 @@ impl Canvas {
                     || tools.shapes_state.placed.is_some()
                     || tools.perspective_crop_state.active);
             let allow_input = !modal_open
-                && paste_overlay.is_none()
+                && (paste_overlay.is_none() || tools.active_tool == crate::components::tools::Tool::Pan)
                 && !paste_consumed_input
                 && (!ui_blocking
                     || raw_pointer_button_on_canvas
@@ -2967,7 +2972,20 @@ impl Canvas {
             } else {
                 // Default — build custom info based on settings
                 let mut parts = Vec::new();
-
+                let key = (state.selection_overlay_generation, state.selection_all, state.width, state.height);
+                let cache_id = egui::Id::new(("information_selection_bounds", state as *const CanvasState as usize));
+                let cached = ui.ctx().data(|d| d.get_temp::<((u64, bool, u32, u32), Option<(u32, u32)>)>(cache_id));
+                let dimensions = if let Some((previous, value)) = cached.filter(|(previous, _)| *previous == key) {
+                    let _ = previous;
+                    value
+                } else {
+                    let value = state.selection_dimensions();
+                    ui.ctx().data_mut(|d| d.insert_temp(cache_id, (key, value)));
+                    value
+                };
+                if let Some((width, height)) = dimensions {
+                    parts.push(format!("{}: {}x{}", crate::t!("info.selection_bounds"), width, height));
+                }
                 if debug_settings.debug_show_canvas_size {
                     parts.push(format!("{}x{}", state.width, state.height));
                 }
@@ -2998,10 +3016,14 @@ impl Canvas {
                 parts.join(" | ")
             };
 
-            let text_galley = ui.painter().layout_no_wrap(
+            let text_galley = ui.painter().layout(
                 debug_text,
-                egui::FontId::monospace(9.0),
-                Color32::from_gray(200),
+                egui::FontId::monospace(debug_settings.info_font_size.clamp(10.0, 24.0)),
+                debug_settings.info_text_color
+                    .map(|[r, g, b]| egui::Color32::from_rgb(r, g, b))
+                    .unwrap_or_else(|| ui.visuals().strong_text_color())
+                    .gamma_multiply(debug_settings.info_opacity.clamp(0.0, 1.0)),
+                (canvas_rect.width() - 20.0).max(20.0),
             );
 
             let text_size = text_galley.size();
@@ -3010,8 +3032,12 @@ impl Canvas {
             let text_rect =
                 egui::Align2::LEFT_TOP.anchor_rect(egui::Rect::from_min_size(debug_pos, text_size));
 
-            // Draw semi-transparent black background (more subtle)
-            painter.rect_filled(text_rect.expand(4.0), 2.0, Color32::from_black_alpha(120));
+            // Theme-aware defaults; explicit colours and opacity apply only to this panel.
+            let background = debug_settings.info_background_color
+                .map(|[r, g, b]| egui::Color32::from_rgb(r, g, b))
+                .unwrap_or(ui.visuals().panel_fill)
+                .gamma_multiply(debug_settings.info_opacity.clamp(0.0, 1.0));
+            painter.rect_filled(text_rect.expand(5.0), 3.0, background);
 
             // Draw text
             painter.galley(debug_pos, text_galley, egui::Color32::TRANSPARENT);

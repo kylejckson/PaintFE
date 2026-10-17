@@ -1550,3 +1550,10 @@ settings.save_error=Не вдалося зберегти налаштуванн�
 paste.outside_hint=Бліді пікселі розташовані за межами полотна.
 
 settings.tools.animate_resize=Анімація зміни розміру панелі інструментів
+
+info.selection_bounds=Межі виділення
+info.font_size=Розмір шрифту відомостей про зображення
+settings.search.placeholder=Пошук налаштувань українською або англійською
+settings.search.empty=Відповідних налаштувань не знайдено
+
+info.appearance=Вигляд відомостей про зображення

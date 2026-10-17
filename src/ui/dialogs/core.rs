@@ -603,19 +603,21 @@ pub(crate) fn dialog_slider(
                     changed = true;
                 }
 
-                let is_default = (*value - default_value).abs() <= step.abs().max(0.0001) * 0.5;
-                let reset_resp = ui
-                    .add_enabled(!is_default, egui::Button::new("↺"))
-                    .on_hover_text(crate::i18n::format_translation(
-                        "ui.reset_to_0_1",
-                        &[
-                            ("0", format!("{}", default_value)),
-                            ("1", suffix.to_string()),
-                        ],
-                    ));
-                if reset_resp.clicked() {
-                    *value = default_value;
-                    changed = true;
+                if !super::remember::has_header_reset(ui.ctx()) {
+                    let is_default = (*value - default_value).abs() <= step.abs().max(0.0001) * 0.5;
+                    let reset_resp = ui
+                        .add_enabled(!is_default, egui::Button::new("↺"))
+                        .on_hover_text(crate::i18n::format_translation(
+                            "ui.reset_to_0_1",
+                            &[
+                                ("0", format!("{}", default_value)),
+                                ("1", suffix.to_string()),
+                            ],
+                        ));
+                    if reset_resp.clicked() {
+                        *value = default_value;
+                        changed = true;
+                    }
                 }
             },
         );
@@ -820,7 +822,7 @@ pub(crate) fn dialog_footer_with_reset(
     ui.add_space(6.0);
     ui.horizontal(|ui| {
         // Reset on the left
-        if ui.button(t!("common.reset")).clicked() {
+        if !super::remember::has_header_reset(ui.ctx()) && ui.button(t!("common.reset")).clicked() {
             reset = true;
         }
         // Right-align OK/Cancel

@@ -1550,3 +1550,10 @@ settings.save_error=Could not save preferences: {error}
 paste.outside_hint=Faded pixels are outside the canvas.
 
 settings.tools.animate_resize=Animate Tools panel resizing
+
+info.selection_bounds=Selection bounds
+info.font_size=Image information font size
+settings.search.placeholder=Search Preferences in English or your language
+settings.search.empty=No matching preferences
+
+info.appearance=Image information appearance

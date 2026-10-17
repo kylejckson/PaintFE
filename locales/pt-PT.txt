@@ -1550,3 +1550,10 @@ settings.save_error=Não foi possível guardar as preferências: {error}
 paste.outside_hint=Os píxeis esbatidos estão fora da tela.
 
 settings.tools.animate_resize=Animar o redimensionamento do painel de ferramentas
+
+info.selection_bounds=Limites da seleção
+info.font_size=Tamanho da letra das informações da imagem
+settings.search.placeholder=Pesquisar preferências em português ou inglês
+settings.search.empty=Nenhuma preferência encontrada
+
+info.appearance=Aspeto das informações da imagem

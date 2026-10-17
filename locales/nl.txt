@@ -1550,3 +1550,10 @@ settings.save_error=Voorkeuren konden niet worden opgeslagen: {error}
 paste.outside_hint=Vervaagde pixels liggen buiten het canvas.
 
 settings.tools.animate_resize=Formaatwijziging van het gereedschapspaneel animeren
+
+info.selection_bounds=Selectieafmetingen
+info.font_size=Lettergrootte van afbeeldingsinformatie
+settings.search.placeholder=Voorkeuren zoeken in het Nederlands of Engels
+settings.search.empty=Geen overeenkomende voorkeuren
+
+info.appearance=Weergave van afbeeldingsinformatie

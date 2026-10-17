@@ -13,7 +13,6 @@ pub struct ResizeImageDialog {
     original_w: u32,
     original_h: u32,
     focus_width_on_open: bool,
-    replace_width_on_first_edit: bool,
     preview_source: Option<TiledImage>,
     comparison_previews: Vec<(String, egui::TextureHandle)>,
 }
@@ -59,6 +58,14 @@ impl ResizePreset {
 }
 
 impl ResizeImageDialog {
+    pub(crate) fn reset_dimensions(&mut self) {
+        self.width = self.original_w as f32;
+        self.height = self.original_h as f32;
+        self.scale_percent = 100.0;
+        self.aspect_ratio = self.width / self.height.max(1.0);
+        self.sync_inputs_from_values();
+    }
+
     pub fn new(state: &CanvasState) -> Self {
         Self {
             width: state.width as f32,
@@ -75,7 +82,6 @@ impl ResizeImageDialog {
             original_w: state.width,
             original_h: state.height,
             focus_width_on_open: true,
-            replace_width_on_first_edit: true,
             preview_source: state
                 .layers
                 .get(state.active_layer_index)
@@ -277,7 +283,6 @@ impl ResizeImageDialog {
                         ui.label(t!("dialog.resize_image.width"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
-                            let previous_input = self.width_input.clone();
                             let width_response = ui.add(
                                 egui::TextEdit::singleline(&mut self.width_input)
                                     .desired_width(96.0),
@@ -292,22 +297,6 @@ impl ResizeImageDialog {
                                     state.store(ctx, width_response.id);
                                 }
                                 self.focus_width_on_open = false;
-                                self.replace_width_on_first_edit = false;
-                            }
-                            if self.replace_width_on_first_edit && width_response.changed() {
-                                if self.width_input.starts_with(&previous_input)
-                                    && self.width_input.len() > previous_input.len()
-                                {
-                                    let suffix = &self.width_input[previous_input.len()..];
-                                    let suffix_trimmed = suffix.trim_start();
-                                    if !matches!(
-                                        suffix_trimmed.chars().next(),
-                                        Some('+') | Some('-') | Some('*') | Some('/')
-                                    ) {
-                                        self.width_input = suffix.to_string();
-                                    }
-                                }
-                                self.replace_width_on_first_edit = false;
                             }
                             let width_commit = width_response.lost_focus()
                                 || (width_response.has_focus()
@@ -318,7 +307,7 @@ impl ResizeImageDialog {
                             let drag = ui.add(egui::Label::new(crate::t!("ui.px")).sense(egui::Sense::DRAG))
                                 .on_hover_text(crate::t!("ui.drag_to_change_width_click_the_number_to_enter_a_value_or_expression"));
                             if drag.dragged() {
-                                self.width_input = (self.width + drag.drag_delta().x).round().clamp(1.0, 32768.0).to_string();
+                                self.width_input = (self.width + ui.input(|i| i.pointer.delta().x)).round().clamp(1.0, 32768.0).to_string();
                                 self.commit_width_input();
                             }
                         });
@@ -348,7 +337,7 @@ impl ResizeImageDialog {
                             let drag = ui.add(egui::Label::new(crate::t!("ui.px")).sense(egui::Sense::DRAG))
                                 .on_hover_text(crate::t!("ui.drag_to_change_height_click_the_number_to_enter_a_value_or_expression"));
                             if drag.dragged() {
-                                self.height_input = (self.height + drag.drag_delta().x).round().clamp(1.0, 32768.0).to_string();
+                                self.height_input = (self.height + ui.input(|i| i.pointer.delta().x)).round().clamp(1.0, 32768.0).to_string();
                                 self.commit_height_input();
                             }
                         });
@@ -598,10 +587,17 @@ pub struct ResizeCanvasDialog {
     original_w: u32,
     original_h: u32,
     focus_width_on_open: bool,
-    replace_width_on_first_edit: bool,
 }
 
 impl ResizeCanvasDialog {
+    pub(crate) fn reset_dimensions(&mut self) {
+        self.width = self.original_w as f32;
+        self.height = self.original_h as f32;
+        self.scale_percent = 100.0;
+        self.aspect_ratio = self.width / self.height.max(1.0);
+        self.sync_inputs_from_values();
+    }
+
     pub fn new(state: &CanvasState) -> Self {
         Self {
             width: state.width as f32,
@@ -616,7 +612,6 @@ impl ResizeCanvasDialog {
             original_w: state.width,
             original_h: state.height,
             focus_width_on_open: true,
-            replace_width_on_first_edit: true,
         }
     }
 
@@ -701,29 +696,18 @@ impl ResizeCanvasDialog {
                         ui.label(t!("dialog.resize_image.width"));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
-                            let previous_input = self.width_input.clone();
                             let width_response = ui.add(
                                 egui::TextEdit::singleline(&mut self.width_input)
                                     .desired_width(96.0),
                             );
                             if self.focus_width_on_open {
                                 width_response.request_focus();
-                                self.focus_width_on_open = false;
-                            }
-                            if self.replace_width_on_first_edit && width_response.changed() {
-                                if self.width_input.starts_with(&previous_input)
-                                    && self.width_input.len() > previous_input.len()
-                                {
-                                    let suffix = &self.width_input[previous_input.len()..];
-                                    let suffix_trimmed = suffix.trim_start();
-                                    if !matches!(
-                                        suffix_trimmed.chars().next(),
-                                        Some('+') | Some('-') | Some('*') | Some('/')
-                                    ) {
-                                        self.width_input = suffix.to_string();
-                                    }
+                                if let Some(mut state) = egui::TextEdit::load_state(ctx, width_response.id) {
+                                    state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                                        egui::text::CCursor::new(0), egui::text::CCursor::new(self.width_input.chars().count()))));
+                                    state.store(ctx, width_response.id);
                                 }
-                                self.replace_width_on_first_edit = false;
+                                self.focus_width_on_open = false;
                             }
                             let width_commit = width_response.lost_focus()
                                 || (width_response.has_focus()
@@ -731,7 +715,12 @@ impl ResizeCanvasDialog {
                             if width_commit {
                                 self.commit_width_input();
                             }
-                            ui.label(crate::t!("unit.px_suffix"));
+                            let drag = ui.add(egui::Label::new(crate::t!("unit.px_suffix")).sense(egui::Sense::DRAG))
+                                .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+                            if drag.dragged() {
+                                self.width_input = (self.width + ui.input(|i| i.pointer.delta().x)).round().clamp(1.0, 20000.0).to_string();
+                                self.commit_width_input();
+                            }
                         });
                         ui.end_row();
 
@@ -748,7 +737,12 @@ impl ResizeCanvasDialog {
                             if height_commit {
                                 self.commit_height_input();
                             }
-                            ui.label(crate::t!("unit.px_suffix"));
+                            let drag = ui.add(egui::Label::new(crate::t!("unit.px_suffix")).sense(egui::Sense::DRAG))
+                                .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+                            if drag.dragged() {
+                                self.height_input = (self.height + ui.input(|i| i.pointer.delta().x)).round().clamp(1.0, 20000.0).to_string();
+                                self.commit_height_input();
+                            }
                         });
                         ui.end_row();
 
@@ -885,7 +879,7 @@ impl ResizeCanvasDialog {
 
             let (grid_rect, response) =
                 ui.allocate_exact_size(Vec2::splat(grid_size), Sense::click());
-            let painter = ui.painter();
+            let painter = ui.painter().with_clip_rect(grid_rect);
 
             // Background
             let grid_bg = if colors.is_dark {
@@ -902,35 +896,20 @@ impl ResizeCanvasDialog {
             );
 
             // Compute canvas preview rect (showing where the original sits in the new canvas)
-            let max_dim = (new_w as f32).max(new_h as f32).max(1.0);
+            let max_dim = (new_w as f32).max(new_h as f32).max(self.original_w as f32).max(self.original_h as f32).max(1.0);
             let preview_w = (new_w as f32 / max_dim) * (grid_size - 8.0);
             let preview_h = (new_h as f32 / max_dim) * (grid_size - 8.0);
-            let offset_x = (grid_size - preview_w) / 2.0;
-            let offset_y = (grid_size - preview_h) / 2.0;
-
             let canvas_w = (self.original_w as f32 / max_dim) * (grid_size - 8.0);
             let canvas_h = (self.original_h as f32 / max_dim) * (grid_size - 8.0);
-
-            // Where canvas sits based on anchor
-            let cx = match self.anchor.0 {
-                0 => grid_rect.min.x + offset_x + 4.0,
-                2 => grid_rect.min.x + offset_x + 4.0 + (preview_w - canvas_w),
-                _ => grid_rect.min.x + offset_x + 4.0 + (preview_w - canvas_w) / 2.0,
-            };
-            let cy = match self.anchor.1 {
-                0 => grid_rect.min.y + offset_y + 4.0,
-                2 => grid_rect.min.y + offset_y + 4.0 + (preview_h - canvas_h),
-                _ => grid_rect.min.y + offset_y + 4.0 + (preview_h - canvas_h) / 2.0,
-            };
-
-            // Draw new canvas area (faint)
-            let new_canvas_rect = Rect::from_min_size(
-                Pos2::new(
-                    grid_rect.min.x + offset_x + 4.0,
-                    grid_rect.min.y + offset_y + 4.0,
-                ),
-                Vec2::new(preview_w, preview_h),
-            );
+            let union_w = canvas_w.max(preview_w);
+            let union_h = canvas_h.max(preview_h);
+            let origin = grid_rect.min + Vec2::new((grid_size - union_w) / 2.0, (grid_size - union_h) / 2.0);
+            let anchor = Vec2::new(self.anchor.0 as f32 / 2.0, self.anchor.1 as f32 / 2.0);
+            let old_min = origin + Vec2::new((union_w - canvas_w) * anchor.x, (union_h - canvas_h) * anchor.y);
+            let new_min = origin + Vec2::new((union_w - preview_w) * anchor.x, (union_h - preview_h) * anchor.y);
+            let cx = old_min.x;
+            let cy = old_min.y;
+            let new_canvas_rect = Rect::from_min_size(new_min, Vec2::new(preview_w, preview_h));
             let new_area_color = if colors.is_dark {
                 Color32::from_gray(40)
             } else {

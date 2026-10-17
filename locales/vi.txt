@@ -1550,3 +1550,10 @@ settings.save_error=Không thể lưu tùy chọn: {error}
 paste.outside_hint=Các điểm ảnh mờ nằm ngoài khung vẽ.
 
 settings.tools.animate_resize=Tạo hoạt ảnh khi đổi kích thước bảng công cụ
+
+info.selection_bounds=Kích thước vùng chọn
+info.font_size=Cỡ chữ thông tin ảnh
+settings.search.placeholder=Tìm tùy chọn bằng tiếng Việt hoặc tiếng Anh
+settings.search.empty=Không tìm thấy tùy chọn phù hợp
+
+info.appearance=Giao diện thông tin ảnh

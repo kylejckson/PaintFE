@@ -1550,3 +1550,10 @@ settings.save_error=Не удалось сохранить настройки: {
 paste.outside_hint=Бледные пиксели находятся за пределами холста.
 
 settings.tools.animate_resize=Анимация изменения размера панели инструментов
+
+info.selection_bounds=Границы выделения
+info.font_size=Размер шрифта сведений об изображении
+settings.search.placeholder=Поиск настроек на русском или английском
+settings.search.empty=Подходящие настройки не найдены
+
+info.appearance=Оформление сведений об изображении

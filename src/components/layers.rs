@@ -37,6 +37,8 @@ pub enum LayerSettingsTab {
 #[derive(Default)]
 pub struct LayerSettingsState {
     pub editing_layer: Option<usize>,
+    source_canvas: usize,
+    source_layer_count: usize,
     pub editing_name: String,
     pub editing_opacity: f32,
     pub editing_blend_mode: BlendMode,

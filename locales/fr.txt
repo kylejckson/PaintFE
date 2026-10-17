@@ -1550,3 +1550,10 @@ settings.save_error=Impossible d’enregistrer les préférences : {error}
 paste.outside_hint=Les pixels estompés sont en dehors du canevas.
 
 settings.tools.animate_resize=Animer le redimensionnement du panneau Outils
+
+info.selection_bounds=Dimensions de la sélection
+info.font_size=Taille du texte des informations sur l’image
+settings.search.placeholder=Rechercher des préférences en français ou en anglais
+settings.search.empty=Aucune préférence correspondante
+
+info.appearance=Apparence des informations de l’image

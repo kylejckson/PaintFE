@@ -1550,3 +1550,10 @@ settings.save_error=환경설정을 저장할 수 없습니다: {error}
 paste.outside_hint=흐리게 표시된 픽셀은 캔버스 밖에 있습니다.
 
 settings.tools.animate_resize=도구 패널 크기 조절 애니메이션
+
+info.selection_bounds=선택 영역 경계
+info.font_size=이미지 정보 글꼴 크기
+settings.search.placeholder=한국어 또는 영어로 환경설정 검색
+settings.search.empty=일치하는 환경설정이 없습니다
+
+info.appearance=이미지 정보 표시 설정

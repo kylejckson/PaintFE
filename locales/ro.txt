@@ -1550,3 +1550,10 @@ settings.save_error=Preferințele nu au putut fi salvate: {error}
 paste.outside_hint=Pixelii estompați sunt în afara pânzei.
 
 settings.tools.animate_resize=Animează redimensionarea panoului de instrumente
+
+info.selection_bounds=Limitele selecției
+info.font_size=Mărimea fontului informațiilor despre imagine
+settings.search.placeholder=Caută în preferințe în română sau engleză
+settings.search.empty=Nu s-au găsit preferințe potrivite
+
+info.appearance=Aspectul informațiilor imaginii

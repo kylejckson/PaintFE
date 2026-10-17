@@ -1,5 +1,18 @@
 impl PaintFEApp {
     fn update_runtime_input(&mut self, ctx: &egui::Context) -> bool {
+        use crate::components::tools::Tool;
+        let tool = self.tools_panel.active_tool;
+        let previous_tool = ctx.data_mut(|d| {
+            let id = egui::Id::new("transform_tool_owner");
+            let previous = d.get_temp::<Tool>(id);
+            d.insert_temp(id, tool);
+            previous
+        });
+        if self.paste_overlay.is_some()
+            && previous_tool.is_some_and(|previous| previous != tool)
+            && !matches!(tool, Tool::MovePixels | Tool::Pan) {
+            self.commit_paste_overlay(true);
+        }
         let ui_blocks_canvas_input = self.ui_pointer_capture_active;
         // Keep editing/navigation keys with focused panel text and numeric fields.
         let escape_event = ctx.input(|i| i.key_pressed(egui::Key::Escape));
@@ -133,10 +146,12 @@ impl PaintFEApp {
             }
         }
 
+        let text_owns_keyboard = self.tools_panel.active_tool == Tool::Text
+            && self.tools_panel.text_state.is_editing;
         let is_rebinding = self.settings_window.rebinding_action.is_some();
         // Cancel a floating paste without also modifying the underlying selection.
         let mut paste_cancelled = false;
-        if self.paste_overlay.is_some() && !modal_open && !panel_keyboard_focus && !is_rebinding {
+        if self.paste_overlay.is_some() && !modal_open && !panel_keyboard_focus && !text_owns_keyboard && !is_rebinding {
             paste_cancelled = ctx.input_mut(|i| {
                 let delete = i.consume_key(egui::Modifiers::NONE, egui::Key::Delete);
                 let backspace = i.consume_key(egui::Modifiers::NONE, egui::Key::Backspace);
@@ -151,6 +166,7 @@ impl PaintFEApp {
         if !modal_open
             && !panel_keyboard_focus
             && !is_rebinding
+            && !text_owns_keyboard
             && !paste_cancelled
             && self.paste_overlay.is_none()
         {
@@ -372,6 +388,7 @@ impl PaintFEApp {
                 }
             }
 
+            if !text_owns_keyboard {
             // Ctrl+C — Copy
             let copy_from_binding = kb.is_pressed_with_legacy(
                 ctx,
@@ -631,6 +648,8 @@ impl PaintFEApp {
                 self.queue_paste_from_clipboard(ctx, cursor_canvas);
             }
 
+            }
+
             let enter_vk_edge = vk_probe.enter_press_count != self.prev_vk_enter_press_count;
             let escape_vk_edge = vk_probe.escape_press_count != self.prev_vk_escape_press_count;
 
@@ -761,9 +780,9 @@ impl PaintFEApp {
                 }
             }
 
-            self.prev_ctrl_c_down = poll_ctrl_c_down;
-            self.prev_ctrl_x_down = poll_ctrl_x_down;
-            self.prev_ctrl_v_down = poll_ctrl_v_down;
+            self.prev_ctrl_c_down = (global_probe.0 && global_probe.1) || (linux_probe.ctrl_down && linux_probe.c_down);
+            self.prev_ctrl_x_down = (global_probe.0 && global_probe.2) || (linux_probe.ctrl_down && linux_probe.x_down);
+            self.prev_ctrl_v_down = (global_probe.0 && global_probe.3) || (linux_probe.ctrl_down && linux_probe.v_down);
             self.prev_enter_down = global_probe.4;
             self.prev_escape_down = global_probe.5;
             self.prev_vk_c_press_count = vk_probe.c_press_count;
@@ -861,6 +880,7 @@ impl PaintFEApp {
             let script_editor_open = self.window_visibility.script_editor;
             let text_edit_focused = ctx.text_edit_focused();
             if !script_editor_open
+                && !text_owns_keyboard
                 && !text_edit_focused
                 && kb.is_pressed(ctx, BindableAction::SelectAll)
             {
