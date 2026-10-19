@@ -1557,3 +1557,9 @@ settings.search.placeholder=Cerca preferenze in italiano o inglese
 settings.search.empty=Nessuna preferenza corrispondente
 
 info.appearance=Aspetto delle informazioni immagine
+
+format.jxl=JPEG XL
+jxl.effort=Impegno di codifica
+jxl.still_images=Immagini statiche, RGBA a 8 o 16 bit
+ui.double_click_slider_reset=Ripristina i cursori con doppio clic
+ui.double_click_reset_hint=Doppio clic per ripristinare

@@ -93,7 +93,7 @@ impl PaintFEApp {
                                 );
                                 ui.label(crate::t!("ctx.text.effects.gradient.angle"));
                                 ui.add(
-                                    crate::ui::numeric::Numeric::new(&mut session.angle_degrees)
+                                    crate::ui::controls::Numeric::new(&mut session.angle_degrees)
                                         .speed(0.1)
                                         .range(-180.0..=180.0)
                                         .suffix("°"),
@@ -628,8 +628,11 @@ impl PaintFEApp {
         let screen_rect = ctx
             .input(|i| i.viewport().inner_rect)
             .unwrap_or_else(|| ctx.content_rect());
-        let screen_w = screen_rect.max.x;
-        let screen_h = screen_rect.max.y;
+        // Native viewport rectangles include the desktop origin. Persist the
+        // extent, not the bottom-right coordinate, or each restart adds the
+        // window position to its dimensions (including on secondary monitors).
+        let screen_w = screen_rect.width();
+        let screen_h = screen_rect.height();
         let initial_layout_pass = self.last_screen_size.0 <= 0.0 || self.last_screen_size.1 <= 0.0;
         let screen_size_changed = initial_layout_pass
             || ((screen_w - self.last_screen_size.0).abs() > 0.5

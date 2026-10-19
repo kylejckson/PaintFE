@@ -2451,13 +2451,11 @@ impl Canvas {
                           // (unreachable ÔÇö already matched in first arm)
                     };
                     ui.ctx().set_cursor_icon(cursor);
-                } else if pointer_over_egui_with_touch
-                    || pointer_over_blocking_ui
-                    || ui_blocks_canvas_input
-                    || !pointer_over_image_for_cursor
-                {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
                 }
+                // Foreground widgets own their cursor outside the canvas. egui
+                // resets the output cursor each frame; forcing Default here
+                // discards numeric resize and text-selection cursors.
+
                 // Paste transforms own the pointer independently of the active
                 // tool, so their current-frame handle cursor has final priority.
                 if let Some(cursor) = paste_cursor {

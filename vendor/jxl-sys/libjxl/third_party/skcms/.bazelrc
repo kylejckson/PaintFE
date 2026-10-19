@@ -1,0 +1,86 @@
+# https://bazel.build/concepts/platforms-intro#cxx
+# This forces Bazel's C++ rules use platforms to select toolchains instead of the default
+# --crosstool_top, --compiler, etc.
+build --incompatible_enable_cc_toolchain_resolution
+
+# We do not want Bazel to detect any C++ toolchains on the remote machine
+# https://github.com/bazelbuild/bazel/blob/4ccc21f2f089971e5f4032397764a4be3549c40a/tools/cpp/cc_configure.bzl#L47
+build --action_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+
+# This tells Bazel that the host platform can use the hermetic toolchain. This is a small lie until
+# Windows support is added.
+build --host_platform=//bazel/platform:host_with_hermetic_toolchain
+
+# Register our toolchains. We do this here, and not in WORKSPACE.bazel because
+# --extra_toolchains has priority over register_toolchains and we conditionally add some toolchains
+# for RBE.
+build --extra_toolchains=//toolchain:linux_amd64_clang_toolchain
+build --extra_toolchains=//toolchain:linux_amd64_ndk_arm32_toolchain
+build --extra_toolchains=//toolchain:linux_amd64_ndk_arm64_toolchain
+build --extra_toolchains=//toolchain:clang_mac_x64_toolchain
+build --extra_toolchains=//toolchain:clang_mac_arm64_toolchain
+build --extra_toolchains=//toolchain:clang_host_mac_x64_target_mac_arm64_toolchain
+
+# SkCMS-specific configs
+
+build:asan --copt -fsanitize=address
+build:asan --linkopt -fsanitize=address
+
+build:msan --copt -fsanitize=memory
+build:msan --linkopt -fsanitize=memory
+
+# Depending on how many machines are in the remote execution instance, setting
+# this higher can make builds faster by allowing more jobs to run in parallel.
+# Setting it too high can result in jobs that timeout, however, while waiting
+# for a remote machine to execute them.
+build:remote --jobs=50
+
+# Starting with Bazel 0.27.0 strategies do not need to be explicitly
+# defined. See https://github.com/bazelbuild/bazel/issues/7480
+build:remote --define=EXECUTOR=remote
+
+# Enable remote execution so actions are performed on the remote systems.
+build:remote --remote_executor=grpcs://remotebuildexecution.googleapis.com
+build:remote --google_default_credentials=true
+
+# Enforce stricter environment rules, which eliminates some non-hermetic
+# behavior and therefore improves both the remote cache hit rate and the
+# correctness and repeatability of the build.
+build:remote --incompatible_strict_action_env=true
+
+# Set a higher timeout value, just in case.
+build:remote --remote_timeout=3600
+
+# Use the RBE instance from the skia-rbe GCP project.
+build:remote --remote_instance_name=projects/skia-rbe/instances/default_instance
+
+# Linux RBE configuration.
+build:linux-rbe --config=remote
+build:linux-rbe --extra_toolchains=@rbe_linux_toolchains//config:cc-toolchain
+build:linux-rbe --extra_execution_platforms=@rbe_linux_toolchains//config:platform
+# TODO(kjlubick, lovisolo) We should be building on RBE with the hermetic toolchain
+#   which requires updating the RBE image to have a new enough libtinfo.so.6
+build:linux-rbe --platforms=@rbe_linux_toolchains//config:platform
+
+# Windows RBE configuration.
+# Can only (currently) be invoked from a host machine that is on Windows.
+build:windows-rbe --config=remote
+build:windows-rbe --extra_toolchains=@rbe_windows_toolchains//config:cc-toolchain
+build:windows-rbe --extra_execution_platforms=@rbe_windows_toolchains//config:platform
+build:windows-rbe --platforms=@rbe_windows_toolchains//config:platform
+
+# Android configuration for 32-bit ARM (armeabi-v7a ABI).
+build:android-arm --platforms=//bazel/platform:android_arm32
+
+# Android RBE configuration for 32-bit ARM (armeabi-v7a ABI).
+build:android-arm-rbe --config=remote --config=android-arm
+build:android-arm-rbe --extra_toolchains=@rbe_linux_toolchains//config:cc-toolchain
+build:android-arm-rbe --extra_execution_platforms=@rbe_linux_toolchains//config:platform
+
+# Android configuration for 64-bit ARM (arm64-v8a ABI).
+build:android-arm64 --platforms=//bazel/platform:android_arm64
+
+# Android RBE configuration for 64-bit ARM (arm64-v8a ABI).
+build:android-arm64-rbe --config=remote --config=android-arm64
+build:android-arm64-rbe --extra_toolchains=@rbe_linux_toolchains//config:cc-toolchain
+build:android-arm64-rbe --extra_execution_platforms=@rbe_linux_toolchains//config:platform

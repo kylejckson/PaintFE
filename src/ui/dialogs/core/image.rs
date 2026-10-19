@@ -200,6 +200,8 @@ impl ResizeImageDialog {
         let mut ok_pressed = false;
 
         crate::ui::polish::window(ctx, "dialog_resize_image")
+            .heading_drag(ctx, egui::Id::new("resize_image_heading_position"),
+                ctx.content_rect().center() - egui::vec2(175.0, 160.0))
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
@@ -282,32 +284,15 @@ impl ResizeImageDialog {
                         // Width row
                         ui.label(t!("dialog.resize_image.width"));
                         ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 4.0;
-                            let width_response = ui.add(
-                                egui::TextEdit::singleline(&mut self.width_input)
-                                    .desired_width(96.0),
+                            let mut value = self.width;
+                            let response = ui.add(
+                                crate::ui::controls::Numeric::dimension(&mut value).focus_on_open(self.focus_width_on_open),
                             );
-                            if self.focus_width_on_open {
-                                width_response.request_focus();
-                                if let Some(mut state) = egui::TextEdit::load_state(ctx, width_response.id) {
-                                    state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
-                                        egui::text::CCursor::new(0),
-                                        egui::text::CCursor::new(self.width_input.chars().count()),
-                                    )));
-                                    state.store(ctx, width_response.id);
-                                }
-                                self.focus_width_on_open = false;
-                            }
-                            let width_commit = width_response.lost_focus()
-                                || (width_response.has_focus()
-                                    && ui.input(|i| i.key_pressed(egui::Key::Tab)));
-                            if width_commit {
-                                self.commit_width_input();
-                            }
-                            let drag = ui.add(egui::Label::new(crate::t!("ui.px")).sense(egui::Sense::DRAG))
-                                .on_hover_text(crate::t!("ui.drag_to_change_width_click_the_number_to_enter_a_value_or_expression"));
-                            if drag.dragged() {
-                                self.width_input = (self.width + ui.input(|i| i.pointer.delta().x)).round().clamp(1.0, 32768.0).to_string();
+                            #[cfg(test)]
+                            ctx.data_mut(|d| d.insert_temp(egui::Id::new(("resize_dimension_rect", "resize_img_dims", "width")), response.rect));
+                            self.focus_width_on_open = false;
+                            if response.changed() {
+                                self.width_input = format_dimension_value(value);
                                 self.commit_width_input();
                             }
                         });
@@ -316,28 +301,14 @@ impl ResizeImageDialog {
                         // Height row
                         ui.label(t!("dialog.resize_image.height"));
                         ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 4.0;
-                            let height_response = ui.add(
-                                egui::TextEdit::singleline(&mut self.height_input)
-                                    .desired_width(96.0),
+                            let mut value = self.height;
+                            let response = ui.add(
+                                crate::ui::controls::Numeric::dimension(&mut value).focus_on_open(self.focus_width_on_open),
                             );
-                            if height_response.gained_focus()
-                                && let Some(mut state) = egui::TextEdit::load_state(ctx, height_response.id)
-                            {
-                                state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
-                                    egui::text::CCursor::new(0), egui::text::CCursor::new(self.height_input.chars().count()))));
-                                state.store(ctx, height_response.id);
-                            }
-                            let height_commit = height_response.lost_focus()
-                                || (height_response.has_focus()
-                                    && ui.input(|i| i.key_pressed(egui::Key::Tab)));
-                            if height_commit {
-                                self.commit_height_input();
-                            }
-                            let drag = ui.add(egui::Label::new(crate::t!("ui.px")).sense(egui::Sense::DRAG))
-                                .on_hover_text(crate::t!("ui.drag_to_change_height_click_the_number_to_enter_a_value_or_expression"));
-                            if drag.dragged() {
-                                self.height_input = (self.height + ui.input(|i| i.pointer.delta().x)).round().clamp(1.0, 32768.0).to_string();
+                            #[cfg(test)]
+                            ctx.data_mut(|d| d.insert_temp(egui::Id::new(("resize_dimension_rect", "resize_img_dims", "height")), response.rect));
+                            if response.changed() {
+                                self.height_input = format_dimension_value(value);
                                 self.commit_height_input();
                             }
                         });
@@ -468,13 +439,13 @@ impl ResizeImageDialog {
                             ui.end_row();
 
                             ui.label(crate::t!("ui.detail_priority"));
-                            dialog_slider(ui, &mut self.retarget.detail_priority, 0.0..=1.0, 0.05, "", 2);
+                            dialog_slider(ui, &mut self.retarget.detail_priority, 0.0..=1.0, 0.05, "", 2, crate::ops::transform::PixelRetargetSettings::default().detail_priority);
                             ui.end_row();
 
                             ui.label(crate::t!("ui.geometry_topology"));
                             ui.horizontal(|ui| {
                                 ui.label(crate::t!("ui.geometry"));
-                                ui.add(egui::Slider::new(&mut self.retarget.topology_priority, 0.0..=1.0).show_value(false));
+                                ui.add(crate::ui::controls::Slider::new(&mut self.retarget.topology_priority, 0.0..=1.0).reset_to(crate::ops::transform::PixelRetargetSettings::default().topology_priority).show_value(false));
                                 ui.label(crate::t!("ui.topology"));
                             });
                             ui.end_row();
@@ -671,6 +642,8 @@ impl ResizeCanvasDialog {
         let mut ok_pressed = false;
 
         crate::ui::polish::window(ctx, "dialog_resize_canvas")
+            .heading_drag(ctx, egui::Id::new("resize_canvas_heading_position"),
+                ctx.content_rect().center() - egui::vec2(170.0, 180.0))
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
@@ -695,30 +668,15 @@ impl ResizeCanvasDialog {
                     .show(ui, |ui| {
                         ui.label(t!("dialog.resize_image.width"));
                         ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 4.0;
-                            let width_response = ui.add(
-                                egui::TextEdit::singleline(&mut self.width_input)
-                                    .desired_width(96.0),
+                            let mut value = self.width;
+                            let response = ui.add(
+                                crate::ui::controls::Numeric::dimension(&mut value).focus_on_open(self.focus_width_on_open),
                             );
-                            if self.focus_width_on_open {
-                                width_response.request_focus();
-                                if let Some(mut state) = egui::TextEdit::load_state(ctx, width_response.id) {
-                                    state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
-                                        egui::text::CCursor::new(0), egui::text::CCursor::new(self.width_input.chars().count()))));
-                                    state.store(ctx, width_response.id);
-                                }
-                                self.focus_width_on_open = false;
-                            }
-                            let width_commit = width_response.lost_focus()
-                                || (width_response.has_focus()
-                                    && ui.input(|i| i.key_pressed(egui::Key::Tab)));
-                            if width_commit {
-                                self.commit_width_input();
-                            }
-                            let drag = ui.add(egui::Label::new(crate::t!("unit.px_suffix")).sense(egui::Sense::DRAG))
-                                .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
-                            if drag.dragged() {
-                                self.width_input = (self.width + ui.input(|i| i.pointer.delta().x)).round().clamp(1.0, 20000.0).to_string();
+                            #[cfg(test)]
+                            ctx.data_mut(|d| d.insert_temp(egui::Id::new(("resize_dimension_rect", "resize_canvas_dims", "width")), response.rect));
+                            self.focus_width_on_open = false;
+                            if response.changed() {
+                                self.width_input = format_dimension_value(value);
                                 self.commit_width_input();
                             }
                         });
@@ -726,21 +684,14 @@ impl ResizeCanvasDialog {
 
                         ui.label(t!("dialog.resize_image.height"));
                         ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 4.0;
-                            let height_response = ui.add(
-                                egui::TextEdit::singleline(&mut self.height_input)
-                                    .desired_width(96.0),
+                            let mut value = self.height;
+                            let response = ui.add(
+                                crate::ui::controls::Numeric::dimension(&mut value).focus_on_open(self.focus_width_on_open),
                             );
-                            let height_commit = height_response.lost_focus()
-                                || (height_response.has_focus()
-                                    && ui.input(|i| i.key_pressed(egui::Key::Tab)));
-                            if height_commit {
-                                self.commit_height_input();
-                            }
-                            let drag = ui.add(egui::Label::new(crate::t!("unit.px_suffix")).sense(egui::Sense::DRAG))
-                                .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
-                            if drag.dragged() {
-                                self.height_input = (self.height + ui.input(|i| i.pointer.delta().x)).round().clamp(1.0, 20000.0).to_string();
+                            #[cfg(test)]
+                            ctx.data_mut(|d| d.insert_temp(egui::Id::new(("resize_dimension_rect", "resize_canvas_dims", "height")), response.rect));
+                            if response.changed() {
+                                self.height_input = format_dimension_value(value);
                                 self.commit_height_input();
                             }
                         });
@@ -1051,7 +1002,7 @@ impl GaussianBlurDialog {
                             if self.advanced_blur {
                                 // Advanced: editable DragValue (up to 100)
                                 let r = ui.add(
-                                    crate::ui::numeric::Numeric::new(&mut self.sigma)
+                                    crate::ui::controls::Numeric::new(&mut self.sigma)
                                         .speed(0.2)
                                         .range(0.1..=100.0)
                                         .max_decimals(1),
@@ -1061,7 +1012,7 @@ impl GaussianBlurDialog {
                                 }
                             } else {
                                 // Normal: slider capped at 10
-                                if dialog_slider(ui, &mut self.sigma, 0.1..=slider_max, 0.1, "", 1)
+                                if dialog_slider(ui, &mut self.sigma, 0.1..=slider_max, 0.1, "", 1, 0.0)
                                 {
                                     sigma_changed = true;
                                 }
@@ -1255,7 +1206,7 @@ impl AddBrushTipDialog {
         self.image_height = 0;
 
         // Decode PNG
-        match image::load_from_memory(&data) {
+        match crate::io::decode_image_bytes(&data) {
             Ok(img) => {
                 self.image_width = img.width();
                 self.image_height = img.height();
@@ -1411,7 +1362,7 @@ impl AddBrushTipDialog {
                         // Load preview texture if needed
                         if self.preview_texture.is_none()
                             && let Some(png_data) = &self.png_data
-                            && let Ok(img) = image::load_from_memory(png_data)
+                            && let Ok(img) = crate::io::decode_image_bytes(png_data)
                         {
                             let rgba = img.to_rgba8();
                             let (w, h) = rgba.dimensions();
@@ -1728,5 +1679,59 @@ impl AddShapeDialog {
                 }
             });
         result
+    }
+}
+
+#[cfg(test)]
+mod issue_185_dimension_controls_tests {
+    use super::*;
+
+    #[test]
+    fn resize_dialogs_use_draggable_dimensions_and_preserve_aspect_ratio() {
+        crate::i18n::init();
+        for image in [true, false] {
+            let ctx = egui::Context::default();
+            let mut fonts = egui::FontDefinitions::default();
+            fonts.families.insert(egui::FontFamily::Name("WidgetTitle".into()), fonts.families[&egui::FontFamily::Proportional].clone());
+            ctx.set_fonts(fonts);
+            let state = CanvasState::new(800, 400);
+            let mut resize_image = ResizeImageDialog::new(&state);
+            let mut resize_canvas = ResizeCanvasDialog::new(&state);
+            let frame = |events, resize_image: &mut ResizeImageDialog, resize_canvas: &mut ResizeCanvasDialog| {
+                ctx.run_ui(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 800.0))), events, ..Default::default() }, |_| {
+                    if image { resize_image.show(&ctx); } else { resize_canvas.show(&ctx, [1.0; 4]); }
+                })
+            };
+            for _ in 0..3 { frame(vec![], &mut resize_image, &mut resize_canvas); }
+            ctx.memory_mut(|m| { if let Some(id) = m.focused() { m.surrender_focus(id); } });
+            let dialog = if image { "resize_img_dims" } else { "resize_canvas_dims" };
+            let rect = ctx.data(|d| d.get_temp::<egui::Rect>(egui::Id::new(("resize_dimension_rect", dialog, "width")))).unwrap();
+            let height_rect = ctx.data(|d| d.get_temp::<egui::Rect>(egui::Id::new(("resize_dimension_rect", dialog, "height")))).unwrap();
+            frame(vec![egui::Event::PointerMoved(height_rect.center()), egui::Event::PointerButton { pos: height_rect.center(), button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE }, egui::Event::PointerButton { pos: height_rect.center(), button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE }], &mut resize_image, &mut resize_canvas);
+            frame(vec![], &mut resize_image, &mut resize_canvas);
+            let point = rect.center();
+            frame(vec![egui::Event::PointerMoved(point)], &mut resize_image, &mut resize_canvas);
+            frame(vec![egui::Event::PointerButton { pos: point, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE }], &mut resize_image, &mut resize_canvas);
+            frame(vec![egui::Event::PointerMoved(point + egui::vec2(32.0, 0.0))], &mut resize_image, &mut resize_canvas);
+            frame(vec![egui::Event::PointerMoved(point + egui::vec2(48.0, 0.0))], &mut resize_image, &mut resize_canvas);
+            frame(vec![egui::Event::PointerButton { pos: point + egui::vec2(48.0, 0.0), button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE }], &mut resize_image, &mut resize_canvas);
+            let outside = point - egui::vec2(55.0, 15.0);
+            frame(vec![egui::Event::PointerMoved(outside), egui::Event::PointerButton { pos: outside, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE }, egui::Event::PointerButton { pos: outside, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE }], &mut resize_image, &mut resize_canvas);
+            let (width, height) = if image { (resize_image.width, resize_image.height) } else { (resize_canvas.width, resize_canvas.height) };
+            let after = ctx.data(|d| d.get_temp::<egui::Rect>(egui::Id::new(("resize_dimension_rect", dialog, "width")))).unwrap();
+            assert!((after.min - rect.min).length() < 1.0, "{dialog} moved while dragging width");
+            assert!(width > 800.0, "{dialog} width did not drag");
+            assert!((width / height - 2.0).abs() < 0.01, "{dialog} lost aspect ratio");
+            let position_id = egui::Id::new(if image { "resize_image_heading_position" } else { "resize_canvas_heading_position" });
+            let before = ctx.data(|d| d.get_temp::<egui::Pos2>(position_id)).unwrap();
+            for (origin, expected_move) in [(before + egui::vec2(20.0, 85.0), false), (before + egui::vec2(65.0, 20.0), true)] {
+                frame(vec![egui::Event::PointerMoved(origin)], &mut resize_image, &mut resize_canvas);
+                frame(vec![egui::Event::PointerButton { pos: origin, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE }], &mut resize_image, &mut resize_canvas);
+                frame(vec![egui::Event::PointerMoved(origin + egui::vec2(30.0, 0.0))], &mut resize_image, &mut resize_canvas);
+                frame(vec![egui::Event::PointerButton { pos: origin + egui::vec2(30.0, 0.0), button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE }], &mut resize_image, &mut resize_canvas);
+                let after = ctx.data(|d| d.get_temp::<egui::Pos2>(position_id)).unwrap();
+                assert!((after.x - before.x - if expected_move { 30.0 } else { 0.0 }).abs() < 1.0, "{dialog} unexpected body/heading movement");
+            }
+        }
     }
 }

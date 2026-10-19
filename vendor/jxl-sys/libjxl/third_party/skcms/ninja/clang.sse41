@@ -1,0 +1,8 @@
+mode         = .sse41
+extra_cflags = -DSKCMS_DISABLE_HSW -DSKCMS_DISABLE_SKX
+target_flags = -msse4.1
+include ninja/clang
+
+disabled = (uname | grep -q Darwin && sysctl machdep.cpu | grep -qv SSE4.1)
+no_hsw   = true
+no_skx   = true

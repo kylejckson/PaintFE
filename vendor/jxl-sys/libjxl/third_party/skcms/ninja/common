@@ -1,0 +1,67 @@
+builddir = $out
+disabled = false
+no_hsw = (uname | grep -q Darwin && sysctl machdep.cpu | grep -qv AVX2)    || (grep -E '^(flags|features)' /proc/cpuinfo | grep -vq avx2)
+no_skx = (uname | grep -q Darwin && sysctl machdep.cpu | grep -qv AVX512F) || (grep -E '^(flags|features)' /proc/cpuinfo | grep -vq avx512f)
+
+# Each compiler has enabled all the warnings it can.
+# Here we make them errors, and disable a few we don't want bothering us.
+warnings = -Werror $
+           -Wno-unknown-warning-option $
+           -Wno-poison-system-directories $
+           -Wno-double-promotion $
+           -Wno-float-equal $
+           -Wno-padded $
+           -Wno-pre-c11-compat $
+
+warnings_c = $warnings $
+           -Wno-declaration-after-statement $
+
+warnings_cc = $warnings $
+           -Wno-c++98-compat-pedantic $
+           -Wno-gnu-anonymous-struct $
+           -Wno-old-style-cast $
+           -Wno-switch-default $
+
+rule compile_c
+    command = ($disabled && touch $out) ||                                                $
+              $cc -std=c11 -g -Os $warnings_c $cflags $extra_cflags $target_flags -MD -MF $
+                  $out.d -c $in -o $out
+    depfile = $out.d
+    deps    = gcc
+    description = compile $out
+
+rule compile_cc
+    command = ($disabled && touch $out) ||                                                    $
+              $cxx -std=c++11 -g -Os $warnings_cc $cflags $extra_cflags $target_flags -MD -MF $
+                   $out.d -c $in -o $out
+    depfile = $out.d
+    deps    = gcc
+    description = compile $out
+
+
+rule compile_cc_hsw
+    command = ($disabled && touch $out) ||                                                        $
+              ($no_hsw && $cxx -std=c++11 -g -Os $warnings_cc $cflags $extra_cflags $target_flags $
+                               -DSKCMS_DISABLE_HSW -MD -MF $out.d -c $in -o $out) ||              $
+                          $cxx -std=c++11 -g -Os $warnings_cc $cflags $extra_cflags               $
+                               -march=x86-64 -mavx2 -mf16c -MD -MF $out.d -c $in -o $out
+    depfile = $out.d
+    deps    = gcc
+    description = compile $out
+
+rule compile_cc_skx
+    command = ($disabled && touch $out) ||                                                         $
+              ($no_skx && $cxx -std=c++11 -g -Os $warnings_cc $cflags $extra_cflags $target_flags  $
+                               -DSKCMS_DISABLE_SKX -MD -MF $out.d -c $in -o $out) ||               $
+                          $cxx -std=c++11 -g -Os $warnings_cc $cflags $extra_cflags                $
+                               -march=x86-64 -mavx512f -mavx512dq -mavx512cd -mavx512bw -mavx512vl $
+                               -MD -MF $out.d -c $in -o $out
+    depfile = $out.d
+    deps    = gcc
+    description = compile $out
+
+rule link
+    command = $disabled && touch $out || $cxx $ldflags $extra_ldflags $in -ldl -o $out
+    description = link $out
+
+include ninja/targets

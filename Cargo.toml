@@ -1,6 +1,6 @@
 [package]
 name = "PaintFE"
-version = "1.4.9"
+version = "1.4.10"
 edition = "2024"
 
 [lib]
@@ -21,6 +21,7 @@ uuid = { version = "1.0", features = ["v4", "js"] }  # Unique identifiers for pr
 serde = { version = "1", features = ["derive"] }  # Serialization framework
 serde_json = "1"
 half = "2"
+jxl-image-rs-integration = "=0.7.4"
 sha2 = "0.10"
 bincode = "1"        # Binary serialization for .pfe files
 
@@ -48,6 +49,7 @@ x11-dl = "2.21"
 # enumeration, dynamic library loading, RAW demosaicing needing a C toolchain,
 # CLI arg parsing, and the OS clipboard).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+jxl-sys = { path = "vendor/jxl-sys" }
 rfd = "0.12"
 webp = "0.3"
 arboard = { version = "3", features = ["wayland-data-control"] }

@@ -85,7 +85,7 @@ PaintFE -i photo.png --format jpeg --quality 90 -o out.jpg
 | `-s` / `--script` | Path to a `.rhai` script |
 | `-o` / `--output` | Output file path for a single input |
 | `--output-dir` | Output directory for batch jobs |
-| `-f` / `--format` | `png`, `jpeg`, `webp`, `tiff`, `bmp`, `tga`, `ico`, `gif` (static), or `pfe` |
+| `-f` / `--format` | `png`, `jpeg`, `jxl`, `webp`, `tiff`, `bmp`, `tga`, `ico`, `gif` (static), or `pfe` |
 | `-q` / `--quality` | JPEG/lossy WebP quality (1-100, default 90) |
 | `--webp-lossy` | Use lossy WebP; WebP output defaults to lossless |
 | `--tiff-compression` | `none`, `lzw`, or `deflate` |
@@ -117,11 +117,13 @@ Photo sources and artwork details are listed in [screenshot credits](screenshot/
 
 | | Formats |
 |---|---|
-| **Read** | PNG, JPEG, WebP, BMP, TIFF, TGA, GIF, APNG, PFE, PDN, and supported camera RAW files |
-| **Write** | PNG, JPEG, WebP, BMP, TIFF, TGA, ICO, GIF, APNG, and PFE |
+| **Read** | PNG, JPEG, JPEG XL, WebP, BMP, TIFF, TGA, GIF, APNG, PFE, PDN, and supported camera RAW files |
+| **Write** | PNG, JPEG, JPEG XL (desktop), WebP, BMP, TIFF, TGA, ICO, GIF, APNG, and PFE |
 | **Animation** | GIF, APNG, and WebP import and export |
 
 PFE is PaintFE's layered project format. Animated export uses each visible layer as a frame, with frame rate, loop count, and format-specific compression options in the export dialog.
+
+JPEG XL supports still images with lossless or lossy compression and an encoding-effort setting. Native exports preserve 8-bit and supported 16-bit RGBA data, including transparency. The codec is built in, with no extra DLL or external converter. Browser builds can import JPEG XL; desktop builds also export it. See [JPEG XL details](docs/jpeg-xl.md) for limits and CLI options.
 
 RAW decoding uses `rawloader` and `imagepipe`. Recognized extensions include CR2, CR3, NEF, ARW, DNG, ORF, RW2, SRW, PEF, and RAF; decoding depends on the camera and file variant.
 

@@ -1,0 +1,28 @@
+name: Rust Common Setup
+description: Set up Rust toolchain and Cargo cache
+
+inputs:
+  toolchain:
+    description: The Rust toolchain version
+    default: stable
+  components:
+    description: The Rustup components to install
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust stable
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ inputs.toolchain }}
+        components: ${{ inputs.components }}
+    - name: Set up Rust cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}

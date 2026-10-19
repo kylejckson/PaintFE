@@ -29,7 +29,7 @@ impl BokehBlurDialog {
                             if self.advanced_blur {
                                 // Advanced: editable DragValue (up to 100)
                                 let r = ui.add(
-                                    crate::ui::numeric::Numeric::new(&mut self.radius)
+                                    crate::ui::controls::Numeric::new(&mut self.radius)
                                         .speed(0.2)
                                         .range(1.0..=100.0)
                                         .max_decimals(1),
@@ -40,7 +40,7 @@ impl BokehBlurDialog {
                             } else {
                                 // Normal: slider capped at 10
                                 let r = ui.add(
-                                    egui::Slider::new(&mut self.radius, 1.0..=slider_max)
+                                    crate::ui::controls::Slider::new(&mut self.radius, 1.0..=slider_max).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits)
                                         .max_decimals(1),
                                 );
                                 if track_slider(&r, &mut self.dragging) {
@@ -155,7 +155,7 @@ impl MotionBlurDialog {
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.angle"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.angle, -180.0..=180.0)
+                            crate::ui::controls::Slider::new(&mut self.angle, -180.0..=180.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits)
                                 .suffix("°")
                                 .max_decimals(0),
                         );
@@ -166,7 +166,7 @@ impl MotionBlurDialog {
 
                         ui.label(crate::t!("ui.distance"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.distance, 1.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut self.distance, 1.0..=100.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits)
                                 .suffix(" px")
                                 .max_decimals(0),
                         );
@@ -244,7 +244,7 @@ impl BoxBlurDialog {
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.radius"));
                         let r =
-                            ui.add(egui::Slider::new(&mut self.radius, 1.0..=50.0).max_decimals(1));
+                            ui.add(crate::ui::controls::Slider::new(&mut self.radius, 1.0..=50.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits).max_decimals(1));
                         if track_slider(&r, &mut self.dragging) {
                             changed = true;
                         }
@@ -341,7 +341,7 @@ impl ZoomBlurDialog {
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.center_x"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.center_x, 0.0..=1.0)
+                            crate::ui::controls::Slider::new(&mut self.center_x, 0.0..=1.0).double_click_reset_to(0.5).clamping(egui::SliderClamping::Edits)
                                 .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
                                 .custom_parser(|s| {
                                     s.trim_end_matches('%')
@@ -357,7 +357,7 @@ impl ZoomBlurDialog {
 
                         ui.label(crate::t!("ui.center_y"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.center_y, 0.0..=1.0)
+                            crate::ui::controls::Slider::new(&mut self.center_y, 0.0..=1.0).double_click_reset_to(0.5).clamping(egui::SliderClamping::Edits)
                                 .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
                                 .custom_parser(|s| {
                                     s.trim_end_matches('%')
@@ -416,7 +416,7 @@ impl ZoomBlurDialog {
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.intensity"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.intensity, 1.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut self.intensity, 1.0..=100.0).double_click_reset_to(30.0).clamping(egui::SliderClamping::Edits)
                                 .max_decimals(0)
                                 .suffix("%"),
                         );
@@ -506,7 +506,7 @@ impl ZoomBlurDialog {
                                     (self.tint_g * 255.0) as u8,
                                     (self.tint_b * 255.0) as u8,
                                 );
-                                if ui.color_edit_button_srgba(&mut col).changed() {
+                                if crate::ui::controls::color_edit_button_srgba(ui, &mut col, egui::color_picker::Alpha::BlendOrAdditive).changed() {
                                     self.tint_r = col.r() as f32 / 255.0;
                                     self.tint_g = col.g() as f32 / 255.0;
                                     self.tint_b = col.b() as f32 / 255.0;
@@ -550,7 +550,7 @@ impl ZoomBlurDialog {
 
                             ui.label(crate::t!("ui.mix"));
                             let r = ui.add(
-                                egui::Slider::new(&mut self.tint_mix, 0.0..=100.0)
+                                crate::ui::controls::Slider::new(&mut self.tint_mix, 0.0..=100.0).double_click_reset_to(30.0).clamping(egui::SliderClamping::Edits)
                                     .max_decimals(0)
                                     .suffix("%"),
                             );

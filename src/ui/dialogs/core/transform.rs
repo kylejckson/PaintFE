@@ -151,14 +151,14 @@ impl LayerTransformDialog {
                     .show(ui, |ui| {
                         ui.label("X");
                         if ui
-                            .add(crate::ui::numeric::Numeric::new(&mut self.offset_x).speed(1.0))
+                            .add(crate::ui::controls::Numeric::new(&mut self.offset_x).speed(1.0))
                             .changed()
                         {
                             changed = true;
                         }
                         ui.label("Y");
                         if ui
-                            .add(crate::ui::numeric::Numeric::new(&mut self.offset_y).speed(1.0))
+                            .add(crate::ui::controls::Numeric::new(&mut self.offset_y).speed(1.0))
                             .changed()
                         {
                             changed = true;

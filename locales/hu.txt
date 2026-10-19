@@ -1557,3 +1557,9 @@ settings.search.placeholder=Beállítások keresése magyarul vagy angolul
 settings.search.empty=Nincs megfelelő beállítás
 
 info.appearance=Képinformációk megjelenése
+
+format.jxl=JPEG XL
+jxl.effort=Kódolási erőfeszítés
+jxl.still_images=Állóképek, 8 vagy 16 bites RGBA
+ui.double_click_slider_reset=Csúszkák visszaállítása dupla kattintással
+ui.double_click_reset_hint=Dupla kattintás a visszaállításhoz

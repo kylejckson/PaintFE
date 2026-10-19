@@ -273,12 +273,12 @@ impl PaintFEApp {
                 ctx.request_repaint();
                 match choice {
                     0 => {
-                        if let Ok(img) = image::load_from_memory(&item.bytes) {
+                        if let Ok(img) = crate::io::decode_image_bytes(&item.bytes) {
                             self.import_image_as_layer(&img.to_rgba8(), &item.name, true);
                         }
                     }
                     1 => {
-                        if let Ok(img) = image::load_from_memory(&item.bytes) {
+                        if let Ok(img) = crate::io::decode_image_bytes(&item.bytes) {
                             self.import_image_as_layer(&img.to_rgba8(), &item.name, false);
                         }
                     }

@@ -60,25 +60,25 @@ impl ColorRangeDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.hue_center"));
-                        if dialog_slider(ui, &mut self.hue_center, 0.0..=360.0, 1.0, "°", 1) {
+                        if dialog_slider(ui, &mut self.hue_center, 0.0..=360.0, 1.0, "°", 1, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.tolerance"));
-                        if dialog_slider(ui, &mut self.hue_tolerance, 1.0..=180.0, 1.0, "°", 1) {
+                        if dialog_slider(ui, &mut self.hue_tolerance, 1.0..=180.0, 1.0, "°", 1, 30.0) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.min_saturation"));
-                        if dialog_slider(ui, &mut self.sat_min, 0.0..=1.0, 0.01, "", 2) {
+                        if dialog_slider(ui, &mut self.sat_min, 0.0..=1.0, 0.01, "", 2, 0.1) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.fuzziness"));
-                        if dialog_slider(ui, &mut self.fuzziness, 0.0..=1.0, 0.01, "", 2) {
+                        if dialog_slider(ui, &mut self.fuzziness, 0.0..=1.0, 0.01, "", 2, 0.3) {
                             changed = true;
                         }
                         ui.end_row();

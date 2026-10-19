@@ -1,0 +1,6 @@
+mode         = .avx512
+extra_cflags = -DSKCMS_FORCE_SKX
+target_flags = -march=x86-64 -mavx512f -mavx512dq -mavx512cd -mavx512bw -mavx512vl
+include ninja/clang
+
+disabled = $no_skx

@@ -373,7 +373,7 @@ pub(crate) fn header(ui: &mut egui::Ui, theme: &crate::theme::Theme) -> (bool, e
             d.insert_temp(egui::Id::new(("floating_header_drag", "Tools")), delta);
         }
     });
-    if drag.contains(ui.input(|i| i.pointer.hover_pos()).unwrap_or(Pos2::ZERO)) {
+    if crate::signal_widgets::floating_pointer_hovered(ui.ctx(), &response, drag) {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
     }
     (close_response.clicked(), response)
@@ -395,6 +395,9 @@ pub(crate) fn resize(
 ) -> Option<(Rect, usize)> {
     let id = egui::Id::new("tools_palette_resize");
     let mut capture = ctx.data(|d| d.get_temp::<Drag>(id));
+    if !response.enabled() || egui::Popup::is_any_open(ctx) {
+        capture = None;
+    }
     let rect = response.rect;
     let (custom, opacity) = ctx
         .data(|d| {
@@ -431,7 +434,12 @@ pub(crate) fn resize(
         }
         e
     };
-    let hovered = ctx.input(|i| i.pointer.hover_pos()).map_or(0, edges);
+    let hovered = if crate::signal_widgets::floating_pointer_hovered(ctx, response, rect.expand(5.))
+    {
+        ctx.input(|i| i.pointer.hover_pos()).map_or(0, edges)
+    } else {
+        0
+    };
     let cursor = match capture.map_or(hovered, |d| d.edges) {
         1 | 2 => Some(egui::CursorIcon::ResizeHorizontal),
         4 | 8 => Some(egui::CursorIcon::ResizeVertical),

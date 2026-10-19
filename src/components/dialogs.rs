@@ -114,16 +114,7 @@ pub struct NewFileDialog {
     aspect_ratio: f32,
     preset: SizePreset,
     focus_width_on_open: bool,
-    replace_width_on_first_edit: bool,
-    focused_dimension_input: Option<DimensionInput>,
-    prev_ctrl_a_down: bool,
     clipboard_dims_rx: Option<mpsc::Receiver<Option<(u32, u32)>>>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DimensionInput {
-    Width,
-    Height,
 }
 
 impl Default for NewFileDialog {
@@ -140,9 +131,6 @@ impl Default for NewFileDialog {
             aspect_ratio: 800.0 / 600.0,
             preset: SizePreset::Size800x600,
             focus_width_on_open: false,
-            replace_width_on_first_edit: false,
-            focused_dimension_input: None,
-            prev_ctrl_a_down: false,
             clipboard_dims_rx: None,
         }
     }
@@ -164,9 +152,6 @@ impl NewFileDialog {
         self.sync_inputs_from_values();
         self.open = true;
         self.focus_width_on_open = true;
-        self.replace_width_on_first_edit = true;
-        self.focused_dimension_input = Some(DimensionInput::Width);
-        self.prev_ctrl_a_down = false;
     }
 
     /// Pre-populate width and height from a clipboard image if available.
@@ -312,15 +297,15 @@ impl NewFileDialog {
                 }
             }
 
-            let select_all_requested = self.select_all_shortcut_pressed(ctx);
-
             crate::ui::polish::window(ctx, "new_file_dialog_internal")
                 .title_bar(false)
                 .collapsible(false)
                 .resizable(false)
-                .movable(true)
-                .pivot(egui::Align2::CENTER_CENTER)
-                .default_pos(ctx.content_rect().center())
+                .heading_drag(
+                    ctx,
+                    egui::Id::new("new_image_heading_position"),
+                    ctx.content_rect().center() - egui::vec2(200.0, 200.0),
+                )
                 .show(ctx, |ui| {
                     ui.set_min_width(360.0);
 
@@ -373,94 +358,41 @@ impl NewFileDialog {
                         .min_col_width(80.0)
                         .spacing([8.0, 6.0])
                         .show(ui, |ui| {
-                            // Width row
                             ui.label(t!("common.width"));
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = 4.0;
-                                let previous_input = self.width_input.clone();
-                                let mut width_output =
-                                    egui::TextEdit::singleline(&mut self.width_input)
-                                        .desired_width(96.0)
-                                        .show(ui);
-                                let width_response = &width_output.response;
-                                if width_response.has_focus()
-                                    || width_response.gained_focus()
-                                    || width_response.clicked()
-                                {
-                                    self.focused_dimension_input = Some(DimensionInput::Width);
-                                }
-                                Self::select_all_text_on_ctrl_a(
-                                    ctx,
-                                    width_response,
-                                    &mut width_output.state,
-                                    &self.width_input,
-                                    self.focused_dimension_input == Some(DimensionInput::Width),
-                                    select_all_requested,
-                                );
-                                if self.focus_width_on_open {
-                                    width_response.request_focus();
-                                    self.focused_dimension_input = Some(DimensionInput::Width);
-                                    self.focus_width_on_open = false;
-                                }
-                                if self.replace_width_on_first_edit && width_response.changed() {
-                                    if self.width_input.starts_with(&previous_input)
-                                        && self.width_input.len() > previous_input.len()
-                                    {
-                                        let suffix = &self.width_input[previous_input.len()..];
-                                        let suffix_trimmed = suffix.trim_start();
-                                        if !matches!(
-                                            suffix_trimmed.chars().next(),
-                                            Some('+') | Some('-') | Some('*') | Some('/')
-                                        ) {
-                                            self.width_input = suffix.to_string();
-                                        }
-                                    }
-                                    self.replace_width_on_first_edit = false;
-                                }
-                                let width_commit = width_response.lost_focus()
-                                    || (width_response.has_focus()
-                                        && ui.input(|i| i.key_pressed(egui::Key::Tab)));
-                                if width_commit {
-                                    self.commit_width_input();
-                                }
-                                ui.label(crate::i18n::translate_english(&self.unit.label()));
-                            });
+                            let mut width = self.width;
+                            let width_response = ui.add(
+                                crate::ui::controls::Numeric::dimension(&mut width)
+                                    .focus_on_open(self.focus_width_on_open)
+                                    .id_salt("new_width")
+                                    .suffix(format!(
+                                        " {}",
+                                        crate::i18n::translate_english(&self.unit.label())
+                                    )),
+                            );
+                            self.focus_width_on_open = false;
+                            if width_response.changed() {
+                                self.width_input = format_dimension_value(width);
+                                self.commit_width_input();
+                            }
                             ui.end_row();
-
-                            // Height row
                             ui.label(t!("common.height"));
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = 4.0;
-                                let mut height_output =
-                                    egui::TextEdit::singleline(&mut self.height_input)
-                                        .desired_width(96.0)
-                                        .show(ui);
-                                let height_response = &height_output.response;
-                                if height_response.has_focus()
-                                    || height_response.gained_focus()
-                                    || height_response.clicked()
-                                {
-                                    self.focused_dimension_input = Some(DimensionInput::Height);
-                                }
-                                Self::select_all_text_on_ctrl_a(
-                                    ctx,
-                                    height_response,
-                                    &mut height_output.state,
-                                    &self.height_input,
-                                    self.focused_dimension_input == Some(DimensionInput::Height),
-                                    select_all_requested,
-                                );
-                                let height_commit = height_response.lost_focus()
-                                    || (height_response.has_focus()
-                                        && ui.input(|i| i.key_pressed(egui::Key::Tab)));
-                                if height_commit {
-                                    self.commit_height_input();
-                                }
-                                ui.label(crate::i18n::translate_english(&self.unit.label()));
-                            });
+                            let mut height = self.height;
+                            if ui
+                                .add(
+                                    crate::ui::controls::Numeric::dimension(&mut height)
+                                        .id_salt("new_height")
+                                        .suffix(format!(
+                                            " {}",
+                                            crate::i18n::translate_english(&self.unit.label())
+                                        )),
+                                )
+                                .changed()
+                            {
+                                self.height_input = format_dimension_value(height);
+                                self.commit_height_input();
+                            }
                             ui.end_row();
 
-                            // Lock aspect ratio (below Height)
                             ui.label("");
                             let checkbox_resp = ui.checkbox(
                                 &mut self.lock_aspect_ratio,
@@ -529,7 +461,7 @@ impl NewFileDialog {
                                 ui.label(t!("common.resolution"));
                                 ui.horizontal(|ui| {
                                     ui.add(
-                                        crate::ui::numeric::Numeric::new(&mut self.ppi)
+                                        crate::ui::controls::Numeric::new(&mut self.ppi)
                                             .speed(1.0)
                                             .range(1.0..=1200.0),
                                     );
@@ -589,54 +521,6 @@ impl NewFileDialog {
         result
     }
 
-    fn select_all_shortcut_pressed(&mut self, ctx: &egui::Context) -> bool {
-        let egui_shortcut = ctx.input(|i| {
-            i.events.iter().any(|event| {
-                matches!(
-                    event,
-                    egui::Event::Key {
-                        key: egui::Key::A,
-                        pressed: true,
-                        modifiers,
-                        ..
-                    } if modifiers.matches_logically(egui::Modifiers::COMMAND)
-                        || modifiers.ctrl
-                        || modifiers.command
-                )
-            })
-        });
-
-        let vk_probe = crate::windows_key_probe::snapshot();
-        let windows_ctrl_a_down = vk_probe.ctrl_down && crate::windows_key_probe::is_vk_down(0x41);
-        let windows_ctrl_a_edge = windows_ctrl_a_down && !self.prev_ctrl_a_down;
-        self.prev_ctrl_a_down = windows_ctrl_a_down;
-
-        egui_shortcut || windows_ctrl_a_edge
-    }
-
-    fn select_all_text_on_ctrl_a(
-        ctx: &egui::Context,
-        response: &egui::Response,
-        state: &mut egui::text_edit::TextEditState,
-        text: &str,
-        dimension_input_active: bool,
-        select_all_requested: bool,
-    ) {
-        let select_all = select_all_requested && (response.has_focus() || dimension_input_active);
-        if !select_all {
-            return;
-        }
-
-        state
-            .cursor
-            .set_char_range(Some(egui::text::CCursorRange::two(
-                egui::text::CCursor::default(),
-                egui::text::CCursor::new(text.chars().count()),
-            )));
-        state.clone().store(ctx, response.id);
-        ctx.request_repaint();
-    }
-
     /// Convert width/height values between units
     fn convert_unit(&mut self, from: SizeUnit, to: SizeUnit) {
         if from == to {
@@ -686,129 +570,7 @@ fn format_dimension_value(value: f32) -> String {
     }
 }
 
-fn evaluate_dimension_expression(input: &str) -> Option<f32> {
-    #[derive(Clone, Copy)]
-    struct Parser<'a> {
-        bytes: &'a [u8],
-        pos: usize,
-    }
-
-    impl<'a> Parser<'a> {
-        fn new(src: &'a str) -> Self {
-            Self {
-                bytes: src.as_bytes(),
-                pos: 0,
-            }
-        }
-
-        fn skip_ws(&mut self) {
-            while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_whitespace() {
-                self.pos += 1;
-            }
-        }
-
-        fn parse_expr(&mut self) -> Option<f32> {
-            let mut value = self.parse_term()?;
-            loop {
-                self.skip_ws();
-                let Some(&op) = self.bytes.get(self.pos) else {
-                    break;
-                };
-                if op != b'+' && op != b'-' {
-                    break;
-                }
-                self.pos += 1;
-                let rhs = self.parse_term()?;
-                value = if op == b'+' { value + rhs } else { value - rhs };
-            }
-            Some(value)
-        }
-
-        fn parse_term(&mut self) -> Option<f32> {
-            let mut value = self.parse_factor()?;
-            loop {
-                self.skip_ws();
-                let Some(&op) = self.bytes.get(self.pos) else {
-                    break;
-                };
-                if op != b'*' && op != b'/' {
-                    break;
-                }
-                self.pos += 1;
-                let rhs = self.parse_factor()?;
-                value = if op == b'*' {
-                    value * rhs
-                } else {
-                    if rhs.abs() < f32::EPSILON {
-                        return None;
-                    }
-                    value / rhs
-                };
-            }
-            Some(value)
-        }
-
-        fn parse_factor(&mut self) -> Option<f32> {
-            self.skip_ws();
-            if let Some(&b'+') = self.bytes.get(self.pos) {
-                self.pos += 1;
-                return self.parse_factor();
-            }
-            if let Some(&b'-') = self.bytes.get(self.pos) {
-                self.pos += 1;
-                return self.parse_factor().map(|v| -v);
-            }
-            if let Some(&b'(') = self.bytes.get(self.pos) {
-                self.pos += 1;
-                let value = self.parse_expr()?;
-                self.skip_ws();
-                if self.bytes.get(self.pos) == Some(&b')') {
-                    self.pos += 1;
-                    return Some(value);
-                }
-                return None;
-            }
-            self.parse_number()
-        }
-
-        fn parse_number(&mut self) -> Option<f32> {
-            self.skip_ws();
-            let start = self.pos;
-            let mut seen_digit = false;
-            let mut seen_dot = false;
-            while let Some(&ch) = self.bytes.get(self.pos) {
-                if ch.is_ascii_digit() {
-                    seen_digit = true;
-                    self.pos += 1;
-                } else if ch == b'.' && !seen_dot {
-                    seen_dot = true;
-                    self.pos += 1;
-                } else {
-                    break;
-                }
-            }
-            if !seen_digit {
-                return None;
-            }
-            std::str::from_utf8(&self.bytes[start..self.pos])
-                .ok()?
-                .parse::<f32>()
-                .ok()
-        }
-    }
-
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let mut parser = Parser::new(trimmed);
-    let value = parser.parse_expr()?;
-    parser.skip_ws();
-    if parser.pos != parser.bytes.len() || !value.is_finite() {
-        return None;
-    }
-    Some(value)
-}
+use crate::ui::numeric::evaluate_dimension_expression;
 
 // ============================================================================
 // IMAGE FORMAT ENUM
@@ -819,6 +581,7 @@ pub enum SaveFormat {
     #[default]
     Png,
     Jpeg,
+    Jxl(crate::io::jxl::JxlOptions),
     Webp,
     Bmp,
     Tga,
@@ -842,6 +605,7 @@ impl SaveFormat {
         match self {
             SaveFormat::Png => "png",
             SaveFormat::Jpeg => "jpg",
+            SaveFormat::Jxl(_) => "jxl",
             SaveFormat::Webp => "webp",
             SaveFormat::Bmp => "bmp",
             SaveFormat::Tga => "tga",
@@ -856,6 +620,7 @@ impl SaveFormat {
         match self {
             SaveFormat::Png => t!("format.png"),
             SaveFormat::Jpeg => t!("format.jpeg"),
+            SaveFormat::Jxl(_) => t!("format.jxl"),
             SaveFormat::Webp => t!("format.webp"),
             SaveFormat::Bmp => t!("format.bmp"),
             SaveFormat::Tga => t!("format.tga"),
@@ -867,7 +632,10 @@ impl SaveFormat {
     }
 
     pub fn supports_quality(&self) -> bool {
-        matches!(self, SaveFormat::Jpeg | SaveFormat::Webp)
+        matches!(
+            self,
+            SaveFormat::Jpeg | SaveFormat::Webp | SaveFormat::Jxl(_)
+        )
     }
 
     /// Returns true if this format supports animated (multi-frame) output.
@@ -880,6 +648,11 @@ impl SaveFormat {
             SaveFormat::Pfe,
             SaveFormat::Png,
             SaveFormat::Jpeg,
+            #[cfg(not(target_arch = "wasm32"))]
+            SaveFormat::Jxl(crate::io::jxl::JxlOptions {
+                lossless: true,
+                effort: 5,
+            }),
             SaveFormat::Webp,
             SaveFormat::Bmp,
             SaveFormat::Tga,
@@ -952,6 +725,15 @@ pub fn generate_preview(
             Some(PreviewResult {
                 file_size: buffer.len(),
                 preview_image: preview,
+            })
+        }
+        SaveFormat::Jxl(options) => {
+            let bytes = crate::io::jxl::encode_rgba8(image, quality, options).ok()?;
+            crate::io::jxl::register();
+            let preview_image = crate::io::decode_image_bytes(&bytes).ok()?.to_rgba8();
+            Some(PreviewResult {
+                file_size: bytes.len(),
+                preview_image,
             })
         }
         SaveFormat::Webp => {
@@ -1216,6 +998,7 @@ pub struct SaveFileDialog {
     last_preview_quality: u8,
     last_preview_webp_lossless: bool,
     needs_preview_update: bool,
+    jxl_preview_job: Option<std::sync::mpsc::Receiver<(SaveFormat, u8, Option<PreviewResult>)>>,
 
     // Interactive preview pan/zoom
     /// 0.0 = not yet computed (will auto-fit on first frame)
@@ -1263,6 +1046,7 @@ impl Default for SaveFileDialog {
             last_preview_quality: 90,
             last_preview_webp_lossless: true,
             needs_preview_update: true,
+            jxl_preview_job: None,
             preview_zoom: 0.0,
             preview_pan: egui::Vec2::ZERO,
             preview_drag_start: None,
@@ -1293,6 +1077,7 @@ impl SaveFileDialog {
         self.filename = "untitled".to_string();
         self.target_directory = None;
         self.source_thumbnail = None;
+        self.jxl_preview_job = None;
         self.source_dimensions = (0, 0);
         self.preview_texture = None;
         self.preview_file_size = 0;
@@ -1320,6 +1105,7 @@ impl SaveFileDialog {
     /// Set the source image for preview generation
     /// Creates a thumbnail for efficient preview rendering
     pub fn set_source_image(&mut self, image: &RgbaImage) {
+        self.jxl_preview_job = None;
         self.source_dimensions = (image.width(), image.height());
         self.source_thumbnail = Some(create_thumbnail(image, PREVIEW_MAX_SIZE));
         self.needs_preview_update = true;
@@ -1365,6 +1151,7 @@ impl SaveFileDialog {
             self.format = match ext.to_string_lossy().to_lowercase().as_str() {
                 "png" => SaveFormat::Png,
                 "jpg" | "jpeg" => SaveFormat::Jpeg,
+                "jxl" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Jxl(Default::default()),
                 "webp" => SaveFormat::Webp,
                 "bmp" => SaveFormat::Bmp,
                 "tga" => SaveFormat::Tga,
@@ -1381,46 +1168,87 @@ impl SaveFileDialog {
 
     /// Update preview if settings have changed
     fn update_preview_if_needed(&mut self, ctx: &egui::Context) {
-        // Check if we need to regenerate
-        let settings_changed = self.format != self.last_preview_format
-            || (self.format.supports_quality() && self.quality != self.last_preview_quality);
-        let webp_settings_changed = self.format == SaveFormat::Webp
-            && self.webp_lossless != self.last_preview_webp_lossless;
-
-        if !self.needs_preview_update && !settings_changed && !webp_settings_changed {
-            return;
-        }
-
-        if let Some(thumbnail) = &self.source_thumbnail {
-            let thumb_w = thumbnail.width();
-            let thumb_h = thumbnail.height();
-            if let Some(preview_result) =
-                generate_preview(thumbnail, self.format, self.quality, self.webp_lossless)
-            {
-                // Update texture
-                let color_image = rgba_to_color_image(&preview_result.preview_image);
-                self.encoded_preview = Some(color_image.clone());
-                self.preview_texture =
-                    Some(ctx.load_texture("save_preview", color_image, TextureOptions::LINEAR));
-                self.preview_file_size = preview_result.file_size;
-
-                // Estimate full-resolution file size by scaling from thumbnail ratio
-                let (fw, fh) = self.source_dimensions;
-                let full_pixels = fw as f64 * fh as f64;
-                let thumb_pixels = thumb_w as f64 * thumb_h as f64;
-                if thumb_pixels > 0.0 {
-                    let ratio = full_pixels / thumb_pixels;
-                    self.estimated_full_size = (preview_result.file_size as f64 * ratio) as usize;
-                } else {
-                    self.estimated_full_size = preview_result.file_size;
+        // Expensive JPEG XL preview encoding stays off the UI thread. At most
+        // one job per dialog is active; stale results are discarded after edits.
+        if matches!(self.format, SaveFormat::Jxl(_)) {
+            if let Some(job) = &self.jxl_preview_job {
+                match job.try_recv() {
+                    Ok((format, quality, result)) => {
+                        self.jxl_preview_job = None;
+                        if format == self.format && quality == self.quality {
+                            if let Some(result) = result {
+                                self.apply_preview(ctx, result);
+                            }
+                            self.last_preview_format = format;
+                            self.last_preview_quality = quality;
+                            self.needs_preview_update = false;
+                        }
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        self.jxl_preview_job = None;
+                        self.needs_preview_update = false;
+                        self.last_preview_format = self.format;
+                        self.last_preview_quality = self.quality;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        ctx.request_repaint_after(std::time::Duration::from_millis(40));
+                        return;
+                    }
                 }
             }
+            let changed = self.needs_preview_update
+                || self.last_preview_format != self.format
+                || self.last_preview_quality != self.quality;
+            if changed && let Some(thumbnail) = self.source_thumbnail.clone() {
+                let (tx, rx) = std::sync::mpsc::channel();
+                let (format, quality) = (self.format, self.quality);
+                let ctx = ctx.clone();
+                crate::par_compat::spawn(move || {
+                    let result = generate_preview(&thumbnail, format, quality, true);
+                    let _ = tx.send((format, quality, result));
+                    ctx.request_repaint();
+                });
+                self.jxl_preview_job = Some(rx);
+                self.needs_preview_update = false;
+            }
+            return;
         }
-
+        let changed = self.needs_preview_update
+            || self.format != self.last_preview_format
+            || (self.format.supports_quality() && self.quality != self.last_preview_quality)
+            || (self.format == SaveFormat::Webp
+                && self.webp_lossless != self.last_preview_webp_lossless);
+        if !changed {
+            return;
+        }
+        if let Some(thumbnail) = &self.source_thumbnail
+            && let Some(result) =
+                generate_preview(thumbnail, self.format, self.quality, self.webp_lossless)
+        {
+            self.apply_preview(ctx, result);
+        }
         self.last_preview_format = self.format;
         self.last_preview_quality = self.quality;
         self.last_preview_webp_lossless = self.webp_lossless;
         self.needs_preview_update = false;
+    }
+
+    fn apply_preview(&mut self, ctx: &egui::Context, result: PreviewResult) {
+        let color_image = rgba_to_color_image(&result.preview_image);
+        self.encoded_preview = Some(color_image.clone());
+        self.preview_texture =
+            Some(ctx.load_texture("save_preview", color_image, TextureOptions::LINEAR));
+        self.preview_file_size = result.file_size;
+        let (fw, fh) = self.source_dimensions;
+        let thumb_pixels = self
+            .source_thumbnail
+            .as_ref()
+            .map_or(0, |image| image.width() as u64 * image.height() as u64);
+        self.estimated_full_size = if thumb_pixels > 0 {
+            (result.file_size as f64 * fw as f64 * fh as f64 / thumb_pixels as f64) as usize
+        } else {
+            result.file_size
+        };
     }
 
     /// Format file size for display
@@ -1683,7 +1511,7 @@ impl SaveFileDialog {
                                     self.preview_zoom = (self.preview_zoom / 1.25).max(0.05);
                                 }
                                 let mut zoom_pct = (self.preview_zoom * 100.0).round();
-                                let zoom_response = ui.add(crate::ui::numeric::Numeric::new(&mut zoom_pct).range(5.0..=6400.0).speed(1.0).suffix("%"));
+                                let zoom_response = ui.add(crate::ui::controls::Numeric::new(&mut zoom_pct).range(5.0..=6400.0).speed(1.0).suffix("%"));
                                 #[cfg(test)]
                                 ctx.data_mut(|d| d.insert_temp(egui::Id::new("save_as_zoom_rect"), zoom_response.rect));
                                 if zoom_response.changed() {
@@ -1765,10 +1593,23 @@ impl SaveFileDialog {
                                 .selected_text(crate::i18n::translate_english(&self.format.label()))
                                 .show_ui(ui, |ui| {
                                     for format in SaveFormat::all() {
-                                        ui.selectable_value(&mut self.format, *format, crate::i18n::translate_english(&format.label()));
+                                        if ui.selectable_label(self.format.extension() == format.extension(),
+                                            crate::i18n::translate_english(&format.label())).clicked()
+                                            && self.format.extension() != format.extension() {
+                                            self.format = *format;
+                                        }
                                     }
                                 });
 
+                            if self.jxl_preview_job.is_some() && matches!(self.format, SaveFormat::Jxl(_)) { ui.spinner(); }
+                            if let SaveFormat::Jxl(options) = &mut self.format {
+                                accent_separator(ui, &colors);
+                                ui.checkbox(&mut options.lossless, crate::t!("ui.lossless"));
+                                ui.label(crate::t!("jxl.effort"));
+                                ui.add(crate::ui::controls::Slider::new(&mut options.effort, 1..=9)
+                                    .reset_to(5));
+                                ui.weak(crate::t!("jxl.still_images"));
+                            }
                             // ── QUALITY (JPEG / WebP) ─────────────────────────
                             if self.format.supports_quality() {
                                 accent_separator(ui, &colors);
@@ -1779,7 +1620,8 @@ impl SaveFileDialog {
                                         ctx.request_repaint();
                                     }
                                 }
-                                if self.format != SaveFormat::Webp || !self.webp_lossless {
+                                if !matches!(self.format, SaveFormat::Jxl(options) if options.lossless)
+                                    && (self.format != SaveFormat::Webp || !self.webp_lossless) {
                                     section_label(ui, &colors, &crate::t!("dialog.resize_image.quality"));
                                     let mut quality = self.quality as f32;
                                     if crate::ui::dialogs::core::numeric_field_with_buttons(ui, &mut quality, 1.0, 1.0..=100.0, "%", 1.0) {
@@ -1787,7 +1629,8 @@ impl SaveFileDialog {
                                         ctx.request_repaint();
                                     }
                                 }
-                                if self.format != SaveFormat::Webp || !self.webp_lossless {
+                                if !matches!(self.format, SaveFormat::Jxl(options) if options.lossless)
+                                    && (self.format != SaveFormat::Webp || !self.webp_lossless) {
                                     let hint = match self.quality {
                                         1..=30 => "Very Low",
                                         31..=50 => "Low",
@@ -1852,7 +1695,7 @@ impl SaveFileDialog {
                                         .spacing([8.0, 4.0])
                                         .show(ui, |ui| {
                                             ui.label(crate::t!("ui.fps"));
-                                            ui.add(egui::Slider::new(&mut self.animation_fps, 1.0..=60.0)
+                                            ui.add(crate::ui::controls::Slider::new(&mut self.animation_fps, 1.0..=60.0).double_click_reset_to(10.0)
                                                 .step_by(1.0)
                                                 .suffix(" fps"));
                                             ui.end_row();
@@ -1860,7 +1703,7 @@ impl SaveFileDialog {
                                             if self.format == SaveFormat::Gif {
                                                 ui.label(crate::t!("ui.colors"));
                                                 let mut colors_f = self.gif_colors as f32;
-                                                if ui.add(egui::Slider::new(&mut colors_f, 2.0..=256.0)
+                                                if ui.add(crate::ui::controls::Slider::new(&mut colors_f, 2.0..=256.0).double_click_reset_to(256.0)
                                                     .step_by(1.0)
                                                     .logarithmic(true)
                                                 ).changed() {
@@ -1954,6 +1797,62 @@ impl SaveFileDialog {
         }
 
         result
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod jxl_preview_tests {
+    use super::*;
+
+    #[test]
+    fn asynchronous_preview_discards_stale_options_and_encodes_current_settings() {
+        let ctx = egui::Context::default();
+        let image = RgbaImage::from_pixel(12, 9, image::Rgba([83, 142, 217, 128]));
+        let format = SaveFormat::Jxl(crate::io::jxl::JxlOptions {
+            lossless: true,
+            effort: 1,
+        });
+        let mut dialog = SaveFileDialog {
+            format,
+            source_thumbnail: Some(image.clone()),
+            source_dimensions: image.dimensions(),
+            ..Default::default()
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send((
+            SaveFormat::Jxl(crate::io::jxl::JxlOptions::default()),
+            90,
+            Some(PreviewResult {
+                file_size: 1,
+                preview_image: RgbaImage::new(1, 1),
+            }),
+        ))
+        .unwrap();
+        dialog.jxl_preview_job = Some(rx);
+        dialog.update_preview_if_needed(&ctx);
+        assert_eq!(dialog.preview_file_size, 0, "stale preview was displayed");
+        assert!(dialog.jxl_preview_job.is_some());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while dialog.jxl_preview_job.is_some() {
+            assert!(std::time::Instant::now() < deadline, "preview timed out");
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            dialog.update_preview_if_needed(&ctx);
+        }
+        let expected = generate_preview(&image, format, 90, true).unwrap();
+        assert_eq!(dialog.preview_file_size, expected.file_size);
+        assert_eq!(dialog.encoded_preview.unwrap().size, [12, 9]);
+        assert_eq!(dialog.last_preview_format, format);
+    }
+
+    #[test]
+    fn reset_disconnects_previous_source_preview() {
+        let mut dialog = SaveFileDialog::default();
+        let (tx, rx) = std::sync::mpsc::channel();
+        dialog.jxl_preview_job = Some(rx);
+        dialog.reset();
+        assert!(dialog.jxl_preview_job.is_none());
+        assert!(tx.send((SaveFormat::Png, 90, None)).is_err());
+        assert!(dialog.encoded_preview.is_none());
     }
 }
 
@@ -2111,5 +2010,52 @@ mod save_as_controls_tests {
         );
         let after = ctx.data(|d| d.get_temp::<egui::Pos2>(position_id)).unwrap();
         assert!((after - before - egui::vec2(25.0, 15.0)).length() < 1.0);
+    }
+}
+
+#[cfg(test)]
+mod shared_new_image_tests {
+    use super::*;
+
+    #[test]
+    fn new_image_dimensions_use_shared_expressions_and_keep_linked_values() {
+        let ctx = egui::Context::default();
+        let mut fonts = egui::FontDefinitions::default();
+        fonts.families.insert(
+            egui::FontFamily::Name("WidgetTitle".into()),
+            fonts.families[&egui::FontFamily::Proportional].clone(),
+        );
+        ctx.set_fonts(fonts);
+        let mut dialog = NewFileDialog::default();
+        dialog.open_dialog();
+        fn frame(ctx: &egui::Context, dialog: &mut NewFileDialog, events: Vec<egui::Event>) {
+            let _ = ctx.run_ui(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |_| {
+                    dialog.show(ctx);
+                },
+            );
+        }
+        for _ in 0..3 {
+            frame(&ctx, &mut dialog, vec![]);
+        }
+        frame(&ctx, &mut dialog, vec![egui::Event::Text("400/2".into())]);
+        frame(
+            &ctx,
+            &mut dialog,
+            vec![egui::Event::Key {
+                key: egui::Key::Tab,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        assert_eq!(dialog.width, 200.0);
+        assert_eq!(dialog.height, 150.0);
+        assert_eq!(dialog.preview_pixels(), (200, 150));
     }
 }

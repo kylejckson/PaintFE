@@ -39,7 +39,7 @@ impl CrystallizeDialog {
                             let mut seed_f = self.seed as f32;
                             if ui
                                 .add(
-                                    crate::ui::numeric::Numeric::new(&mut seed_f)
+                                    crate::ui::controls::Numeric::new(&mut seed_f)
                                         .speed(1.0)
                                         .range(0.0..=9999.0),
                                 )
@@ -142,7 +142,7 @@ impl DentsDialog {
                     .show(ui, |ui| {
                         ui.label(crate::t!("dialog.resize_image.scale"));
                         let r =
-                            ui.add(egui::Slider::new(&mut self.scale, 1.0..=80.0).max_decimals(1));
+                            ui.add(crate::ui::controls::Slider::new(&mut self.scale, 1.0..=80.0).double_click_reset_to(8.0).clamping(egui::SliderClamping::Edits).max_decimals(1));
                         if track_slider(&r, &mut self.dragging) {
                             changed = true;
                         }
@@ -150,7 +150,7 @@ impl DentsDialog {
 
                         ui.label(crate::t!("ui.amount"));
                         let r =
-                            ui.add(egui::Slider::new(&mut self.amount, 0.5..=30.0).max_decimals(1));
+                            ui.add(crate::ui::controls::Slider::new(&mut self.amount, 0.5..=30.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits).max_decimals(1));
                         if track_slider(&r, &mut self.dragging) {
                             changed = true;
                         }
@@ -161,7 +161,7 @@ impl DentsDialog {
                             let mut seed_f = self.seed as f32;
                             if ui
                                 .add(
-                                    crate::ui::numeric::Numeric::new(&mut seed_f)
+                                    crate::ui::controls::Numeric::new(&mut seed_f)
                                         .speed(1.0)
                                         .range(0.0..=9999.0),
                                 )
@@ -188,11 +188,9 @@ impl DentsDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.octaves"));
-                        let r = ui.add(
-                            egui::Slider::new(&mut self.octaves, 1.0..=8.0)
-                                .max_decimals(0)
-                                .integer(),
-                        );
+                        let mut octaves = self.octaves.round() as u32;
+                        let r = ui.add(crate::ui::controls::Slider::new(&mut octaves, 1..=8).double_click_reset_to(1));
+                        if r.changed() { self.octaves = octaves as f32; }
                         if track_slider(&r, &mut self.dragging) {
                             changed = true;
                         }
@@ -200,7 +198,7 @@ impl DentsDialog {
 
                         ui.label(crate::t!("ui.roughness"));
                         let r = ui
-                            .add(egui::Slider::new(&mut self.roughness, 0.1..=1.0).max_decimals(2));
+                            .add(crate::ui::controls::Slider::new(&mut self.roughness, 0.1..=1.0).double_click_reset_to(0.5).clamping(egui::SliderClamping::Edits).max_decimals(2));
                         if track_slider(&r, &mut self.dragging) {
                             changed = true;
                         }
@@ -374,7 +372,7 @@ impl BulgeDialog {
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.amount"));
                         let r =
-                            ui.add(egui::Slider::new(&mut self.amount, -3.0..=3.0).max_decimals(2));
+                            ui.add(crate::ui::controls::Slider::new(&mut self.amount, -3.0..=3.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits).max_decimals(2));
                         if track_slider(&r, &mut self.dragging) {
                             changed = true;
                         }
@@ -389,7 +387,7 @@ impl BulgeDialog {
 
                         ui.label(crate::t!("ui.origin_x"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.origin_x, 0.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut self.origin_x, 0.0..=100.0).double_click_reset_to(50.0).clamping(egui::SliderClamping::Edits)
                                 .suffix("%")
                                 .max_decimals(0),
                         );
@@ -400,7 +398,7 @@ impl BulgeDialog {
 
                         ui.label(crate::t!("ui.origin_y"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.origin_y, 0.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut self.origin_y, 0.0..=100.0).double_click_reset_to(50.0).clamping(egui::SliderClamping::Edits)
                                 .suffix("%")
                                 .max_decimals(0),
                         );
@@ -474,7 +472,7 @@ impl TwistDialog {
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.angle"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.angle, -720.0..=720.0)
+                            crate::ui::controls::Slider::new(&mut self.angle, -720.0..=720.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits)
                                 .suffix("°")
                                 .max_decimals(0),
                         );
@@ -510,7 +508,7 @@ impl TwistDialog {
 
                         ui.label(crate::t!("ui.origin_x"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.origin_x, 0.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut self.origin_x, 0.0..=100.0).double_click_reset_to(50.0).clamping(egui::SliderClamping::Edits)
                                 .suffix("%")
                                 .max_decimals(0),
                         );
@@ -521,7 +519,7 @@ impl TwistDialog {
 
                         ui.label(crate::t!("ui.origin_y"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.origin_y, 0.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut self.origin_y, 0.0..=100.0).double_click_reset_to(50.0).clamping(egui::SliderClamping::Edits)
                                 .suffix("%")
                                 .max_decimals(0),
                         );

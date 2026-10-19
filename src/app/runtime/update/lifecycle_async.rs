@@ -420,6 +420,9 @@ impl PaintFEApp {
             match result {
                 IoResult::ImageLoaded {
                     tiled,
+                    pixel_format,
+                    deep_pixels,
+                    hdr_metadata,
                     width,
                     height,
                     path,
@@ -430,6 +433,9 @@ impl PaintFEApp {
                     let mut canvas_state = CanvasState::new(width, height);
                     if let Some(layer) = canvas_state.layers.first_mut() {
                         layer.pixels = tiled;
+                        layer.pixel_format = pixel_format;
+                        layer.deep_pixels = deep_pixels;
+                        layer.hdr_metadata = hdr_metadata;
                     }
                     canvas_state.composite_cache = None;
                     canvas_state.mark_dirty(None);

@@ -1557,3 +1557,9 @@ settings.search.placeholder=Tercihlerde Türkçe veya İngilizce ara
 settings.search.empty=Eşleşen tercih bulunamadı
 
 info.appearance=Görüntü bilgisi görünümü
+
+format.jxl=JPEG XL
+jxl.effort=Kodlama çabası
+jxl.still_images=Durağan görüntüler, 8 veya 16 bit RGBA
+ui.double_click_slider_reset=Kaydırıcıları çift tıklamayla sıfırla
+ui.double_click_reset_hint=Sıfırlamak için çift tıklayın

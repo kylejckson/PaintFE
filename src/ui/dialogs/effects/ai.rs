@@ -63,7 +63,7 @@ impl RemoveBackgroundDialog {
                         ui.label(egui::RichText::new(crate::t!("dialog.threshold")).size(11.0));
                         ui.horizontal(|ui| {
                             ui.add(
-                                egui::Slider::new(&mut self.threshold, 0.05..=0.95)
+                                crate::ui::controls::Slider::new(&mut self.threshold, 0.05..=0.95).double_click_reset_to(0.5).clamping(egui::SliderClamping::Edits)
                                     .step_by(0.01)
                                     .fixed_decimals(2)
                                     .text(""),
@@ -98,7 +98,7 @@ impl RemoveBackgroundDialog {
                         ui.horizontal(|ui| {
                             let mut fill_val = self.fill_holes as i32;
                             ui.add(
-                                egui::Slider::new(&mut fill_val, 0..=20)
+                                crate::ui::controls::Slider::new(&mut fill_val, 0..=20).double_click_reset_to(0)
                                     .suffix(" px")
                                     .text(""),
                             );
@@ -123,7 +123,7 @@ impl RemoveBackgroundDialog {
                         ui.label(egui::RichText::new(crate::t!("ui.edge_feather")).size(11.0));
                         ui.horizontal(|ui| {
                             ui.add(
-                                egui::Slider::new(&mut self.edge_feather, 0.0..=20.0)
+                                crate::ui::controls::Slider::new(&mut self.edge_feather, 0.0..=20.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits)
                                     .step_by(0.5)
                                     .fixed_decimals(1)
                                     .suffix(" px")
@@ -136,7 +136,7 @@ impl RemoveBackgroundDialog {
                         ui.label(egui::RichText::new(crate::t!("ui.mask_expansion")).size(11.0));
                         ui.horizontal(|ui| {
                             ui.add(
-                                egui::Slider::new(&mut self.mask_expansion, -10..=10)
+                                crate::ui::controls::Slider::new(&mut self.mask_expansion, -10..=10).double_click_reset_to(0).clamping(egui::SliderClamping::Edits)
                                     .suffix(" px")
                                     .text(""),
                             );

@@ -1557,3 +1557,9 @@ settings.search.placeholder=Caută în preferințe în română sau engleză
 settings.search.empty=Nu s-au găsit preferințe potrivite
 
 info.appearance=Aspectul informațiilor imaginii
+
+format.jxl=JPEG XL
+jxl.effort=Efort de codificare
+jxl.still_images=Imagini statice, RGBA pe 8 sau 16 biți
+ui.double_click_slider_reset=Resetează glisoarele prin dublu clic
+ui.double_click_reset_hint=Dublu clic pentru resetare

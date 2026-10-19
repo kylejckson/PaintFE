@@ -115,6 +115,7 @@ fn sanitize_window_position(pos: (f32, f32)) -> Option<[f32; 2]> {
 
 /// Inner main function — contains all actual logic.
 fn main_inner() -> Result<(), eframe::Error> {
+    paintfe::io::jxl::register();
     // -- Windows console management ------------------------------------
     // The binary is SUBSYSTEM:WINDOWS so Windows never allocates a console.
     // In CLI mode preserve inherited redirection and connect missing handles

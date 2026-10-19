@@ -3,6 +3,118 @@ use super::*;
 use crate::components::tools::Tool;
 
 #[test]
+fn jpeg_xl_document_open_preserves_16_bit_samples_from_files_and_bytes() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target/jpeg-xl-app")
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(&root).unwrap();
+    let pixels: Vec<u16> = (0..9 * 7 * 4).map(|i| (i * 137 + 11) as u16).collect();
+    let options = crate::io::jxl::JxlOptions::default();
+    let bytes = crate::io::jxl::encode_rgba16(9, 7, &pixels, 90, options).unwrap();
+    let path = root.join("source.jxl");
+    std::fs::write(&path, &bytes).unwrap();
+    let mut app = app();
+    let ctx = context();
+    for from_bytes in [false, true] {
+        if from_bytes {
+            app.open_image_from_bytes(&bytes, Some("source.jxl".into()));
+        } else {
+            app.open_file_by_path(path.clone(), 0.0);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+            while app.pending_io_ops > 0 {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "JPEG XL background open timed out"
+                );
+                app.update_runtime_lifecycle_async(&ctx);
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        }
+        let state = &app.projects[app.active_project_index].canvas_state;
+        assert_eq!(
+            state.layers[0].pixel_format,
+            crate::canvas::PixelFormat::RgbaU16
+        );
+        assert_eq!(
+            state.layers[0].deep_pixels.as_ref(),
+            Some(&crate::experimental::DeepRgbaBuffer::U16(pixels.clone()))
+        );
+        let output = root.join(if from_bytes { "bytes.jxl" } else { "file.jxl" });
+        crate::io::encode_canvas_state_and_write(
+            state,
+            &output,
+            SaveFormat::Jxl(options),
+            90,
+            TiffCompression::None,
+            true,
+        )
+        .unwrap();
+        assert_eq!(image::open(output).unwrap().to_rgba16().as_raw(), &pixels);
+    }
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+#[ignore = "manual full-app UI and tessellation CPU profile"]
+fn profile_complete_interface_frames() {
+    use eframe::App as _;
+    let ctx = context();
+    let cc = eframe::CreationContext::_new_kittest(ctx.clone());
+    let mut app = PaintFEApp::new(&cc, Vec::new(), mpsc::channel().1);
+    app.projects = vec![Project::new_untitled(1, 800, 600)];
+    app.settings_window.open_tools_settings(&app.settings);
+    let mut frame = eframe::Frame::_new_kittest();
+    let mut clock = 0;
+    for cached in [false, true, false, true] {
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("profile_disable_section_cache"), !cached));
+        let mut samples = Vec::new();
+        for tick in 0..150 {
+            clock += 1;
+            let delta = if tick < 10 {
+                2000.
+            } else if tick < 40 {
+                0.
+            } else if tick < 95 {
+                -25.
+            } else {
+                25.
+            };
+            let start = std::time::Instant::now();
+            let output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1200., 900.),
+                    )),
+                    time: Some(clock as f64 / 60.),
+                    events: vec![
+                        egui::Event::PointerMoved(egui::pos2(750., 450.)),
+                        egui::Event::MouseWheel {
+                            unit: egui::MouseWheelUnit::Point,
+                            delta: egui::vec2(0., delta),
+                            modifiers: egui::Modifiers::NONE,
+                            phase: egui::TouchPhase::Move,
+                        },
+                    ],
+                    ..Default::default()
+                },
+                |ui| app.ui(ui, &mut frame),
+            );
+            let _ = ctx.tessellate(output.shapes, output.pixels_per_point);
+            if tick >= 40 {
+                samples.push(start.elapsed().as_secs_f64() * 1000.);
+            }
+        }
+        samples.sort_by(f64::total_cmp);
+        println!(
+            "Complete app + tessellation cached={cached}: median={:.2}ms p95={:.2}ms",
+            samples[samples.len() / 2],
+            samples[samples.len() * 95 / 100]
+        );
+    }
+}
+
+#[test]
 fn workspace_restore_and_reset_update_the_palette_without_unhiding_tools() {
     use crate::ui::workspace::{Command, PanelPlacement, WorkspaceLayout};
     let mut app = app();
@@ -646,4 +758,40 @@ fn issue_193_text_paste_typing_and_backspace_reach_the_editor() {
             .to_rgba_image(),
         before
     );
+}
+
+#[test]
+fn window_restore_size_excludes_desktop_position_on_every_monitor() {
+    let mut app = app();
+    let ctx = context();
+    for (origin_index, origin) in [
+        egui::pos2(138.0, 162.0),
+        egui::pos2(-1500.0, 80.0),
+        egui::Pos2::ZERO,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        for frame in 0..3 {
+            let size = egui::vec2(1000.0, 700.0);
+            let mut input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                time: Some(10.0 + origin_index as f64 * 10.0 + frame as f64 * 2.0),
+                ..Default::default()
+            };
+            let viewport = input.viewports.entry(egui::ViewportId::ROOT).or_default();
+            viewport.inner_rect = Some(egui::Rect::from_min_size(origin, size));
+            viewport.outer_rect = Some(egui::Rect::from_min_size(
+                origin - egui::vec2(8.0, 32.0),
+                size + egui::vec2(16.0, 40.0),
+            ));
+            let _ = ctx.run_ui(input, |ui| {
+                app.reset_ui_cursor_blocking_rects();
+                app.show_runtime_canvas_tail(&ctx, ui, false);
+            });
+        }
+        assert_eq!(app.settings.persist_window_width, 1000.0);
+        assert_eq!(app.settings.persist_window_height, 700.0);
+        assert_eq!(app.last_screen_size, (1000.0, 700.0));
+    }
 }

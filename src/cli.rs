@@ -61,18 +61,26 @@ pub struct CliArgs {
     #[arg(long, value_name = "DIR")]
     pub output_dir: Option<PathBuf>,
 
-    /// Output format: png, jpeg, webp, bmp, tga, ico, tiff, gif, pfe.
+    /// Output format: png, jpeg, jxl, webp, bmp, tga, ico, tiff, gif, pfe.
     /// When omitted, the format is inferred from --output's extension, defaulting to png.
     #[arg(short, long, value_name = "FORMAT")]
     pub format: Option<String>,
 
-    /// JPEG / WEBP quality (1–100, default 90).
+    /// JPEG / WebP / JPEG XL quality (1–100, default 90).
     #[arg(short, long, default_value_t = 90, value_name = "1-100")]
     pub quality: u8,
 
     /// Write WebP lossily using --quality. Default WebP output is lossless.
     #[arg(long)]
     pub webp_lossy: bool,
+
+    /// Write JPEG XL lossily using --quality. Default JPEG XL is lossless.
+    #[arg(long)]
+    pub jxl_lossy: bool,
+
+    /// JPEG XL encoding effort (1-9, higher is slower).
+    #[arg(long, default_value_t = 5, value_parser = clap::value_parser!(u8).range(1..=9))]
+    pub jxl_effort: u8,
 
     /// TIFF compression mode: none, lzw, deflate (default: none).
     #[arg(long, default_value = "none", value_name = "MODE")]
@@ -125,7 +133,13 @@ pub fn run(args: CliArgs) -> ExitCode {
     }
 
     // Parse format and compression settings
-    let save_format = parse_format(args.format.as_deref(), args.output.as_deref());
+    let mut save_format = parse_format(args.format.as_deref(), args.output.as_deref());
+    if matches!(save_format, SaveFormat::Jxl(_)) {
+        save_format = SaveFormat::Jxl(crate::io::jxl::JxlOptions {
+            lossless: !args.jxl_lossy,
+            effort: args.jxl_effort,
+        });
+    }
     let tiff_compression = match args.tiff_compression.to_lowercase().as_str() {
         "lzw" => TiffCompression::Lzw,
         "deflate" => TiffCompression::Deflate,
@@ -318,6 +332,22 @@ fn run_one(
         SaveFormat::Pfe => {
             save_pfe(&state, output).map_err(|e| format!("PFE save failed: {:?}", e))?;
         }
+        SaveFormat::Jxl(_)
+            if state
+                .layers
+                .iter()
+                .any(|layer| layer.pixel_format != crate::canvas::PixelFormat::RgbaU8) =>
+        {
+            crate::io::encode_canvas_state_and_write(
+                &state,
+                output,
+                format,
+                quality,
+                tiff_compression,
+                webp_lossless,
+            )
+            .map_err(|e| format!("save failed: {e}"))?;
+        }
         _ => {
             let flat_img = if flatten && state.layers.len() > 1 {
                 // Composite all visible layers
@@ -395,6 +425,7 @@ fn parse_format(format_arg: Option<&str>, output: Option<&Path>) -> SaveFormat {
     if let Some(f) = format_arg {
         return match f.to_lowercase().as_str() {
             "jpeg" | "jpg" => SaveFormat::Jpeg,
+            "jxl" => SaveFormat::Jxl(Default::default()),
             "webp" => SaveFormat::Webp,
             "bmp" => SaveFormat::Bmp,
             "tga" => SaveFormat::Tga,
@@ -415,6 +446,7 @@ fn parse_format(format_arg: Option<&str>, output: Option<&Path>) -> SaveFormat {
             .as_str()
         {
             "jpg" | "jpeg" => SaveFormat::Jpeg,
+            "jxl" => SaveFormat::Jxl(Default::default()),
             "webp" => SaveFormat::Webp,
             "bmp" => SaveFormat::Bmp,
             "tga" => SaveFormat::Tga,

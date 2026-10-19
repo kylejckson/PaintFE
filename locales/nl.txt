@@ -1557,3 +1557,9 @@ settings.search.placeholder=Voorkeuren zoeken in het Nederlands of Engels
 settings.search.empty=Geen overeenkomende voorkeuren
 
 info.appearance=Weergave van afbeeldingsinformatie
+
+format.jxl=JPEG XL
+jxl.effort=Coderingsinspanning
+jxl.still_images=Stilstaande afbeeldingen, 8-bits of 16-bits RGBA
+ui.double_click_slider_reset=Schuifregelaars resetten met dubbelklik
+ui.double_click_reset_hint=Dubbelklik om te resetten

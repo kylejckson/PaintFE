@@ -498,7 +498,7 @@ impl ToolsPanel {
                 vis.widgets.active.bg_stroke = egui::Stroke::NONE;
 
                 let dv_resp = ui.add(
-                    crate::ui::numeric::Numeric::new(&mut self.properties.size)
+                    crate::ui::controls::Numeric::new(&mut self.properties.size)
                         .speed(0.5)
                         .range(1.0..=256.0)
                         .suffix("px"),
@@ -554,7 +554,7 @@ impl ToolsPanel {
                 }
             }
         });
-        if ui.small_button("+").clicked() {
+        if crate::ui::controls::stepper(ui, true).clicked() {
             self.properties.size =
                 (self.properties.size + crate::ui::numeric::step(ui, 1.0)).min(256.0);
         }
@@ -592,7 +592,7 @@ impl ToolsPanel {
                 vis.widgets.active.bg_stroke = egui::Stroke::NONE;
 
                 let dv_resp = ui.add(
-                    crate::ui::numeric::Numeric::new(&mut self.text_state.font_size)
+                    crate::ui::controls::Numeric::new(&mut self.text_state.font_size)
                         .speed(0.5)
                         .range(6.0..=f32::MAX)
                         .suffix("px"),
@@ -658,7 +658,7 @@ impl ToolsPanel {
                 }
             }
         });
-        if ui.small_button("+").clicked() {
+        if crate::ui::controls::stepper(ui, true).clicked() {
             self.text_state.font_size += crate::ui::numeric::step(ui, 1.0);
             self.text_state.preview_dirty = true;
             self.text_state.glyph_cache.clear();
@@ -690,7 +690,7 @@ impl ToolsPanel {
             let mut hardness_pct = (self.properties.hardness * 100.0).round();
             if ui
                 .add(
-                    crate::ui::numeric::Numeric::new(&mut hardness_pct)
+                    crate::ui::controls::Numeric::new(&mut hardness_pct)
                         .speed(1.0)
                         .range(0.0..=100.0)
                         .suffix("%"),
@@ -795,36 +795,17 @@ impl ToolsPanel {
                         ("Flow", &mut self.properties.flow),
                     ] {
                         ui.label(crate::i18n::translate_english(label));
-                        ui.horizontal(|ui| {
-                            if ui.small_button("-").clicked() {
-                                *value = (*value - 0.05).max(0.0);
-                            }
-                            let mut percent = *value * 100.0;
-                            if ui
-                                .add(
-                                    crate::ui::numeric::Numeric::new(&mut percent)
-                                        .range(0.0..=100.0)
-                                        .suffix("%")
-                                        .speed(1.0),
-                                )
-                                .changed()
-                            {
-                                *value = percent / 100.0;
-                            }
-                            if ui.small_button("+").clicked() {
-                                *value = (*value + 0.05).min(1.0);
-                            }
-                            if ui.small_button("\u{21ba}").clicked() {
-                                *value = 1.0;
-                            }
-                        });
+                        let mut percent = *value * 100.0;
+                        if ui.add(crate::ui::controls::Numeric::percentage(&mut percent).id_salt(label).steppers(5.0).reset_to(100.0)).changed() {
+                            *value = percent / 100.0;
+                        }
                         ui.end_row();
                     }
                     ui.label(crate::t!("ui.scatter"));
                     let mut scatter_pct = (self.properties.scatter * 200.0).round();
                     if ui
                         .add(
-                            egui::Slider::new(&mut scatter_pct, 0.0..=200.0)
+                            crate::ui::controls::Slider::new(&mut scatter_pct, 0.0..=200.0).double_click_reset_to(0.0)
                                 .suffix("%")
                                 .max_decimals(0),
                         )
@@ -837,7 +818,7 @@ impl ToolsPanel {
                     let mut hj_pct = (self.properties.hue_jitter * 100.0).round();
                     if ui
                         .add(
-                            egui::Slider::new(&mut hj_pct, 0.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut hj_pct, 0.0..=100.0).double_click_reset_to(0.0)
                                 .suffix("%")
                                 .max_decimals(0),
                         )
@@ -850,7 +831,7 @@ impl ToolsPanel {
                     let mut bj_pct = (self.properties.brightness_jitter * 100.0).round();
                     if ui
                         .add(
-                            egui::Slider::new(&mut bj_pct, 0.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut bj_pct, 0.0..=100.0).double_click_reset_to(0.0)
                                 .suffix("%")
                                 .max_decimals(0),
                         )
@@ -875,7 +856,7 @@ impl ToolsPanel {
                     if ui
                         .add_enabled(
                             self.properties.pressure_size,
-                            egui::Slider::new(&mut min_size_pct, 1.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut min_size_pct, 1.0..=100.0).double_click_reset_to(10.0)
                                 .suffix("% min")
                                 .max_decimals(0),
                         )
@@ -896,7 +877,7 @@ impl ToolsPanel {
                     if ui
                         .add_enabled(
                             self.properties.pressure_opacity,
-                            egui::Slider::new(&mut min_opacity_pct, 1.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut min_opacity_pct, 1.0..=100.0).double_click_reset_to(10.0)
                                 .suffix("% min")
                                 .max_decimals(0),
                         )
@@ -916,7 +897,7 @@ impl ToolsPanel {
             let mut spacing_pct = (self.properties.spacing * 100.0).round();
             if ui
                 .add(
-                    crate::ui::numeric::Numeric::new(&mut spacing_pct)
+                    crate::ui::controls::Numeric::new(&mut spacing_pct)
                         .speed(1.0)
                         .range(1.0..=200.0)
                         .suffix("%"),
@@ -948,7 +929,7 @@ impl ToolsPanel {
             // Min handle
             if ui
                 .add(
-                    crate::ui::numeric::Numeric::new(&mut lo)
+                    crate::ui::controls::Numeric::new(&mut lo)
                         .speed(1.0)
                         .range(0.0..=360.0)
                         .suffix(" deg"),
@@ -1002,7 +983,7 @@ impl ToolsPanel {
             // Max handle
             if ui
                 .add(
-                    crate::ui::numeric::Numeric::new(&mut hi)
+                    crate::ui::controls::Numeric::new(&mut hi)
                         .speed(1.0)
                         .range(0.0..=360.0)
                         .suffix(" deg"),
@@ -1019,7 +1000,7 @@ impl ToolsPanel {
         } else {
             // --- Fixed rotation mode: single angle value ---
             ui.add(
-                crate::ui::numeric::Numeric::new(&mut self.properties.tip_rotation)
+                crate::ui::controls::Numeric::new(&mut self.properties.tip_rotation)
                     .speed(1.0)
                     .range(0.0..=359.0)
                     .suffix(" deg"),
@@ -1155,7 +1136,7 @@ impl ToolsPanel {
         let mut hardness_pct = (self.properties.hardness * 100.0).round();
         if ui
             .add(
-                crate::ui::numeric::Numeric::new(&mut hardness_pct)
+                crate::ui::controls::Numeric::new(&mut hardness_pct)
                     .speed(1.0)
                     .range(0.0..=100.0)
                     .suffix("%"),
@@ -1206,7 +1187,7 @@ impl ToolsPanel {
                     let mut scatter_pct = (self.properties.scatter * 200.0).round();
                     if ui
                         .add(
-                            egui::Slider::new(&mut scatter_pct, 0.0..=200.0)
+                            crate::ui::controls::Slider::new(&mut scatter_pct, 0.0..=200.0).double_click_reset_to(0.0)
                                 .suffix("%")
                                 .max_decimals(0),
                         )
@@ -1232,7 +1213,7 @@ impl ToolsPanel {
             let mut spacing_pct = (self.properties.spacing * 100.0).round();
             if ui
                 .add(
-                    crate::ui::numeric::Numeric::new(&mut spacing_pct)
+                    crate::ui::controls::Numeric::new(&mut spacing_pct)
                         .speed(1.0)
                         .range(1.0..=200.0)
                         .suffix("%"),
@@ -1326,7 +1307,7 @@ impl ToolsPanel {
     fn show_sel_modify_controls(&mut self, ui: &mut egui::Ui) {
         ui.label(crate::t!("ui.modify"));
         ui.add(
-            crate::ui::numeric::Numeric::new(&mut self.sel_modify_radius)
+            crate::ui::controls::Numeric::new(&mut self.sel_modify_radius)
                 .range(1.0..=200.0)
                 .speed(0.5)
                 .suffix("px")
@@ -1380,7 +1361,7 @@ impl ToolsPanel {
         // Size
         ui.label(t!("ctx.size"));
         ui.add(
-            crate::ui::numeric::Numeric::new(&mut self.properties.size)
+            crate::ui::controls::Numeric::new(&mut self.properties.size)
                 .range(1.0..=256.0)
                 .speed(0.5)
                 .suffix("px"),
@@ -1392,7 +1373,7 @@ impl ToolsPanel {
         let mut hardness_pct = self.properties.hardness * 100.0;
         if ui
             .add(
-                crate::ui::numeric::Numeric::new(&mut hardness_pct)
+                crate::ui::controls::Numeric::new(&mut hardness_pct)
                     .range(0.0..=100.0)
                     .speed(0.5)
                     .suffix("%"),
@@ -1421,7 +1402,7 @@ impl ToolsPanel {
         // Size
         ui.label(t!("ctx.size"));
         ui.add(
-            crate::ui::numeric::Numeric::new(&mut self.properties.size)
+            crate::ui::controls::Numeric::new(&mut self.properties.size)
                 .range(1.0..=256.0)
                 .speed(0.5)
                 .suffix("px"),
@@ -1433,7 +1414,7 @@ impl ToolsPanel {
         let mut hardness_pct = self.properties.hardness * 100.0;
         if ui
             .add(
-                crate::ui::numeric::Numeric::new(&mut hardness_pct)
+                crate::ui::controls::Numeric::new(&mut hardness_pct)
                     .range(0.0..=100.0)
                     .speed(0.5)
                     .suffix("%"),
@@ -1466,7 +1447,7 @@ impl ToolsPanel {
         if cur_q == ContentAwareQuality::Instant {
             ui.label(t!("ctx.content_aware.sample"));
             ui.add(
-                crate::ui::numeric::Numeric::new(&mut self.content_aware_state.sample_radius)
+                crate::ui::controls::Numeric::new(&mut self.content_aware_state.sample_radius)
                     .range(10.0..=150.0)
                     .speed(0.5)
                     .suffix("px"),
@@ -1478,7 +1459,7 @@ impl ToolsPanel {
         if cur_q.is_async() {
             ui.label(crate::t!("ui.patch"));
             ui.add(
-                crate::ui::numeric::Numeric::new(&mut self.content_aware_state.patch_size)
+                crate::ui::controls::Numeric::new(&mut self.content_aware_state.patch_size)
                     .range(3_u32..=11_u32)
                     .speed(0.5)
                     .suffix("px"),
@@ -1500,164 +1481,9 @@ impl ToolsPanel {
     /// Draw a custom tolerance slider with +/- buttons, wide track, and vertical handle.
     /// Returns `Some(new_value)` if changed, `None` otherwise.
     fn tolerance_slider(ui: &mut egui::Ui, id_salt: &str, value: f32) -> Option<f32> {
-        let mut new_value = value;
-        let mut changed = false;
-
-        let vis = ui.visuals().clone();
-        let is_dark = vis.dark_mode;
-
-        // Colors that work in both dark and light modes
-        let track_bg = if is_dark {
-            Color32::from_gray(50)
-        } else {
-            Color32::from_gray(190)
-        };
-        // Use theme accent color for the filled portion
-        let track_fill = vis.selection.bg_fill;
-        let handle_color = if is_dark {
-            Color32::from_gray(220)
-        } else {
-            Color32::from_gray(255)
-        };
-        let handle_border = if is_dark {
-            Color32::from_gray(140)
-        } else {
-            Color32::from_gray(80)
-        };
-        let btn_bg = if is_dark {
-            Color32::from_gray(60)
-        } else {
-            Color32::from_gray(210)
-        };
-        let btn_hover = if is_dark {
-            Color32::from_gray(80)
-        } else {
-            Color32::from_gray(225)
-        };
-        let btn_text = if is_dark {
-            Color32::from_gray(220)
-        } else {
-            Color32::from_gray(30)
-        };
-        let value_text_color = if is_dark {
-            Color32::from_gray(200)
-        } else {
-            Color32::from_gray(40)
-        };
-
-        ui.horizontal(|ui| {
-            // Minus button
-            let btn_size = egui::vec2(20.0, 20.0);
-            let (minus_rect, minus_resp) = ui.allocate_exact_size(btn_size, egui::Sense::click());
-            let minus_bg = if minus_resp.hovered() {
-                btn_hover
-            } else {
-                btn_bg
-            };
-            ui.painter().rect_filled(minus_rect, 3.0, minus_bg);
-            ui.painter().text(
-                minus_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                "-",
-                egui::FontId::proportional(14.0),
-                btn_text,
-            );
-            if minus_resp.clicked() {
-                new_value = (new_value - crate::ui::numeric::step(ui, 1.0)).max(0.0);
-                changed = true;
-            }
-
-            ui.add_space(4.0);
-
-            // Slider track
-            let slider_width = 140.0;
-            let slider_height = 20.0;
-            let (slider_rect, slider_resp) = ui.allocate_exact_size(
-                egui::vec2(slider_width, slider_height),
-                egui::Sense::click_and_drag(),
-            );
-
-            let rounding = slider_height / 2.0;
-
-            // Draw track background
-            ui.painter().rect_filled(slider_rect, rounding, track_bg);
-
-            // Draw filled portion
-            let fill_fraction = new_value / 100.0;
-            let fill_width = slider_rect.width() * fill_fraction;
-            if fill_width > 0.5 {
-                let fill_rect =
-                    Rect::from_min_size(slider_rect.min, egui::vec2(fill_width, slider_height));
-                ui.painter().rect_filled(fill_rect, rounding, track_fill);
-            }
-
-            // Draw vertical handle
-            let handle_x = slider_rect.min.x + fill_width;
-            let handle_width = 4.0;
-            let handle_height = slider_height + 2.0;
-            let handle_rect = Rect::from_center_size(
-                egui::pos2(handle_x, slider_rect.center().y),
-                egui::vec2(handle_width, handle_height),
-            );
-            ui.painter().rect_filled(handle_rect, 2.0, handle_color);
-            ui.painter().rect_stroke(
-                handle_rect,
-                2.0,
-                (1.0, handle_border),
-                egui::StrokeKind::Middle,
-            );
-
-            // Draw value text centered on track
-            let text = format!("{}%", new_value.round() as i32);
-            ui.painter().text(
-                slider_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                &text,
-                egui::FontId::proportional(11.0),
-                value_text_color,
-            );
-
-            // Handle interaction
-            if (slider_resp.dragged() || slider_resp.clicked())
-                && let Some(pos) = slider_resp.interact_pointer_pos()
-            {
-                let frac = ((pos.x - slider_rect.min.x) / slider_rect.width()).clamp(0.0, 1.0);
-                new_value = (frac * 100.0).round();
-                changed = true;
-            }
-
-            // Tooltip
-            if slider_resp.hovered() {
-                slider_resp.on_hover_text(t!("ctx.tolerance_tooltip"));
-            }
-
-            ui.add_space(4.0);
-
-            // Plus button
-            let (plus_rect, plus_resp) = ui.allocate_exact_size(btn_size, egui::Sense::click());
-            let plus_bg = if plus_resp.hovered() {
-                btn_hover
-            } else {
-                btn_bg
-            };
-            ui.painter().rect_filled(plus_rect, 3.0, plus_bg);
-            ui.painter().text(
-                plus_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                "+",
-                egui::FontId::proportional(14.0),
-                btn_text,
-            );
-            if plus_resp.clicked() {
-                new_value = (new_value + crate::ui::numeric::step(ui, 1.0)).min(100.0);
-                changed = true;
-            }
-        });
-
-        // Ensure we allocate a unique id for internal egui state
-        let _ = ui.id().with(id_salt);
-
-        if changed { Some(new_value) } else { None }
+        let mut next = value;
+        ui.add(crate::ui::controls::Slider::new(&mut next, 0.0..=100.0).double_click_reset_to(5.0).id_salt(id_salt).step_by(1.0).suffix("%").fixed_decimals(0).steppers(true))
+            .on_hover_text(t!("ctx.tolerance_tooltip")).changed().then_some(next)
     }
 
     fn show_magic_wand_options(&mut self, ui: &mut egui::Ui) {
@@ -1801,7 +1627,7 @@ impl ToolsPanel {
         let mut hardness_pct = (self.properties.hardness * 100.0).round();
         if ui
             .add(
-                crate::ui::numeric::Numeric::new(&mut hardness_pct)
+                crate::ui::controls::Numeric::new(&mut hardness_pct)
                     .speed(1.0)
                     .range(0.0..=100.0)
                     .suffix("%"),

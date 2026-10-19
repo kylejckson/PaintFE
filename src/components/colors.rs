@@ -59,6 +59,7 @@ pub struct ColorsPanel {
     hex_draft: bool,
     hex_field_id: Option<egui::Id>,
     sections: [bool; 3],
+    hue_ring_cache: Option<([u32; 4], std::sync::Arc<egui::Mesh>)>,
 }
 
 impl Default for ColorsPanel {
@@ -77,6 +78,7 @@ impl Default for ColorsPanel {
             hex_draft: false,
             hex_field_id: None,
             sections: [true, false, false],
+            hue_ring_cache: None,
         }
     }
 }
@@ -603,76 +605,91 @@ impl ColorsPanel {
             let p = ui.painter();
 
             // 1) Hue ring  (annular mesh, 96 segments + AA fringe)
-            let segs: u32 = 96;
-            let aa_w: f32 = 1.2; // anti-alias fringe width
-            let mut ring = egui::Mesh::default();
-            for i in 0..segs {
-                let a0 = (i as f32 / segs as f32) * TAU;
-                let a1 = ((i + 1) as f32 / segs as f32) * TAU;
-                let c0 = hsv_to_color(i as f32 / segs as f32, 1.0, 1.0, 255);
-                let c1 = hsv_to_color((i + 1) as f32 / segs as f32, 1.0, 1.0, 255);
-                let c0t = cw::rgba(c0.r(), c0.g(), c0.b(), 0);
-                let c1t = cw::rgba(c1.r(), c1.g(), c1.b(), 0);
-                let b = ring.vertices.len() as u32;
-                // outer AA fringe (transparent → opaque)
-                ring.colored_vertex(
-                    Pos2::new(
-                        center.x + a0.cos() * (outer_r + aa_w),
-                        center.y + a0.sin() * (outer_r + aa_w),
-                    ),
-                    c0t,
-                );
-                ring.colored_vertex(
-                    Pos2::new(
-                        center.x + a1.cos() * (outer_r + aa_w),
-                        center.y + a1.sin() * (outer_r + aa_w),
-                    ),
-                    c1t,
-                );
-                // outer solid edge
-                ring.colored_vertex(
-                    Pos2::new(center.x + a0.cos() * outer_r, center.y + a0.sin() * outer_r),
-                    c0,
-                );
-                ring.colored_vertex(
-                    Pos2::new(center.x + a1.cos() * outer_r, center.y + a1.sin() * outer_r),
-                    c1,
-                );
-                // inner solid edge
-                ring.colored_vertex(
-                    Pos2::new(center.x + a0.cos() * inner_r, center.y + a0.sin() * inner_r),
-                    c0,
-                );
-                ring.colored_vertex(
-                    Pos2::new(center.x + a1.cos() * inner_r, center.y + a1.sin() * inner_r),
-                    c1,
-                );
-                // inner AA fringe (opaque → transparent)
-                ring.colored_vertex(
-                    Pos2::new(
-                        center.x + a0.cos() * (inner_r - aa_w),
-                        center.y + a0.sin() * (inner_r - aa_w),
-                    ),
-                    c0t,
-                );
-                ring.colored_vertex(
-                    Pos2::new(
-                        center.x + a1.cos() * (inner_r - aa_w),
-                        center.y + a1.sin() * (inner_r - aa_w),
-                    ),
-                    c1t,
-                );
-                // outer fringe quad
-                ring.add_triangle(b, b + 1, b + 3);
-                ring.add_triangle(b, b + 3, b + 2);
-                // solid body quad
-                ring.add_triangle(b + 2, b + 3, b + 5);
-                ring.add_triangle(b + 2, b + 5, b + 4);
-                // inner fringe quad
-                ring.add_triangle(b + 4, b + 5, b + 7);
-                ring.add_triangle(b + 4, b + 7, b + 6);
+            let aa_w: f32 = 1.2;
+            let ring_key = [
+                center.x.to_bits(),
+                center.y.to_bits(),
+                outer_r.to_bits(),
+                inner_r.to_bits(),
+            ];
+            if self
+                .hue_ring_cache
+                .as_ref()
+                .is_none_or(|(key, _)| *key != ring_key)
+            {
+                let segs: u32 = 96;
+                let mut ring = egui::Mesh::default();
+                for i in 0..segs {
+                    let a0 = (i as f32 / segs as f32) * TAU;
+                    let a1 = ((i + 1) as f32 / segs as f32) * TAU;
+                    let c0 = hsv_to_color(i as f32 / segs as f32, 1.0, 1.0, 255);
+                    let c1 = hsv_to_color((i + 1) as f32 / segs as f32, 1.0, 1.0, 255);
+                    let c0t = cw::rgba(c0.r(), c0.g(), c0.b(), 0);
+                    let c1t = cw::rgba(c1.r(), c1.g(), c1.b(), 0);
+                    let b = ring.vertices.len() as u32;
+                    // outer AA fringe (transparent → opaque)
+                    ring.colored_vertex(
+                        Pos2::new(
+                            center.x + a0.cos() * (outer_r + aa_w),
+                            center.y + a0.sin() * (outer_r + aa_w),
+                        ),
+                        c0t,
+                    );
+                    ring.colored_vertex(
+                        Pos2::new(
+                            center.x + a1.cos() * (outer_r + aa_w),
+                            center.y + a1.sin() * (outer_r + aa_w),
+                        ),
+                        c1t,
+                    );
+                    // outer solid edge
+                    ring.colored_vertex(
+                        Pos2::new(center.x + a0.cos() * outer_r, center.y + a0.sin() * outer_r),
+                        c0,
+                    );
+                    ring.colored_vertex(
+                        Pos2::new(center.x + a1.cos() * outer_r, center.y + a1.sin() * outer_r),
+                        c1,
+                    );
+                    // inner solid edge
+                    ring.colored_vertex(
+                        Pos2::new(center.x + a0.cos() * inner_r, center.y + a0.sin() * inner_r),
+                        c0,
+                    );
+                    ring.colored_vertex(
+                        Pos2::new(center.x + a1.cos() * inner_r, center.y + a1.sin() * inner_r),
+                        c1,
+                    );
+                    // inner AA fringe (opaque → transparent)
+                    ring.colored_vertex(
+                        Pos2::new(
+                            center.x + a0.cos() * (inner_r - aa_w),
+                            center.y + a0.sin() * (inner_r - aa_w),
+                        ),
+                        c0t,
+                    );
+                    ring.colored_vertex(
+                        Pos2::new(
+                            center.x + a1.cos() * (inner_r - aa_w),
+                            center.y + a1.sin() * (inner_r - aa_w),
+                        ),
+                        c1t,
+                    );
+                    // outer fringe quad
+                    ring.add_triangle(b, b + 1, b + 3);
+                    ring.add_triangle(b, b + 3, b + 2);
+                    // solid body quad
+                    ring.add_triangle(b + 2, b + 3, b + 5);
+                    ring.add_triangle(b + 2, b + 5, b + 4);
+                    // inner fringe quad
+                    ring.add_triangle(b + 4, b + 5, b + 7);
+                    ring.add_triangle(b + 4, b + 7, b + 6);
+                }
+                self.hue_ring_cache = Some((ring_key, std::sync::Arc::new(ring)));
             }
-            p.add(egui::Shape::mesh(ring));
+            p.add(egui::Shape::Mesh(
+                self.hue_ring_cache.as_ref().unwrap().1.clone(),
+            ));
 
             // 2) SV triangle  (3-vertex core + AA fringe edges)
             let pure_col = hsv_to_color(h, 1.0, 1.0, 255);

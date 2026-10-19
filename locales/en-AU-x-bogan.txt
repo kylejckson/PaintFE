@@ -1557,3 +1557,9 @@ settings.search.placeholder=Search Preferences in English or your language
 settings.search.empty=No matching preferences
 
 info.appearance=Image info look
+
+format.jxl=JPEG XL
+jxl.effort=Encoding effort
+jxl.still_images=Still pics, 8-bit or 16-bit RGBA
+ui.double_click_slider_reset=Double-click sliders to reset
+ui.double_click_reset_hint=Double-click to reset

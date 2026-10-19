@@ -584,6 +584,18 @@ pub fn card_frame_interactive<R>(
 /// both of them short.
 ///
 /// Returns `true` if the close button was clicked.
+/// Raw panel hover cursors must yield to menus and other foreground layers.
+pub(crate) fn floating_pointer_hovered(
+    ctx: &egui::Context,
+    response: &egui::Response,
+    rect: Rect,
+) -> bool {
+    response.enabled()
+        && ctx.input(|i| i.pointer.hover_pos()).is_some_and(|pos| {
+            rect.contains(pos) && ctx.layer_id_at(pos) == Some(response.layer_id)
+        })
+}
+
 /// Preserve resize gestures even when press, move and release arrive in one frame.
 pub(crate) fn floating_resize(
     ctx: &egui::Context,
@@ -594,6 +606,9 @@ pub(crate) fn floating_resize(
     let panel = id;
     let id = egui::Id::new(("floating_resize_capture", id));
     let mut capture = ctx.data_mut(|d| d.get_temp::<(egui::Pos2, Vec2)>(id));
+    if !response.enabled() || egui::Popup::is_any_open(ctx) {
+        capture = None;
+    }
     let grip = egui::Rect::from_min_max(response.rect.max - Vec2::splat(18.0), response.rect.max);
     if response.enabled() {
         let painter = ctx.layer_painter(response.layer_id);
@@ -613,9 +628,7 @@ pub(crate) fn floating_resize(
                 egui::Stroke::new(1.0, color),
             );
         }
-        if capture.is_some()
-            || ctx.input(|i| i.pointer.hover_pos().is_some_and(|p| grip.contains(p)))
-        {
+        if capture.is_some() || floating_pointer_hovered(ctx, response, grip) {
             ctx.set_cursor_icon(egui::CursorIcon::ResizeNwSe);
         }
     }
@@ -901,6 +914,64 @@ pub fn close_button(ui: &mut Ui, theme: &Theme) -> egui::Response {
 #[cfg(test)]
 mod refinement_tests {
     use super::*;
+    #[test]
+    fn foreground_menus_own_cursor_above_both_panel_resize_paths() {
+        for tools_panel in [false, true] {
+            let ctx = egui::Context::default();
+            let panel = Rect::from_min_max(egui::pos2(100., 100.), egui::pos2(300., 300.));
+            let pointer = egui::pos2(295., 295.);
+            for menu_open in [false, true, false] {
+                let mut cursor = egui::CursorIcon::Default;
+                // Let egui register/removal of the foreground area settle.
+                for _ in 0..3 {
+                    let output = ctx.run_ui(
+                        egui::RawInput {
+                            screen_rect: Some(Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                Vec2::splat(600.),
+                            )),
+                            events: vec![egui::Event::PointerMoved(pointer)],
+                            ..Default::default()
+                        },
+                        |ui| {
+                            if menu_open {
+                                egui::Area::new(egui::Id::new("menu_above_resize_grip"))
+                                    .order(egui::Order::Foreground)
+                                    .fixed_pos(egui::pos2(270., 270.))
+                                    .show(&ctx, |ui| {
+                                        ui.set_min_size(Vec2::splat(100.));
+                                        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                                    });
+                            }
+                            let response = ui.allocate_rect(panel, Sense::hover());
+                            if tools_panel {
+                                crate::ui::panels::tools::palette::resize(
+                                    &ctx,
+                                    &response,
+                                    &Default::default(),
+                                    false,
+                                    |size| size,
+                                );
+                            } else {
+                                floating_resize(&ctx, &response, "cursor_test", Vec2::splat(50.));
+                            }
+                        },
+                    );
+                    cursor = output.platform_output.cursor_icon;
+                }
+                assert_eq!(
+                    cursor,
+                    if menu_open {
+                        egui::CursorIcon::PointingHand
+                    } else {
+                        egui::CursorIcon::ResizeNwSe
+                    },
+                    "tools_panel={tools_panel}, menu_open={menu_open}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn fast_resize_releases_capture_and_respects_minimum() {
         let ctx = egui::Context::default();

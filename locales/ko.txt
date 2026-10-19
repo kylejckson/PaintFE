@@ -1557,3 +1557,9 @@ settings.search.placeholder=한국어 또는 영어로 환경설정 검색
 settings.search.empty=일치하는 환경설정이 없습니다
 
 info.appearance=이미지 정보 표시 설정
+
+format.jxl=JPEG XL
+jxl.effort=인코딩 처리 수준
+jxl.still_images=정지 이미지, 8비트 또는 16비트 RGBA
+ui.double_click_slider_reset=슬라이더를 두 번 클릭하여 초기화
+ui.double_click_reset_hint=두 번 클릭하여 초기화

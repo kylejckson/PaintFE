@@ -1557,3 +1557,9 @@ settings.search.placeholder=Поиск настроек на русском ил
 settings.search.empty=Подходящие настройки не найдены
 
 info.appearance=Оформление сведений об изображении
+
+format.jxl=JPEG XL
+jxl.effort=Усилие кодирования
+jxl.still_images=Статичные изображения, RGBA 8 или 16 бит
+ui.double_click_slider_reset=Сбрасывать ползунки двойным щелчком
+ui.double_click_reset_hint=Двойной щелчок для сброса

@@ -1557,3 +1557,9 @@ settings.search.placeholder=Tìm tùy chọn bằng tiếng Việt hoặc tiến
 settings.search.empty=Không tìm thấy tùy chọn phù hợp
 
 info.appearance=Giao diện thông tin ảnh
+
+format.jxl=JPEG XL
+jxl.effort=Mức xử lý mã hóa
+jxl.still_images=Ảnh tĩnh, RGBA 8 bit hoặc 16 bit
+ui.double_click_slider_reset=Nhấp đúp thanh trượt để đặt lại
+ui.double_click_reset_hint=Nhấp đúp để đặt lại

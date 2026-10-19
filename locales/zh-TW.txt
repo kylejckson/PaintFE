@@ -1557,3 +1557,9 @@ settings.search.placeholder=以中文或英文搜尋偏好設定
 settings.search.empty=沒有符合的偏好設定
 
 info.appearance=影像資訊外觀
+
+format.jxl=JPEG XL
+jxl.effort=編碼處理強度
+jxl.still_images=靜態影像，8 位元或 16 位元 RGBA
+ui.double_click_slider_reset=按兩下滑桿以重設
+ui.double_click_reset_hint=按兩下以重設

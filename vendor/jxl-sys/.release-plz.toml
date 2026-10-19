@@ -1,0 +1,3 @@
+[workspace]
+allow_dirty = true
+publish_allow_dirty = true

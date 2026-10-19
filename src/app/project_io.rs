@@ -191,7 +191,8 @@ impl PaintFEApp {
     }
 
     fn open_image_from_bytes(&mut self, bytes: &[u8], name_hint: Option<String>) {
-        let decoded = match image::load_from_memory(bytes) {
+        crate::io::jxl::register();
+        let decoded = match crate::io::decode_image_bytes(bytes) {
             Ok(decoded) => decoded,
             Err(error) => {
                 self.report_open_error(
@@ -202,7 +203,7 @@ impl PaintFEApp {
             }
         };
 
-        let image = decoded.to_rgba8();
+        let (image, pixel_format, deep_pixels, hdr_metadata) = crate::io::dynamic_image_to_rgba_and_deep(decoded);
         let width = image.width();
         let height = image.height();
         if let Err(error) = crate::io::validate_open_dimensions(width, height) {
@@ -219,6 +220,9 @@ impl PaintFEApp {
         let mut project = Project::new_untitled(self.untitled_counter, width, height);
         if let Some(layer) = project.canvas_state.layers.first_mut() {
             layer.pixels = TiledImage::from_rgba_image(&image);
+            layer.pixel_format = pixel_format;
+            layer.deep_pixels = deep_pixels;
+            layer.hdr_metadata = hdr_metadata;
         }
         project.canvas_state.composite_cache = None;
         project.canvas_state.mark_dirty(None);
@@ -290,7 +294,7 @@ impl PaintFEApp {
                 .and_then(|e| e.to_str())
                 .map(|e| e.to_ascii_lowercase())
                 .as_deref(),
-            Some("png" | "jpg" | "jpeg" | "webp" | "bmp" | "tga" | "tif" | "tiff" | "gif" | "ico")
+            Some("png" | "jpg" | "jpeg" | "jxl" | "webp" | "bmp" | "tga" | "tif" | "tiff" | "gif" | "ico")
         )
     }
 
@@ -357,7 +361,7 @@ impl PaintFEApp {
                 }
             }
             1 => {
-                let img = match image::load_from_memory(&item.bytes) {
+                let img = match crate::io::decode_image_bytes(&item.bytes) {
                     Ok(img) => img,
                     Err(error) => {
                         self.report_open_error(&item.name, &error.to_string());
@@ -539,7 +543,8 @@ impl PaintFEApp {
                             Ok(frames) if !frames.is_empty() => {
                                 let format = match ext.as_str() {
                                     "gif" => SaveFormat::Gif,
-                                    "webp" => SaveFormat::Webp,
+                                    "jxl" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Jxl(Default::default()),
+                                "webp" => SaveFormat::Webp,
                                     _ => SaveFormat::Png,
                                 };
                                 let width = frames[0].0.width();
@@ -613,6 +618,9 @@ impl PaintFEApp {
                             // RAW files open as PNG (user must Save As to choose format)
                             let _ = sender.send(IoResult::ImageLoaded {
                                 tiled,
+                                pixel_format: crate::canvas::PixelFormat::RgbaU8,
+                                deep_pixels: None,
+                                hdr_metadata: Default::default(),
                                 width,
                                 height,
                                 path,
@@ -654,7 +662,7 @@ impl PaintFEApp {
                             });
                             return;
                         }
-                        let image = img.to_rgba8();
+                        let (image, pixel_format, deep_pixels, hdr_metadata) = crate::io::dynamic_image_to_rgba_and_deep(img);
                         let width = image.width();
                         let height = image.height();
                         let tiled = TiledImage::from_rgba_image(&image);
@@ -663,6 +671,7 @@ impl PaintFEApp {
                             .extension()
                             .map(|ext| match ext.to_string_lossy().to_lowercase().as_str() {
                                 "jpg" | "jpeg" => SaveFormat::Jpeg,
+                                "jxl" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Jxl(Default::default()),
                                 "webp" => SaveFormat::Webp,
                                 "bmp" => SaveFormat::Bmp,
                                 "tga" => SaveFormat::Tga,
@@ -675,6 +684,7 @@ impl PaintFEApp {
 
                         let _ = sender.send(IoResult::ImageLoaded {
                             tiled,
+                            pixel_format, deep_pixels, hdr_metadata,
                             width,
                             height,
                             path,

@@ -1,0 +1,9 @@
+mode          = .m32-O0
+extra_cflags  = -O0 -DSKCMS_DISABLE_HSW -DSKCMS_DISABLE_SKX
+extra_ldflags = -m32
+target_flags  = -m32 -msse2
+include ninja/clang
+
+disabled = (uname | grep -qv Linux)
+no_hsw   = true
+no_skx   = true

@@ -1557,3 +1557,9 @@ settings.search.placeholder=Einstellungen auf Deutsch oder Englisch suchen
 settings.search.empty=Keine passenden Einstellungen
 
 info.appearance=Darstellung der Bildinformationen
+
+format.jxl=JPEG XL
+jxl.effort=Kodierungsaufwand
+jxl.still_images=Standbilder, RGBA mit 8 oder 16 Bit
+ui.double_click_slider_reset=Schieberegler per Doppelklick zurücksetzen
+ui.double_click_reset_hint=Zum Zurücksetzen doppelklicken

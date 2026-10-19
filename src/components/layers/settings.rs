@@ -229,7 +229,7 @@ impl LayersPanel {
             ui.label(t!("layer.opacity"));
             if ui
                 .add(
-                    egui::Slider::new(&mut self.settings_state.editing_opacity, 0.0..=1.0)
+                    crate::ui::controls::Slider::new(&mut self.settings_state.editing_opacity, 0.0..=1.0).double_click_reset_to(1.0)
                         .fixed_decimals(2)
                         .show_value(true),
                 )
@@ -338,7 +338,7 @@ impl LayersPanel {
                 ui.label(crate::t!("ui.max_nits"));
                 if ui
                     .add(
-                        crate::ui::numeric::Numeric::new(&mut max_nits)
+                        crate::ui::controls::Numeric::new(&mut max_nits)
                             .range(80.0..=10000.0)
                             .speed(10.0),
                     )
@@ -431,7 +431,7 @@ impl LayersPanel {
             crate::canvas::AdjustmentKind::Exposure { ev } => {
                 changed |= ui
                     .add(
-                        egui::Slider::new(ev, -4.0..=4.0)
+                        crate::ui::controls::Slider::new(ev, -4.0..=4.0).double_click_reset_to(0.0)
                             .text(crate::t!("ui.ev"))
                             .fixed_decimals(2),
                     )
@@ -442,10 +442,10 @@ impl LayersPanel {
                 contrast,
             } => {
                 changed |= ui
-                    .add(egui::Slider::new(brightness, -255.0..=255.0).text(crate::t!("ui.brightness")))
+                    .add(crate::ui::controls::Slider::new(brightness, -255.0..=255.0).double_click_reset_to(0.0).text(crate::t!("ui.brightness")))
                     .changed();
                 changed |= ui
-                    .add(egui::Slider::new(contrast, -255.0..=255.0).text(crate::t!("ui.contrast")))
+                    .add(crate::ui::controls::Slider::new(contrast, -255.0..=255.0).double_click_reset_to(0.0).text(crate::t!("ui.contrast")))
                     .changed();
             }
             crate::canvas::AdjustmentKind::Invert => {
@@ -469,7 +469,7 @@ impl LayersPanel {
                             let name = ["R", "G", "B", "A"][i];
                             changed |= ui
                                 .add(
-                                    crate::ui::numeric::Numeric::new(coeff)
+                                    crate::ui::controls::Numeric::new(coeff).id_salt((label, i))
                                         .range(-2.0..=2.0)
                                         .speed(0.05)
                                         .prefix(name),
@@ -523,7 +523,7 @@ impl LayersPanel {
                             outline.color[2],
                             outline.color[3],
                         );
-                        if ui.color_edit_button_srgba(&mut c).changed() {
+                        if crate::ui::controls::color_edit_button_srgba(ui, &mut c, egui::color_picker::Alpha::BlendOrAdditive).changed() {
                             outline.color = [c.r(), c.g(), c.b(), c.a()];
                             changed = true;
                         }
@@ -532,7 +532,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.outline.width"));
                         if ui
                             .add(
-                                crate::ui::numeric::Numeric::new(&mut outline.width)
+                                crate::ui::controls::Numeric::new(&mut outline.width)
                                     .speed(0.1)
                                     .range(0.5..=50.0)
                                     .suffix("px"),
@@ -601,7 +601,7 @@ impl LayersPanel {
                             shadow.color[2],
                             shadow.color[3],
                         );
-                        if ui.color_edit_button_srgba(&mut c).changed() {
+                        if crate::ui::controls::color_edit_button_srgba(ui, &mut c, egui::color_picker::Alpha::BlendOrAdditive).changed() {
                             shadow.color = [c.r(), c.g(), c.b(), c.a()];
                             changed = true;
                         }
@@ -610,7 +610,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.shadow.offset_x"));
                         if ui
                             .add(
-                                crate::ui::numeric::Numeric::new(&mut shadow.offset_x)
+                                crate::ui::controls::Numeric::new(&mut shadow.offset_x)
                                     .speed(0.5)
                                     .range(-100.0..=100.0)
                                     .suffix("px"),
@@ -622,7 +622,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.shadow.offset_y"));
                         if ui
                             .add(
-                                crate::ui::numeric::Numeric::new(&mut shadow.offset_y)
+                                crate::ui::controls::Numeric::new(&mut shadow.offset_y)
                                     .speed(0.5)
                                     .range(-100.0..=100.0)
                                     .suffix("px"),
@@ -635,7 +635,7 @@ impl LayersPanel {
                     ui.horizontal(|ui| {
                         ui.label(t!("ctx.text.effects.shadow.blur"));
                         let r = ui.add(
-                            egui::Slider::new(&mut shadow.blur_radius, 0.0..=50.0)
+                            crate::ui::controls::Slider::new(&mut shadow.blur_radius, 0.0..=50.0).double_click_reset_to(ShadowEffect::default().blur_radius)
                                 .suffix(" px")
                                 .max_decimals(1),
                         );
@@ -645,7 +645,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.shadow.spread"));
                         if ui
                             .add(
-                                crate::ui::numeric::Numeric::new(&mut shadow.spread)
+                                crate::ui::controls::Numeric::new(&mut shadow.spread)
                                     .speed(0.2)
                                     .range(0.0..=30.0)
                                     .suffix("px"),
@@ -688,7 +688,7 @@ impl LayersPanel {
                             inner.color[2],
                             inner.color[3],
                         );
-                        if ui.color_edit_button_srgba(&mut c).changed() {
+                        if crate::ui::controls::color_edit_button_srgba(ui, &mut c, egui::color_picker::Alpha::BlendOrAdditive).changed() {
                             inner.color = [c.r(), c.g(), c.b(), c.a()];
                             changed = true;
                         }
@@ -697,7 +697,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.inner_shadow.offset_x"));
                         if ui
                             .add(
-                                crate::ui::numeric::Numeric::new(&mut inner.offset_x)
+                                crate::ui::controls::Numeric::new(&mut inner.offset_x)
                                     .speed(0.5)
                                     .range(-100.0..=100.0)
                                     .suffix("px"),
@@ -709,7 +709,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.inner_shadow.offset_y"));
                         if ui
                             .add(
-                                crate::ui::numeric::Numeric::new(&mut inner.offset_y)
+                                crate::ui::controls::Numeric::new(&mut inner.offset_y)
                                     .speed(0.5)
                                     .range(-100.0..=100.0)
                                     .suffix("px"),
@@ -723,7 +723,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.inner_shadow.blur"));
                         if ui
                             .add(
-                                crate::ui::numeric::Numeric::new(&mut inner.blur_radius)
+                                crate::ui::controls::Numeric::new(&mut inner.blur_radius)
                                     .speed(0.2)
                                     .range(0.0..=50.0)
                                     .suffix("px"),
@@ -769,7 +769,7 @@ impl LayersPanel {
                             gradient.start_color[2],
                             gradient.start_color[3],
                         );
-                        if ui.color_edit_button_srgba(&mut c).changed() {
+                        if crate::ui::controls::color_edit_button_srgba(ui, &mut c, egui::color_picker::Alpha::BlendOrAdditive).changed() {
                             gradient.start_color = [c.r(), c.g(), c.b(), c.a()];
                             changed = true;
                         }
@@ -782,7 +782,7 @@ impl LayersPanel {
                             gradient.end_color[2],
                             gradient.end_color[3],
                         );
-                        if ui.color_edit_button_srgba(&mut c).changed() {
+                        if crate::ui::controls::color_edit_button_srgba(ui, &mut c, egui::color_picker::Alpha::BlendOrAdditive).changed() {
                             gradient.end_color = [c.r(), c.g(), c.b(), c.a()];
                             changed = true;
                         }
@@ -791,7 +791,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.gradient.angle"));
                         if ui
                             .add(
-                                crate::ui::numeric::Numeric::new(&mut gradient.angle_degrees)
+                                crate::ui::controls::Numeric::new(&mut gradient.angle_degrees)
                                     .speed(1.0)
                                     .range(-360.0..=360.0)
                                     .suffix("deg"),
@@ -803,7 +803,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.gradient.scale"));
                         if ui
                             .add(
-                                crate::ui::numeric::Numeric::new(&mut gradient.scale)
+                                crate::ui::controls::Numeric::new(&mut gradient.scale)
                                     .speed(1.0)
                                     .range(1.0..=5000.0)
                                     .suffix("px"),
@@ -817,7 +817,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.gradient.offset_x"));
                         if ui
                             .add(
-                                crate::ui::numeric::Numeric::new(&mut gradient.offset[0])
+                                crate::ui::controls::Numeric::new(&mut gradient.offset[0])
                                     .speed(0.5)
                                     .range(-5000.0..=5000.0),
                             )
@@ -828,7 +828,7 @@ impl LayersPanel {
                         ui.label(t!("ctx.text.effects.gradient.offset_y"));
                         if ui
                             .add(
-                                crate::ui::numeric::Numeric::new(&mut gradient.offset[1])
+                                crate::ui::controls::Numeric::new(&mut gradient.offset[1])
                                     .speed(0.5)
                                     .range(-5000.0..=5000.0),
                             )
@@ -872,7 +872,7 @@ impl LayersPanel {
             if let Some(ref rx) = self.settings_state.texture_load_rx
                 && let Ok(data) = rx.try_recv()
             {
-                if let Ok(img) = image::load_from_memory(&data)
+                if let Ok(img) = crate::io::decode_image_bytes(&data)
                     && let Some(ref mut tex) = self.settings_state.text_effects.texture_fill
                 {
                     tex.texture_data = data;
@@ -887,7 +887,7 @@ impl LayersPanel {
             if let Some((_name, data)) = crate::web_bridge::drain_pending("texture_fill")
                 .into_iter()
                 .next()
-                && let Ok(img) = image::load_from_memory(&data)
+                && let Ok(img) = crate::io::decode_image_bytes(&data)
                 && let Some(ref mut tex) = self.settings_state.text_effects.texture_fill
             {
                 tex.texture_data = data;
@@ -913,7 +913,7 @@ impl LayersPanel {
                             ui.label(t!("ctx.text.effects.texture.scale"));
                             if ui
                                 .add(
-                                    crate::ui::numeric::Numeric::new(&mut tex.scale)
+                                    crate::ui::controls::Numeric::new(&mut tex.scale)
                                         .speed(0.01)
                                         .range(0.1..=10.0),
                                 )
@@ -926,7 +926,7 @@ impl LayersPanel {
                             ui.label(t!("ctx.text.effects.texture.offset_x"));
                             if ui
                                 .add(
-                                    crate::ui::numeric::Numeric::new(&mut tex.offset[0])
+                                    crate::ui::controls::Numeric::new(&mut tex.offset[0])
                                         .speed(0.5)
                                         .range(-1000.0..=1000.0),
                                 )
@@ -937,7 +937,7 @@ impl LayersPanel {
                             ui.label(t!("ctx.text.effects.texture.offset_y"));
                             if ui
                                 .add(
-                                    crate::ui::numeric::Numeric::new(&mut tex.offset[1])
+                                    crate::ui::controls::Numeric::new(&mut tex.offset[1])
                                         .speed(0.5)
                                         .range(-1000.0..=1000.0),
                                 )
@@ -1032,7 +1032,7 @@ impl LayersPanel {
                     ui.label(t!("ctx.text.warp.arc.bend"));
                     if ui
                         .add(
-                            crate::ui::numeric::Numeric::new(&mut arc.bend)
+                            crate::ui::controls::Numeric::new(&mut arc.bend)
                                 .speed(0.01)
                                 .range(-1.0..=1.0),
                         )
@@ -1045,7 +1045,7 @@ impl LayersPanel {
                     ui.label(t!("ctx.text.warp.arc.hdist"));
                     if ui
                         .add(
-                            crate::ui::numeric::Numeric::new(&mut arc.horizontal_distortion)
+                            crate::ui::controls::Numeric::new(&mut arc.horizontal_distortion)
                                 .speed(0.01)
                                 .range(-1.0..=1.0),
                         )
@@ -1058,7 +1058,7 @@ impl LayersPanel {
                     ui.label(t!("ctx.text.warp.arc.vdist"));
                     if ui
                         .add(
-                            crate::ui::numeric::Numeric::new(&mut arc.vertical_distortion)
+                            crate::ui::controls::Numeric::new(&mut arc.vertical_distortion)
                                 .speed(0.01)
                                 .range(-1.0..=1.0),
                         )
@@ -1073,7 +1073,7 @@ impl LayersPanel {
                     ui.label(t!("ctx.text.warp.circular.radius"));
                     if ui
                         .add(
-                            crate::ui::numeric::Numeric::new(&mut circ.radius)
+                            crate::ui::controls::Numeric::new(&mut circ.radius)
                                 .speed(1.0)
                                 .range(20.0..=2000.0)
                                 .suffix("px"),
@@ -1088,7 +1088,7 @@ impl LayersPanel {
                     let mut degrees = circ.start_angle.to_degrees();
                     if ui
                         .add(
-                            crate::ui::numeric::Numeric::new(&mut degrees)
+                            crate::ui::controls::Numeric::new(&mut degrees)
                                 .speed(1.0)
                                 .range(-360.0..=360.0)
                                 .suffix("°"),
@@ -1117,7 +1117,7 @@ impl LayersPanel {
                         ui.label(format!("T{i}:"));
                         if ui
                             .add(
-                                crate::ui::numeric::Numeric::new(&mut pt[0])
+                                crate::ui::controls::Numeric::new(&mut pt[0]).id_salt(("envelope", i, 0))
                                     .speed(1.0)
                                     .prefix("x: "),
                             )
@@ -1127,7 +1127,7 @@ impl LayersPanel {
                         }
                         if ui
                             .add(
-                                crate::ui::numeric::Numeric::new(&mut pt[1])
+                                crate::ui::controls::Numeric::new(&mut pt[1]).id_salt(("envelope", i, 1))
                                     .speed(1.0)
                                     .prefix("y: "),
                             )
@@ -1144,7 +1144,7 @@ impl LayersPanel {
                         ui.label(format!("B{i}:"));
                         if ui
                             .add(
-                                crate::ui::numeric::Numeric::new(&mut pt[0])
+                                crate::ui::controls::Numeric::new(&mut pt[0]).id_salt(("envelope_bottom", i, 0))
                                     .speed(1.0)
                                     .prefix("x: "),
                             )
@@ -1154,7 +1154,7 @@ impl LayersPanel {
                         }
                         if ui
                             .add(
-                                crate::ui::numeric::Numeric::new(&mut pt[1])
+                                crate::ui::controls::Numeric::new(&mut pt[1]).id_salt(("envelope_bottom", i, 1))
                                     .speed(1.0)
                                     .prefix("y: "),
                             )

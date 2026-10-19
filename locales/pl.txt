@@ -1557,3 +1557,9 @@ settings.search.placeholder=Szukaj ustawień po polsku lub angielsku
 settings.search.empty=Brak pasujących ustawień
 
 info.appearance=Wygląd informacji o obrazie
+
+format.jxl=JPEG XL
+jxl.effort=Nakład kodowania
+jxl.still_images=Obrazy nieruchome, RGBA 8- lub 16-bitowe
+ui.double_click_slider_reset=Resetuj suwaki dwukrotnym kliknięciem
+ui.double_click_reset_hint=Kliknij dwukrotnie, aby zresetować

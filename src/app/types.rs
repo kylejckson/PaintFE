@@ -95,6 +95,9 @@ pub enum IoResult {
     /// An image file was decoded and tiled, ready to become a new project.
     ImageLoaded {
         tiled: TiledImage,
+        pixel_format: crate::canvas::PixelFormat,
+        deep_pixels: Option<crate::experimental::DeepRgbaBuffer>,
+        hdr_metadata: crate::canvas::HdrMetadata,
         width: u32,
         height: u32,
         path: std::path::PathBuf,

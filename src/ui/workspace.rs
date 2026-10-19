@@ -379,12 +379,14 @@ pub fn preferences(
         crate::t!("ui.remember_panel_positions_and_sizes"),
     );
     ui.add(
-        egui::Slider::new(&mut settings.snap_distance, 3.0..=20.0)
+        crate::ui::controls::Slider::new(&mut settings.snap_distance, 3.0..=20.0)
+            .double_click_reset_to(WorkspaceSettings::default().snap_distance)
             .text(crate::t!("ui.snap_distance"))
             .suffix(" px"),
     );
     ui.add(
-        egui::Slider::new(&mut settings.panel_gap, 0.0..=24.0)
+        crate::ui::controls::Slider::new(&mut settings.panel_gap, 0.0..=24.0)
+            .double_click_reset_to(WorkspaceSettings::default().panel_gap)
             .text(crate::t!("ui.panel_spacing"))
             .suffix(" px"),
     );

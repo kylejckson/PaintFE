@@ -1,5 +1,6 @@
 // Search catalogue: stable label keys, English fallback and owning section.
 const SEARCH_ENTRIES: &[SearchEntry] = &[
+    SearchEntry {tab: SettingsTab::Interface, key: "ui.double_click_slider_reset", english: "Double-click sliders to reset", section: "ui.motion_and_interaction"},
     SearchEntry {tab: SettingsTab::Interface, key: "info.font_size", english: "Image information font size", section: "info.appearance"},
     SearchEntry {tab: SettingsTab::Interface, key: "info.appearance", english: "Image information appearance", section: "info.appearance"},
     SearchEntry {tab: SettingsTab::Interface, key: "settings.interface.resize_grip_opacity", english: "Opacity", section: "info.appearance"},

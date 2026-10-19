@@ -15,12 +15,14 @@ jobs:
   clippy:
     name: Clippy
     runs-on: windows-latest
+    env:
+      LIBCLANG_PATH: C:\Program Files\LLVM\bin
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
         with:
           toolchain: 1.96.1
           components: clippy
@@ -37,6 +39,18 @@ jobs:
 
       - name: Run Clippy
         run: cargo clippy -- -D warnings
+
+      - name: Check shared UI control boundary
+        run: python tools/check_ui_controls.py --self-test
+
+      - name: Test JPEG XL codecs
+        run: cargo test -j1 --test jpeg_xl -- --test-threads=1
+
+      - name: Test shared control interactions
+        run: cargo test -j1 --lib ui::controls -- --test-threads=1
+
+      - name: Test numeric editor interactions
+        run: cargo test -j1 --lib ui::numeric -- --test-threads=1
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
@@ -70,7 +84,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
         with:
           toolchain: 1.96.1
 
@@ -88,7 +102,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
         with:
           toolchain: 1.96.1
           components: clippy
@@ -105,3 +119,6 @@ jobs:
 
       - name: Run Clippy
         run: cargo clippy -- -D warnings
+
+      - name: Test JPEG XL codecs
+        run: cargo test -j1 --test jpeg_xl -- --test-threads=1

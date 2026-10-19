@@ -1224,7 +1224,7 @@ impl PaintFEApp {
                     .add_filter(
                         crate::t!("ui.image"),
                         &[
-                            "png", "jpg", "jpeg", "bmp", "gif", "webp", "tiff", "tif", "tga", "ico",
+                            "png", "jpg", "jpeg", "bmp", "gif", "jxl", "webp", "tiff", "tif", "tga", "ico",
                         ],
                     )
                     .pick_file()

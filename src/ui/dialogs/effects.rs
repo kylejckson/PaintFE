@@ -157,7 +157,8 @@ mod slider_preview_tests {
                     ..Default::default()
                 },
                 |ui| {
-                    let response = ui.add(egui::Slider::new(&mut value, 0.0..=100.0));
+                    let response =
+                        ui.add(crate::ui::controls::Slider::new(&mut value, 0.0..=100.0));
                     if frame == 1 {
                         response.request_focus();
                     }

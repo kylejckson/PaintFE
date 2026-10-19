@@ -49,6 +49,13 @@ cargo clippy -- -D warnings
 
 If a Clippy lint is a false positive or genuinely not applicable to a specific case, you can suppress it with `#[allow(...)]` on that item -- but add a comment explaining why.
 
+For numeric UI changes, use the components and presets in `crate::ui::controls`.
+Read [Shared UI controls](docs/ui-controls.md) for the interaction contract,
+examples and supported standard/colour slider styles. Do not introduce another
+numeric editor, slider input handler, step/reset button or expression parser in a
+screen. Run `python tools/check_ui_controls.py --self-test`; CI checks this boundary.
+The gallery is available with `cargo run --example control_gallery -j1`.
+
 A few conventions used in the codebase:
 
 - Operations that mutate canvas state live in `src/ops/`. Filters go in `filters.rs`, geometric transforms in `transform.rs`, color adjustments in `adjustments.rs`, generation effects in `effects.rs`.

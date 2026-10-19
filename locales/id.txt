@@ -1557,3 +1557,9 @@ settings.search.placeholder=Cari preferensi dalam bahasa Indonesia atau Inggris
 settings.search.empty=Tidak ada preferensi yang cocok
 
 info.appearance=Tampilan informasi gambar
+
+format.jxl=JPEG XL
+jxl.effort=Upaya pengodean
+jxl.still_images=Gambar diam, RGBA 8-bit atau 16-bit
+ui.double_click_slider_reset=Klik dua kali penggeser untuk mereset
+ui.double_click_reset_hint=Klik dua kali untuk mereset

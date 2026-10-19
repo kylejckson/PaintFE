@@ -1,0 +1,6 @@
+mode         = .hsw
+extra_cflags = -DSKCMS_FORCE_HSW
+target_flags = -march=x86-64 -mavx2 -mf16c
+include ninja/clang
+
+disabled = $no_hsw

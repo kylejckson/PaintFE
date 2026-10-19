@@ -23,7 +23,7 @@ impl InkDialog {
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.edge_strength"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.edge_strength, 10.0..=300.0)
+                            crate::ui::controls::Slider::new(&mut self.edge_strength, 10.0..=300.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits)
                                 .max_decimals(0),
                         );
                         if track_slider(&r, &mut self.dragging) {
@@ -33,7 +33,7 @@ impl InkDialog {
 
                         ui.label(crate::t!("dialog.threshold"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.threshold, 0.05..=1.0).max_decimals(2),
+                            crate::ui::controls::Slider::new(&mut self.threshold, 0.05..=1.0).double_click_reset_to(0.3).clamping(egui::SliderClamping::Edits).max_decimals(2),
                         );
                         if track_slider(&r, &mut self.dragging) {
                             changed = true;
@@ -105,7 +105,7 @@ impl OilPaintingDialog {
 
                         ui.label(crate::t!("ui.intensity_levels"));
                         let r =
-                            ui.add(egui::Slider::new(&mut self.levels, 4.0..=64.0).max_decimals(0));
+                            ui.add(crate::ui::controls::Slider::new(&mut self.levels, 4.0..=64.0).double_click_reset_to(20.0).clamping(egui::SliderClamping::Edits).max_decimals(0));
                         if track_slider(&r, &mut self.dragging) {
                             changed = true;
                         }
@@ -172,14 +172,14 @@ impl ColorFilterDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(crate::t!("keybind_category.color"));
-                        if ui.color_edit_button_rgb(&mut self.color).changed() {
+                        if crate::ui::controls::color_edit_button_rgb(ui, &mut self.color).changed() {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.intensity"));
                         let r = ui
-                            .add(egui::Slider::new(&mut self.intensity, 0.0..=1.0).max_decimals(2));
+                            .add(crate::ui::controls::Slider::new(&mut self.intensity, 0.0..=1.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits).max_decimals(2));
                         if track_slider(&r, &mut self.dragging) {
                             changed = true;
                         }
@@ -353,7 +353,7 @@ impl ColorToAlphaDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(crate::t!("keybind_category.color"));
-                        if ui.color_edit_button_rgb(&mut self.target_color).changed() {
+                        if crate::ui::controls::color_edit_button_rgb(ui, &mut self.target_color).changed() {
                             changed = true;
                         }
                         ui.end_row();
@@ -369,12 +369,12 @@ impl ColorToAlphaDialog {
                                 .as_ref()
                                 .map_or(0, |img| img.height().saturating_sub(1));
                             ui.add(
-                                crate::ui::numeric::Numeric::new(&mut self.sample_x)
+                                crate::ui::controls::Numeric::new(&mut self.sample_x)
                                     .range(0..=max_x),
                             );
                             ui.label("x");
                             ui.add(
-                                crate::ui::numeric::Numeric::new(&mut self.sample_y)
+                                crate::ui::controls::Numeric::new(&mut self.sample_y)
                                     .range(0..=max_y),
                             );
                             if ui.small_button(crate::t!("ui.pick")).clicked()
@@ -403,45 +403,45 @@ impl ColorToAlphaDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.tolerance"));
-                        if dialog_slider(ui, &mut self.tolerance, 0.0..=128.0, 1.0, "", 0) {
+                        if dialog_slider(ui, &mut self.tolerance, 0.0..=128.0, 1.0, "", 0, 18.0) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.softness"));
-                        if dialog_slider(ui, &mut self.softness, 0.0..=255.0, 1.0, "", 0) {
+                        if dialog_slider(ui, &mut self.softness, 0.0..=255.0, 1.0, "", 0, 35.0) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.strength"));
-                        if dialog_slider(ui, &mut self.strength, 0.0..=1.0, 0.01, "", 2) {
+                        if dialog_slider(ui, &mut self.strength, 0.0..=1.0, 0.01, "", 2, 1.0) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.spill_suppression"));
-                        if dialog_slider(ui, &mut self.spill_suppression, 0.0..=1.0, 0.01, "", 2) {
+                        if dialog_slider(ui, &mut self.spill_suppression, 0.0..=1.0, 0.01, "", 2, 0.35) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.alpha_floor"));
-                        if dialog_slider(ui, &mut self.alpha_floor, 0.0..=1.0, 0.01, "", 2) {
+                        if dialog_slider(ui, &mut self.alpha_floor, 0.0..=1.0, 0.01, "", 2, 0.0) {
                             self.alpha_ceiling = self.alpha_ceiling.max(self.alpha_floor);
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.alpha_ceiling"));
-                        if dialog_slider(ui, &mut self.alpha_ceiling, 0.0..=1.0, 0.01, "", 2) {
+                        if dialog_slider(ui, &mut self.alpha_ceiling, 0.0..=1.0, 0.01, "", 2, 1.0) {
                             self.alpha_floor = self.alpha_floor.min(self.alpha_ceiling);
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.protect_luminance"));
-                        if dialog_slider(ui, &mut self.protect_luminance, 0.0..=1.0, 0.01, "", 2) {
+                        if dialog_slider(ui, &mut self.protect_luminance, 0.0..=1.0, 0.01, "", 2, 0.15) {
                             changed = true;
                         }
                         ui.end_row();
@@ -595,7 +595,7 @@ impl RecoverTransparencyDialog {
                         ui.end_row();
 
                         ui.label(crate::t!("ui.fallback_manual"));
-                        if ui.color_edit_button_rgb(&mut self.background_color).changed() {
+                        if crate::ui::controls::color_edit_button_rgb(ui, &mut self.background_color).changed() {
                             self.auto_sample_edges = false;
                             changed = true;
                         }
@@ -611,9 +611,9 @@ impl RecoverTransparencyDialog {
                                 .original_flat
                                 .as_ref()
                                 .map_or(0, |img| img.height().saturating_sub(1));
-                            ui.add(crate::ui::numeric::Numeric::new(&mut self.sample_x).range(0..=max_x));
+                            ui.add(crate::ui::controls::Numeric::new(&mut self.sample_x).range(0..=max_x));
                             ui.label("x");
-                            ui.add(crate::ui::numeric::Numeric::new(&mut self.sample_y).range(0..=max_y));
+                            ui.add(crate::ui::controls::Numeric::new(&mut self.sample_y).range(0..=max_y));
                             if ui.small_button(crate::t!("ui.pick")).clicked()
                                 && let Some(flat) = &self.original_flat
                             {
@@ -633,13 +633,13 @@ impl RecoverTransparencyDialog {
                         ui.end_row();
 
                         ui.label(crate::t!("ui.edge_sample_depth"));
-                        if dialog_slider(ui, &mut self.sample_depth, 1.0..=8.0, 1.0, " px", 0) {
+                        if dialog_slider(ui, &mut self.sample_depth, 1.0..=8.0, 1.0, " px", 0, 2.0) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.noise_tolerance"));
-                        if dialog_slider(ui, &mut self.noise_tolerance, 0.5..=32.0, 0.5, "", 1) {
+                        if dialog_slider(ui, &mut self.noise_tolerance, 0.5..=32.0, 0.5, "", 1, 4.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -661,7 +661,7 @@ impl RecoverTransparencyDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.recover_band"));
-                        if dialog_slider(ui, &mut self.edge_width, 0.0..=6.0, 1.0, " px", 0) {
+                        if dialog_slider(ui, &mut self.edge_width, 0.0..=6.0, 1.0, " px", 0, 2.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -673,21 +673,21 @@ impl RecoverTransparencyDialog {
                         ui.end_row();
 
                         ui.label(crate::t!("ui.transparent_snap"));
-                        if dialog_slider(ui, &mut self.transparent_snap, 0.0..=0.25, 0.005, "", 3) {
+                        if dialog_slider(ui, &mut self.transparent_snap, 0.0..=0.25, 0.005, "", 3, 0.025) {
                             self.opaque_snap = self.opaque_snap.max(self.transparent_snap);
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.opaque_snap"));
-                        if dialog_slider(ui, &mut self.opaque_snap, 0.75..=1.0, 0.005, "", 3) {
+                        if dialog_slider(ui, &mut self.opaque_snap, 0.75..=1.0, 0.005, "", 3, 0.97) {
                             self.transparent_snap = self.transparent_snap.min(self.opaque_snap);
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.color_preservation"));
-                        if dialog_slider(ui, &mut self.foreground_influence, 0.0..=1.0, 0.05, "", 2) {
+                        if dialog_slider(ui, &mut self.foreground_influence, 0.0..=1.0, 0.05, "", 2, 0.8) {
                             changed = true;
                         }
                         ui.end_row();
@@ -717,25 +717,25 @@ impl RecoverTransparencyDialog {
                         ui.end_row();
 
                         ui.label(crate::t!("ui.maximum_island_size"));
-                        if dialog_slider(ui, &mut self.island_max_size, 1.0..=256.0, 1.0, " px", 0) {
+                        if dialog_slider(ui, &mut self.island_max_size, 1.0..=256.0, 1.0, " px", 0, 24.0) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.island_strictness"));
-                        if dialog_slider(ui, &mut self.island_tolerance, 0.1..=1.25, 0.05, "", 2) {
+                        if dialog_slider(ui, &mut self.island_tolerance, 0.1..=1.25, 0.05, "", 2, 0.65) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.maximum_depth"));
-                        if dialog_slider(ui, &mut self.island_max_depth, 1.0..=64.0, 1.0, " px", 0) {
+                        if dialog_slider(ui, &mut self.island_max_depth, 1.0..=64.0, 1.0, " px", 0, 12.0) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.bridge_tiny_gaps"));
-                        if dialog_slider(ui, &mut self.bridge_gaps, 0.0..=4.0, 1.0, " px", 0) {
+                        if dialog_slider(ui, &mut self.bridge_gaps, 0.0..=4.0, 1.0, " px", 0, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -744,9 +744,9 @@ impl RecoverTransparencyDialog {
                         ui.horizontal(|ui| {
                             let max_x = self.original_flat.as_ref().map_or(0, |img| img.width().saturating_sub(1));
                             let max_y = self.original_flat.as_ref().map_or(0, |img| img.height().saturating_sub(1));
-                            ui.add(crate::ui::numeric::Numeric::new(&mut self.island_x).range(0..=max_x));
+                            ui.add(crate::ui::controls::Numeric::new(&mut self.island_x).range(0..=max_x));
                             ui.label("x");
-                            ui.add(crate::ui::numeric::Numeric::new(&mut self.island_y).range(0..=max_y));
+                            ui.add(crate::ui::controls::Numeric::new(&mut self.island_y).range(0..=max_y));
                         });
                         ui.end_row();
 
@@ -856,7 +856,7 @@ impl ContoursDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(crate::t!("dialog.resize_image.scale"));
-                        if dialog_slider(ui, &mut self.scale, 5.0..=400.0, 1.0, " px", 0) {
+                        if dialog_slider(ui, &mut self.scale, 5.0..=400.0, 1.0, " px", 0, 30.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -869,7 +869,7 @@ impl ContoursDialog {
                         ui.end_row();
 
                         ui.label(crate::t!("ui.frequency"));
-                        if dialog_slider(ui, &mut self.frequency, 1.0..=30.0, 0.1, "", 1) {
+                        if dialog_slider(ui, &mut self.frequency, 1.0..=30.0, 0.1, "", 1, 8.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -882,7 +882,7 @@ impl ContoursDialog {
                         ui.end_row();
 
                         ui.label(crate::t!("ui.line_width"));
-                        if dialog_slider(ui, &mut self.line_width, 0.5..=8.0, 0.1, " px", 1) {
+                        if dialog_slider(ui, &mut self.line_width, 0.5..=8.0, 0.1, " px", 1, 1.5) {
                             changed = true;
                         }
                         ui.end_row();
@@ -894,7 +894,7 @@ impl ContoursDialog {
                                 (self.line_color[1] * 255.0) as u8,
                                 (self.line_color[2] * 255.0) as u8,
                             );
-                            if ui.color_edit_button_srgba(&mut c32).changed() {
+                            if crate::ui::controls::color_edit_button_srgba(ui, &mut c32, egui::color_picker::Alpha::BlendOrAdditive).changed() {
                                 self.line_color = [
                                     c32.r() as f32 / 255.0,
                                     c32.g() as f32 / 255.0,
@@ -923,7 +923,7 @@ impl ContoursDialog {
                         ui.end_row();
 
                         ui.label(crate::t!("ui.blend"));
-                        if dialog_slider(ui, &mut self.blend, 0.0..=1.0, 0.01, "", 2) {
+                        if dialog_slider(ui, &mut self.blend, 0.0..=1.0, 0.01, "", 2, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -937,7 +937,7 @@ impl ContoursDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.octaves"));
-                        if dialog_slider(ui, &mut self.octaves, 1.0..=6.0, 1.0, "", 0) {
+                        if dialog_slider(ui, &mut self.octaves, 1.0..=6.0, 1.0, "", 0, 3.0) {
                             self.octaves = self.octaves.round().clamp(1.0, 6.0);
                             changed = true;
                         }
@@ -948,7 +948,7 @@ impl ContoursDialog {
                             let mut seed_f = self.seed as f32;
                             if ui
                                 .add(
-                                    crate::ui::numeric::Numeric::new(&mut seed_f)
+                                    crate::ui::controls::Numeric::new(&mut seed_f)
                                         .speed(1.0)
                                         .range(0.0..=9999.0),
                                 )

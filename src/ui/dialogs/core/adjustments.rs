@@ -46,13 +46,13 @@ impl BrightnessContrastDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.brightness"));
-                        if dialog_slider(ui, &mut self.brightness, -100.0..=100.0, 1.0, "", 0) {
+                        if dialog_slider(ui, &mut self.brightness, -100.0..=100.0, 1.0, "", 0, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.contrast"));
-                        if dialog_slider(ui, &mut self.contrast, -100.0..=100.0, 1.0, "", 0) {
+                        if dialog_slider(ui, &mut self.contrast, -100.0..=100.0, 1.0, "", 0, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -170,19 +170,19 @@ impl HueSaturationDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.hue"));
-                        if dialog_slider(ui, &mut self.hue, -180.0..=180.0, 1.0, "°", 0) {
+                        if dialog_slider(ui, &mut self.hue, -180.0..=180.0, 1.0, "°", 0, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.saturation"));
-                        if dialog_slider(ui, &mut self.saturation, -100.0..=100.0, 1.0, "", 0) {
+                        if dialog_slider(ui, &mut self.saturation, -100.0..=100.0, 1.0, "", 0, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.lightness"));
-                        if dialog_slider(ui, &mut self.lightness, -100.0..=100.0, 1.0, "", 0) {
+                        if dialog_slider(ui, &mut self.lightness, -100.0..=100.0, 1.0, "", 0, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -275,17 +275,17 @@ impl HueSaturationDialog {
                         .spacing([8.0, 6.0])
                         .show(ui, |ui| {
                             ui.label(crate::t!("ui.hue"));
-                            if dialog_slider(ui, &mut b.hue, -180.0..=180.0, 1.0, "°", 0) {
+                            if dialog_slider(ui, &mut b.hue, -180.0..=180.0, 1.0, "°", 0, 0.0) {
                                 changed = true;
                             }
                             ui.end_row();
                             ui.label(crate::t!("ui.saturation"));
-                            if dialog_slider(ui, &mut b.saturation, -100.0..=100.0, 1.0, "", 0) {
+                            if dialog_slider(ui, &mut b.saturation, -100.0..=100.0, 1.0, "", 0, 0.0) {
                                 changed = true;
                             }
                             ui.end_row();
                             ui.label(crate::t!("ui.lightness"));
-                            if dialog_slider(ui, &mut b.lightness, -100.0..=100.0, 1.0, "", 0) {
+                            if dialog_slider(ui, &mut b.lightness, -100.0..=100.0, 1.0, "", 0, 0.0) {
                                 changed = true;
                             }
                             ui.end_row();
@@ -395,7 +395,7 @@ impl ExposureDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.ev_stops"));
-                        if dialog_slider(ui, &mut self.exposure, -5.0..=5.0, 0.1, " EV", 2) {
+                        if dialog_slider(ui, &mut self.exposure, -5.0..=5.0, 0.1, " EV", 2, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -526,13 +526,13 @@ impl HighlightsShadowsDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.shadows"));
-                        if dialog_slider(ui, &mut self.shadows, -100.0..=100.0, 1.0, "", 0) {
+                        if dialog_slider(ui, &mut self.shadows, -100.0..=100.0, 1.0, "", 0, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.highlights"));
-                        if dialog_slider(ui, &mut self.highlights, -100.0..=100.0, 1.0, "", 0) {
+                        if dialog_slider(ui, &mut self.highlights, -100.0..=100.0, 1.0, "", 0, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -836,7 +836,7 @@ impl LevelsDialog {
                         ui.end_row();
 
                         ui.label(crate::t!("ui.gamma"));
-                        if dialog_slider(ui, &mut self.ch_gamma[ci], 0.1..=10.0, 0.05, "", 2) {
+                        if dialog_slider(ui, &mut self.ch_gamma[ci], 0.1..=10.0, 0.05, "", 2, 1.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -1475,13 +1475,13 @@ impl TemperatureTintDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.temperature"));
-                        if dialog_slider(ui, &mut self.temperature, -100.0..=100.0, 1.0, "", 0) {
+                        if dialog_slider(ui, &mut self.temperature, -100.0..=100.0, 1.0, "", 0, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.tint"));
-                        if dialog_slider(ui, &mut self.tint, -100.0..=100.0, 1.0, "", 0) {
+                        if dialog_slider(ui, &mut self.tint, -100.0..=100.0, 1.0, "", 0, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -1682,7 +1682,7 @@ impl ThresholdDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.level"));
-                        if dialog_slider(ui, &mut self.level, 0.0..=255.0, 1.0, "", 0) {
+                        if dialog_slider(ui, &mut self.level, 0.0..=255.0, 1.0, "", 0, 128.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -1792,7 +1792,7 @@ impl PosterizeDialog {
                         ui.label(crate::t!("dialog.levels"));
                         {
                             let mut lf = levels_i32 as f32;
-                            if dialog_slider(ui, &mut lf, 2.0..=16.0, 1.0, "", 0) {
+                            if dialog_slider(ui, &mut lf, 2.0..=16.0, 1.0, "", 0, 4.0) {
                                 levels_i32 = lf.round() as i32;
                                 self.levels = levels_i32 as u32;
                                 changed = true;
@@ -1926,7 +1926,7 @@ impl ColorBalanceDialog {
                             egui::RichText::new(crate::t!("ui.cyan_red"))
                                 .color(Color32::from_rgb(200, 100, 100)),
                         );
-                        if dialog_slider(ui, &mut zone[0], -100.0..=100.0, 1.0, "", 0) {
+                        if dialog_slider(ui, &mut zone[0], -100.0..=100.0, 1.0, "", 0, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -1935,7 +1935,7 @@ impl ColorBalanceDialog {
                             egui::RichText::new(crate::t!("ui.magenta_green"))
                                 .color(Color32::from_rgb(100, 180, 100)),
                         );
-                        if dialog_slider(ui, &mut zone[1], -100.0..=100.0, 1.0, "", 0) {
+                        if dialog_slider(ui, &mut zone[1], -100.0..=100.0, 1.0, "", 0, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -1944,7 +1944,7 @@ impl ColorBalanceDialog {
                             egui::RichText::new(crate::t!("ui.yellow_blue"))
                                 .color(Color32::from_rgb(100, 140, 220)),
                         );
-                        if dialog_slider(ui, &mut zone[2], -100.0..=100.0, 1.0, "", 0) {
+                        if dialog_slider(ui, &mut zone[2], -100.0..=100.0, 1.0, "", 0, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -2140,7 +2140,7 @@ impl GradientMapDialog {
                             self.shadow_color[1],
                             self.shadow_color[2],
                         );
-                        if ui.color_edit_button_srgba(&mut c).changed() {
+                        if crate::ui::controls::color_edit_button_srgba(ui, &mut c, egui::color_picker::Alpha::BlendOrAdditive).changed() {
                             self.shadow_color = [c.r(), c.g(), c.b()];
                             self.preset = GradientMapPreset::Custom;
                             changed_color = true;
@@ -2153,7 +2153,7 @@ impl GradientMapDialog {
                             self.highlight_color[1],
                             self.highlight_color[2],
                         );
-                        if ui.color_edit_button_srgba(&mut c).changed() {
+                        if crate::ui::controls::color_edit_button_srgba(ui, &mut c, egui::color_picker::Alpha::BlendOrAdditive).changed() {
                             self.highlight_color = [c.r(), c.g(), c.b()];
                             self.preset = GradientMapPreset::Custom;
                             changed_color = true;
@@ -2274,7 +2274,7 @@ impl BlackAndWhiteDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(egui::RichText::new(crate::t!("ui.reds")).color(Color32::from_rgb(220, 80, 80)));
-                        if dialog_slider(ui, &mut self.r_weight, 0.0..=200.0, 1.0, "", 1) {
+                        if dialog_slider(ui, &mut self.r_weight, 0.0..=200.0, 1.0, "", 1, 21.26) {
                             changed = true;
                         }
                         ui.end_row();
@@ -2282,7 +2282,7 @@ impl BlackAndWhiteDialog {
                         ui.label(
                             egui::RichText::new(crate::t!("ui.greens")).color(Color32::from_rgb(80, 180, 80)),
                         );
-                        if dialog_slider(ui, &mut self.g_weight, 0.0..=200.0, 1.0, "", 1) {
+                        if dialog_slider(ui, &mut self.g_weight, 0.0..=200.0, 1.0, "", 1, 71.52) {
                             changed = true;
                         }
                         ui.end_row();
@@ -2290,7 +2290,7 @@ impl BlackAndWhiteDialog {
                         ui.label(
                             egui::RichText::new(crate::t!("ui.blues")).color(Color32::from_rgb(80, 140, 220)),
                         );
-                        if dialog_slider(ui, &mut self.b_weight, 0.0..=200.0, 1.0, "", 1) {
+                        if dialog_slider(ui, &mut self.b_weight, 0.0..=200.0, 1.0, "", 1, 7.22) {
                             changed = true;
                         }
                         ui.end_row();
@@ -2403,7 +2403,7 @@ impl VibranceDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(crate::t!("dialog.vibrance"));
-                        if dialog_slider(ui, &mut self.amount, -100.0..=100.0, 1.0, "", 0) {
+                        if dialog_slider(ui, &mut self.amount, -100.0..=100.0, 1.0, "", 0, 0.0) {
                             changed = true;
                         }
                         ui.end_row();

@@ -38,6 +38,7 @@ struct Sample {
     time_ms: f64,
     gap_ms: f64,
     events: usize,
+    active: bool,
     previous_cpu_ms: Option<f64>,
     ms: [f64; STAGES.len()],
 }
@@ -52,9 +53,22 @@ static BACKEND: OnceLock<Option<Backend>> = OnceLock::new();
 fn backend() -> Option<&'static Backend> {
     BACKEND
         .get_or_init(|| {
-            let path = std::env::var_os("PAINTFE_UI_PROFILE")?;
-            let path = std::path::PathBuf::from(path);
-            let drive = std::env::var_os("PAINTFE_UI_PROFILE_DRIVE").is_some();
+            // Debug review copies can opt in beside their own executable. This
+            // avoids changing the user's process/system environment for a UI run.
+            #[cfg(debug_assertions)]
+            let review_path = std::env::current_exe().ok().and_then(|exe| {
+                let dir = exe.parent()?;
+                dir.join("ui-profile.enabled")
+                    .is_file()
+                    .then(|| dir.join("ui-profile.jsonl"))
+            });
+            #[cfg(not(debug_assertions))]
+            let review_path: Option<std::path::PathBuf> = None;
+            let drive =
+                review_path.is_some() || std::env::var_os("PAINTFE_UI_PROFILE_DRIVE").is_some();
+            let path = std::env::var_os("PAINTFE_UI_PROFILE")
+                .map(std::path::PathBuf::from)
+                .or(review_path)?;
             let (sender, receiver) = mpsc::sync_channel::<Sample>(1024);
             std::thread::Builder::new()
                 .name("paintfe-ui-profile".into())
@@ -66,7 +80,7 @@ fn backend() -> Option<&'static Backend> {
                     let mut writer = std::io::BufWriter::new(file);
                     let _ = serde_json::to_writer(
                         &mut writer,
-                        &serde_json::json!({"stages": STAGES, "version": 1, "continuous": drive}),
+                        &serde_json::json!({"stages": STAGES, "version": 2, "continuous": drive}),
                     );
                     let _ = writeln!(writer);
                     let mut count = 0;
@@ -110,9 +124,26 @@ impl Frame {
         };
         let now = Instant::now();
         let time_ms = backend.origin.elapsed().as_secs_f64() * 1000.0;
+        let active_id = egui::Id::new("paintfe_profile_active_until");
+        let interacting = ctx.input(|i| {
+            i.pointer.any_down()
+                || i.events.iter().any(|event| {
+                    matches!(
+                        event,
+                        egui::Event::MouseWheel { .. } | egui::Event::Key { .. }
+                    )
+                })
+        });
+        let active = if interacting {
+            ctx.data_mut(|d| d.insert_temp(active_id, time_ms + 250.0));
+            true
+        } else {
+            ctx.data(|d| d.get_temp::<f64>(active_id))
+                .is_some_and(|until| time_ms < until)
+        };
         // A bounded 20-second continuous sample distinguishes presentation gaps
         // from ordinary event-driven idle time. Never active without explicit opt-in.
-        if backend.drive && time_ms < 20_000.0 {
+        if backend.drive && (time_ms < 20_000.0 || active) {
             ctx.request_repaint();
         }
         let last = ctx.data(|d| d.get_temp::<f64>(egui::Id::new("paintfe_profile_last_frame")));
@@ -122,6 +153,7 @@ impl Frame {
                 time_ms,
                 gap_ms: last.map_or(0.0, |last| time_ms - last),
                 events: ctx.input(|i| i.events.len()),
+                active,
                 previous_cpu_ms: previous_cpu.map(|v| v as f64 * 1000.0),
                 ms: [0.0; STAGES.len()],
             })

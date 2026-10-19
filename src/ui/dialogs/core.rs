@@ -390,17 +390,8 @@ pub(crate) fn accent_separator(ui: &mut egui::Ui, colors: &DialogColors) {
     ui.painter().rect_filled(rect, 0.0, colors.separator);
 }
 
-fn themed_stepper_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
-    let stepper_bg = crate::theme::Theme::stepper_button_bg_for(ui);
-    ui.scope(|ui| {
-        ui.visuals_mut().widgets.inactive.bg_fill = stepper_bg;
-        ui.visuals_mut().widgets.inactive.weak_bg_fill = stepper_bg;
-        ui.small_button(label)
-    })
-    .inner
-}
-
 /// Draw a numeric field with +/- buttons.  Returns true if the value changed.
+#[track_caller]
 pub(crate) fn numeric_field_with_buttons(
     ui: &mut egui::Ui,
     value: &mut f32,
@@ -415,6 +406,7 @@ pub(crate) fn numeric_field_with_buttons(
 /// Like `numeric_field_with_buttons`, but when `request_focus` is true the
 /// DragValue is given keyboard focus on this frame (used to auto-select
 /// the first field when a dialog opens).
+#[track_caller]
 pub(crate) fn numeric_field_with_buttons_focus(
     ui: &mut egui::Ui,
     value: &mut f32,
@@ -424,43 +416,21 @@ pub(crate) fn numeric_field_with_buttons_focus(
     step: f32,
     request_focus: bool,
 ) -> bool {
-    let step = crate::ui::numeric::step(ui, step);
-    let mut changed = false;
-    let range_start = *range.start();
-    let range_end = *range.end();
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
-        if themed_stepper_button(ui, "-").clicked() {
-            *value = (*value - step).max(range_start);
-            changed = true;
-        }
-        let dv = crate::ui::numeric::Numeric::new(value)
+    let response = ui.add(
+        crate::ui::controls::Numeric::new(value)
             .speed(speed)
-            .range(range);
-        let dv = if !suffix.is_empty() {
-            dv.suffix(suffix)
-        } else {
-            dv
-        };
-        let response = ui.add(dv);
-        if request_focus {
-            response.request_focus();
-        }
-        if response.changed() {
-            changed = true;
-        }
-        if themed_stepper_button(ui, "+").clicked() {
-            *value = (*value + step).min(range_end);
-            changed = true;
-        }
-    });
-    changed
+            .range(range)
+            .suffix(suffix)
+            .steppers(step as f64)
+            .focus_on_open(request_focus),
+    );
+    response.changed()
 }
 
-/// Painter-based slider with a downward-pointing arrow thumb + flanking −/+ buttons.
-/// Matches the visual style of the colour-panel gradient bars.
+/// Standard slider composed with the shared numeric editor and step buttons.
 /// `step` is the increment for the buttons; `suffix` is appended to the value label.
 /// Returns `true` if the value changed.
+#[track_caller]
 pub(crate) fn dialog_slider(
     ui: &mut egui::Ui,
     value: &mut f32,
@@ -468,161 +438,19 @@ pub(crate) fn dialog_slider(
     step: f32,
     suffix: &str,
     decimals: usize,
+    default: f32,
 ) -> bool {
-    let range_start = *range.start();
-    let range_end = *range.end();
-    let default_value = if range_start <= 0.0 && range_end >= 0.0 {
-        0.0
-    } else {
-        range_start
-    };
-    let keyboard_step = step;
-    let step = crate::ui::numeric::step(ui, step);
-    let mut changed = false;
-
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
-
-        // Custom painted slider track + arrow thumb
-        let bar_h = 6.0_f32;
-        let arrow_h = 14.0_f32;
-        let bar_w = 140.0_f32;
-        let desired = egui::Vec2::new(bar_w, bar_h + arrow_h + 1.0);
-        let (rect, resp) = ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
-        let bar = egui::Rect::from_min_size(
-            egui::Pos2::new(rect.min.x, rect.max.y - bar_h),
-            egui::Vec2::new(rect.width(), bar_h),
-        );
-
-        resp.widget_info(|| egui::WidgetInfo::slider(ui.is_enabled(), *value as f64, suffix));
-        changed |= crate::ui::numeric::slider_input(
-            ui,
-            &resp,
-            value,
-            range_start..=range_end,
-            keyboard_step,
-        );
-        if ui.is_rect_visible(rect) {
-            let p = ui.painter();
-            let vis = ui.visuals();
-            let track_col = vis.extreme_bg_color;
-            let filled_col = vis.selection.bg_fill;
-            let border_col = if vis.widgets.inactive.bg_stroke.color == egui::Color32::TRANSPARENT {
-                egui::Color32::from_black_alpha(40)
-            } else {
-                vis.widgets.inactive.bg_stroke.color
-            };
-
-            // Filled portion (left of thumb)
-            let t = (*value - range_start) / (range_end - range_start).max(f32::EPSILON);
-            let fill_x = bar.min.x + t * bar.width();
-            if fill_x > bar.min.x {
-                p.rect_filled(
-                    egui::Rect::from_min_max(bar.min, egui::Pos2::new(fill_x, bar.max.y)),
-                    egui::CornerRadius::same(2),
-                    filled_col.linear_multiply(0.6),
-                );
-            }
-            // Unfilled portion
-            if fill_x < bar.max.x {
-                p.rect_filled(
-                    egui::Rect::from_min_max(egui::Pos2::new(fill_x, bar.min.y), bar.max),
-                    egui::CornerRadius::same(2),
-                    track_col,
-                );
-            }
-            p.rect_stroke(
-                bar,
-                egui::CornerRadius::same(2),
-                egui::Stroke::new(1.0, border_col),
-                egui::StrokeKind::Middle,
-            );
-
-            // Arrow thumb — small dark triangle, white outline (Paint.NET style)
-            let tx = bar.min.x + t * bar.width();
-            let aw = 5.5_f32;
-            let ah = 9.0_f32;
-            let tip = egui::Pos2::new(tx, bar.center().y);
-            let base_y = tip.y - ah;
-            let bl = egui::Pos2::new(tx - aw, base_y);
-            let br = egui::Pos2::new(tx + aw, base_y);
-            p.add(egui::Shape::convex_polygon(
-                vec![tip, bl, br],
-                vis.text_color(),
-                egui::Stroke::NONE,
-            ));
-            p.add(egui::Shape::convex_polygon(
-                vec![tip, bl, br],
-                egui::Color32::TRANSPARENT,
-                egui::Stroke::new(
-                    crate::ui::polish::settings(ui.ctx()).border_width,
-                    vis.panel_fill,
-                ),
-            ));
-        }
-
-        // Drag / click interaction
-        if (resp.dragged() || resp.clicked())
-            && let Some(mp) = resp.interact_pointer_pos()
-        {
-            let t = ((mp.x - bar.min.x) / bar.width()).clamp(0.0, 1.0);
-            let new_val = range_start + t * (range_end - range_start);
-            // Snap to step grid
-            let snapped = (new_val / step).round() * step;
-            *value = snapped.clamp(range_start, range_end);
-            changed = true;
-        }
-
-        // Stepper + manual input cluster (buttons flank the numeric field).
-        ui.allocate_ui_with_layout(
-            egui::Vec2::new(146.0, 22.0),
-            egui::Layout::left_to_right(egui::Align::Center),
-            |ui| {
-                ui.spacing_mut().item_spacing.x = 2.0;
-
-                if ui.add_sized([20.0, 18.0], egui::Button::new("-")).clicked() {
-                    *value = (*value - step).max(range_start);
-                    changed = true;
-                }
-
-                let dv = crate::ui::numeric::Numeric::new(value)
-                    .speed(keyboard_step * 0.5)
-                    .range(range)
-                    .max_decimals(decimals);
-                let dv = if !suffix.is_empty() {
-                    dv.suffix(suffix)
-                } else {
-                    dv
-                };
-                if ui.add_sized([60.0, 18.0], dv).changed() {
-                    changed = true;
-                }
-
-                if ui.add_sized([20.0, 18.0], egui::Button::new("+")).clicked() {
-                    *value = (*value + step).min(range_end);
-                    changed = true;
-                }
-
-                if !super::remember::has_header_reset(ui.ctx()) {
-                    let is_default = (*value - default_value).abs() <= step.abs().max(0.0001) * 0.5;
-                    let reset_resp = ui
-                        .add_enabled(!is_default, egui::Button::new("↺"))
-                        .on_hover_text(crate::i18n::format_translation(
-                            "ui.reset_to_0_1",
-                            &[
-                                ("0", format!("{}", default_value)),
-                                ("1", suffix.to_string()),
-                            ],
-                        ));
-                    if reset_resp.clicked() {
-                        *value = default_value;
-                        changed = true;
-                    }
-                }
-            },
-        );
-    });
-    changed
+    let mut slider = crate::ui::controls::Slider::new(value, range)
+        .clamping(egui::SliderClamping::Edits)
+        .step_by(step as f64)
+        .suffix(suffix)
+        .max_decimals(decimals)
+        .steppers(true)
+        .double_click_reset_to(default);
+    if !super::remember::has_header_reset(ui.ctx()) {
+        slider = slider.reset_to(default);
+    }
+    ui.add(slider).changed()
 }
 
 fn format_dimension_value(value: f32) -> String {
@@ -640,129 +468,7 @@ fn format_dimension_value(value: f32) -> String {
     }
 }
 
-fn evaluate_dimension_expression(input: &str) -> Option<f32> {
-    #[derive(Clone, Copy)]
-    struct Parser<'a> {
-        bytes: &'a [u8],
-        pos: usize,
-    }
-
-    impl<'a> Parser<'a> {
-        fn new(src: &'a str) -> Self {
-            Self {
-                bytes: src.as_bytes(),
-                pos: 0,
-            }
-        }
-
-        fn skip_ws(&mut self) {
-            while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_whitespace() {
-                self.pos += 1;
-            }
-        }
-
-        fn parse_expr(&mut self) -> Option<f32> {
-            let mut value = self.parse_term()?;
-            loop {
-                self.skip_ws();
-                let Some(&op) = self.bytes.get(self.pos) else {
-                    break;
-                };
-                if op != b'+' && op != b'-' {
-                    break;
-                }
-                self.pos += 1;
-                let rhs = self.parse_term()?;
-                value = if op == b'+' { value + rhs } else { value - rhs };
-            }
-            Some(value)
-        }
-
-        fn parse_term(&mut self) -> Option<f32> {
-            let mut value = self.parse_factor()?;
-            loop {
-                self.skip_ws();
-                let Some(&op) = self.bytes.get(self.pos) else {
-                    break;
-                };
-                if op != b'*' && op != b'/' {
-                    break;
-                }
-                self.pos += 1;
-                let rhs = self.parse_factor()?;
-                value = if op == b'*' {
-                    value * rhs
-                } else {
-                    if rhs.abs() < f32::EPSILON {
-                        return None;
-                    }
-                    value / rhs
-                };
-            }
-            Some(value)
-        }
-
-        fn parse_factor(&mut self) -> Option<f32> {
-            self.skip_ws();
-            if let Some(&b'+') = self.bytes.get(self.pos) {
-                self.pos += 1;
-                return self.parse_factor();
-            }
-            if let Some(&b'-') = self.bytes.get(self.pos) {
-                self.pos += 1;
-                return self.parse_factor().map(|v| -v);
-            }
-            if let Some(&b'(') = self.bytes.get(self.pos) {
-                self.pos += 1;
-                let value = self.parse_expr()?;
-                self.skip_ws();
-                if self.bytes.get(self.pos) == Some(&b')') {
-                    self.pos += 1;
-                    return Some(value);
-                }
-                return None;
-            }
-            self.parse_number()
-        }
-
-        fn parse_number(&mut self) -> Option<f32> {
-            self.skip_ws();
-            let start = self.pos;
-            let mut seen_digit = false;
-            let mut seen_dot = false;
-            while let Some(&ch) = self.bytes.get(self.pos) {
-                if ch.is_ascii_digit() {
-                    seen_digit = true;
-                    self.pos += 1;
-                } else if ch == b'.' && !seen_dot {
-                    seen_dot = true;
-                    self.pos += 1;
-                } else {
-                    break;
-                }
-            }
-            if !seen_digit {
-                return None;
-            }
-            std::str::from_utf8(&self.bytes[start..self.pos])
-                .ok()?
-                .parse::<f32>()
-                .ok()
-        }
-    }
-
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let mut parser = Parser::new(trimmed);
-    let value = parser.parse_expr()?;
-    parser.skip_ws();
-    if parser.pos != parser.bytes.len() || !value.is_finite() {
-        return None;
-    }
-    Some(value)
-}
+pub(crate) use crate::ui::numeric::evaluate_dimension_expression;
 
 pub(crate) fn dialog_footer_keys(ctx: &egui::Context) -> (bool, bool) {
     // A popup may have opened while laying out the dialog body this frame.

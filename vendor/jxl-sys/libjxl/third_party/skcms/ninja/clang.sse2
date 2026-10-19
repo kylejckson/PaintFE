@@ -1,0 +1,8 @@
+mode         = .sse2
+extra_cflags = -DSKCMS_DISABLE_HSW -DSKCMS_DISABLE_SKX
+target_flags = -msse2 -mno-sse3 -mno-ssse3 -mno-sse4.1
+include ninja/clang
+
+disabled = (uname | grep -q Darwin && sysctl machdep.cpu | grep -qv SSE2)
+no_hsw   = true
+no_skx   = true

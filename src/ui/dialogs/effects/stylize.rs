@@ -23,7 +23,7 @@ impl GlowDialog {
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.radius"));
                         let r =
-                            ui.add(egui::Slider::new(&mut self.radius, 1.0..=30.0).max_decimals(1));
+                            ui.add(crate::ui::controls::Slider::new(&mut self.radius, 1.0..=30.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits).max_decimals(1));
                         if track_slider(&r, &mut self.dragging) {
                             changed = true;
                         }
@@ -31,7 +31,7 @@ impl GlowDialog {
 
                         ui.label(crate::t!("ui.intensity"));
                         let r = ui
-                            .add(egui::Slider::new(&mut self.intensity, 0.0..=2.0).max_decimals(2));
+                            .add(crate::ui::controls::Slider::new(&mut self.intensity, 0.0..=2.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits).max_decimals(2));
                         if track_slider(&r, &mut self.dragging) {
                             changed = true;
                         }
@@ -89,7 +89,7 @@ impl SharpenDialog {
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.amount"));
                         let r =
-                            ui.add(egui::Slider::new(&mut self.amount, 0.1..=5.0).max_decimals(1));
+                            ui.add(crate::ui::controls::Slider::new(&mut self.amount, 0.1..=5.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits).max_decimals(1));
                         if track_slider(&r, &mut self.dragging) {
                             changed = true;
                         }
@@ -97,7 +97,7 @@ impl SharpenDialog {
 
                         ui.label(crate::t!("ui.radius"));
                         let r =
-                            ui.add(egui::Slider::new(&mut self.radius, 0.5..=10.0).max_decimals(1));
+                            ui.add(crate::ui::controls::Slider::new(&mut self.radius, 0.5..=10.0).double_click_reset_to(1.5).clamping(egui::SliderClamping::Edits).max_decimals(1));
                         if track_slider(&r, &mut self.dragging) {
                             changed = true;
                         }
@@ -155,7 +155,7 @@ impl VignetteDialog {
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.amount"));
                         let r =
-                            ui.add(egui::Slider::new(&mut self.amount, 0.0..=2.0).max_decimals(2));
+                            ui.add(crate::ui::controls::Slider::new(&mut self.amount, 0.0..=2.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits).max_decimals(2));
                         if track_slider(&r, &mut self.dragging) {
                             changed = true;
                         }
@@ -163,7 +163,7 @@ impl VignetteDialog {
 
                         ui.label(crate::t!("ui.softness"));
                         let r = ui
-                            .add(egui::Slider::new(&mut self.softness, 0.1..=1.5).max_decimals(2));
+                            .add(crate::ui::controls::Slider::new(&mut self.softness, 0.1..=1.5).double_click_reset_to(0.6).clamping(egui::SliderClamping::Edits).max_decimals(2));
                         if track_slider(&r, &mut self.dragging) {
                             changed = true;
                         }
@@ -231,7 +231,7 @@ impl HalftoneDialog {
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.dot_size"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.dot_size, 2.0..=30.0)
+                            crate::ui::controls::Slider::new(&mut self.dot_size, 2.0..=30.0).double_click_reset_to(1.0).clamping(egui::SliderClamping::Edits)
                                 .suffix(" px")
                                 .max_decimals(0),
                         );
@@ -242,7 +242,7 @@ impl HalftoneDialog {
 
                         ui.label(crate::t!("ui.angle"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.angle, -90.0..=90.0)
+                            crate::ui::controls::Slider::new(&mut self.angle, -90.0..=90.0).double_click_reset_to(45.0).clamping(egui::SliderClamping::Edits)
                                 .suffix("°")
                                 .max_decimals(0),
                         );

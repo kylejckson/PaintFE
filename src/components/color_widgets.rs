@@ -250,54 +250,7 @@ pub(crate) fn parse_hex(text: &str) -> Option<[u8; 3]> {
 }
 
 /// Capture the original press, including gestures whose release is outside the control.
-pub(crate) fn drag_motion(
-    ui: &Ui,
-    rect: egui::Rect,
-    id: egui::Id,
-) -> (Option<egui::Pos2>, Option<egui::Pos2>, bool) {
-    let id = id.with("pointer_capture");
-    let mut active = ui
-        .ctx()
-        .data_mut(|d| d.get_temp::<bool>(id))
-        .unwrap_or(false);
-    let mut start = None;
-    let mut position = None;
-    let events = ui.input(|input| input.events.clone());
-    for event in &events {
-        match event {
-            egui::Event::PointerButton {
-                pos,
-                button: egui::PointerButton::Primary,
-                pressed: true,
-                ..
-            } if ui.is_enabled()
-                && rect.intersect(ui.clip_rect()).contains(*pos)
-                && ui
-                    .ctx()
-                    .layer_id_at(*pos)
-                    .is_none_or(|layer| layer == ui.layer_id()) =>
-            {
-                active = true;
-                start = Some(*pos);
-                position = Some(*pos);
-            }
-            egui::Event::PointerMoved(pos) if active => position = Some(*pos),
-            egui::Event::PointerButton {
-                pos,
-                button: egui::PointerButton::Primary,
-                pressed: false,
-                ..
-            } if active => {
-                position = Some(*pos);
-                active = false;
-            }
-            egui::Event::PointerGone => active = false,
-            _ => {}
-        }
-    }
-    ui.ctx().data_mut(|d| d.insert_temp(id, active));
-    (start, position, active)
-}
+pub(crate) use crate::ui::controls::drag_motion;
 
 /// Thin rounded track, immediate pointer updates, and a directly editable numeric capsule.
 pub(crate) fn slider(
@@ -309,81 +262,16 @@ pub(crate) fn slider(
     sample: impl Fn(f32) -> Color32,
     alpha: bool,
 ) -> bool {
-    let mut changed = false;
-    ui.push_id(id, |ui| {
-        ui.horizontal(|ui| {
-            if !label.is_empty() {
-                ui.add_sized(
-                    [12.0, 22.0],
-                    egui::Label::new(egui::RichText::new(label).size(10.0)),
-                );
-            }
-            let width = (ui.available_width() - 47.0).max(40.0);
-            let (rect, response) =
-                ui.allocate_exact_size(Vec2::new(width, 22.0), Sense::click_and_drag());
-            response
-                .widget_info(|| egui::WidgetInfo::slider(ui.is_enabled(), *value as f64, label));
-            let track = egui::Rect::from_center_size(rect.center(), Vec2::new(width - 4.0, 10.0));
-            if let (_, Some(pos), _) = drag_motion(ui, rect, response.id) {
-                let next = ((pos.x - track.left()) / track.width()).clamp(0.0, 1.0) * max;
-                changed |= next != *value;
-                *value = next;
-            }
-            changed |= crate::ui::numeric::slider_input(ui, &response, value, 0.0..=max, 1.0);
-            if ui.is_rect_visible(rect) {
-                let style = theme(ui);
-                let radius = style.widget_rounding.clamp(0.0, 5.0);
-                if alpha {
-                    checker(ui, track, radius as u8);
-                }
-                // Rounded outer silhouette: each vertical slice follows the circular end caps.
-                let n = track.width().ceil() as usize;
-                for x in 0..n {
-                    let px = x as f32 + 0.5;
-                    let edge = px.min(track.width() - px).max(0.0);
-                    let half = if edge < radius {
-                        5.0 - radius + (radius.powi(2) - (radius - edge).powi(2)).sqrt()
-                    } else {
-                        5.0
-                    };
-                    let r = egui::Rect::from_center_size(
-                        egui::pos2(track.left() + px, track.center().y),
-                        Vec2::new(1.1, half * 2.0),
-                    );
-                    ui.painter().rect_filled(r, 0, sample(px / track.width()));
-                }
-                ui.painter().rect_stroke(
-                    track,
-                    radius as u8,
-                    Stroke::new(0.5, ui.visuals().widgets.noninteractive.bg_stroke.color),
-                    egui::StrokeKind::Inside,
-                );
-                let center = egui::pos2(
-                    track.left() + (*value / max).clamp(0.0, 1.0) * track.width(),
-                    track.center().y,
-                );
-                ui.painter().circle_filled(center, 5.0, style.panel_bg);
-                ui.painter()
-                    .circle_stroke(center, 5.0, Stroke::new(1.0, style.border_color));
-                ui.painter().circle_filled(center, 1.5, style.text_color);
-            }
-            egui::Frame::new()
-                .fill(field_fill(ui))
-                .corner_radius(widget_radius(ui))
-                .show(ui, |ui| {
-                    changed |= ui
-                        .add_sized(
-                            [37.0, 20.0],
-                            crate::ui::numeric::Numeric::new(value)
-                                .range(0.0..=max)
-                                .speed(1.0)
-                                .max_decimals(0),
-                        )
-                        .changed();
-                });
-        });
-    });
-    changed
+    let style = theme(ui);
+    let mut slider = crate::ui::controls::GradientSlider::new(value, max, sample)
+        .id_salt(id)
+        .label(label)
+        .alpha(alpha)
+        .theme(style);
+    if alpha {
+        slider = slider.reset_to(max);
+    }
+    ui.add(slider).changed()
 }
 
 #[cfg(test)]

@@ -1,0 +1,21 @@
+cc      = emcc
+cxx     = em++
+cflags  = -g3
+ldflags = -g3 --embed-file profiles
+exe     = .js
+out     = out/emscripten$mode
+
+node = 'node'
+
+rule run
+    command = if which $node >/dev/null; $
+              then $
+                  $node $in > $out; $
+              else touch $out; fi
+    description = run $in
+
+include ninja/common
+
+disabled = (uname | grep -qv Linux)
+no_hsw   = true
+no_skx   = true

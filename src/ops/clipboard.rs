@@ -547,7 +547,7 @@ fn get_from_wayland_clipboard() -> Option<RgbaImage> {
         return None;
     }
 
-    image::load_from_memory(&output.stdout)
+    crate::io::decode_image_bytes(&output.stdout)
         .ok()
         .map(|img| img.to_rgba8())
 }
@@ -2836,7 +2836,7 @@ mod web_clipboard {
                         {
                             let array = js_sys::Uint8Array::new(&buf);
                             let bytes = array.to_vec();
-                            if let Ok(img) = image::load_from_memory(&bytes) {
+                            if let Ok(img) = crate::io::decode_image_bytes(&bytes) {
                                 LAST_PASTED.with(|p| *p.borrow_mut() = Some(img.to_rgba8()));
                                 ctx.request_repaint();
                             }

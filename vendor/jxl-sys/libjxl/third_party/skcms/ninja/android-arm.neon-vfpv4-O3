@@ -1,0 +1,4 @@
+mode         = .neon-vfpv4-O3
+extra_cflags = -O3
+target_flags = -mfpu=neon-vfpv4
+include ninja/android-arm

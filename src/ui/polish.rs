@@ -41,6 +41,7 @@ pub struct PolishSettings {
     pub text_scale: f32,
     pub icon_gap: f32,
     pub numeric_wheel: bool,
+    pub double_click_slider_reset: bool,
     pub fine_adjustment: f32,
 }
 impl Default for PolishSettings {
@@ -63,6 +64,7 @@ impl Default for PolishSettings {
             text_scale: 1.0,
             icon_gap: 4.0,
             numeric_wheel: true,
+            double_click_slider_reset: true,
             fine_adjustment: 0.1,
         }
     }
@@ -130,10 +132,11 @@ pub fn window<'a>(ctx: &Context, title: impl Into<egui::WidgetText>) -> Polished
     PolishedWindow(
         egui::Window::new(title).fade_in(enabled).fade_out(enabled),
         false,
+        None,
     )
 }
 
-pub struct PolishedWindow<'a>(egui::Window<'a>, bool);
+pub struct PolishedWindow<'a>(egui::Window<'a>, bool, Option<(Id, egui::Pos2)>);
 impl<'a> PolishedWindow<'a> {
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.0 = self.0.enabled(enabled);
@@ -252,13 +255,25 @@ impl<'a> PolishedWindow<'a> {
         self.0 = self.0.current_pos(value);
         self
     }
+    /// A custom-header dialog moves only from its heading, never its controls.
+    pub fn heading_drag(mut self, ctx: &Context, id: Id, default: egui::Pos2) -> Self {
+        let position = ctx
+            .data(|d| d.get_temp::<egui::Pos2>(id))
+            .unwrap_or(default);
+        self.0 = self.0.movable(false).current_pos(position);
+        self.2 = Some((id, position));
+        self
+    }
     pub fn show<R>(
         self,
         ctx: &Context,
         content: impl FnOnce(&mut Ui) -> R,
     ) -> Option<egui::InnerResponse<Option<R>>> {
         let fixed_size = self.1;
-        self.0.show(ctx, |ui| {
+        let heading = self.2;
+        let mut moved = None;
+        let response = self.0.show(ctx, |ui| {
+            let heading_min = ui.cursor().min;
             let popup_open = egui::Popup::is_any_open(ctx);
             let keys = ui.input(|i| {
                 (
@@ -277,8 +292,26 @@ impl<'a> PolishedWindow<'a> {
             // Window fades use the global Overlay timing. Body disclosure widgets
             // get Expansion timing without changing other windows or their hit areas.
             ui.style_mut().animation_time = duration(ctx, MotionKind::Expansion);
-            content(ui)
-        })
+            let result = content(ui);
+            if let Some((id, position)) = heading {
+                let height = 32.0 * settings(ctx).spacing_scale;
+                // Reserve the close, remember and reset controls on the right.
+                let rect = egui::Rect::from_min_size(
+                    heading_min,
+                    egui::vec2((ui.min_rect().width() - height * 3.0).max(1.0), height),
+                );
+                let drag = ui.interact(rect, id.with("heading_drag"), egui::Sense::drag());
+                if drag.dragged() {
+                    moved = Some(position + ui.input(|i| i.pointer.delta()));
+                    ctx.request_repaint();
+                }
+            }
+            result
+        });
+        if let (Some((id, _)), Some(response)) = (heading, &response) {
+            ctx.data_mut(|d| d.insert_temp(id, moved.unwrap_or(response.response.rect.min)));
+        }
+        response
     }
 }
 
@@ -595,7 +628,8 @@ pub fn preferences(ui: &mut Ui, config: &mut PolishSettings) -> bool {
         crate::t!("ui.respect_system_reduced_motion"),
     );
     ui.add(
-        egui::Slider::new(&mut config.speed, 0.5..=2.0)
+        crate::ui::controls::Slider::new(&mut config.speed, 0.5..=2.0)
+            .double_click_reset_to(PolishSettings::default().speed)
             .text(crate::t!("ui.motion_speed"))
             .suffix("×"),
     );
@@ -612,15 +646,21 @@ pub fn preferences(ui: &mut Ui, config: &mut PolishSettings) -> bool {
             ui.checkbox(value, label);
         }
         ui.add(
-            egui::Slider::new(&mut config.spring_strength, 0.0..=0.15)
+            crate::ui::controls::Slider::new(&mut config.spring_strength, 0.0..=0.15)
+                .double_click_reset_to(PolishSettings::default().spring_strength)
                 .text(crate::t!("ui.spring_strength")),
         );
         ui.checkbox(
             &mut config.numeric_wheel,
             crate::t!("ui.adjust_numeric_controls_with_the_wheel"),
         );
+        ui.checkbox(
+            &mut config.double_click_slider_reset,
+            crate::t!("ui.double_click_slider_reset"),
+        );
         ui.add(
-            egui::Slider::new(&mut config.fine_adjustment, 0.01..=0.5)
+            crate::ui::controls::Slider::new(&mut config.fine_adjustment, 0.01..=0.5)
+                .double_click_reset_to(PolishSettings::default().fine_adjustment)
                 .text(crate::t!("ui.shift_fine_adjustment"))
                 .suffix("×"),
         );
@@ -630,27 +670,32 @@ pub fn preferences(ui: &mut Ui, config: &mut PolishSettings) -> bool {
     });
     Collapse::new("Shared spacing and typography").show(ui, |ui| {
         ui.add(
-            egui::Slider::new(&mut config.spacing_scale, 0.8..=1.5)
+            crate::ui::controls::Slider::new(&mut config.spacing_scale, 0.8..=1.5)
+                .double_click_reset_to(PolishSettings::default().spacing_scale)
                 .text(crate::t!("ui.spacing"))
                 .suffix("×"),
         );
         ui.add(
-            egui::Slider::new(&mut config.text_scale, 0.85..=1.35)
+            crate::ui::controls::Slider::new(&mut config.text_scale, 0.85..=1.35)
+                .double_click_reset_to(PolishSettings::default().text_scale)
                 .text(crate::t!("ui.text_size"))
                 .suffix("×"),
         );
         ui.add(
-            egui::Slider::new(&mut config.icon_gap, 2.0..=8.0)
+            crate::ui::controls::Slider::new(&mut config.icon_gap, 2.0..=8.0)
+                .double_click_reset_to(PolishSettings::default().icon_gap)
                 .text(crate::t!("ui.icon_spacing"))
                 .suffix(" px"),
         );
         ui.add(
-            egui::Slider::new(&mut config.border_width, 0.5..=2.0)
+            crate::ui::controls::Slider::new(&mut config.border_width, 0.5..=2.0)
+                .double_click_reset_to(PolishSettings::default().border_width)
                 .text(crate::t!("ui.control_borders"))
                 .suffix(" px"),
         );
         ui.add(
-            egui::Slider::new(&mut config.focus_width, 1.0..=3.0)
+            crate::ui::controls::Slider::new(&mut config.focus_width, 1.0..=3.0)
+                .double_click_reset_to(PolishSettings::default().focus_width)
                 .text(crate::t!("ui.keyboard_focus_outline"))
                 .suffix(" px"),
         );

@@ -1557,3 +1557,9 @@ settings.search.placeholder=日本語または英語で設定を検索
 settings.search.empty=一致する設定はありません
 
 info.appearance=画像情報の表示設定
+
+format.jxl=JPEG XL
+jxl.effort=エンコードの処理量
+jxl.still_images=静止画像、8ビットまたは16ビットRGBA
+ui.double_click_slider_reset=スライダーをダブルクリックしてリセット
+ui.double_click_reset_hint=ダブルクリックでリセット

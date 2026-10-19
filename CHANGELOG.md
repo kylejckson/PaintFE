@@ -6,6 +6,31 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.10] - 2026-10-19
+
+- Added JPEG XL opening and saving, with lossless and lossy options.
+- Made numeric controls more consistent and added double-click slider resets.
+- Improved Preferences scrolling and stopped panel cursors appearing through menus.
+
+### Fixed
+
+- Replaced separate numeric editors, sliders, colour-channel fields and step buttons with shared controls across dialogs, Preferences and tool settings. Typing, dragging, keyboard adjustments and resets now follow the same rules, while colour sliders keep their triangular handles.
+- Reduced work while scrolling the Interface page by reusing offscreen section measurements and colour-wheel geometry. Unchanged AI paths are no longer checked on disk every frame, and scrolling over numeric fields no longer changes their values on this page.
+- Panel resize grips and the Tools heading now respect menus and windows above them, preventing resize or drag cursors from showing through a menu.
+- Corrected a browser-only compile error in the translated print-window title.
+
+### Added
+
+- Added JPEG XL still-image import and desktop export, including lossless and lossy modes, encoding effort, background previews and CLI conversion. The encoder is built into the application and needs no extra codec DLL. Lossless tests cover exact 8-bit and 16-bit RGBA samples, including transparent pixels.
+- Added double-click reset on slider tracks where a meaningful default is available. Numeric fields keep double-click text editing, optional theme overrides return to their inherited values, and the gesture can be disabled in Preferences > Interface > Motion and interaction details.
+
+### Maintenance
+
+- Documented the shared control system and added an automated audit to help keep future controls consistent.
+- Updated the pinned CI actions from pull requests 175, 176 and 177, and added JPEG XL codec checks to CI.
+
+Related issue: 185. The issue remains open for users to test and confirm. Further testing is continuing.
+
 ## [1.4.9] - 2026-10-17
 
 - Fixed text editing, crop undo redraws and layer settings getting out of sync.

@@ -20,6 +20,21 @@ use crate::canvas::{
 };
 use crate::components::dialogs::SaveFormat;
 use crate::experimental::{DeepRgbaBuffer, f16_bits_to_f32, reinhard_tone_map_rgba};
+pub mod jxl;
+
+/// Unlike image::load_from_memory, ImageReader's format guessing consults custom
+/// codec hooks. Use this for document, layer, clipboard and preview image bytes.
+pub fn decode_image_bytes(bytes: &[u8]) -> image::ImageResult<DynamicImage> {
+    use image::ImageDecoder as _;
+    jxl::register();
+    let decoder = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()?
+        .into_decoder()?;
+    let (width, height) = decoder.dimensions();
+    validate_open_dimensions(width, height)
+        .map_err(|message| ImageError::IoError(std::io::Error::other(message)))?;
+    DynamicImage::from_decoder(decoder)
+}
 
 /// Minimum frame delay in milliseconds for animated images.
 const MIN_FRAME_DELAY_MS: u16 = 10;
@@ -580,7 +595,7 @@ fn metadata_for_path(path: &Path) -> crate::canvas::ImageMetadata {
     meta
 }
 
-fn dynamic_image_to_rgba_and_deep(
+pub(crate) fn dynamic_image_to_rgba_and_deep(
     img: DynamicImage,
 ) -> (
     RgbaImage,
@@ -685,6 +700,7 @@ fn dynamic_image_to_rgba_and_deep(
 /// - RAW camera files (CR2, NEF, ARW, DNG, etc.) — decoded to 8-bit sRGB RGBA
 /// - All standard raster formats supported by the `image` crate (PNG, JPEG, WEBP, BMP, …)
 pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
+    jxl::register();
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -1607,6 +1623,20 @@ pub fn encode_prepared_and_write(
                 height,
                 pixels,
             },
+            SaveFormat::Jxl(options),
+        ) => {
+            let bytes = jxl::encode_rgba16(*width, *height, pixels, quality, options)?;
+            let mut writer = BufWriter::new(File::create(path)?);
+            writer.write_all(&bytes)?;
+            writer.flush()?;
+            return Ok(());
+        }
+        (
+            PreparedExportImage::Rgba16 {
+                width,
+                height,
+                pixels,
+            },
             SaveFormat::Png,
         ) => return write_png16(*width, *height, pixels, path),
         (
@@ -1760,6 +1790,9 @@ pub fn encode_and_write(
                 image::ExtendedColorType::Rgb8,
             )?;
         }
+        SaveFormat::Jxl(options) => {
+            writer.write_all(&jxl::encode_rgba8(image, quality, options)?)?;
+        }
         SaveFormat::Webp => {
             encode_static_webp(image, &mut writer, quality, webp_lossless)?;
         }
@@ -1846,6 +1879,7 @@ pub fn encode_and_write(
         }
     }
 
+    writer.flush()?;
     Ok(())
 }
 
@@ -1918,6 +1952,7 @@ impl Default for FileHandler {
 
 impl FileHandler {
     pub fn new() -> Self {
+        jxl::register();
         Self {
             current_path: None,
             last_format: SaveFormat::Png,
@@ -1954,10 +1989,10 @@ impl FileHandler {
         .add_filter(
             crate::t!("ui.all_supported"),
             &[
-                "pfe", "pdn", "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff",
-                "tif", "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef",
-                "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos", "kdc",
-                "dcr", "erf",
+                "pfe", "pdn", "png", "jpg", "jpeg", "jxl", "webp", "bmp", "tga", "gif", "ico",
+                "tiff", "tif", "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf",
+                "rw2", "pef", "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef",
+                "mos", "kdc", "dcr", "erf",
             ],
         )
         .add_filter("PaintFE Project", &["pfe"])
@@ -1965,7 +2000,7 @@ impl FileHandler {
         .add_filter(
             crate::t!("ui.images"),
             &[
-                "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
+                "png", "jpg", "jpeg", "jxl", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
             ],
         )
         .add_filter(
@@ -2005,17 +2040,17 @@ impl FileHandler {
         .add_filter(
             crate::t!("ui.all_supported"),
             &[
-                "pfe", "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
-                "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef", "raf",
-                "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos", "kdc", "dcr",
-                "erf",
+                "pfe", "png", "jpg", "jpeg", "jxl", "webp", "bmp", "tga", "gif", "ico", "tiff",
+                "tif", "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef",
+                "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos", "kdc",
+                "dcr", "erf",
             ],
         )
         .add_filter("PaintFE Project", &["pfe"])
         .add_filter(
             crate::t!("ui.images"),
             &[
-                "png", "jpg", "jpeg", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
+                "png", "jpg", "jpeg", "jxl", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
             ],
         )
         .add_filter(
@@ -2050,6 +2085,9 @@ impl FileHandler {
                     self.last_format = match ext.to_string_lossy().to_lowercase().as_str() {
                         "png" => SaveFormat::Png,
                         "jpg" | "jpeg" => SaveFormat::Jpeg,
+                        "jxl" if cfg!(not(target_arch = "wasm32")) => {
+                            SaveFormat::Jxl(Default::default())
+                        }
                         "webp" => SaveFormat::Webp,
                         "bmp" => SaveFormat::Bmp,
                         "tga" => SaveFormat::Tga,
@@ -2079,116 +2117,14 @@ impl FileHandler {
         tiff_compression: TiffCompression,
         webp_lossless: bool,
     ) -> Result<(), ImageError> {
-        let file = File::create(path)?;
-        let mut writer = BufWriter::new(file);
-
-        match format {
-            SaveFormat::Png => {
-                let encoder = PngEncoder::new(&mut writer);
-                encoder.write_image(
-                    image.as_raw(),
-                    image.width(),
-                    image.height(),
-                    image::ExtendedColorType::Rgba8,
-                )?;
-            }
-            SaveFormat::Jpeg => {
-                // JPEG doesn't support alpha, convert to RGB
-                let rgb_image = DynamicImage::ImageRgba8(image.clone()).to_rgb8();
-                let encoder = JpegEncoder::new_with_quality(&mut writer, quality);
-                encoder.write_image(
-                    rgb_image.as_raw(),
-                    rgb_image.width(),
-                    rgb_image.height(),
-                    image::ExtendedColorType::Rgb8,
-                )?;
-            }
-            SaveFormat::Webp => {
-                encode_static_webp(image, &mut writer, quality, webp_lossless)?;
-            }
-            SaveFormat::Bmp => {
-                let encoder = BmpEncoder::new(&mut writer);
-                encoder.write_image(
-                    image.as_raw(),
-                    image.width(),
-                    image.height(),
-                    image::ExtendedColorType::Rgba8,
-                )?;
-            }
-            SaveFormat::Tga => {
-                let encoder = TgaEncoder::new(&mut writer);
-                encoder.write_image(
-                    image.as_raw(),
-                    image.width(),
-                    image.height(),
-                    image::ExtendedColorType::Rgba8,
-                )?;
-            }
-            SaveFormat::Ico => {
-                // ICO entries limited to 256×256; scale down if needed
-                let dyn_img = if image.width() > 256 || image.height() > 256 {
-                    let scale = 256.0 / image.width().max(image.height()) as f32;
-                    let new_w = ((image.width() as f32 * scale) as u32).max(1);
-                    let new_h = ((image.height() as f32 * scale) as u32).max(1);
-                    let resized = image::imageops::resize(
-                        image,
-                        new_w,
-                        new_h,
-                        image::imageops::FilterType::Lanczos3,
-                    );
-                    DynamicImage::ImageRgba8(resized)
-                } else {
-                    DynamicImage::ImageRgba8(image.clone())
-                };
-                dyn_img.write_to(&mut writer, image::ImageFormat::Ico)?;
-            }
-            SaveFormat::Tiff => {
-                let err_map = |e: tiff::TiffError| {
-                    ImageError::IoError(std::io::Error::other(format!("TIFF encode error: {}", e)))
-                };
-                let mut tiff_enc = tiff::encoder::TiffEncoder::new(&mut writer).map_err(err_map)?;
-                match tiff_compression {
-                    TiffCompression::None => {
-                        tiff_enc
-                            .write_image::<tiff::encoder::colortype::RGBA8>(
-                                image.width(),
-                                image.height(),
-                                image.as_raw(),
-                            )
-                            .map_err(err_map)?;
-                    }
-                    TiffCompression::Lzw => {
-                        tiff_enc
-                            .write_image_with_compression::<tiff::encoder::colortype::RGBA8, _>(
-                                image.width(),
-                                image.height(),
-                                tiff::encoder::compression::Lzw,
-                                image.as_raw(),
-                            )
-                            .map_err(err_map)?;
-                    }
-                    TiffCompression::Deflate => {
-                        tiff_enc
-                            .write_image_with_compression::<tiff::encoder::colortype::RGBA8, _>(
-                                image.width(),
-                                image.height(),
-                                tiff::encoder::compression::Deflate::default(),
-                                image.as_raw(),
-                            )
-                            .map_err(err_map)?;
-                    }
-                }
-            }
-            SaveFormat::Pfe => {
-                // PFE projects are saved via save_pfe(), not save_image()
-                unreachable!("PFE format should be handled via save_pfe(), not save_image()");
-            }
-            SaveFormat::Gif => {
-                // Static GIF: quantize to 256 colors and save single frame
-                encode_static_gif(image, path)
-                    .map_err(|e| ImageError::IoError(std::io::Error::other(e)))?;
-            }
-        }
+        encode_and_write(
+            image,
+            path,
+            format,
+            quality,
+            tiff_compression,
+            webp_lossless,
+        )?;
 
         // Update state
         self.current_path = Some(path.to_path_buf());

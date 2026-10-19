@@ -1557,3 +1557,9 @@ settings.search.placeholder=Pesquisar preferências em português ou inglês
 settings.search.empty=Nenhuma preferência encontrada
 
 info.appearance=Aspeto das informações da imagem
+
+format.jxl=JPEG XL
+jxl.effort=Esforço de codificação
+jxl.still_images=Imagens estáticas, RGBA de 8 ou 16 bits
+ui.double_click_slider_reset=Repor os controlos deslizantes com duplo clique
+ui.double_click_reset_hint=Faça duplo clique para repor

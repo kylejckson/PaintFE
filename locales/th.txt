@@ -1557,3 +1557,9 @@ settings.search.placeholder=ค้นหาการตั้งค่าด้�
 settings.search.empty=ไม่พบการตั้งค่าที่ตรงกัน
 
 info.appearance=รูปแบบข้อมูลภาพ
+
+format.jxl=JPEG XL
+jxl.effort=ระดับการเข้ารหัส
+jxl.still_images=ภาพนิ่ง RGBA แบบ 8 บิตหรือ 16 บิต
+ui.double_click_slider_reset=ดับเบิลคลิกแถบเลื่อนเพื่อรีเซ็ต
+ui.double_click_reset_hint=ดับเบิลคลิกเพื่อรีเซ็ต

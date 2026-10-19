@@ -35,7 +35,7 @@ pub fn print_image(composite: &RgbaImage) -> Result<(), String> {
     let document = print_window
         .document()
         .ok_or("print window has no document")?;
-    document.set_title(crate::t!("ui.paintfe_print"));
+    document.set_title(&crate::t!("ui.paintfe_print"));
     let body = document.body().ok_or("print window has no body")?;
     let html = format!(
         r#"<style>

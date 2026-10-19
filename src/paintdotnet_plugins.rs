@@ -139,10 +139,14 @@ impl PaintDotNetPluginDialog {
                             match property.kind.as_str() {
                                 "double" => {
                                     let mut number = value.as_f64().unwrap_or_default();
-                                    let response = ui.add(egui::Slider::new(
-                                        &mut number,
-                                        property.min.unwrap_or(0.0)..=property.max.unwrap_or(1.0),
-                                    ));
+                                    let response = ui.add(
+                                        crate::ui::controls::Slider::new(
+                                            &mut number,
+                                            property.min.unwrap_or(0.0)
+                                                ..=property.max.unwrap_or(1.0),
+                                        )
+                                        .id_salt(&property.name),
+                                    );
                                     if response.changed() {
                                         *value = Value::from(number);
                                         changed = true;
@@ -150,11 +154,14 @@ impl PaintDotNetPluginDialog {
                                 }
                                 "int32" => {
                                     let mut number = value.as_i64().unwrap_or_default() as i32;
-                                    let response = ui.add(egui::Slider::new(
-                                        &mut number,
-                                        property.min.unwrap_or(0.0) as i32
-                                            ..=property.max.unwrap_or(100.0) as i32,
-                                    ));
+                                    let response = ui.add(
+                                        crate::ui::controls::Slider::new(
+                                            &mut number,
+                                            property.min.unwrap_or(0.0) as i32
+                                                ..=property.max.unwrap_or(100.0) as i32,
+                                        )
+                                        .id_salt(&property.name),
+                                    );
                                     if response.changed() {
                                         *value = Value::from(number);
                                         changed = true;

@@ -1557,3 +1557,9 @@ settings.search.placeholder=Hledat v nastavení česky nebo anglicky
 settings.search.empty=Žádná odpovídající nastavení
 
 info.appearance=Vzhled informací o obrázku
+
+format.jxl=JPEG XL
+jxl.effort=Úsilí při kódování
+jxl.still_images=Statické obrázky, 8bitové nebo 16bitové RGBA
+ui.double_click_slider_reset=Obnovit posuvníky dvojklikem
+ui.double_click_reset_hint=Obnovit dvojklikem

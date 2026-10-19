@@ -482,7 +482,7 @@ fn render_texture_fill(
     }
 
     // Try to decode the texture
-    let tex_img = match image::load_from_memory(&tex.texture_data) {
+    let tex_img = match crate::io::decode_image_bytes(&tex.texture_data) {
         Ok(img) => img.to_rgba8(),
         Err(_) => {
             // Decode failed — fall back to normal text fill

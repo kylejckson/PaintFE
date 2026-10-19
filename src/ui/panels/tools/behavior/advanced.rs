@@ -25,7 +25,7 @@ impl ToolsPanel {
         let mut strength_pct = (self.liquify_state.strength * 100.0).round() as i32;
         if ui
             .add(
-                crate::ui::numeric::Numeric::new(&mut strength_pct)
+                crate::ui::controls::Numeric::new(&mut strength_pct)
                     .speed(1)
                     .range(1..=100)
                     .suffix("%"),
@@ -38,7 +38,7 @@ impl ToolsPanel {
         ui.separator();
         ui.label(t!("ctx.size"));
         ui.add(
-            crate::ui::numeric::Numeric::new(&mut self.properties.size)
+            crate::ui::controls::Numeric::new(&mut self.properties.size)
                 .speed(0.5)
                 .range(5.0..=500.0)
                 .suffix("px"),
@@ -449,7 +449,7 @@ impl ToolsPanel {
         ui.separator();
         ui.label(t!("ctx.color_remover.smoothness"));
         ui.add(
-            crate::ui::numeric::Numeric::new(&mut self.color_remover_state.smoothness)
+            crate::ui::controls::Numeric::new(&mut self.color_remover_state.smoothness)
                 .speed(0.2)
                 .range(0..=20)
                 .suffix("px"),
@@ -485,14 +485,14 @@ impl ToolsPanel {
     fn show_smudge_options(&mut self, ui: &mut egui::Ui) {
         ui.label(crate::t!("ctx.liquify.size"));
         ui.add(
-            crate::ui::numeric::Numeric::new(&mut self.properties.size)
+            crate::ui::controls::Numeric::new(&mut self.properties.size)
                 .speed(0.5)
                 .range(1.0..=500.0)
                 .suffix("px"),
         );
         ui.separator();
         ui.label(crate::t!("ctx.liquify.strength"));
-        ui.add(egui::Slider::new(&mut self.smudge_state.strength, 0.01..=1.0).fixed_decimals(2));
+        ui.add(crate::ui::controls::Slider::new(&mut self.smudge_state.strength, 0.01..=1.0).double_click_reset_to(0.6).fixed_decimals(2));
     }
 
     /// Smudge one brush circle at (cx, cy): picks up color from canvas and
@@ -901,7 +901,7 @@ impl ToolsPanel {
         ui.separator();
         ui.label(t!("ctx.shapes.width"));
         ui.add(
-            crate::ui::numeric::Numeric::new(&mut self.properties.size)
+            crate::ui::controls::Numeric::new(&mut self.properties.size)
                 .speed(0.5)
                 .range(1.0..=100.0)
                 .suffix("px"),
@@ -911,7 +911,7 @@ impl ToolsPanel {
             ui.separator();
             ui.label(t!("ctx.shapes.radius"));
             ui.add(
-                crate::ui::numeric::Numeric::new(&mut self.shapes_state.corner_radius)
+                crate::ui::controls::Numeric::new(&mut self.shapes_state.corner_radius)
                     .speed(0.5)
                     .range(0.0..=500.0)
                     .suffix("px"),

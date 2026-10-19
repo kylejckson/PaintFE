@@ -1,0 +1,6 @@
+mode         = .portable
+extra_cflags = -DSKCMS_PORTABLE
+include ninja/gcc
+
+no_hsw = true
+no_skx = true

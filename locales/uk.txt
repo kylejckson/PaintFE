@@ -1557,3 +1557,9 @@ settings.search.placeholder=Пошук налаштувань українськ
 settings.search.empty=Відповідних налаштувань не знайдено
 
 info.appearance=Вигляд відомостей про зображення
+
+format.jxl=JPEG XL
+jxl.effort=Зусилля кодування
+jxl.still_images=Статичні зображення, RGBA 8 або 16 біт
+ui.double_click_slider_reset=Скидати повзунки подвійним клацанням
+ui.double_click_reset_hint=Подвійне клацання для скидання

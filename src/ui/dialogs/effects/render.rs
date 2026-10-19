@@ -71,13 +71,13 @@ impl GridDialog {
                         ui.end_row();
 
                         ui.label(crate::t!("keybind_category.color"));
-                        if ui.color_edit_button_rgb(&mut self.color).changed() {
+                        if crate::ui::controls::color_edit_button_rgb(ui, &mut self.color).changed() {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("settings.interface.resize_grip_opacity"));
-                        if dialog_slider(ui, &mut self.opacity, 0.0..=1.0, 0.01, "", 2) {
+                        if dialog_slider(ui, &mut self.opacity, 0.0..=1.0, 0.01, "", 2, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -173,20 +173,20 @@ impl DropShadowDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.offset_x"));
-                        if dialog_slider(ui, &mut self.offset_x, -50.0..=50.0, 1.0, " px", 0) {
+                        if dialog_slider(ui, &mut self.offset_x, -50.0..=50.0, 1.0, " px", 0, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.offset_y"));
-                        if dialog_slider(ui, &mut self.offset_y, -50.0..=50.0, 1.0, " px", 0) {
+                        if dialog_slider(ui, &mut self.offset_y, -50.0..=50.0, 1.0, " px", 0, 0.0) {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("ui.radius"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.blur_radius, 0.0..=30.0)
+                            crate::ui::controls::Slider::new(&mut self.blur_radius, 0.0..=30.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits)
                                 .suffix(" px")
                                 .step_by(0.1)
                                 .max_decimals(1),
@@ -206,13 +206,13 @@ impl DropShadowDialog {
                         ui.end_row();
 
                         ui.label(crate::t!("keybind_category.color"));
-                        if ui.color_edit_button_rgb(&mut self.color).changed() {
+                        if crate::ui::controls::color_edit_button_rgb(ui, &mut self.color).changed() {
                             changed = true;
                         }
                         ui.end_row();
 
                         ui.label(crate::t!("settings.interface.resize_grip_opacity"));
-                        if dialog_slider(ui, &mut self.opacity, 0.0..=1.0, 0.01, "", 2) {
+                        if dialog_slider(ui, &mut self.opacity, 0.0..=1.0, 0.01, "", 2, 1.0) {
                             changed = true;
                         }
                         ui.end_row();
@@ -304,7 +304,7 @@ impl OutlineDialog {
                         ui.end_row();
 
                         ui.label(crate::t!("keybind_category.color"));
-                        if ui.color_edit_button_rgb(&mut self.color).changed() {
+                        if crate::ui::controls::color_edit_button_rgb(ui, &mut self.color).changed() {
                             changed = true;
                         }
                         ui.end_row();
@@ -429,7 +429,7 @@ impl SeamlessTextureDialog {
                         );
                         ui.end_row();
                         ui.label(crate::t!("ui.strength"));
-                        changed |= dialog_slider(ui, &mut self.strength, 0.0..=1.0, 0.01, "", 2);
+                        changed |= dialog_slider(ui, &mut self.strength, 0.0..=1.0, 0.01, "", 2, 1.0);
                         ui.end_row();
                         ui.label(crate::t!("ui.directions"));
                         ui.horizontal(|ui| {
@@ -455,7 +455,7 @@ impl SeamlessTextureDialog {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.organic_amount"));
-                        changed |= dialog_slider(ui, &mut self.organicity, 0.0..=1.0, 0.01, "", 2);
+                        changed |= dialog_slider(ui, &mut self.organicity, 0.0..=1.0, 0.01, "", 2, 0.25);
                         ui.end_row();
                         ui.label(crate::t!("ui.dent_size"));
                         changed |= numeric_field_with_buttons(
@@ -609,7 +609,7 @@ impl PixelDragDialog {
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.amount"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.amount, 1.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut self.amount, 1.0..=100.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits)
                                 .suffix("%")
                                 .max_decimals(0),
                         );
@@ -620,7 +620,7 @@ impl PixelDragDialog {
 
                         ui.label(crate::t!("ui.distance"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.distance, 5.0..=200.0)
+                            crate::ui::controls::Slider::new(&mut self.distance, 5.0..=200.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits)
                                 .suffix(" px")
                                 .max_decimals(0),
                         );
@@ -631,7 +631,7 @@ impl PixelDragDialog {
 
                         ui.label(crate::t!("ui.direction"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.direction, -180.0..=180.0)
+                            crate::ui::controls::Slider::new(&mut self.direction, -180.0..=180.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits)
                                 .suffix("°")
                                 .max_decimals(0),
                         );
@@ -645,7 +645,7 @@ impl PixelDragDialog {
                             let mut seed_f = self.seed as f32;
                             if ui
                                 .add(
-                                    crate::ui::numeric::Numeric::new(&mut seed_f)
+                                    crate::ui::controls::Numeric::new(&mut seed_f)
                                         .speed(1.0)
                                         .range(0.0..=9999.0),
                                 )
@@ -737,7 +737,7 @@ impl RgbDisplaceDialog {
                     .show(ui, |ui| {
                         ui.label("  X");
                         let r = ui.add(
-                            egui::Slider::new(&mut self.r_x, -100.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut self.r_x, -100.0..=100.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits)
                                 .suffix(" px")
                                 .max_decimals(0),
                         );
@@ -747,7 +747,7 @@ impl RgbDisplaceDialog {
                         ui.end_row();
                         ui.label("  Y");
                         let r = ui.add(
-                            egui::Slider::new(&mut self.r_y, -100.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut self.r_y, -100.0..=100.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits)
                                 .suffix(" px")
                                 .max_decimals(0),
                         );
@@ -774,7 +774,7 @@ impl RgbDisplaceDialog {
                     .show(ui, |ui| {
                         ui.label("  X");
                         let r = ui.add(
-                            egui::Slider::new(&mut self.g_x, -100.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut self.g_x, -100.0..=100.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits)
                                 .suffix(" px")
                                 .max_decimals(0),
                         );
@@ -784,7 +784,7 @@ impl RgbDisplaceDialog {
                         ui.end_row();
                         ui.label("  Y");
                         let r = ui.add(
-                            egui::Slider::new(&mut self.g_y, -100.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut self.g_y, -100.0..=100.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits)
                                 .suffix(" px")
                                 .max_decimals(0),
                         );
@@ -811,7 +811,7 @@ impl RgbDisplaceDialog {
                     .show(ui, |ui| {
                         ui.label("  X");
                         let r = ui.add(
-                            egui::Slider::new(&mut self.b_x, -100.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut self.b_x, -100.0..=100.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits)
                                 .suffix(" px")
                                 .max_decimals(0),
                         );
@@ -821,7 +821,7 @@ impl RgbDisplaceDialog {
                         ui.end_row();
                         ui.label("  Y");
                         let r = ui.add(
-                            egui::Slider::new(&mut self.b_y, -100.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut self.b_y, -100.0..=100.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits)
                                 .suffix(" px")
                                 .max_decimals(0),
                         );

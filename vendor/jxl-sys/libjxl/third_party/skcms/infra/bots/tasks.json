@@ -1,0 +1,414 @@
+{
+  "casSpecs": {
+    "whole-repo": {
+      "root": "..",
+      "paths": ["skcms"],
+      "excludes": ["^(.*\\/)*\\.git(\\/.*)*$"]
+    }
+  },
+  "commit_queue": {
+    "skcms": {}
+  },
+  "jobs": {
+    "skcms": {
+      "tasks": [
+        "skcms-Linux",
+        "skcms-Mac",
+        "skcms-Win",
+        "skcms-Linux-Bazel-Build-RBE",
+        "skcms-Linux-Bazel-Test-RBE",
+        "skcms-Android-ARM-Bazel-Build-RBE",
+        "skcms-Android-ARM64-Bazel-Build-RBE"
+      ]
+    },
+    "skcms-Linux": {
+      "tasks": ["skcms-Linux"]
+    },
+    "skcms-Mac": {
+      "tasks": ["skcms-Mac"]
+    },
+    "skcms-Win": {
+      "tasks": ["skcms-Win"]
+    },
+    "skcms-Linux-Bazel-Build-RBE": {
+      "tasks": ["skcms-Linux-Bazel-Build-RBE"]
+    },
+    "skcms-Linux-Bazel-Test-RBE": {
+      "tasks": ["skcms-Linux-Bazel-Test-RBE"]
+    },
+    "skcms-Android-ARM-Bazel-Build-RBE": {
+      "tasks": ["skcms-Android-ARM-Bazel-Build-RBE"]
+    },
+    "skcms-Android-ARM64-Bazel-Build-RBE": {
+      "tasks": ["skcms-Android-ARM64-Bazel-Build-RBE"]
+    }
+  },
+  "tasks": {
+    "skcms-Linux": {
+      "casSpec": "whole-repo",
+      "cipd_packages": [
+        {
+          "name": "infra/ninja/linux-amd64",
+          "path": "ninja",
+          "version": "version:1.8.2"
+        },
+        {
+          "name": "skia/bots/android_ndk_linux",
+          "path": "ndk",
+          "version": "version:17"
+        },
+        {
+          "name": "skia/bots/clang_ubuntu_noble",
+          "path": "clang_ubuntu_noble",
+          "version": "version:3"
+        },
+        {
+          "name": "infra/python/cpython/linux-amd64",
+          "path": "python",
+          "version": "version:2.7.15.chromium14"
+        }
+      ],
+      "command": [
+        "python/bin/python",
+        "skcms/infra/bots/bot.py",
+        "ninja",
+        "ndk",
+        "clang_ubuntu_noble"
+      ],
+      "dimensions": [
+        "os:Ubuntu-24.04",
+        "cpu:x86-64-Skylake_GCE",
+        "gpu:none",
+        "pool:Skia"
+      ],
+      "max_attempts": 1,
+      "service_account": "skia-external-compile-tasks@skia-swarming-bots.iam.gserviceaccount.com"
+    },
+    "skcms-Mac": {
+      "caches": [
+        {
+          "name": "xcode_skcms",
+          "path": "cache/Xcode_skcms.app"
+        }
+      ],
+      "casSpec": "whole-repo",
+      "cipd_packages": [
+        {
+          "name": "infra/ninja/mac-amd64",
+          "path": "ninja",
+          "version": "version:1.8.2"
+        },
+        {
+          "name": "skia/bots/android_ndk_darwin",
+          "path": "ndk",
+          "version": "version:11"
+        },
+        {
+          "name": "infra/tools/mac_toolchain/${platform}",
+          "path": "mac_toolchain",
+          "version": "git_revision:0cb1e51344de158f72524c384f324465aebbcef2"
+        },
+        {
+          "name": "infra/python/cpython/mac-amd64",
+          "path": "python",
+          "version": "version:2.7.15.chromium14"
+        }
+      ],
+      "command": [
+        "python/bin/python",
+        "skcms/infra/bots/bot.py",
+        "ninja",
+        "ndk",
+        "mac_toolchain",
+        "cache/Xcode_skcms.app"
+      ],
+      "dimensions": [
+        "cores:12",
+        "cpu:x86-64",
+        "os:Mac-14.5",
+        "pool:Skia"
+      ],
+      "max_attempts": 1,
+      "service_account": "skia-external-compile-tasks@skia-swarming-bots.iam.gserviceaccount.com"
+    },
+    "skcms-Win": {
+      "casSpec": "whole-repo",
+      "cipd_packages": [
+        {
+          "name": "skia/bots/win_ninja",
+          "path": "ninja",
+          "version": "version:2"
+        },
+        {
+          "name": "skia/bots/win_toolchain",
+          "path": "win_toolchain",
+          "version": "version:11"
+        },
+        {
+          "name": "skia/bots/clang_win",
+          "path": "clang_win",
+          "version": "version:17"
+        },
+        {
+          "name": "infra/python/cpython/windows-amd64",
+          "path": "python",
+          "version": "version:2.7.15.chromium14"
+        }
+      ],
+      "command": [
+        "python/bin/python.exe",
+        "skcms/infra/bots/bot.py",
+        "ninja",
+        "win_toolchain",
+        "clang_win"
+      ],
+      "dimensions": [
+        "os:Windows-11-22631",
+        "gpu:none",
+        "pool:Skia"
+      ],
+      "max_attempts": 1,
+      "service_account": "skia-external-compile-tasks@skia-swarming-bots.iam.gserviceaccount.com"
+    },
+    "skcms-Linux-Bazel-Build-RBE": {
+      "caches": [
+        {
+          "name": "vpython",
+          "path": "cache/vpython"
+        }
+      ],
+      "casSpec": "whole-repo",
+      "cipd_packages": [
+        {
+          "name": "infra/3pp/tools/cpython3/linux-amd64",
+          "path": "cipd_bin_packages/cpython3",
+          "version": "version:2@3.8.10.chromium.19"
+        },
+        {
+          "name": "infra/tools/luci-auth/${platform}",
+          "path": "cipd_bin_packages",
+          "version": "git_revision:ea71ae8f23ef18150e0be1e35f78bc3ccdf0bd92"
+        },
+        {
+          "name": "skia/bots/bazelisk",
+          "path": "bazelisk",
+          "version": "version:0"
+        }
+      ],
+      "command": [
+        "luci-auth",
+        "context",
+        "cipd_bin_packages/cpython3/bin/python3",
+        "skcms/infra/bots/bazel.py",
+        "build",
+        "rbe",
+        "linux"
+      ],
+      "dimensions": [
+        "pool:Skia",
+        "os:Ubuntu-24.04",
+        "gpu:none",
+        "cpu:x86-64-Haswell_GCE",
+        "machine_type:n1-highcpu-64"
+      ],
+      "env_prefixes": {
+        "PATH": [
+          "cipd_bin_packages",
+          "cipd_bin_packages/bin",
+          "cipd_bin_packages/cpython3",
+          "cipd_bin_packages/cpython3/bin",
+          "bazelisk"
+        ],
+        "VPYTHON_VIRTUALENV_ROOT": [
+          "cache/vpython"
+        ]
+      },
+      "max_attempts": 1,
+      "service_account": "skia-external-compile-tasks@skia-swarming-bots.iam.gserviceaccount.com"
+    },
+    "skcms-Linux-Bazel-Test-RBE": {
+      "caches": [
+        {
+          "name": "vpython",
+          "path": "cache/vpython"
+        }
+      ],
+      "casSpec": "whole-repo",
+      "cipd_packages": [
+        {
+          "name": "infra/3pp/tools/cpython3/linux-amd64",
+          "path": "cipd_bin_packages/cpython3",
+          "version": "version:2@3.8.10.chromium.19"
+        },
+        {
+          "name": "infra/tools/luci-auth/${platform}",
+          "path": "cipd_bin_packages",
+          "version": "git_revision:ea71ae8f23ef18150e0be1e35f78bc3ccdf0bd92"
+        },
+        {
+          "name": "skia/bots/bazelisk",
+          "path": "bazelisk",
+          "version": "version:0"
+        }
+      ],
+      "command": [
+        "luci-auth",
+        "context",
+        "cipd_bin_packages/cpython3/bin/python3",
+        "skcms/infra/bots/bazel.py",
+        "test",
+        "rbe",
+        "linux"
+      ],
+      "dimensions": [
+        "pool:Skia",
+        "os:Ubuntu-24.04",
+        "gpu:none",
+        "cpu:x86-64-Haswell_GCE",
+        "machine_type:n1-highcpu-64"
+      ],
+      "env_prefixes": {
+        "PATH": [
+          "cipd_bin_packages",
+          "cipd_bin_packages/bin",
+          "cipd_bin_packages/cpython3",
+          "cipd_bin_packages/cpython3/bin",
+          "bazelisk"
+        ],
+        "VPYTHON_VIRTUALENV_ROOT": [
+          "cache/vpython"
+        ]
+      },
+      "max_attempts": 1,
+      "service_account": "skia-external-compile-tasks@skia-swarming-bots.iam.gserviceaccount.com"
+    },
+    "skcms-Android-ARM-Bazel-Build-RBE": {
+      "caches": [
+        {
+          "name": "vpython",
+          "path": "cache/vpython"
+        }
+      ],
+      "casSpec": "whole-repo",
+      "cipd_packages": [
+        {
+          "name": "infra/3pp/tools/cpython3/linux-amd64",
+          "path": "cipd_bin_packages/cpython3",
+          "version": "version:2@3.8.10.chromium.19"
+        },
+        {
+          "name": "infra/tools/luci-auth/${platform}",
+          "path": "cipd_bin_packages",
+          "version": "git_revision:ea71ae8f23ef18150e0be1e35f78bc3ccdf0bd92"
+        },
+        {
+          "name": "skia/bots/android_ndk_linux",
+          "path": "android_ndk_linux",
+          "version": "version:17"
+        },
+        {
+          "name": "skia/bots/bazelisk",
+          "path": "bazelisk",
+          "version": "version:0"
+        }
+      ],
+      "command": [
+        "luci-auth",
+        "context",
+        "cipd_bin_packages/cpython3/bin/python3",
+        "skcms/infra/bots/bazel.py",
+        "build",
+        "rbe",
+        "android-arm"
+      ],
+      "dimensions": [
+        "pool:Skia",
+        "os:Ubuntu-24.04",
+        "gpu:none",
+        "cpu:x86-64-Haswell_GCE",
+        "machine_type:n1-highcpu-64"
+      ],
+      "env_prefixes": {
+        "ANDROID_NDK_HOME": [
+          "android_ndk_linux"
+        ],
+        "PATH": [
+          "cipd_bin_packages",
+          "cipd_bin_packages/bin",
+          "cipd_bin_packages/cpython3",
+          "cipd_bin_packages/cpython3/bin",
+          "bazelisk"
+        ],
+        "VPYTHON_VIRTUALENV_ROOT": [
+          "cache/vpython"
+        ]
+      },
+      "max_attempts": 1,
+      "service_account": "skia-external-compile-tasks@skia-swarming-bots.iam.gserviceaccount.com"
+    },
+    "skcms-Android-ARM64-Bazel-Build-RBE": {
+      "caches": [
+        {
+          "name": "vpython",
+          "path": "cache/vpython"
+        }
+      ],
+      "casSpec": "whole-repo",
+      "cipd_packages": [
+        {
+          "name": "infra/3pp/tools/cpython3/linux-amd64",
+          "path": "cipd_bin_packages/cpython3",
+          "version": "version:2@3.8.10.chromium.19"
+        },
+        {
+          "name": "infra/tools/luci-auth/${platform}",
+          "path": "cipd_bin_packages",
+          "version": "git_revision:ea71ae8f23ef18150e0be1e35f78bc3ccdf0bd92"
+        },
+        {
+          "name": "skia/bots/android_ndk_linux",
+          "path": "android_ndk_linux",
+          "version": "version:17"
+        },
+        {
+          "name": "skia/bots/bazelisk",
+          "path": "bazelisk",
+          "version": "version:0"
+        }
+      ],
+      "command": [
+        "luci-auth",
+        "context",
+        "cipd_bin_packages/cpython3/bin/python3",
+        "skcms/infra/bots/bazel.py",
+        "build",
+        "rbe",
+        "android-arm64"
+      ],
+      "dimensions": [
+        "pool:Skia",
+        "os:Ubuntu-24.04",
+        "gpu:none",
+        "cpu:x86-64-Haswell_GCE",
+        "machine_type:n1-highcpu-64"
+      ],
+      "env_prefixes": {
+        "ANDROID_NDK_HOME": [
+          "android_ndk_linux"
+        ],
+        "PATH": [
+          "cipd_bin_packages",
+          "cipd_bin_packages/bin",
+          "cipd_bin_packages/cpython3",
+          "cipd_bin_packages/cpython3/bin",
+          "bazelisk"
+        ],
+        "VPYTHON_VIRTUALENV_ROOT": [
+          "cache/vpython"
+        ]
+      },
+      "max_attempts": 1,
+      "service_account": "skia-external-compile-tasks@skia-swarming-bots.iam.gserviceaccount.com"
+    }
+  }
+}

@@ -34,7 +34,7 @@ impl AddNoiseDialog {
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.amount"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.amount, 1.0..=100.0)
+                            crate::ui::controls::Slider::new(&mut self.amount, 1.0..=100.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits)
                                 .suffix("%")
                                 .max_decimals(0),
                         );
@@ -75,7 +75,7 @@ impl AddNoiseDialog {
                             let mut seed_f = self.seed as f32;
                             if ui
                                 .add(
-                                    crate::ui::numeric::Numeric::new(&mut seed_f)
+                                    crate::ui::controls::Numeric::new(&mut seed_f)
                                         .speed(1.0)
                                         .range(0.0..=9999.0),
                                 )
@@ -103,7 +103,7 @@ impl AddNoiseDialog {
                     .show(ui, |ui| {
                         ui.label(crate::t!("dialog.resize_image.scale"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.scale, 0.5..=100.0)
+                            crate::ui::controls::Slider::new(&mut self.scale, 0.5..=100.0).double_click_reset_to(1.0).clamping(egui::SliderClamping::Edits)
                                 .suffix(" px")
                                 .max_decimals(1)
                                 .logarithmic(true)
@@ -124,11 +124,9 @@ impl AddNoiseDialog {
                         // Octaves only for Perlin
                         if self.noise_type_idx == 2 {
                             ui.label(crate::t!("ui.octaves"));
-                            let r = ui.add(
-                                egui::Slider::new(&mut self.octaves, 1.0..=8.0)
-                                    .max_decimals(0)
-                                    .integer(),
-                            );
+                            let mut octaves = self.octaves.round() as u32;
+                            let r = ui.add(crate::ui::controls::Slider::new(&mut octaves, 1..=8).double_click_reset_to(1));
+                            if r.changed() { self.octaves = octaves as f32; }
                             if track_slider(&r, &mut self.dragging) {
                                 changed = true;
                             }
@@ -201,7 +199,7 @@ impl ReduceNoiseDialog {
                     .show(ui, |ui| {
                         ui.label(crate::t!("ui.strength"));
                         let r = ui.add(
-                            egui::Slider::new(&mut self.strength, 5.0..=100.0).max_decimals(0),
+                            crate::ui::controls::Slider::new(&mut self.strength, 5.0..=100.0).double_click_reset_to(0.0).clamping(egui::SliderClamping::Edits).max_decimals(0),
                         );
                         if track_slider(&r, &mut self.dragging) {
                             changed = true;

@@ -1,0 +1,56 @@
+[package]
+name = "jxl-sys"
+version = "0.1.12+libjxl-0.12.0"
+authors = [
+  "ApertureC Team <aperturec@zetier.com>",
+  "Joe Kale <joe@zetier.com>"
+]
+edition = "2024"
+repository = "https://github.com/zetier/jxl-sys"
+description = "bindings to libjxl"
+links = "jxl"
+license = "MIT OR Apache-2.0"
+keywords = ["jpeg-xl", "jxl", "libjxl", "jpegxl", "libjpegxl"]
+categories = ["multimedia", "graphics", "external-ffi-bindings"]
+
+exclude = [
+  "libjxl/.github",
+  "libjxl/debian",
+  "libjxl/doc",
+  "libjxl/examples",
+  "libjxl/plugins",
+  "libjxl/testdata",
+  "libjxl/third_party/HEVCSoftware",
+  "libjxl/third_party/brotli/csharp",
+  "libjxl/third_party/brotli/docs/*.pdf",
+  "libjxl/third_party/brotli/docs/*.svg",
+  "libjxl/third_party/brotli/go",
+  "libjxl/third_party/brotli/java",
+  "libjxl/third_party/brotli/python",
+  "libjxl/third_party/brotli/research",
+  "libjxl/third_party/brotli/tests",
+  "libjxl/third_party/googletest",
+  "libjxl/third_party/highway/docs",
+  "libjxl/third_party/highway/g3doc",
+  "libjxl/third_party/lcms",
+  "libjxl/third_party/libjpeg-turbo",
+  "libjxl/third_party/libpng",
+  "libjxl/third_party/sjpeg",
+  "libjxl/third_party/skcms/profiles",
+  "libjxl/third_party/zlib",
+  "libjxl/third_party/brotli/js",
+]
+
+[features]
+default = []
+lto = []
+
+[build-dependencies]
+anyhow = "1"
+bindgen = { version = "0.72", default-features = false, features = ["runtime"] }
+cmake = "0.1"
+regex = "1"
+semver = "1"
+
+[dev-dependencies]
+semver = "1"

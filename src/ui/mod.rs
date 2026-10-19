@@ -1,3 +1,4 @@
+pub mod controls;
 pub mod dialogs;
 pub mod numeric;
 pub mod panels;

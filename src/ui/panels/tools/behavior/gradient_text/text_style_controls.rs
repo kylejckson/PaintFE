@@ -506,7 +506,7 @@ impl ToolsPanel {
         ui.label(t!("ctx.text.letter_spacing"));
         if ui
             .add(
-                crate::ui::numeric::Numeric::new(&mut self.text_state.letter_spacing)
+                crate::ui::controls::Numeric::new(&mut self.text_state.letter_spacing)
                     .speed(0.1)
                     .suffix("px"),
             )
@@ -523,7 +523,7 @@ impl ToolsPanel {
         ui.label(crate::t!("ui.letter_width"));
         if ui
             .add(
-                crate::ui::numeric::Numeric::new(&mut self.text_state.width_scale)
+                crate::ui::controls::Numeric::new(&mut self.text_state.width_scale)
                     .speed(0.01)
                     .range(0.01..=10.0)
                     .suffix("x"),
@@ -539,7 +539,7 @@ impl ToolsPanel {
         ui.label(crate::t!("ui.letter_height"));
         if ui
             .add(
-                crate::ui::numeric::Numeric::new(&mut self.text_state.height_scale)
+                crate::ui::controls::Numeric::new(&mut self.text_state.height_scale)
                     .speed(0.01)
                     .range(0.01..=10.0)
                     .suffix("x"),
@@ -556,7 +556,7 @@ impl ToolsPanel {
         ui.label(t!("ctx.text.line_spacing"));
         if ui
             .add(
-                crate::ui::numeric::Numeric::new(&mut self.text_state.line_spacing)
+                crate::ui::controls::Numeric::new(&mut self.text_state.line_spacing)
                     .speed(0.01)
                     .range(0.5..=5.0)
                     .suffix("x"),
