@@ -127,7 +127,7 @@ fn signed_payload_does_not_preserve_privileged_archive_permissions() {
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(
             fs::metadata(payload).unwrap().permissions().mode() & 0o7777,
-            0o755
+            0o700
         );
     }
 }
