@@ -20,7 +20,12 @@ jobs:
       LIBCLANG_PATH: C:\Program Files\LLVM\bin
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
+        with:
+          python-version: '3.12'
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
@@ -28,7 +33,7 @@ jobs:
           toolchain: 1.96.1
 
       - name: Cache cargo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
         with:
           path: |
             ~/.cargo/registry
@@ -58,7 +63,7 @@ jobs:
           (Get-FileHash target/release/paintdotnet-host/PaintFE.PaintDotNetHost.exe -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content -NoNewline target/release/paintdotnet-host/PaintFE.PaintDotNetHost.exe.sha256
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: PaintFE-windows
           path: |
@@ -66,7 +71,7 @@ jobs:
             target/release/paintdotnet-host
 
       - name: Upload optional feature packs
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: optional-packs-build-windows
           path: target/optional-packs/*/release/*.pfepack
@@ -79,7 +84,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
 
       - name: Install system dependencies
         run: |
@@ -98,13 +103,18 @@ jobs:
             libclang-dev \
             pkg-config
 
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
+        with:
+          python-version: '3.12'
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
         with:
           toolchain: 1.96.1
 
       - name: Cache cargo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
         with:
           path: |
             ~/.cargo/registry
@@ -128,7 +138,7 @@ jobs:
         run: bash paintdotnet-host/publish.sh linux-x64 target/release/paintdotnet-host
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: PaintFE-linux
           path: |
@@ -136,7 +146,7 @@ jobs:
             target/release/paintdotnet-host
 
       - name: Upload optional feature packs
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: optional-packs-build-linux
           path: target/optional-packs/*/release/*.pfepack
@@ -149,10 +159,10 @@ jobs:
     needs: build-linux
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
       - name: Install packaging tools
         run: sudo apt-get update && sudo apt-get install -y rpm file
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: PaintFE-linux
           path: native-input
@@ -173,7 +183,7 @@ jobs:
         run: |
           source packaging/linux/signing-key.sh
           sign_rpm native-packages/PaintFE-linux-x64.rpm
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: PaintFE-linux-packages
           path: native-packages/*
@@ -186,7 +196,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
 
       - name: Install system dependencies
         run: |
@@ -212,7 +222,7 @@ jobs:
           toolchain: 1.96.1
 
       - name: Cache cargo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
         with:
           path: |
             ~/.cargo/registry
@@ -222,7 +232,7 @@ jobs:
           restore-keys: appimage-cargo-
 
       - name: Reuse signed-pack-compatible core build
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: PaintFE-linux
           path: target/release
@@ -238,7 +248,7 @@ jobs:
         run: bash packaging/appimage/build-appimage.sh
 
       - name: Upload AppImage artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: PaintFE-appimage
           path: PaintFE-x86_64.AppImage
@@ -249,7 +259,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
+        with:
+          python-version: '3.12'
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
@@ -257,7 +272,7 @@ jobs:
           toolchain: 1.96.1
 
       - name: Cache cargo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
         with:
           path: |
             ~/.cargo/registry
@@ -293,13 +308,13 @@ jobs:
           bash packaging/macos/package.sh target/release/PaintFE target/pdn-host/osx-arm64 arm64 "${GITHUB_REF_NAME#v}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: PaintFE-macos-arm64
           path: PaintFE-macOS-arm64.dmg
 
       - name: Upload optional feature packs
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: optional-packs-build-macos-arm
           path: target/optional-packs/*/release/*.pfepack
@@ -312,7 +327,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
+        with:
+          python-version: '3.12'
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
@@ -321,7 +341,7 @@ jobs:
           targets: x86_64-apple-darwin
 
       - name: Cache cargo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
         with:
           path: |
             ~/.cargo/registry
@@ -357,14 +377,14 @@ jobs:
           bash packaging/macos/package.sh target/x86_64-apple-darwin/release/PaintFE target/pdn-host/osx-x64 x86_64 "${GITHUB_REF_NAME#v}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: PaintFE-macos-x86_64
           path: PaintFE-macOS-x86_64.dmg
 
   # ── MSIX build (Microsoft Store submission package) ────────────────────────
       - name: Upload optional feature packs
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: optional-packs-build-macos-x86
           path: target/optional-packs/*/release/*.pfepack
@@ -382,7 +402,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
@@ -390,7 +410,7 @@ jobs:
           toolchain: 1.96.1
 
       - name: Cache cargo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
         with:
           path: |
             ~/.cargo/registry
@@ -400,7 +420,7 @@ jobs:
           restore-keys: msix-cargo-
 
       - name: Reuse signed-pack-compatible core build
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: PaintFE-windows
           path: target/release
@@ -458,7 +478,7 @@ jobs:
             pack /d packaging\msix\PackageLayout /p PaintFE.msix /nv
 
       - name: Upload MSIX artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: PaintFE-msix-store-submission
           path: PaintFE.msix
@@ -474,7 +494,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout release notes
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
 
       - name: Prepare release notes
         env:
@@ -496,43 +516,43 @@ jobs:
           test -s release-notes.md
 
       - name: Download Windows binary
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: PaintFE-windows
           path: dist/windows
 
       - name: Download Linux binary
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: PaintFE-linux
           path: dist/linux
 
       - name: Download native Linux packages
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: PaintFE-linux-packages
           path: dist/packages
 
       - name: Download AppImage
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: PaintFE-appimage
           path: dist/linux
 
       - name: Download macOS ARM binary
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: PaintFE-macos-arm64
           path: dist/macos
 
       - name: Download macOS Intel binary
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: PaintFE-macos-x86_64
           path: dist/macos
 
       - name: Download optional feature packs
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           pattern: optional-packs-*
           merge-multiple: true

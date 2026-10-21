@@ -80,6 +80,57 @@ fn signed_install_detects_tampering_and_preserves_previous_install() {
     fs::write(payload, b"damage").unwrap();
     assert!(installed_at(&root, Pack::Jxl, &public).is_err());
 }
+
+fn set_payload_archive_mode(path: &Path, mode: u32) {
+    // Only change ZIP metadata. The signed payload and its checksum stay valid.
+    let mut bytes = fs::read(path).unwrap();
+    let payload = Pack::Jxl.payload().as_bytes();
+    let offset = bytes
+        .windows(4)
+        .enumerate()
+        .find_map(|(offset, signature)| {
+            (signature == b"PK\x01\x02"
+                && bytes.get(offset + 46..offset + 46 + payload.len()) == Some(payload))
+            .then_some(offset)
+        })
+        .expect("payload central directory entry");
+    bytes[offset + 5] = 3; // Unix creator system.
+    bytes[offset + 38..offset + 42].copy_from_slice(&(mode << 16).to_le_bytes());
+    fs::write(path, bytes).unwrap();
+}
+
+#[test]
+fn signed_payload_cannot_be_installed_as_a_symlink() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("symlink.pfepack");
+    let root = fixture.0.join("packs");
+    archive(&path, &manifest(Pack::Jxl, b"helper"), b"helper", false);
+    set_payload_archive_mode(&path, 0o120777);
+    let error = install_at(&path, Pack::Jxl, &root, &key().verifying_key().to_bytes()).unwrap_err();
+    assert!(error.contains("Invalid pack entry"), "{error}");
+    assert!(!root.join("protocol-1").exists());
+}
+
+#[test]
+fn signed_payload_does_not_preserve_privileged_archive_permissions() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("permissions.pfepack");
+    let root = fixture.0.join("packs");
+    archive(&path, &manifest(Pack::Jxl, b"helper"), b"helper", false);
+    set_payload_archive_mode(&path, 0o106755);
+    let public = key().verifying_key().to_bytes();
+    install_at(&path, Pack::Jxl, &root, &public).unwrap();
+    let payload = installed_at(&root, Pack::Jxl, &public).unwrap();
+    assert_eq!(fs::read(&payload).unwrap(), b"helper");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::metadata(payload).unwrap().permissions().mode() & 0o7777,
+            0o755
+        );
+    }
+}
 #[test]
 fn rejects_wrong_key_platform_feature_protocol_and_paths() {
     let fixture = Fixture::new();

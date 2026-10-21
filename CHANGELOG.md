@@ -17,6 +17,27 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 - Linux installation, upgrade and desktop checks still require distribution testing. Arabic mixed-direction text needs native-speaker review; full RTL layout is not implemented.
 - Package publication requires maintainer signing secrets and explicit Pages setup. Existing Actions storage settings are unchanged.
 
+## [1.4.12] - 2026-10-21
+
+- Fixed the Linux release build and macOS CI checks.
+- Updated ZIP handling and a concurrency dependency.
+- Added broader optional-pack checks across Windows, Linux and macOS.
+
+### Fixed
+
+- Release builds now install Python 3.12 explicitly, avoiding the missing TOML parser on Linux.
+- Codec tests use their platform's generated pack metadata instead of looking for Windows files on macOS.
+- Fixed a Windows-only mutable variable triggering macOS Clippy.
+
+### Maintenance
+
+- Updated ZIP to 9.0.5 and event-listener to 5.4.2.
+- Updated deprecated Actions runtimes and added Linux CI checks.
+- Added signed-pack tests for symlinks and archive permissions.
+
+Issues remain open for users to test and confirm.
+Further testing is continuing.
+
 ## [1.4.11] - 2026-10-21
 
 - Reduced startup delays and pauses caused by settings saves.

@@ -45,7 +45,7 @@ reported as an export error. Process isolation is not an operating-system sandbo
 
 ## Local review builds
 
-Run `python tools/build_optional_packs.py --release` with Python cryptography
+Run `python tools/build_optional_packs.py --release` with Python 3.11 or later and cryptography
 installed. It builds the helper, signs both packs with an ephemeral in-memory
 review key, then builds the core with that public key and exact download sizes.
 Outputs and public build metadata are in
@@ -57,6 +57,12 @@ the trust anchor. Development tests should load the public variables from
 and set `PAINTFE_TEST_JXL_PACK` to the matching pack path. The JPEG XL tests print
 an explicit unavailable-encoder notice when no pack is supplied; golden import
 and destination-protection tests always run.
+
+CI explicitly installs Python 3.12 on every pack-building runner. Use
+`--helper-only --github-env` in codec-test jobs to export the matching public
+key, download sizes, signed encoder path and isolated storage directory through
+`GITHUB_ENV`. This works on Windows, Linux and macOS, including Intel macOS
+cross-compilation. It never exports the private signing seed.
 
 ## Official release setup
 
@@ -78,13 +84,15 @@ new-release GitHub download needs those assets to be published first.
 
 ## Local validation (21 October 2026)
 
-Windows release executable: 45,397,504 bytes (43.29 MiB), previously
+Initial Windows optional-pack review build, before the release-build repairs:
+45,397,504 bytes (43.29 MiB), previously
 64,893,440 bytes (61.89 MiB). Reduction: 19,495,936 bytes, or 30.04%.
 CJK download: 13,588,486 bytes; encoder download: 1,594,733 bytes.
 Installing both packs adds their data/helper files to disk; the reduction above
 measures the core executable, not a fully populated installation.
 
-The full Windows app suite passed in sequential batches: 655 tests passed and
+After the release-build repairs, the full Windows app suite passed in sequential
+batches: 657 tests passed and
 none failed. Ten items remain ignored as configured: three manual profiling
 tests, three native ONNX tests requiring external fixtures and four documentation
 examples. Four additional optimized-build CLI smoke checks passed earlier. These cover
@@ -96,7 +104,14 @@ system fonts avoiding prompts. Shared controls boundary/self-tests, locale
 validation, formatting and workflow structure checks also passed. The Windows
 incremental build cache emitted a hard-link/copy warning; no Rust source warning
 was reported by these builds. All-targets Clippy passed with warnings denied
-after seven lint findings were corrected.
+after the lint findings were corrected. The encoder-helper Clippy and test
+harness also passed. Four packaging-tool regression tests verified real signed
+archives and matching CI metadata for all four release platforms, with native
+compilation mocked. Workflow structure and actionlint checks passed. The
+dependency audit reports no vulnerabilities under the existing audit policy;
+eight unmaintained-dependency notices remain visible, with no new exclusions.
+Native Linux/macOS execution still needs confirmation in Actions after an
+approved push.
 
 Live UI checks covered light/dark modes, font import, Japanese/Korean text,
 restart verification, the download warning/error state and a real JPEG XL Save

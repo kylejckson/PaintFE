@@ -1,22 +1,39 @@
 """Build release-bound signed packs and the core. Private keys exist in memory only.
 Requires Python cryptography. Optional --target supports release cross-compilation.
 """
-import argparse, hashlib, json, os, platform, shutil, subprocess, zipfile
+import argparse, hashlib, json, os, platform, shutil, subprocess, sys, zipfile
 from pathlib import Path
+if sys.version_info < (3, 11):
+    raise SystemExit('Optional pack builds require Python 3.11 or later. Install Python 3.12 and retry.')
+import tomllib
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 ROOT = Path(__file__).resolve().parents[1]
+
+def platform_id(target=None):
+    os_name = ('windows' if 'windows' in target else 'macos' if 'apple' in target else 'linux') if target else {'Windows':'windows','Darwin':'macos','Linux':'linux'}[platform.system()]
+    arch = target.split('-')[0] if target else {'AMD64':'x86_64','arm64':'aarch64'}.get(platform.machine(), platform.machine())
+    return os_name, arch
+
+def export_test_environment(output, pack_paths):
+    metadata = json.loads((output/'build-env.json').read_text(encoding='utf-8'))
+    metadata.update(PAINTFE_TEST_JXL_PACK=str(pack_paths['jxl']), PAINTFE_TEST_STORAGE_DIR=str(ROOT/'target'/'codec-test-storage'))
+    with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as destination:
+        for name, value in metadata.items():
+            if '\n' in value or '\r' in value:
+                raise ValueError('Newlines are not allowed in build environment values')
+            destination.write(f'{name}={value}\n')
 
 def run():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--release', action='store_true')
     parser.add_argument('--target')
     parser.add_argument('--helper-only', action='store_true')
+    parser.add_argument('--github-env', action='store_true', help='Export public pack metadata and test paths to GITHUB_ENV')
     args = parser.parse_args()
-    version = __import__('tomllib').loads((ROOT/'Cargo.toml').read_text(encoding='utf-8'))['package']['version']
+    version = tomllib.loads((ROOT/'Cargo.toml').read_text(encoding='utf-8'))['package']['version']
     target = args.target
-    os_name = ('windows' if 'windows' in target else 'macos' if 'apple' in target else 'linux') if target else {'Windows':'windows','Darwin':'macos','Linux':'linux'}[platform.system()]
-    arch = target.split('-')[0] if target else {'AMD64':'x86_64','arm64':'aarch64'}.get(platform.machine(), platform.machine())
+    os_name, arch = platform_id(target)
     system = f'{os_name}-{arch}'
     profile = 'release' if args.release else 'debug'
     output = ROOT/'target'/'optional-packs'/system/profile
@@ -64,6 +81,8 @@ def run():
     env['PAINTFE_PACK_PUBLIC_KEY']=public
     for pack,path in pack_paths.items(): env[f'PAINTFE_{pack.upper()}_PACK_SIZE']=str(path.stat().st_size)
     (output/'build-env.json').write_text(json.dumps({k:v for k,v in env.items() if k.startswith('PAINTFE_') and k.endswith(('_PUBLIC_KEY','_PACK_SIZE'))}),encoding='utf-8')
+    if args.github_env:
+        export_test_environment(output, pack_paths)
     if not args.helper_only:
         subprocess.run(['cargo','build','-j','1','--bin','PaintFE']+extra,cwd=ROOT,env=env,check=True)
         shutil.copy2(binary_root/f'PaintFE{suffix}',output/f'PaintFE{suffix}')
