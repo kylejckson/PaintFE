@@ -6,6 +6,17 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [Unreleased]
+
+- Added native Linux DEB and RPM packaging for easier system installation.
+- Added signed Linux package repository publication for normal system updates.
+- Added the community Arabic translation and an offline Arabic font fallback.
+
+### Notes
+
+- Linux installation, upgrade and desktop checks still require distribution testing. Arabic mixed-direction text needs native-speaker review; full RTL layout is not implemented.
+- Package publication requires maintainer signing secrets and explicit Pages setup. Existing Actions storage settings are unchanged.
+
 ## [1.4.10] - 2026-10-19
 
 - Added JPEG XL opening and saving, with lossless and lossy options.

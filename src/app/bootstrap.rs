@@ -17,7 +17,7 @@ impl PaintFEApp {
 
         // -- Font configuration ------------------------------------------------
         // Proportional: DM Sans (primary, matches website) → Noto Sans (Cyrillic/
-        //   Greek fallback) → system CJK → bundled CJK/Thai → egui defaults
+        //   Greek fallback) → system CJK → bundled CJK/Thai/Arabic → egui defaults
         // Monospace: JetBrains Mono → the same script fallbacks → egui defaults
         {
             let mut fonts = egui::FontDefinitions::default();
@@ -68,6 +68,10 @@ impl PaintFEApp {
 
             // Keep language switching independent of installed system fonts.
             for (name, bytes) in [
+                (
+                    "noto_arabic",
+                    include_bytes!("../../assets/fonts/NotoSansArabic.ttf").as_slice(),
+                ),
                 (
                     "noto_thai",
                     include_bytes!("../../assets/fonts/NotoSansThai.ttf").as_slice(),

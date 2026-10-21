@@ -8,6 +8,13 @@ PaintFE embeds its UI fonts and never downloads fonts at runtime.
 - https://github.com/google/fonts/tree/main/ofl/notosansthai
 
 Their original SIL Open Font License files are included beside the fonts.
+
+`NotoSansArabic.ttf` is the unmodified variable Noto Sans Arabic font from
+https://github.com/google/fonts/tree/main/ofl/notosansarabic, with its original
+`NotoSansArabic-OFL.txt`. It is available in both UI font families; see
+`docs/arabic.md` for the current bidirectional-layout limitations.
+The bundled Arabic font's SHA-256 is
+`63111b5b2e074dd48cc67692e0a2726d86ee94c1c37fe8598257b7b4e87e869e`.
 Chinese, Japanese and Korean glyphs and Thai combining marks are available to proportional text,
 monospace section labels and panel titles. An available system CJK font stays
 ahead of the bundled CJK fallback to preserve regional Japanese/Chinese

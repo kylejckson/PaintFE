@@ -21,6 +21,7 @@ struct I18nState {
 /// Supported languages: (code, native_name)
 pub const LANGUAGES: &[(&str, &str)] = &[
     ("en", "English"),
+    ("ar", "العربية"),
     ("es", "Español"),
     ("fr", "Français"),
     ("de", "Deutsch"),
@@ -49,6 +50,7 @@ pub const LANGUAGES: &[(&str, &str)] = &[
 
 const EMBEDDED_TRANSLATIONS: &[(&str, &str)] = &[
     ("en", include_str!("../locales/en.txt")),
+    ("ar", include_str!("../locales/ar.txt")),
     ("es", include_str!("../locales/es.txt")),
     ("fr", include_str!("../locales/fr.txt")),
     ("de", include_str!("../locales/de.txt")),
@@ -357,6 +359,8 @@ mod locale_tests {
     fn real_system_locales_select_real_languages() {
         for (locale, expected) in [
             ("ru_RU.UTF-8", "ru"),
+            ("ar_SA.UTF-8", "ar"),
+            ("ar-EG", "ar"),
             ("uk-UA", "uk"),
             ("cs_CZ.UTF-8", "cs"),
             ("ro-RO", "ro"),

@@ -14,7 +14,12 @@ Free, open-source raster image editor built in Rust. Single portable binary, no 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/kylejckson/PaintFE/badge)](https://scorecard.dev/viewer/?uri=github.com/kylejckson/PaintFE)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12019/badge)](https://www.bestpractices.dev/projects/12019)
 
-24 tools · 25 blend modes · GPU compositing · Rhai scripting · CLI batch processing · local background removal · GIF/APNG/WebP animation · RAW camera support · 25 UI languages
+24 tools · 25 blend modes · GPU compositing · Rhai scripting · CLI batch processing · local background removal · GIF/APNG/WebP animation · RAW camera support · 26 UI languages
+
+Linux DEB/RPM packaging and signed package repository setup are described in the
+[Linux installation guide](docs/linux-packages.md). Packages become available with
+the next release containing this support. Arabic includes a bundled font; see
+[Arabic translation notes](docs/arabic.md) for current RTL limitations.
 
 ![PaintFE photo workspace in light mode with Luminous icons](screenshot/main_screenshot.png)
 

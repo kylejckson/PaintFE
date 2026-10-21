@@ -102,7 +102,7 @@ errors.extend(f"source lookup missing from English: {key}" for key in sorted(use
 fonts = ROOT / "assets/fonts"
 proportional = [font_has_glyph(fonts / name) for name in ("DMSans-Regular.ttf", "NotoSans-Regular.ttf")]
 monospace = [font_has_glyph(fonts / name) for name in ("JetBrainsMono-Regular.ttf", "NotoSans-Regular.ttf")]
-for name in ("NotoSansCJK-Regular.otf", "NotoSansThai.ttf"):
+for name in ("NotoSansCJK-Regular.otf", "NotoSansThai.ttf", "NotoSansArabic.ttf"):
     check = font_has_glyph(fonts / name)
     proportional.append(check)
     monospace.append(check)

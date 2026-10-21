@@ -1,0 +1,76 @@
+name: Publish Linux package repository
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialize deployments, including manual retries. Build a complete site first.
+concurrency:
+  group: paintfe-package-pages
+  cancel-in-progress: false
+
+jobs:
+  repository:
+    if: >-
+      vars.PACKAGES_PAGES_ENABLED == 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'v') &&
+       !contains(github.event.workflow_run.head_branch, '-') &&
+       github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install repository tools
+        run: sudo apt-get update && sudo apt-get install -y apt-utils rpm createrepo-c
+      - name: Fetch published stable packages and verify release checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          latest="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          previous="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq \
+            '[.[] | select(.draft == false and .prerelease == false) | select(any(.assets[]; .name == "PaintFE-linux-x64.deb")) | .tag_name]')"
+          printf '%s' "$previous" | jq --arg latest "$latest" '[ $latest ] + ([.[] | select(. != $latest)][:1]) | .[]' -r > tags.txt
+          while IFS= read -r tag; do
+            [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            mkdir -p "release-packages/$tag"
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "release-packages/$tag" \
+              --pattern PaintFE-linux-x64.deb --pattern PaintFE-linux-x64.rpm --pattern checksums-SHA256.txt
+            (
+              cd "release-packages/$tag"
+              awk '$2 == "PaintFE-linux-x64.deb" || $2 == "PaintFE-linux-x64.rpm"' checksums-SHA256.txt > package-checksums.txt
+              test "$(wc -l < package-checksums.txt)" -eq 2
+              sha256sum --check --strict package-checksums.txt
+              test "$(dpkg-deb -f PaintFE-linux-x64.deb Version)" = "${tag#v}"
+            )
+          done < tags.txt
+      - name: Build and sign the repository
+        env:
+          PACKAGES_GPG_PRIVATE_KEY: ${{ secrets.PACKAGES_GPG_PRIVATE_KEY }}
+          PACKAGES_GPG_PASSPHRASE: ${{ secrets.PACKAGES_GPG_PASSPHRASE }}
+        run: bash packaging/linux/build-repository.sh release-packages package-site
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa
+        with:
+          path: package-site
+
+  deploy:
+    needs: repository
+    runs-on: ubuntu-22.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy the completed package site
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e

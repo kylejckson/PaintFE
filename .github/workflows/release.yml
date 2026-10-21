@@ -119,6 +119,42 @@ jobs:
             target/release/PaintFE
             target/release/paintdotnet-host
 
+  # ── Native Linux packages ──────────────────────────────────────────────────
+  build-linux-packages:
+    name: Package (DEB / RPM)
+    needs: build-linux
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install packaging tools
+        run: sudo apt-get update && sudo apt-get install -y rpm file
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: PaintFE-linux
+          path: native-input
+      - name: Package the existing Linux build
+        run: bash packaging/linux/build-packages.sh native-input native-packages
+      - name: Check DEB installation and CLI startup
+        run: |
+          sudo apt-get install -y ./native-packages/PaintFE-linux-x64.deb
+          ldd /usr/lib/paintfe/PaintFE > package-libraries.txt
+          ldd /usr/lib/paintfe/paintdotnet-host/PaintFE.PaintDotNetHost >> package-libraries.txt
+          if grep 'not found' package-libraries.txt; then exit 1; fi
+          PaintFE -i package-check --help > /dev/null
+          sudo apt-get remove -y paintfe
+      - name: Sign RPM package
+        env:
+          PACKAGES_GPG_PRIVATE_KEY: ${{ secrets.PACKAGES_GPG_PRIVATE_KEY }}
+          PACKAGES_GPG_PASSPHRASE: ${{ secrets.PACKAGES_GPG_PASSPHRASE }}
+        run: |
+          source packaging/linux/signing-key.sh
+          sign_rpm native-packages/PaintFE-linux-x64.rpm
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: PaintFE-linux-packages
+          path: native-packages/*
+          if-no-files-found: error
+
   # ── AppImage build ─────────────────────────────────────────────────────────
   build-appimage:
     name: Build (AppImage)
@@ -376,7 +412,7 @@ jobs:
   # ── Create GitHub Release ──────────────────────────────────────────────────
   release:
     name: Publish Release
-    needs: [build-windows, build-linux, build-appimage, build-macos-arm, build-macos-x86]
+    needs: [build-windows, build-linux, build-linux-packages, build-appimage, build-macos-arm, build-macos-x86]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -414,6 +450,12 @@ jobs:
         with:
           name: PaintFE-linux
           path: dist/linux
+
+      - name: Download native Linux packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: PaintFE-linux-packages
+          path: dist/packages
 
       - name: Download AppImage
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
@@ -465,8 +507,9 @@ jobs:
             linux/paintdotnet-host/PaintFE.PaintDotNetHost \
             linux/paintdotnet-host/PaintFE.PaintDotNetHost.sha256 \
             PaintFE-windows-x64.zip PaintFE-linux-x64.tar.gz \
+            packages/PaintFE-linux-x64.deb packages/PaintFE-linux-x64.rpm \
             macos/PaintFE-macOS-arm64.dmg macos/PaintFE-macOS-x86_64.dmg \
-            | sed 's|windows/||; s|linux/||; s|macos/||' \
+            | sed 's|windows/||; s|linux/||; s|macos/||; s|packages/||' \
             > checksums-SHA256.txt
           cat checksums-SHA256.txt
 
@@ -483,6 +526,8 @@ jobs:
             dist/linux/PaintFE-x86_64.AppImage
             dist/PaintFE-windows-x64.zip
             dist/PaintFE-linux-x64.tar.gz
+            dist/packages/PaintFE-linux-x64.deb
+            dist/packages/PaintFE-linux-x64.rpm
             dist/macos/PaintFE-macOS-arm64.dmg
             dist/macos/PaintFE-macOS-x86_64.dmg
             dist/macos/paintfe.rb
