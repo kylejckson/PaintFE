@@ -1,6 +1,6 @@
 [package]
 name = "PaintFE"
-version = "1.4.10"
+version = "1.4.11"
 edition = "2024"
 
 [lib]
@@ -49,7 +49,7 @@ x11-dl = "2.21"
 # enumeration, dynamic library loading, RAW demosaicing needing a C toolchain,
 # CLI arg parsing, and the OS clipboard).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-jxl-sys = { path = "vendor/jxl-sys" }
+ed25519-dalek = { version = "2.2", default-features = false, features = ["std"] }
 rfd = "0.12"
 webp = "0.3"
 arboard = { version = "3", features = ["wayland-data-control"] }

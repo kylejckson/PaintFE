@@ -12,7 +12,9 @@
 use image::RgbaImage;
 use std::path::Path;
 
+mod availability;
 mod model;
+pub(crate) use availability::AvailabilityProbe;
 pub use model::ModelProfile;
 
 /// Settings for the Remove Background operation.

@@ -41,7 +41,11 @@ jobs:
         # .cargo/config.toml applies -C target-feature=+crt-static on Windows,
         # statically linking vcruntime into the EXE — no external C++ dependency
         # (satisfies Microsoft Store policy 10.2.4.1).
-        run: cargo build --release
+        env:
+          PAINTFE_PACK_SIGNING_KEY: ${{ secrets.OPTIONAL_PACK_SIGNING_KEY }}
+        run: |
+          python -m pip install cryptography==46.0.7
+          python tools/build_optional_packs.py --release
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
@@ -60,6 +64,14 @@ jobs:
           path: |
             target/release/PaintFE.exe
             target/release/paintdotnet-host
+
+      - name: Upload optional feature packs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: optional-packs-build-windows
+          path: target/optional-packs/*/release/*.pfepack
+          if-no-files-found: error
+
 
   # ── Linux build ────────────────────────────────────────────────────────────
   build-linux:
@@ -102,7 +114,11 @@ jobs:
           restore-keys: linux-cargo-
 
       - name: Build release
-        run: cargo build --release
+        env:
+          PAINTFE_PACK_SIGNING_KEY: ${{ secrets.OPTIONAL_PACK_SIGNING_KEY }}
+        run: |
+          python -m pip install cryptography==46.0.7
+          python tools/build_optional_packs.py --release
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
@@ -118,6 +134,14 @@ jobs:
           path: |
             target/release/PaintFE
             target/release/paintdotnet-host
+
+      - name: Upload optional feature packs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: optional-packs-build-linux
+          path: target/optional-packs/*/release/*.pfepack
+          if-no-files-found: error
+
 
   # ── Native Linux packages ──────────────────────────────────────────────────
   build-linux-packages:
@@ -158,6 +182,7 @@ jobs:
   # ── AppImage build ─────────────────────────────────────────────────────────
   build-appimage:
     name: Build (AppImage)
+    needs: build-linux
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -196,8 +221,11 @@ jobs:
           key: appimage-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: appimage-cargo-
 
-      - name: Build release binary
-        run: cargo build --release
+      - name: Reuse signed-pack-compatible core build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: PaintFE-linux
+          path: target/release
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
@@ -239,7 +267,11 @@ jobs:
           restore-keys: macos-arm-cargo-
 
       - name: Build release
-        run: cargo build --release
+        env:
+          PAINTFE_PACK_SIGNING_KEY: ${{ secrets.OPTIONAL_PACK_SIGNING_KEY }}
+        run: |
+          python -m pip install cryptography==46.0.7
+          python tools/build_optional_packs.py --release
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
@@ -266,6 +298,14 @@ jobs:
           name: PaintFE-macos-arm64
           path: PaintFE-macOS-arm64.dmg
 
+      - name: Upload optional feature packs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: optional-packs-build-macos-arm
+          path: target/optional-packs/*/release/*.pfepack
+          if-no-files-found: error
+
+
   # ── macOS build (Intel — x86_64) ──────────────────────────────────────────
   build-macos-x86:
     name: Build (macOS Intel)
@@ -291,7 +331,11 @@ jobs:
           restore-keys: macos-x86-cargo-
 
       - name: Build release (cross-compile for Intel)
-        run: cargo build --release --target x86_64-apple-darwin
+        env:
+          PAINTFE_PACK_SIGNING_KEY: ${{ secrets.OPTIONAL_PACK_SIGNING_KEY }}
+        run: |
+          python -m pip install cryptography==46.0.7
+          python tools/build_optional_packs.py --release --target x86_64-apple-darwin
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
@@ -319,9 +363,18 @@ jobs:
           path: PaintFE-macOS-x86_64.dmg
 
   # ── MSIX build (Microsoft Store submission package) ────────────────────────
+      - name: Upload optional feature packs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: optional-packs-build-macos-x86
+          path: target/optional-packs/*/release/*.pfepack
+          if-no-files-found: error
+
+
   # Download the artifact from Actions and submit it to Partner Center manually.
   build-msix:
     name: Build (MSIX / MS Store)
+    needs: build-windows
     runs-on: windows-latest
     env:
       LIBCLANG_PATH: C:\Program Files\LLVM\bin
@@ -346,8 +399,11 @@ jobs:
           key: msix-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: msix-cargo-
 
-      - name: Build release binary
-        run: cargo build --release
+      - name: Reuse signed-pack-compatible core build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: PaintFE-windows
+          path: target/release
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
@@ -475,6 +531,13 @@ jobs:
           name: PaintFE-macos-x86_64
           path: dist/macos
 
+      - name: Download optional feature packs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: optional-packs-*
+          merge-multiple: true
+          path: dist/packs
+
       - name: Make binaries executable
         run: |
           chmod +x dist/linux/PaintFE
@@ -511,6 +574,7 @@ jobs:
             macos/PaintFE-macOS-arm64.dmg macos/PaintFE-macOS-x86_64.dmg \
             | sed 's|windows/||; s|linux/||; s|macos/||; s|packages/||' \
             > checksums-SHA256.txt
+          sha256sum packs/*.pfepack | sed 's|packs/||' >> checksums-SHA256.txt
           cat checksums-SHA256.txt
 
       - name: Create release
@@ -532,3 +596,4 @@ jobs:
             dist/macos/PaintFE-macOS-x86_64.dmg
             dist/macos/paintfe.rb
             dist/checksums-SHA256.txt
+            dist/packs/*.pfepack

@@ -4,6 +4,9 @@ use crate::components::tools::Tool;
 
 #[test]
 fn jpeg_xl_document_open_preserves_16_bit_samples_from_files_and_bytes() {
+    if !crate::services::optional_packs::test_encoder_available() {
+        return;
+    }
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("target/jpeg-xl-app")
         .join(uuid::Uuid::new_v4().to_string());

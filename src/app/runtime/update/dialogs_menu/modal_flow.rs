@@ -82,21 +82,9 @@ impl PaintFEApp {
             self.assets.reload_icons(ctx, dark);
         }
 
-        let current_paths = (
-            self.settings.onnx_runtime_path.clone(),
-            self.settings.birefnet_model_path.clone(),
+        self.onnx_available = self.onnx_availability.update(
+            ctx, &self.settings.onnx_runtime_path, &self.settings.birefnet_model_path,
         );
-        if current_paths != self.onnx_last_probed_paths {
-            self.onnx_last_probed_paths = current_paths;
-            self.onnx_available = if !self.settings.onnx_runtime_path.is_empty()
-                && !self.settings.birefnet_model_path.is_empty()
-            {
-                crate::ops::ai::probe_onnx_runtime(&self.settings.onnx_runtime_path).is_ok()
-                    && std::path::Path::new(&self.settings.birefnet_model_path).exists()
-            } else {
-                false
-            };
-        }
 
         self.process_active_dialog(ctx);
 

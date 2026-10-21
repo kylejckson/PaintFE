@@ -31,7 +31,8 @@ impl PaintFEApp {
                     .is_some_and(|id| Some(id) != self.canvas.canvas_widget_id));
 
         // Determine if a modal dialog is open — block all shortcuts and canvas interaction.
-        let modal_open = self.document_modal_open();
+        let modal_open = self.document_modal_open()
+            || ctx.data(|d|d.get_temp::<bool>(egui::Id::new("optional_pack_modal_open"))).unwrap_or(false);
         let popup_open = egui::Popup::is_any_open(ctx) || (escape_event && previous_popup);
         let escape_operation = self.move_sel_dragging
             || self.paste_overlay.is_some()

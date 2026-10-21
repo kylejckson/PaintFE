@@ -54,6 +54,12 @@ fn storage_child() {
             assert!(active.portable);
             assert!(!settings.middle_click_close_tabs);
             assert!(active.data_dir().join("scripts/kept.rhai").is_file());
+            assert!(
+                active
+                    .data_dir()
+                    .join("packs/protocol-1/cjk/fixture")
+                    .is_file()
+            );
             settings.save();
             storage::request_mode(false, true).unwrap();
             assert!(
@@ -70,6 +76,12 @@ fn storage_child() {
                 "edits after the mode change must migrate"
             );
             assert!(active.data_dir().join("scripts/kept.rhai").is_file());
+            assert!(
+                active
+                    .data_dir()
+                    .join("packs/protocol-1/cjk/fixture")
+                    .is_file()
+            );
             storage::request_mode(true, true).unwrap();
             settings.middle_click_close_tabs = false;
             settings.save();
@@ -82,6 +94,12 @@ fn storage_child() {
                 active.executable_dir.join("models/fixture.onnx")
             );
             assert!(Path::new(&settings.birefnet_model_path).is_file());
+            assert!(
+                active
+                    .data_dir()
+                    .join("packs/protocol-1/cjk/fixture")
+                    .is_file()
+            );
         }
         "fallback" => {
             assert!(!active.portable);
@@ -90,6 +108,7 @@ fn storage_child() {
         }
         _ => panic!("Unknown test phase"),
     }
+    AppSettings::flush_pending_saves().unwrap();
 }
 
 #[test]
@@ -105,6 +124,10 @@ fn defaults_migrate_legacy_data_and_mode_changes_survive_restart_and_relocation(
         ),
     );
     fixture.write("profile/scripts/kept.rhai", "// preserved");
+    fixture.write(
+        "profile/packs/protocol-1/cjk/fixture",
+        "preserved optional pack",
+    );
     child(&fixture.0, "default");
     child(&fixture.0, "profile");
     child(&fixture.0, "portable");

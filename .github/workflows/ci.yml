@@ -43,6 +43,16 @@ jobs:
       - name: Check shared UI control boundary
         run: python tools/check_ui_controls.py --self-test
 
+      - name: Prepare signed optional packs for codec tests
+        shell: pwsh
+        run: |
+          python -m pip install cryptography==46.0.7
+          python tools/build_optional_packs.py --helper-only
+          $metadata = Get-Content target/optional-packs/windows-x86_64/debug/build-env.json | ConvertFrom-Json
+          $metadata.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" >> $env:GITHUB_ENV }
+          "PAINTFE_TEST_JXL_PACK=$((Get-ChildItem target/optional-packs/windows-x86_64/debug/*jxl*.pfepack).FullName)" >> $env:GITHUB_ENV
+          "PAINTFE_TEST_STORAGE_DIR=$PWD/target/codec-test-storage" >> $env:GITHUB_ENV
+
       - name: Test JPEG XL codecs
         run: cargo test -j1 --test jpeg_xl -- --test-threads=1
 
@@ -119,6 +129,16 @@ jobs:
 
       - name: Run Clippy
         run: cargo clippy -- -D warnings
+
+      - name: Prepare signed optional packs for codec tests
+        shell: pwsh
+        run: |
+          python -m pip install cryptography==46.0.7
+          python tools/build_optional_packs.py --helper-only
+          $metadata = Get-Content target/optional-packs/windows-x86_64/debug/build-env.json | ConvertFrom-Json
+          $metadata.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" >> $env:GITHUB_ENV }
+          "PAINTFE_TEST_JXL_PACK=$((Get-ChildItem target/optional-packs/windows-x86_64/debug/*jxl*.pfepack).FullName)" >> $env:GITHUB_ENV
+          "PAINTFE_TEST_STORAGE_DIR=$PWD/target/codec-test-storage" >> $env:GITHUB_ENV
 
       - name: Test JPEG XL codecs
         run: cargo test -j1 --test jpeg_xl -- --test-threads=1

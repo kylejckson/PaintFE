@@ -39,6 +39,7 @@ pub(super) fn show(
             )
     });
     let result = ui.scope_builder(egui::UiBuilder::new().id(id), |ui| {
+        let _profile = crate::ui::perf::Scope::new(if skip { 27 } else { 26 });
         if skip {
             ui.allocate_space(cache.as_ref().unwrap().size);
         } else {

@@ -4,6 +4,8 @@ impl PaintFEApp {
         startup_files: Vec<PathBuf>,
         ipc_receiver: mpsc::Receiver<PathBuf>,
     ) -> Self {
+        let _startup = crate::ui::perf::StartupSpan::new("app_constructor");
+        let profile = crate::ui::perf::StartupSpan::new("app_settings_language");
         // Initialize settings from disk (or defaults if no saved file)
         let mut settings = AppSettings::load();
 
@@ -15,9 +17,11 @@ impl PaintFEApp {
             crate::i18n::set_language(&settings.language);
         }
 
+        drop(profile);
+        let profile = crate::ui::perf::StartupSpan::new("font_definitions");
         // -- Font configuration ------------------------------------------------
         // Proportional: DM Sans (primary, matches website) → Noto Sans (Cyrillic/
-        //   Greek fallback) → system CJK → bundled CJK/Thai/Arabic → egui defaults
+        //   Greek fallback) → system CJK → optional CJK/bundled Thai/Arabic → egui defaults
         // Monospace: JetBrains Mono → the same script fallbacks → egui defaults
         {
             let mut fonts = egui::FontDefinitions::default();
@@ -76,9 +80,14 @@ impl PaintFEApp {
                     "noto_thai",
                     include_bytes!("../../assets/fonts/NotoSansThai.ttf").as_slice(),
                 ),
+                #[cfg(target_arch = "wasm32")]
                 (
-                    "noto_cjk",
+                    "noto_cjk_web",
                     include_bytes!("../../assets/fonts/NotoSansCJK-Regular.otf").as_slice(),
+                ),
+                (
+                    "cjk_picker",
+                    include_bytes!("../../assets/fonts/CJK-Picker.otf").as_slice(),
                 ),
             ] {
                 fonts
@@ -94,7 +103,13 @@ impl PaintFEApp {
             }
 
             // Try to discover a system CJK font at runtime for JP/KO/ZH support
-            if let Some((name, data)) = discover_system_cjk_font() {
+            let system_font_profile = crate::ui::perf::StartupSpan::new("system_cjk_read");
+            let mut system_languages: Vec<String> = Vec::new();
+            if let Some((name, data)) = discover_system_cjk_font(&crate::i18n::current_language()) {
+                #[cfg(not(target_arch = "wasm32"))]
+                for language in ["ja", "ko", "zh-CN", "zh-TW"] {
+                    if crate::services::optional_packs::font_covers(&data,language) {system_languages.push(language.to_owned());}
+                }
                 fonts
                     .font_data
                     .insert(name.clone(), egui::FontData::from_owned(data).into());
@@ -111,6 +126,7 @@ impl PaintFEApp {
                     .insert(2, name);
             }
 
+            drop(system_font_profile);
             fonts.font_data.insert(
                 "dm_sans_medium".to_owned(),
                 egui::FontData::from_static(include_bytes!("../../assets/fonts/DMSans-Medium.ttf"))
@@ -121,12 +137,19 @@ impl PaintFEApp {
             fonts
                 .families
                 .insert(egui::FontFamily::Name("WidgetTitle".into()), titles);
-            cc.egui_ctx.set_fonts(fonts);
+            #[cfg(not(target_arch = "wasm32"))]
+            crate::ui::panels::optional_features::initialize_fonts(&cc.egui_ctx,fonts,system_languages,settings.language.is_empty());
+            #[cfg(target_arch = "wasm32")]
+            { let _ = &mut system_languages; cc.egui_ctx.set_fonts(fonts); }
         }
 
+        drop(profile);
+        let profile = crate::ui::perf::StartupSpan::new("system_font_enumeration");
         // Initialize theme from settings with accent and apply immediately
         settings.persisted_text_font_family =
             crate::ops::text::resolve_font_family_preference(&settings.persisted_text_font_family);
+        drop(profile);
+        let profile = crate::ui::perf::StartupSpan::new("initial_theme");
 
         let accent = if settings.theme_preset == crate::theme::ThemePreset::Custom {
             settings.custom_accent
@@ -184,6 +207,8 @@ impl PaintFEApp {
         #[cfg(target_arch = "wasm32")]
         crate::ops::clipboard::install_paste_listener(cc.egui_ctx.clone());
 
+        drop(profile);
+        let profile = crate::ui::perf::StartupSpan::new("initial_project");
         // Initialize with one default project (or empty if disabled in settings)
         let (initial_projects, initial_counter) = if settings.create_canvas_on_startup {
             let w = settings.default_canvas_width.max(1);
@@ -193,6 +218,8 @@ impl PaintFEApp {
             (Vec::new(), 0usize)
         };
 
+        drop(profile);
+        let profile = crate::ui::perf::StartupSpan::new("assets_and_icons");
         // Initialize assets
         let mut assets = Assets::new();
         assets.init(&cc.egui_ctx);
@@ -221,19 +248,14 @@ impl PaintFEApp {
         let (script_sender, script_receiver) = mpsc::channel();
         let (canvas_op_sender, canvas_op_receiver) = mpsc::channel();
 
+        drop(profile);
+        let profile = crate::ui::perf::StartupSpan::new("onnx_probe");
         // Probe ONNX Runtime availability
-        let onnx_available =
-            if !settings.onnx_runtime_path.is_empty() && !settings.birefnet_model_path.is_empty() {
-                crate::ops::ai::probe_onnx_runtime(&settings.onnx_runtime_path).is_ok()
-                    && std::path::Path::new(&settings.birefnet_model_path).exists()
-            } else {
-                false
-            };
-        let onnx_last_probed_paths = (
-            settings.onnx_runtime_path.clone(),
-            settings.birefnet_model_path.clone(),
-        );
+        let onnx_available = false;
+        let onnx_availability = crate::ops::ai::AvailabilityProbe::default();
 
+        drop(profile);
+        let profile = crate::ui::perf::StartupSpan::new("canvas_gpu_initialization");
         let canvas = match cc.wgpu_render_state.as_ref() {
             Some(rs) => Canvas::new_for_render_state(rs),
             #[cfg(target_arch = "wasm32")]
@@ -244,6 +266,8 @@ impl PaintFEApp {
             #[cfg(not(target_arch = "wasm32"))]
             None => Canvas::new(&settings.preferred_gpu),
         };
+        drop(profile);
+        let profile = crate::ui::perf::StartupSpan::new("app_state_and_custom_assets");
         let create_canvas_on_startup = settings.create_canvas_on_startup;
 
         let mut app = Self {
@@ -321,7 +345,7 @@ impl PaintFEApp {
             pending_io_ops: 0,
             io_ops_start_time: None,
             onnx_available,
-            onnx_last_probed_paths,
+            onnx_availability,
             script_editor: {
                 let mut se = script_editor::ScriptEditorPanel::default();
                 se.load_saved_scripts();
@@ -442,12 +466,19 @@ impl PaintFEApp {
         app.last_tool_settings_fingerprint = app.compute_tool_settings_fingerprint();
         app.last_window_state_fingerprint = app.compute_window_state_fingerprint();
         app.last_window_state_observed_fingerprint = app.last_window_state_fingerprint;
+        if matches!(
+            crate::ui::perf::requested_scenario(),
+            Some("interface" | "general")
+        ) {
+            app.settings_window.open = true;
+        }
         log_info!(
             "Startup: PaintFE initialized (theme={:?} preset={:?} projects={})",
             app.theme.mode,
             app.settings.theme_preset,
             app.projects.len()
         );
+        drop(profile);
         app
     }
 

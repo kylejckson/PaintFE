@@ -271,8 +271,8 @@ pub struct PaintFEApp {
     io_ops_start_time: Option<f64>,
     /// Whether ONNX Runtime is available (both DLL and model configured + DLL probed OK)
     onnx_available: bool,
-    /// Cached ONNX paths used for last probe (re-probe only when changed)
-    onnx_last_probed_paths: (String, String),
+    /// Coalesced asynchronous runtime/model availability checks.
+    onnx_availability: crate::ops::ai::AvailabilityProbe,
 
     // Script editor
     script_editor: script_editor::ScriptEditorPanel,
@@ -348,7 +348,7 @@ pub struct PaintFEApp {
 
 /// Discover a system CJK font at runtime (for Japanese, Korean, Chinese support).
 /// Returns `(font_name, font_bytes)` if found.
-fn discover_system_cjk_font() -> Option<(String, Vec<u8>)> {
+pub(crate) fn discover_system_cjk_font(language: &str) -> Option<(String, Vec<u8>)> {
     // Common CJK font paths to try, ordered by quality/coverage
     let candidates: &[(&str, &[&str])] = &[
         #[cfg(target_os = "windows")]
@@ -416,7 +416,11 @@ fn discover_system_cjk_font() -> Option<(String, Vec<u8>)> {
             if let Ok(data) = std::fs::read(path)
                 && data.len() > 100
             {
-                // sanity check
+                // Check the requested script instead of accepting an unrelated CJK font.
+                #[cfg(not(target_arch = "wasm32"))]
+                if !crate::services::optional_packs::font_covers(&data,language) { continue; }
+                #[cfg(target_arch = "wasm32")]
+                let _ = language;
                 return Some((name.to_string(), data));
             }
         }

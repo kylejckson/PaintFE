@@ -39,6 +39,7 @@ pub struct SettingsWindow {
     staged_model_path: String,
     /// Result of last ONNX Runtime probe (None = not tested yet)
     onnx_probe_result: Option<Result<String, String>>,
+    onnx_test_receiver: Option<(String, std::sync::mpsc::Receiver<Result<String, String>>)>,
     /// Staging copy of keybindings for the Keybinds tab
     staged_keybindings: KeyBindings,
     /// Which action is currently being rebound (waiting for key press)
@@ -59,6 +60,8 @@ pub struct SettingsWindow {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum SettingsTab {
     General,
+    #[cfg(not(target_arch = "wasm32"))]
+    OptionalFeatures,
     Editing,
     Interface,
     Hardware,
@@ -164,6 +167,7 @@ impl Default for SettingsWindow {
             staged_onnx_path: String::new(),
             staged_model_path: String::new(),
             onnx_probe_result: None,
+            onnx_test_receiver: None,
             staged_keybindings: KeyBindings::default(),
             rebinding_action: None,
             theme_status: None,
@@ -193,6 +197,7 @@ impl SettingsWindow {
         self.staged_onnx_path = settings.onnx_runtime_path.clone();
         self.staged_model_path = settings.birefnet_model_path.clone();
         self.onnx_probe_result = None;
+        self.onnx_test_receiver = None;
         self.staged_keybindings = settings.keybindings.clone();
         self.rebinding_action = None;
         #[cfg(not(target_arch = "wasm32"))]
@@ -215,6 +220,24 @@ impl SettingsWindow {
         if !self.open {
             return None;
         }
+
+        if crate::ui::perf::requested_scenario() == Some("interface") {
+            let first = ctx.data_mut(|d| {
+                let id = egui::Id::new("profile_initial_navigation");
+                let first = !d.get_temp::<bool>(id).unwrap_or(false);
+                d.insert_temp(id, true);
+                first
+            });
+            if first {
+                self.active_tab = SettingsTab::Interface;
+            }
+        }
+
+        crate::ui::perf::scenario(match self.active_tab {
+            SettingsTab::Interface => "preferences_interface",
+            SettingsTab::General => "preferences_general",
+            _ => "preferences_other",
+        });
 
         crate::config::persistence::begin();
 
@@ -384,6 +407,12 @@ impl SettingsWindow {
                             (SettingsTab::AI, Icon::SettingsAI, t!("settings.tab.ai")),
                             #[cfg(not(target_arch = "wasm32"))]
                             (
+                                SettingsTab::OptionalFeatures,
+                                Icon::SettingsPlugins,
+                                t!("packs.title"),
+                            ),
+                            #[cfg(not(target_arch = "wasm32"))]
+                            (
                                 SettingsTab::Plugins,
                                 Icon::SettingsPlugins,
                                 t!("settings.tab.plugins"),
@@ -443,13 +472,18 @@ impl SettingsWindow {
                                 icon_rect.right() + theme.polish.icon_gap,
                                 rect.center().y,
                             );
-                            ui.painter().text(
-                                text_pos,
-                                egui::Align2::LEFT_CENTER,
-                                label,
+                            let mut job = egui::text::LayoutJob::simple(
+                                label.clone(),
                                 egui::FontId::proportional(12.0 * theme.polish.text_scale),
                                 text_color,
+                                (rect.right() - text_pos.x - 6.0).max(1.0),
                             );
+                            job.wrap.max_rows = 1;
+                            job.wrap.break_anywhere = true;
+                            let galley = ui.painter().layout_job(job);
+                            let origin = egui::pos2(text_pos.x, text_pos.y - galley.size().y * 0.5);
+                            ui.painter().galley(origin, galley, text_color);
+                            response.on_hover_text(label);
                         }
                     });
 
@@ -482,6 +516,10 @@ impl SettingsWindow {
                                 });
                                 ui.add_space(4.0);
                                 match self.active_tab {
+                                    #[cfg(not(target_arch = "wasm32"))]
+                                    SettingsTab::OptionalFeatures => {
+                                        super::optional_features::show_settings(ui);
+                                    }
                                     SettingsTab::General => {
                                         self.show_general_tab(ui, settings);
                                     }
@@ -758,7 +796,7 @@ impl SettingsWindow {
 
     /// Draws a bold section label followed by a thin separator rule.
     /// Used consistently across all settings tabs.
-    fn section_header(ui: &mut egui::Ui, label: &str) {
+    pub(super) fn section_header(ui: &mut egui::Ui, label: &str) {
         ui.ctx().data_mut(|d| {
             d.insert_temp(
                 egui::Id::new("preferences_search_current_section"),
@@ -1235,6 +1273,10 @@ impl SettingsWindow {
                     {
                         settings.language = String::new();
                         let detected = crate::i18n::detect_system_language();
+                        #[cfg(not(target_arch = "wasm32"))]
+                        if !super::optional_features::select_language(ui.ctx(), &detected, true) {
+                            return;
+                        }
                         crate::i18n::set_language(&detected);
                     }
                     for &(code, name) in crate::i18n::LANGUAGES {
@@ -1245,6 +1287,10 @@ impl SettingsWindow {
                             )
                             .clicked()
                         {
+                            #[cfg(not(target_arch = "wasm32"))]
+                            if !super::optional_features::select_language(ui.ctx(), code, false) {
+                                continue;
+                            }
                             settings.language = code.to_string();
                             crate::i18n::set_language(code);
                         }
@@ -3699,19 +3745,63 @@ impl SettingsWindow {
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             if ui
-                .button(t!("settings.ai.test"))
+                .add_enabled(
+                    self.onnx_test_receiver.is_none(),
+                    egui::Button::new(t!("settings.ai.test")),
+                )
                 .search_target(ui, "settings.ai.test")
                 .clicked()
             {
-                self.onnx_probe_result = Some(
-                    match Self::validated_ai_path(&self.staged_onnx_path, false) {
-                        Ok(path) if path.is_empty() => Err(t!("settings.ai.path_empty")),
-                        Ok(path) => {
-                            crate::ops::ai::probe_onnx_runtime(&path).map_err(|e| e.to_string())
+                self.onnx_probe_result = None;
+                match Self::validated_ai_path(&self.staged_onnx_path, false) {
+                    Ok(path) if path.is_empty() => {
+                        self.onnx_probe_result = Some(Err(t!("settings.ai.path_empty")))
+                    }
+                    Ok(path) => {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        {
+                            let (sender, receiver) = std::sync::mpsc::channel();
+                            let ctx = ui.ctx().clone();
+                            let probe_path = path.clone();
+                            match std::thread::Builder::new()
+                                .name("paintfe-onnx-test".into())
+                                .spawn(move || {
+                                    let _ = sender.send(
+                                        crate::ops::ai::probe_onnx_runtime(&probe_path)
+                                            .map_err(|e| e.to_string()),
+                                    );
+                                    ctx.request_repaint();
+                                }) {
+                                Ok(_) => self.onnx_test_receiver = Some((path, receiver)),
+                                Err(error) => self.onnx_probe_result = Some(Err(error.to_string())),
+                            }
                         }
-                        Err(error) => Err(error),
-                    },
-                );
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            self.onnx_probe_result = Some(
+                                crate::ops::ai::probe_onnx_runtime(&path)
+                                    .map_err(|e| e.to_string()),
+                            );
+                        }
+                    }
+                    Err(error) => self.onnx_probe_result = Some(Err(error)),
+                }
+            }
+            if let Some((path, receiver)) = &self.onnx_test_receiver {
+                match receiver.try_recv() {
+                    Ok(result) => {
+                        if self.staged_onnx_path.trim().trim_matches('"') == path {
+                            self.onnx_probe_result = Some(result);
+                        }
+                        self.onnx_test_receiver = None;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        self.onnx_test_receiver = None;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        ui.spinner();
+                    }
+                }
             }
             match &self.onnx_probe_result {
                 Some(Ok(version)) => {
@@ -4423,9 +4513,11 @@ mod preference_consistency_tests {
     #[test]
     fn unchanged_ai_paths_are_not_probed_on_scrolling_frames() {
         let ctx = context();
-        let mut settings = AppSettings::default();
-        settings.birefnet_model_path = "missing-model.onnx".into();
-        settings.onnx_runtime_path = "missing-runtime.dll".into();
+        let mut settings = AppSettings {
+            birefnet_model_path: "missing-model.onnx".into(),
+            onnx_runtime_path: "missing-runtime.dll".into(),
+            ..Default::default()
+        };
         let mut window = SettingsWindow {
             staged_model_path: settings.birefnet_model_path.clone(),
             staged_onnx_path: settings.onnx_runtime_path.clone(),
@@ -4999,6 +5091,7 @@ mod preference_consistency_tests {
             settings.keybindings.get(BindableAction::Copy),
             Some(&KeyCombo::ctrl_key(egui::Key::F8))
         );
+        AppSettings::flush_pending_saves().unwrap();
         let restored = AppSettings::load();
         assert_eq!(restored.theme_mode, ThemeMode::Dark);
         assert_eq!(
@@ -5006,6 +5099,7 @@ mod preference_consistency_tests {
             settings.keybindings.get(BindableAction::Copy)
         );
         AppSettings::default().save();
+        AppSettings::flush_pending_saves().unwrap();
     }
 }
 

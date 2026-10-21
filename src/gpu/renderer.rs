@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use super::compositor::Compositor;
 use super::context::GpuContext;
+use super::pipeline::LazyPipeline;
 
 // ============================================================================
 // ASYNC GPU READBACK — double-buffered staging for stall-free rendering
@@ -209,21 +210,41 @@ struct GpuLayerState {
     generation: u64,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+struct PipelinePreparation {
+    worker: Option<std::thread::JoinHandle<()>>,
+    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for PipelinePreparation {
+    fn drop(&mut self) {
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::Release);
+        if let Some(worker) = self.worker.take() {
+            worker.thread().unpark();
+            let _ = worker.join();
+        }
+    }
+}
+
 /// The top-level GPU renderer.
 pub struct GpuRenderer {
+    // Dropped first: no compiler job may outlive this renderer's resources.
+    #[cfg(not(target_arch = "wasm32"))]
+    preparation: Option<PipelinePreparation>,
     pub ctx: GpuContext,
     pub compositor: Compositor,
-    pub blur_pipeline: GpuBlurPipeline,
-    pub bc_pipeline: GpuBrightnessContrastPipeline,
-    pub hsl_pipeline: GpuHslPipeline,
-    pub invert_pipeline: GpuInvertPipeline,
-    pub median_pipeline: GpuMedianPipeline,
-    pub gradient_pipeline: GpuGradientPipeline,
-    pub magic_wand_pipeline: GpuMagicWandPipeline,
-    pub fill_preview_pipeline: GpuFillPreviewPipeline,
-    pub flood_fill_pipeline: GpuFloodFillPipeline,
-    pub liquify_pipeline: GpuLiquifyPipeline,
-    pub mesh_warp_disp_pipeline: GpuMeshWarpDisplacementPipeline,
+    pub blur_pipeline: LazyPipeline<GpuBlurPipeline>,
+    pub bc_pipeline: LazyPipeline<GpuBrightnessContrastPipeline>,
+    pub hsl_pipeline: LazyPipeline<GpuHslPipeline>,
+    pub invert_pipeline: LazyPipeline<GpuInvertPipeline>,
+    pub median_pipeline: LazyPipeline<GpuMedianPipeline>,
+    pub gradient_pipeline: LazyPipeline<GpuGradientPipeline>,
+    pub magic_wand_pipeline: LazyPipeline<GpuMagicWandPipeline>,
+    pub fill_preview_pipeline: LazyPipeline<GpuFillPreviewPipeline>,
+    pub flood_fill_pipeline: LazyPipeline<GpuFloodFillPipeline>,
+    pub liquify_pipeline: LazyPipeline<GpuLiquifyPipeline>,
+    pub mesh_warp_disp_pipeline: LazyPipeline<GpuMeshWarpDisplacementPipeline>,
     pub texture_pool: TexturePool,
     layer_textures: HashMap<usize, GpuLayerState>,
     /// Output (composited) texture — recycled between frames.
@@ -267,25 +288,36 @@ impl GpuRenderer {
     /// (see `GpuContext::from_egui_render_state`) instead of requesting a
     /// second adapter, which can't be done synchronously in the browser.
     pub fn new_for_egui(rs: &eframe::egui_wgpu::RenderState) -> Self {
-        Self::from_context(GpuContext::from_egui_render_state(rs))
+        let renderer = Self::from_context(GpuContext::from_egui_render_state(rs));
+        #[cfg(not(target_arch = "wasm32"))]
+        let renderer = {
+            let mut renderer = renderer;
+            renderer.prepare_pipelines();
+            renderer
+        };
+        renderer
     }
 
     /// Build a renderer from an already-initialized `GpuContext` — used on
     /// web to reuse eframe's device instead of requesting a fresh one.
     pub fn from_context(ctx: GpuContext) -> Self {
         let compositor = Compositor::new(&ctx.device);
-        let blur_pipeline = GpuBlurPipeline::new(&ctx.device);
-        let bc_pipeline = GpuBrightnessContrastPipeline::new(&ctx.device);
-        let hsl_pipeline = GpuHslPipeline::new(&ctx.device);
-        let invert_pipeline = GpuInvertPipeline::new(&ctx.device);
-        let median_pipeline = GpuMedianPipeline::new(&ctx.device);
-        let gradient_pipeline = GpuGradientPipeline::new(&ctx.device);
-        let magic_wand_pipeline = GpuMagicWandPipeline::new(&ctx.device);
-        let fill_preview_pipeline = GpuFillPreviewPipeline::new(&ctx.device);
-        let flood_fill_pipeline = GpuFloodFillPipeline::new(&ctx.device);
-        let liquify_pipeline = GpuLiquifyPipeline::new(&ctx.device);
-        let mesh_warp_disp_pipeline = GpuMeshWarpDisplacementPipeline::new(&ctx.device);
+        let blur_pipeline = LazyPipeline::new(ctx.device.clone(), GpuBlurPipeline::new);
+        let bc_pipeline = LazyPipeline::new(ctx.device.clone(), GpuBrightnessContrastPipeline::new);
+        let hsl_pipeline = LazyPipeline::new(ctx.device.clone(), GpuHslPipeline::new);
+        let invert_pipeline = LazyPipeline::new(ctx.device.clone(), GpuInvertPipeline::new);
+        let median_pipeline = LazyPipeline::new(ctx.device.clone(), GpuMedianPipeline::new);
+        let gradient_pipeline = LazyPipeline::new(ctx.device.clone(), GpuGradientPipeline::new);
+        let magic_wand_pipeline = LazyPipeline::new(ctx.device.clone(), GpuMagicWandPipeline::new);
+        let fill_preview_pipeline =
+            LazyPipeline::new(ctx.device.clone(), GpuFillPreviewPipeline::new);
+        let flood_fill_pipeline = LazyPipeline::new(ctx.device.clone(), GpuFloodFillPipeline::new);
+        let liquify_pipeline = LazyPipeline::new(ctx.device.clone(), GpuLiquifyPipeline::new);
+        let mesh_warp_disp_pipeline =
+            LazyPipeline::new(ctx.device.clone(), GpuMeshWarpDisplacementPipeline::new);
         Self {
+            #[cfg(not(target_arch = "wasm32"))]
+            preparation: None,
             ctx,
             compositor,
             blur_pipeline,
@@ -311,6 +343,45 @@ impl GpuRenderer {
             async_readback: AsyncReadback::new(),
             available: true,
         }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn prepare_pipelines(&mut self) {
+        let jobs: Vec<_> = [
+            self.gradient_pipeline.background_job(),
+            self.magic_wand_pipeline.background_job(),
+            self.fill_preview_pipeline.background_job(),
+            self.flood_fill_pipeline.background_job(),
+            self.liquify_pipeline.background_job(),
+            self.blur_pipeline.background_job(),
+            self.bc_pipeline.background_job(),
+            self.hsl_pipeline.background_job(),
+            self.invert_pipeline.background_job(),
+            self.median_pipeline.background_job(),
+            self.mesh_warp_disp_pipeline.background_job(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop = cancelled.clone();
+        let worker = std::thread::Builder::new()
+            .name("paintfe-gpu-prepare".into())
+            .spawn(move || {
+                std::thread::park_timeout(std::time::Duration::from_millis(150));
+                let _profile = crate::ui::perf::StartupSpan::new("gpu_background_preparation");
+                for job in jobs {
+                    if stop.load(std::sync::atomic::Ordering::Acquire) {
+                        break;
+                    }
+                    job();
+                }
+            })
+            .ok();
+        self.preparation = worker.map(|worker| PipelinePreparation {
+            worker: Some(worker),
+            cancelled,
+        });
     }
 
     pub fn adapter_name(&self) -> &str {
@@ -972,5 +1043,35 @@ impl Drop for GpuRenderer {
         self.texture_pool.clear();
         self.output_texture = None;
         self.ping_pong = [None, None];
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod preparation_tests {
+    use super::*;
+    #[test]
+    fn renderer_preparation_teardown_wakes_and_joins_the_worker() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let finished = Arc::new(AtomicBool::new(false));
+        let stop = cancelled.clone();
+        let done = finished.clone();
+        let worker = std::thread::spawn(move || {
+            while !stop.load(Ordering::Acquire) {
+                std::thread::park_timeout(std::time::Duration::from_secs(3));
+            }
+            done.store(true, Ordering::Release);
+        });
+        drop(PipelinePreparation {
+            worker: Some(worker),
+            cancelled,
+        });
+        assert!(
+            finished.load(Ordering::Acquire),
+            "renderer dropped before worker completed"
+        );
     }
 }

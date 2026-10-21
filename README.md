@@ -128,7 +128,7 @@ Photo sources and artwork details are listed in [screenshot credits](screenshot/
 
 PFE is PaintFE's layered project format. Animated export uses each visible layer as a frame, with frame rate, loop count, and format-specific compression options in the export dialog.
 
-JPEG XL supports still images with lossless or lossy compression and an encoding-effort setting. Native exports preserve 8-bit and supported 16-bit RGBA data, including transparency. The codec is built in, with no extra DLL or external converter. Browser builds can import JPEG XL; desktop builds also export it. See [JPEG XL details](docs/jpeg-xl.md) for limits and CLI options.
+JPEG XL supports still images with lossless or lossy compression and an encoding-effort setting. Native exports preserve 8-bit and supported 16-bit RGBA data, including transparency. JPEG XL import is built in. Desktop export uses an optional offline encoder pack installed through Preferences > Optional features. See [JPEG XL details](docs/jpeg-xl.md) for limits and CLI options.
 
 RAW decoding uses `rawloader` and `imagepipe`. Recognized extensions include CR2, CR3, NEF, ARW, DNG, ORF, RW2, SRW, PEF, and RAF; decoding depends on the camera and file variant.
 
@@ -235,7 +235,7 @@ I recognise that AI’s place in creative work is a sensitive subject. I want to
 
 Bug reports, feature requests, translations, and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution guidelines.
 
-25 locales ship built in and can be switched through **Preferences > General > Language**: English, German, French, Spanish, Brazilian Portuguese, European Portuguese, Italian, Russian, Ukrainian, Czech, Romanian, Belarusian, Polish, Dutch, Turkish, Japanese, Simplified Chinese, Traditional Chinese, Korean, Indonesian, Vietnamese, Thai, Hungarian, Bogan English, and Fancy English (FE). All catalogs cover the current English interface keys. Chinese, Japanese, Korean and Thai font fallbacks are bundled for offline use. Translation improvements from fluent speakers are welcome.
+25 locales ship built in and can be switched through **Preferences > General > Language**: English, German, French, Spanish, Brazilian Portuguese, European Portuguese, Italian, Russian, Ukrainian, Czech, Romanian, Belarusian, Polish, Dutch, Turkish, Japanese, Simplified Chinese, Traditional Chinese, Korean, Indonesian, Vietnamese, Thai, Hungarian, Bogan English, and Fancy English (FE). All catalogs cover the current English interface keys. Thai and Arabic font fallbacks are bundled. Chinese, Japanese and Korean use suitable system fonts or an optional font pack. Installed packs work offline; downloading one requires an explicit request. Translation improvements from fluent speakers are welcome.
 
 To add a translation, copy `locales/en.txt`, translate the values without changing keys, and name the file with its BCP-47 code, such as `ko.txt`.
 

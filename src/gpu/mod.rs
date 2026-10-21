@@ -15,6 +15,7 @@
 pub mod compositor;
 pub mod compute;
 pub mod context;
+pub mod pipeline;
 pub mod pool;
 pub mod renderer;
 pub mod shaders;

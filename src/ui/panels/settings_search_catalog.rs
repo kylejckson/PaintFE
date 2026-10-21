@@ -1,5 +1,7 @@
 // Search catalogue: stable label keys, English fallback and owning section.
 const SEARCH_ENTRIES: &[SearchEntry] = &[
+    #[cfg(not(target_arch = "wasm32"))]
+    SearchEntry {tab:SettingsTab::OptionalFeatures, key:"packs.title",english:"Optional features fonts CJK JPEG XL export install download packs",section:"packs.title"},
     SearchEntry {tab: SettingsTab::Interface, key: "ui.double_click_slider_reset", english: "Double-click sliders to reset", section: "ui.motion_and_interaction"},
     SearchEntry {tab: SettingsTab::Interface, key: "info.font_size", english: "Image information font size", section: "info.appearance"},
     SearchEntry {tab: SettingsTab::Interface, key: "info.appearance", english: "Image information appearance", section: "info.appearance"},

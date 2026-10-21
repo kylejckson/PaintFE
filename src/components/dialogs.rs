@@ -1171,6 +1171,13 @@ impl SaveFileDialog {
         // Expensive JPEG XL preview encoding stays off the UI thread. At most
         // one job per dialog is active; stale results are discarded after edits.
         if matches!(self.format, SaveFormat::Jxl(_)) {
+            #[cfg(not(target_arch = "wasm32"))]
+            if !crate::services::optional_packs::is_present(
+                crate::services::optional_packs::Pack::Jxl,
+            ) {
+                self.needs_preview_update = true;
+                return;
+            }
             if let Some(job) = &self.jxl_preview_job {
                 match job.try_recv() {
                     Ok((format, quality, result)) => {
@@ -1601,6 +1608,11 @@ impl SaveFileDialog {
                                     }
                                 });
 
+                            #[cfg(not(target_arch = "wasm32"))]
+                            if matches!(self.format,SaveFormat::Jxl(_)) && !crate::services::optional_packs::is_present(crate::services::optional_packs::Pack::Jxl) {
+                                ui.label(crate::t!("packs.jxl_missing"));
+                                if ui.button(crate::t!("packs.install_jxl")).clicked() {crate::services::optional_packs::request_jxl();}
+                            }
                             if self.jxl_preview_job.is_some() && matches!(self.format, SaveFormat::Jxl(_)) { ui.spinner(); }
                             if let SaveFormat::Jxl(options) = &mut self.format {
                                 accent_separator(ui, &colors);
@@ -1744,7 +1756,13 @@ impl SaveFileDialog {
                                     .strong()
                             ).fill(colors.accent);
                             let save_clicked = ui.add(save_btn).clicked() || enter;
-                            if save_clicked {
+                            #[cfg(not(target_arch = "wasm32"))]
+                            let needs_jxl = matches!(self.format,SaveFormat::Jxl(_)) && !crate::services::optional_packs::is_present(crate::services::optional_packs::Pack::Jxl);
+                            #[cfg(target_arch = "wasm32")]
+                            let needs_jxl = false;
+                            #[cfg(not(target_arch = "wasm32"))]
+                            if save_clicked && needs_jxl {crate::services::optional_packs::request_jxl();}
+                            if save_clicked && !needs_jxl {
                                 let full_filename = format!("{}.{}", self.filename, self.format.extension());
                                 // Web has no native save-location picker: downloads always
                                 // go to the browser's default download folder, so we skip

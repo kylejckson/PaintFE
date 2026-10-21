@@ -1563,3 +1563,26 @@ jxl.effort=Upaya pengodean
 jxl.still_images=Gambar diam, RGBA 8-bit atau 16-bit
 ui.double_click_slider_reset=Klik dua kali penggeser untuk mereset
 ui.double_click_reset_hint=Klik dua kali untuk mereset
+
+# Optional features (English fallback pending translation review)
+packs.title=Optional features
+packs.cjk=Chinese, Japanese and Korean fonts
+packs.jxl=JPEG XL export
+packs.offline=Install only the features you need. Installed features work offline.
+packs.download_warning=Requires a one-time internet download. Once installed, this feature works offline. Your images are processed locally and are never uploaded.
+packs.cjk_description=Full Noto Sans CJK coverage. PaintFE uses suitable system fonts without this pack when available.
+packs.jxl_description=Adds JPEG XL export. Opening JPEG XL files is already built in.
+packs.download=Download and install
+packs.import=Import downloaded pack...
+packs.remove=Remove
+packs.later=Later
+packs.not_installed=Not installed
+packs.installed=Installed
+packs.invalid=Pack needs repair. Download or import a matching pack.
+packs.working=Installing or removing pack...
+packs.complete=Optional features updated.
+packs.jxl_missing=JPEG XL export requires the optional encoder pack. Open Preferences > Optional features to install it, then retry saving.
+packs.install_jxl=Install JPEG XL export...
+packs.cjk_size=CJK font: 15.68 MiB installed. The download is smaller.
+packs.jxl_size=The export helper is downloaded for your operating system and processor.
+packs.github=Download source: PaintFE GitHub Releases. Installation verifies the pack signature and file contents.

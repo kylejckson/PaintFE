@@ -98,11 +98,11 @@ for path in (ROOT / "src").rglob("*.rs"):
     used.update(re.findall(r'format_translation\(\s*"([a-z][a-z0-9_.]+)"', source))
 errors.extend(f"source lookup missing from English: {key}" for key in sorted(used - english.keys()))
 
-# These are the actual bundled families, not a system font assumption.
+# Core fallback families plus the optional pack source. Check both, without assuming system fonts.
 fonts = ROOT / "assets/fonts"
 proportional = [font_has_glyph(fonts / name) for name in ("DMSans-Regular.ttf", "NotoSans-Regular.ttf")]
 monospace = [font_has_glyph(fonts / name) for name in ("JetBrainsMono-Regular.ttf", "NotoSans-Regular.ttf")]
-for name in ("NotoSansCJK-Regular.otf", "NotoSansThai.ttf", "NotoSansArabic.ttf"):
+for name in ("NotoSansCJK-Regular.otf", "NotoSansThai.ttf", "NotoSansArabic.ttf", "CJK-Picker.otf"):
     check = font_has_glyph(fonts / name)
     proportional.append(check)
     monospace.append(check)
@@ -119,6 +119,15 @@ for family, checks in (("proportional", proportional), ("monospace", monospace))
         errors.append(f"{family}: missing letter glyphs: {''.join(absent)}")
     print(f"{family}: checked {len(letters)} distinct letters")
 
+# A tiny subset keeps all language-picker names readable before installing CJK.
+picker = font_has_glyph(fonts / "CJK-Picker.otf")
+for character in "日本語中文简体繁體한국어":
+    if not picker(ord(character)):
+        errors.append(f"language picker missing {character}")
+bootstrap = (ROOT / "src/app/bootstrap.rs").read_text(encoding="utf-8")
+native_bootstrap = re.sub(r'(?s)#\[cfg\(target_arch = "wasm32"\)\]\s*\(.*?\),', "", bootstrap)
+if 'include_bytes!("../../assets/fonts/NotoSansCJK-Regular.otf")' in native_bootstrap:
+    errors.append("full optional CJK font must not be embedded in the core")
 if errors:
     print("\n".join(errors), file=sys.stderr)
     sys.exit(1)

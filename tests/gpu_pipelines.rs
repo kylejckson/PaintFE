@@ -466,3 +466,31 @@ fn gpu_composite_two_layers() {
         pixels[idx + 2]
     );
 }
+
+#[test]
+fn deferred_colour_and_median_pipelines_keep_pixel_results_on_first_use() {
+    require_gpu!(gpu);
+    assert!(!gpu.bc_pipeline.is_initialized());
+    assert!(!gpu.hsl_pipeline.is_initialized());
+    assert!(!gpu.invert_pipeline.is_initialized());
+    assert!(!gpu.median_pipeline.is_initialized());
+    let pixels: Vec<u8> = [61, 127, 193, 255].repeat(16 * 16);
+    for actual in [
+        gpu.brightness_contrast_rgba(&pixels, 16, 16, 0.0, 0.0),
+        gpu.hsl_rgba(&pixels, 16, 16, 0.0, 0.0, 0.0),
+        gpu.invert_rgba(&gpu.invert_rgba(&pixels, 16, 16), 16, 16),
+        gpu.median_rgba(&pixels, 16, 16, 1).unwrap(),
+    ] {
+        assert_eq!(actual.len(), pixels.len());
+        for (expected, actual) in pixels.iter().zip(actual) {
+            assert!(
+                expected.abs_diff(actual) <= 1,
+                "first-use pipeline changed identity pixels"
+            );
+        }
+    }
+    assert!(gpu.bc_pipeline.is_initialized());
+    assert!(gpu.hsl_pipeline.is_initialized());
+    assert!(gpu.invert_pipeline.is_initialized());
+    assert!(gpu.median_pipeline.is_initialized());
+}

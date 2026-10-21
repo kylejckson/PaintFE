@@ -7,6 +7,27 @@ use paintfe::io::{
     jxl::{self, JxlOptions},
 };
 
+fn encoder_available() -> bool {
+    static SETUP: std::sync::Once = std::sync::Once::new();
+    SETUP.call_once(|| {
+        if let Some(path) = std::env::var_os("PAINTFE_TEST_JXL_PACK") {
+            paintfe::services::optional_packs::install(
+                std::path::Path::new(&path),
+                paintfe::services::optional_packs::Pack::Jxl,
+            )
+            .unwrap();
+        }
+    });
+    let available =
+        paintfe::services::optional_packs::installed(paintfe::services::optional_packs::Pack::Jxl)
+            .is_ok();
+    if !available {
+        eprintln!(
+            "Optional encoder unavailable; run tools/build_optional_packs.py and set PAINTFE_TEST_JXL_PACK to exercise exports."
+        );
+    }
+    available
+}
 struct Fixture(std::path::PathBuf);
 impl Fixture {
     fn new() -> Self {
@@ -35,6 +56,9 @@ fn image() -> RgbaImage {
 
 #[test]
 fn lossless_rgba8_preserves_all_pixels_including_hidden_rgb_and_alpha() {
+    if !encoder_available() {
+        return;
+    }
     jxl::register();
     let source = image();
     for effort in [1, 5, 9] {
@@ -55,6 +79,9 @@ fn lossless_rgba8_preserves_all_pixels_including_hidden_rgb_and_alpha() {
 
 #[test]
 fn lossy_quality_100_is_explicit_and_alpha_remains_lossless() {
+    if !encoder_available() {
+        return;
+    }
     jxl::register();
     let source = image();
     for quality in [30, 90, 100] {
@@ -84,6 +111,9 @@ fn lossy_quality_100_is_explicit_and_alpha_remains_lossless() {
 
 #[test]
 fn lossless_rgba16_roundtrip_preserves_native_depth_and_samples() {
+    if !encoder_available() {
+        return;
+    }
     jxl::register();
     let pixels: Vec<u16> = (0..11 * 7 * 4).map(|i| (i * 137 + 11) as u16).collect();
     let bytes = jxl::encode_rgba16(11, 7, &pixels, 90, JxlOptions::default()).unwrap();
@@ -134,6 +164,9 @@ fn lossless_rgba16_roundtrip_preserves_native_depth_and_samples() {
 
 #[test]
 fn generic_open_detects_jxl_without_a_filename_extension() {
+    if !encoder_available() {
+        return;
+    }
     jxl::register();
     let fixture = Fixture::new();
     let source = image();
@@ -150,6 +183,9 @@ fn generic_open_detects_jxl_without_a_filename_extension() {
 
 #[test]
 fn prepared_file_and_quick_save_use_the_same_codec_options() {
+    if !encoder_available() {
+        return;
+    }
     let fixture = Fixture::new();
     let source = image();
     let path = fixture.0.join("test.jxl");
@@ -171,6 +207,9 @@ fn prepared_file_and_quick_save_use_the_same_codec_options() {
 
 #[test]
 fn malformed_truncated_and_over_limit_inputs_are_rejected() {
+    if !encoder_available() {
+        return;
+    }
     jxl::register();
     let bytes = jxl::encode_rgba8(&image(), 90, JxlOptions::default()).unwrap();
     for end in [0, 1, 2, 12, bytes.len() / 2] {
@@ -192,6 +231,9 @@ fn malformed_truncated_and_over_limit_inputs_are_rejected() {
 
 #[test]
 fn cli_exports_lossless_and_lossy_jxl_and_imports_it_again() {
+    if !encoder_available() {
+        return;
+    }
     let fixture = Fixture::new();
     let source = fixture.0.join("in.png");
     image().save(&source).unwrap();
@@ -209,7 +251,11 @@ fn cli_exports_lossless_and_lossy_jxl_and_imports_it_again() {
             cmd.arg("--jxl-lossy");
         }
         let result = cmd
-            .env("PAINTFE_TEST_STORAGE_DIR", fixture.0.join("profile"))
+            .env(
+                "PAINTFE_TEST_STORAGE_DIR",
+                std::env::var_os("PAINTFE_TEST_STORAGE_DIR")
+                    .expect("Set PAINTFE_TEST_STORAGE_DIR for codec tests"),
+            )
             .env("RAYON_NUM_THREADS", "2")
             .output()
             .unwrap();
@@ -230,7 +276,11 @@ fn cli_exports_lossless_and_lossy_jxl_and_imports_it_again() {
             .arg(&output)
             .arg("--output")
             .arg(&png)
-            .env("PAINTFE_TEST_STORAGE_DIR", fixture.0.join("profile"))
+            .env(
+                "PAINTFE_TEST_STORAGE_DIR",
+                std::env::var_os("PAINTFE_TEST_STORAGE_DIR")
+                    .expect("Set PAINTFE_TEST_STORAGE_DIR for codec tests"),
+            )
             .env("RAYON_NUM_THREADS", "2")
             .output()
             .unwrap();
@@ -239,4 +289,60 @@ fn cli_exports_lossless_and_lossy_jxl_and_imports_it_again() {
             assert_eq!(image::open(png).unwrap().to_rgba8(), image());
         }
     }
+}
+
+#[test]
+fn built_in_import_works_without_encoder_or_network() {
+    jxl::register();
+    let decoded = io::decode_image_bytes(include_bytes!("fixtures/jpeg-xl/rgba8.jxl"))
+        .unwrap()
+        .to_rgba8();
+    assert_eq!(decoded, image());
+    let decoded = io::decode_image_bytes(include_bytes!("fixtures/jpeg-xl/rgba16.jxl")).unwrap();
+    assert_eq!(decoded.color(), image::ColorType::Rgba16);
+    let expected: Vec<u16> = (0..11 * 7 * 4).map(|i| (i * 137 + 11) as u16).collect();
+    assert_eq!(decoded.to_rgba16().as_raw(), &expected);
+}
+#[test]
+fn failed_jxl_export_preserves_existing_destination() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("existing.jxl");
+    std::fs::write(&path, b"previous export").unwrap();
+    // Invalid dimensions fail even with an encoder installed.
+    assert!(
+        io::encode_and_write(
+            &RgbaImage::new(0, 0),
+            &path,
+            SaveFormat::Jxl(Default::default()),
+            90,
+            TiffCompression::None,
+            true
+        )
+        .is_err()
+    );
+    assert_eq!(std::fs::read(path).unwrap(), b"previous export");
+}
+
+#[test]
+fn cli_without_encoder_reports_failure_and_preserves_previous_export() {
+    let fixture = Fixture::new();
+    let source = fixture.0.join("input.png");
+    image().save(&source).unwrap();
+    let output = fixture.0.join("existing.jxl");
+    std::fs::write(&output, b"previous export").unwrap();
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_PaintFE"))
+        .arg("--input")
+        .arg(source)
+        .arg("--output")
+        .arg(&output)
+        .arg("--overwrite")
+        .env(
+            "PAINTFE_TEST_STORAGE_DIR",
+            fixture.0.join("no-pack-profile"),
+        )
+        .env("RAYON_NUM_THREADS", "2")
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert_eq!(std::fs::read(output).unwrap(), b"previous export");
 }

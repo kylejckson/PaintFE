@@ -27,6 +27,9 @@ fn title_case(s: &str) -> String {
 }
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=PAINTFE_PACK_PUBLIC_KEY");
+    println!("cargo:rerun-if-env-changed=PAINTFE_CJK_PACK_SIZE");
+    println!("cargo:rerun-if-env-changed=PAINTFE_JXL_PACK_SIZE");
     // -- Windows EXE icon embedding -----------------------------------------
     // Embed assets/icons/app_icon.ico into the EXE so Windows shows it in
     // Explorer, the taskbar, and the Alt-Tab switcher.

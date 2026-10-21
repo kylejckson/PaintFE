@@ -224,6 +224,7 @@ impl<'a, T: Number> Numeric<'a, T> {
 }
 impl<T: Number> Widget for Numeric<'_, T> {
     fn ui(mut self, ui: &mut Ui) -> Response {
+        let _profile = crate::ui::perf::Scope::new(24);
         ui.scope_builder(
             egui::UiBuilder::new().id(ui.make_persistent_id(("control", self.id_salt))),
             |ui| {
@@ -474,6 +475,36 @@ impl<T: Number> Numeric<'_, T> {
             ui.visuals().widgets.inactive.corner_radius.nw as f32,
         );
         response
+    }
+}
+
+/// Named presets configure the same editor rather than implementing new controls.
+impl<'a> Numeric<'a, f32> {
+    #[track_caller]
+    pub fn dimension(value: &'a mut f32) -> Self {
+        Self::new(value)
+            .expressions()
+            .range(1.0..=20000.0)
+            .fixed_decimals(0)
+            .update_while_editing(false)
+            .suffix(" px")
+            .steppers(1.0)
+    }
+    #[track_caller]
+    pub fn percentage(value: &'a mut f32) -> Self {
+        Self::new(value)
+            .range(0.0..=100.0)
+            .suffix("%")
+            .speed(1.0)
+            .max_decimals(1)
+    }
+    #[track_caller]
+    pub fn angle(value: &'a mut f32) -> Self {
+        Self::new(value)
+            .range(-180.0..=180.0)
+            .suffix("°")
+            .speed(1.0)
+            .max_decimals(1)
     }
 }
 
@@ -815,35 +846,5 @@ mod polish_tests {
             );
             assert!((value - expected).abs() < 0.001, "{value} vs {expected}");
         }
-    }
-}
-
-/// Named presets configure the same editor rather than implementing new controls.
-impl<'a> Numeric<'a, f32> {
-    #[track_caller]
-    pub fn dimension(value: &'a mut f32) -> Self {
-        Self::new(value)
-            .expressions()
-            .range(1.0..=20000.0)
-            .fixed_decimals(0)
-            .update_while_editing(false)
-            .suffix(" px")
-            .steppers(1.0)
-    }
-    #[track_caller]
-    pub fn percentage(value: &'a mut f32) -> Self {
-        Self::new(value)
-            .range(0.0..=100.0)
-            .suffix("%")
-            .speed(1.0)
-            .max_decimals(1)
-    }
-    #[track_caller]
-    pub fn angle(value: &'a mut f32) -> Self {
-        Self::new(value)
-            .range(-180.0..=180.0)
-            .suffix("°")
-            .speed(1.0)
-            .max_decimals(1)
     }
 }

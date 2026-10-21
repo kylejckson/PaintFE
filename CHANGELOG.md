@@ -17,6 +17,35 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 - Linux installation, upgrade and desktop checks still require distribution testing. Arabic mixed-direction text needs native-speaker review; full RTL layout is not implemented.
 - Package publication requires maintainer signing secrets and explicit Pages setup. Existing Actions storage settings are unchanged.
 
+## [1.4.11] - 2026-10-21
+
+- Reduced startup delays and pauses caused by settings saves.
+- Made the CJK font and JPEG XL encoder optional downloads.
+- Reduced the Windows executable from 61.89 MiB to 43.29 MiB.
+
+### Improved
+
+- Moved settings writes off the UI thread while keeping automatic saving, error reporting and safe shutdown.
+- Moved AI runtime availability checks into the background.
+- Deferred GPU pipeline setup and reused the last working Windows graphics backend to reduce startup work.
+- Cached colour-slider gradients and checkerboards to reduce drawing work without changing their appearance or controls.
+
+### Added
+
+- Added Preferences > Optional features for downloading, importing and removing the CJK font and JPEG XL export packs.
+- Added signed pack verification and a warning before the one-time online download. Installed features work offline.
+- Added font installation prompts when a selected CJK language needs coverage unavailable from system fonts.
+- Added an installation offer when saving JPEG XL without its encoder. Opening JPEG XL files remains available in the core application.
+
+### Validation
+
+- Full test suite: 655 passed, none failed, 10 intentionally ignored.
+- App and encoder-helper Clippy checks passed.
+- Formatting and shared UI control checks passed.
+
+Existing issues remain open for users to test and confirm.
+Further testing is continuing.
+
 ## [1.4.10] - 2026-10-19
 
 - Added JPEG XL opening and saving, with lossless and lossy options.

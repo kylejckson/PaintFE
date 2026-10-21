@@ -110,3 +110,9 @@ does not establish smooth GPU presentation. Debug review copies can opt into a
 local frame trace with an adjacent `ui-profile.enabled` file. Analyse it using
 `python tools/analyze_ui_profile.py path/to/ui-profile.jsonl`; idle gaps are
 excluded, and the report does not claim to measure GPU completion.
+
+Colour tracks cache sampled textures per stable widget identity instead of
+creating a shape for every pixel. Re-sample caller closures each frame and
+upload only changed pixels; do not cache by closure identity. Keep checkerboard
+textures theme-specific and track resolution aware of DPI. The paint tests
+check bounded geometry and invalidation; shared interaction tests still apply.

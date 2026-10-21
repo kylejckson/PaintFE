@@ -115,6 +115,7 @@ fn sanitize_window_position(pos: (f32, f32)) -> Option<[f32; 2]> {
 
 /// Inner main function — contains all actual logic.
 fn main_inner() -> Result<(), eframe::Error> {
+    let startup_profile = paintfe::ui::perf::StartupSpan::new("process_to_event_loop");
     paintfe::io::jxl::register();
     // -- Windows console management ------------------------------------
     // The binary is SUBSYSTEM:WINDOWS so Windows never allocates a console.
@@ -197,6 +198,7 @@ fn main_inner() -> Result<(), eframe::Error> {
         i18n::init();
         let args = cli::CliArgs::parse();
         let code = cli::run(args);
+        let _ = AppSettings::flush_pending_saves();
         std::process::exit(if code == std::process::ExitCode::SUCCESS {
             0
         } else {
@@ -250,16 +252,25 @@ fn main_inner() -> Result<(), eframe::Error> {
         }
     }
 
+    let profile = paintfe::ui::perf::StartupSpan::new("storage");
     paintfe::services::storage::initialize();
+    drop(profile);
 
     // Initialize session log (overwrites previous session log)
     logger::init();
 
     // Initialize the internationalization system
+    let profile = paintfe::ui::perf::StartupSpan::new("i18n");
     i18n::init();
+    drop(profile);
 
     // Collect positional file arguments (e.g. `paintfe.exe photo.png` from
     // right-click → "Open with" on Windows, or drag-onto-exe).
+    let profile = paintfe::ui::perf::StartupSpan::new("ipc");
+    if let Err(error) = paintfe::services::graphics::wait_for_recovery_parent() {
+        logger::write("ERROR", &error);
+        return Ok(());
+    }
     let startup_files = ipc::collect_startup_files();
 
     // Single-instance: if another PaintFE GUI is already running, send the
@@ -272,13 +283,17 @@ fn main_inner() -> Result<(), eframe::Error> {
     // We are the first instance — start the IPC listener so future
     // invocations can send their file paths to us.
     let ipc_receiver = ipc::start_listener();
+    drop(profile);
 
     // Load application icon (window title bar, taskbar, Alt+Tab)
+    let profile = paintfe::ui::perf::StartupSpan::new("window_icon_and_settings");
     let icon = load_app_icon();
 
     let startup_settings = AppSettings::load();
+    drop(profile);
 
     // Define the native window options
+    let preferred_backend = paintfe::services::graphics::preferred_backends();
     let options = eframe::NativeOptions {
         viewport: {
             let mut vp = egui::ViewportBuilder::default()
@@ -301,6 +316,19 @@ fn main_inner() -> Result<(), eframe::Error> {
         event_loop_builder: Some(Box::new(configure_event_loop)),
         wgpu_options: {
             let mut wgpu_options = eframe::egui_wgpu::WgpuConfiguration::default();
+            if let Some(backends) = preferred_backend
+                && let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut wgpu_options.wgpu_setup
+            {
+                setup.instance_descriptor.backends = backends;
+                // Opt-in fault injection exercises recovery without a broken driver.
+                if paintfe::ui::perf::requested_scenario().is_some()
+                    && std::env::var_os("PAINTFE_PROFILE_FAIL_PREFERRED").is_some()
+                {
+                    setup.native_adapter_selector = Some(std::sync::Arc::new(|_, _| {
+                        Err("Profiling: simulated preferred backend failure".into())
+                    }));
+                }
+            }
             if startup_settings.low_latency_present {
                 // AutoNoVsync picks the first supported mode out of Immediate →
                 // Mailbox → Fifo (graceful fallback; plain Mailbox would crash on
@@ -316,15 +344,39 @@ fn main_inner() -> Result<(), eframe::Error> {
     };
 
     // Run the application
-    eframe::run_native(
+    drop(startup_profile);
+    let renderer_profile = paintfe::ui::perf::StartupSpan::new("event_loop_to_app_creation");
+    let app_created = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let creation_flag = app_created.clone();
+    let result = eframe::run_native(
         "PaintFE",
         options,
         Box::new(move |cc| {
+            drop(renderer_profile);
+            creation_flag.store(true, std::sync::atomic::Ordering::Release);
+            if let Some(state) = &cc.wgpu_render_state {
+                paintfe::services::graphics::record_working_backend(
+                    state.adapter.get_info().backend,
+                );
+            }
             #[cfg(target_os = "windows")]
             set_windows_app_icons(cc);
             Ok(Box::new(PaintFEApp::new(cc, startup_files, ipc_receiver)))
         }),
-    )
+    );
+    if result.is_err()
+        && preferred_backend.is_some()
+        && !app_created.load(std::sync::atomic::Ordering::Acquire)
+    {
+        logger::write(
+            "WARN",
+            "Preferred graphics backend failed; restarting once with automatic selection",
+        );
+        if paintfe::services::graphics::restart_with_automatic_backend().is_ok() {
+            return Ok(());
+        }
+    }
+    result
 }
 
 /// Entry point — on Windows, wraps main_inner with SEH protection to catch

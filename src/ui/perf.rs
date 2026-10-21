@@ -7,7 +7,7 @@ use std::{
     time::Instant,
 };
 
-pub const STAGES: [&str; 24] = [
+pub const STAGES: [&str; 29] = [
     "lifecycle",
     "motion_policy",
     "os_motion",
@@ -31,22 +31,43 @@ pub const STAGES: [&str; 24] = [
     "preferences_header",
     "preferences_sidebar",
     "preferences_content",
+    "standard_slider",
+    "numeric_editor",
+    "gradient_slider",
+    "section_render",
+    "section_skip",
     "total",
 ];
 #[derive(Clone, Serialize)]
 struct Sample {
     time_ms: f64,
     gap_ms: f64,
+    frame_nr: u64,
+    pass: usize,
     events: usize,
     active: bool,
+    scenario: &'static str,
     previous_cpu_ms: Option<f64>,
     ms: [f64; STAGES.len()],
+    calls: [u32; STAGES.len()],
+}
+#[derive(Serialize)]
+#[serde(untagged)]
+enum Record {
+    Frame(Sample),
+    Startup {
+        startup: &'static str,
+        time_ms: f64,
+        duration_ms: f64,
+    },
 }
 thread_local! { static CURRENT: RefCell<Option<Sample>> = const { RefCell::new(None) }; }
 struct Backend {
-    sender: mpsc::SyncSender<Sample>,
+    sender: mpsc::SyncSender<Record>,
     origin: Instant,
     drive: bool,
+    scenario: Option<String>,
+    exit_after_ms: Option<f64>,
 }
 static BACKEND: OnceLock<Option<Backend>> = OnceLock::new();
 
@@ -69,7 +90,7 @@ fn backend() -> Option<&'static Backend> {
             let path = std::env::var_os("PAINTFE_UI_PROFILE")
                 .map(std::path::PathBuf::from)
                 .or(review_path)?;
-            let (sender, receiver) = mpsc::sync_channel::<Sample>(1024);
+            let (sender, receiver) = mpsc::sync_channel::<Record>(1024);
             std::thread::Builder::new()
                 .name("paintfe-ui-profile".into())
                 .spawn(move || {
@@ -80,7 +101,7 @@ fn backend() -> Option<&'static Backend> {
                     let mut writer = std::io::BufWriter::new(file);
                     let _ = serde_json::to_writer(
                         &mut writer,
-                        &serde_json::json!({"stages": STAGES, "version": 2, "continuous": drive}),
+                        &serde_json::json!({"stages": STAGES, "version": 3, "continuous": drive}),
                     );
                     let _ = writeln!(writer);
                     let mut count = 0;
@@ -112,11 +133,46 @@ fn backend() -> Option<&'static Backend> {
                 sender,
                 origin: Instant::now(),
                 drive,
+                scenario: std::env::var("PAINTFE_PROFILE_SCENARIO").ok(),
+                exit_after_ms: std::env::var("PAINTFE_PROFILE_EXIT_AFTER_MS")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
             })
         })
         .as_ref()
 }
 pub struct Frame(Option<Instant>);
+pub fn scenario(name: &'static str) {
+    if BACKEND.get().is_some_and(Option::is_some) {
+        CURRENT.with_borrow_mut(|slot| {
+            if let Some(sample) = slot {
+                sample.scenario = name;
+            }
+        });
+    }
+}
+/// Diagnostic startup navigation, active only when tracing is explicitly enabled.
+pub fn requested_scenario() -> Option<&'static str> {
+    backend()?.scenario.as_deref()
+}
+/// Opt-in startup spans share the frame clock and never record user data.
+pub struct StartupSpan(&'static str, Option<Instant>);
+impl StartupSpan {
+    pub fn new(name: &'static str) -> Self {
+        Self(name, backend().map(|_| Instant::now()))
+    }
+}
+impl Drop for StartupSpan {
+    fn drop(&mut self) {
+        if let (Some(start), Some(backend)) = (self.1, BACKEND.get().and_then(Option::as_ref)) {
+            let _ = backend.sender.try_send(Record::Startup {
+                startup: self.0,
+                time_ms: backend.origin.elapsed().as_secs_f64() * 1000.0,
+                duration_ms: start.elapsed().as_secs_f64() * 1000.0,
+            });
+        }
+    }
+}
 impl Frame {
     pub fn begin(ctx: &egui::Context, previous_cpu: Option<f32>) -> Self {
         let Some(backend) = backend() else {
@@ -124,6 +180,13 @@ impl Frame {
         };
         let now = Instant::now();
         let time_ms = backend.origin.elapsed().as_secs_f64() * 1000.0;
+        if backend.exit_after_ms.is_some_and(|limit| time_ms >= limit) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        } else if let Some(limit) = backend.exit_after_ms {
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(
+                (limit - time_ms) / 1000.0,
+            ));
+        }
         let active_id = egui::Id::new("paintfe_profile_active_until");
         let interacting = ctx.input(|i| {
             i.pointer.any_down()
@@ -147,15 +210,26 @@ impl Frame {
             ctx.request_repaint();
         }
         let last = ctx.data(|d| d.get_temp::<f64>(egui::Id::new("paintfe_profile_last_frame")));
-        ctx.data_mut(|d| d.insert_temp(egui::Id::new("paintfe_profile_last_frame"), time_ms));
+        let pass = ctx.current_pass_index();
+        if pass == 0 {
+            ctx.data_mut(|d| d.insert_temp(egui::Id::new("paintfe_profile_last_frame"), time_ms));
+        }
         CURRENT.with_borrow_mut(|slot| {
             *slot = Some(Sample {
                 time_ms,
-                gap_ms: last.map_or(0.0, |last| time_ms - last),
+                gap_ms: if pass == 0 {
+                    last.map_or(0.0, |last| time_ms - last)
+                } else {
+                    0.0
+                },
+                frame_nr: ctx.cumulative_frame_nr(),
+                pass,
                 events: ctx.input(|i| i.events.len()),
                 active,
+                scenario: "editor",
                 previous_cpu_ms: previous_cpu.map(|v| v as f64 * 1000.0),
                 ms: [0.0; STAGES.len()],
+                calls: [0; STAGES.len()],
             })
         });
         Self(Some(now))
@@ -168,7 +242,7 @@ impl Drop for Frame {
                 if let Some(mut sample) = slot.take() {
                     sample.ms[STAGES.len() - 1] = start.elapsed().as_secs_f64() * 1000.0;
                     if let Some(backend) = BACKEND.get().and_then(Option::as_ref) {
-                        let _ = backend.sender.try_send(sample);
+                        let _ = backend.sender.try_send(Record::Frame(sample));
                     }
                 }
             });
@@ -194,6 +268,7 @@ impl Drop for Scope {
             CURRENT.with_borrow_mut(|slot| {
                 if let Some(sample) = slot {
                     sample.ms[self.stage] += start.elapsed().as_secs_f64() * 1000.0;
+                    sample.calls[self.stage] += 1;
                 }
             });
         }

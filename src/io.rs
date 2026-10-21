@@ -1767,6 +1767,12 @@ pub fn encode_and_write(
     tiff_compression: TiffCompression,
     webp_lossless: bool,
 ) -> Result<(), ImageError> {
+    // A missing optional encoder or failed helper must not truncate a previous export.
+    if let SaveFormat::Jxl(options) = format {
+        let bytes = jxl::encode_rgba8(image, quality, options)?;
+        std::fs::write(path, bytes)?;
+        return Ok(());
+    }
     let file = File::create(path)?;
     let mut writer = BufWriter::new(file);
 

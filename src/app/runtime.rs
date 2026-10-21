@@ -45,7 +45,7 @@ impl eframe::App for PaintFEApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        if !self.settings_window.open { crate::config::persistence::flush(true); }
+        let _profile = crate::ui::perf::Frame::begin(&ctx, frame.info().cpu_usage);
         ctx.data_mut(|d| {
             d.insert_temp(
                 egui::Id::new("resize_grip_appearance"),
@@ -62,14 +62,17 @@ impl eframe::App for PaintFEApp {
                 });
             }
         }
-        let _profile = crate::ui::perf::Frame::begin(&ctx, frame.info().cpu_usage);
         {
             let _scope = crate::ui::perf::Scope::new(0);
             self.update_runtime_lifecycle_async(&ctx);
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        let pack_modal = crate::ui::panels::optional_features::frame(&ctx, &mut self.settings);
+        #[cfg(target_arch = "wasm32")]
+        let pack_modal = false;
         let modal_open = {
             let _scope = crate::ui::perf::Scope::new(4);
-            self.update_runtime_input(&ctx)
+            self.update_runtime_input(&ctx) || pack_modal
         };
         {
             let _scope = crate::ui::perf::Scope::new(5);
@@ -87,4 +90,10 @@ include!("runtime/update/input_shortcuts.rs");
 include!("runtime/update/dialogs_menu.rs");
 include!("runtime/update/canvas_tail.rs");
 
-impl Drop for PaintFEApp { fn drop(&mut self) { crate::config::persistence::flush(true); } }
+impl Drop for PaintFEApp {
+    fn drop(&mut self) {
+        if let Err(error) = crate::config::persistence::drain() {
+            crate::logger::write("WARN", &format!("Settings shutdown save failed: {error}"));
+        }
+    }
+}

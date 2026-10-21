@@ -1040,7 +1040,13 @@ impl AppSettings {
         }
     }
 
-    /// Save settings to disk
+    /// Wait for queued saves before an explicit process exit or migration.
+    /// Ordinary UI frames should queue `save` instead of waiting here.
+    pub fn flush_pending_saves() -> Result<(), String> {
+        crate::config::persistence::drain()
+    }
+
+    /// Save asynchronously on native; browser storage remains synchronous.
     pub fn save(&self) {
         let _scope = crate::ui::perf::Scope::new(3);
         #[cfg(not(target_arch = "wasm32"))]
@@ -2354,6 +2360,7 @@ mod refinement_tests {
             ..Default::default()
         };
         settings.save();
+        crate::config::persistence::drain().unwrap();
         let restored = AppSettings::load();
         assert_eq!(restored.info_font_size, 18.0);
         assert_eq!(restored.info_opacity, 0.65);
@@ -2383,6 +2390,7 @@ mod refinement_tests {
             crate::ops::ai::GraphOptimization::Basic
         );
         AppSettings::default().save();
+        crate::config::persistence::drain().unwrap();
     }
 
     #[test]

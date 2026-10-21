@@ -1,0 +1,13 @@
+[package]
+name = "paintfe-jxl-encoder"
+version = "1.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+jxl-sys = { path = "../../vendor/jxl-sys" }
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

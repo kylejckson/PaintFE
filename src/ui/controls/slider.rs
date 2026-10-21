@@ -121,6 +121,7 @@ impl<'a, T: Number> Slider<'a, T> {
 
 impl<T: Number> Widget for Slider<'_, T> {
     fn ui(mut self, ui: &mut Ui) -> Response {
+        let _profile = crate::ui::perf::Scope::new(23);
         ui.scope_builder(
             egui::UiBuilder::new().id(ui.make_persistent_id(("control", self.id))),
             |ui| {
