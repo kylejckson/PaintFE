@@ -15,7 +15,23 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 ### Notes
 
 - Linux installation, upgrade and desktop checks still require distribution testing. Arabic mixed-direction text needs native-speaker review; full RTL layout is not implemented.
-- Package publication requires maintainer signing secrets and explicit Pages setup. Existing Actions storage settings are unchanged.
+- Package publication requires maintainer signing secrets and explicit Pages setup.
+
+## [1.4.13] - 2026-10-22
+
+- Fixed the RPM signing error that blocked the previous release.
+- Reduced storage used by temporary Actions build downloads.
+- Kept Microsoft Store submission downloads available for fourteen days.
+
+### Release maintenance
+
+- Fixed RPM signing by exporting the public key in the format required by Ubuntu's RPM tools, then checking the package has a signature.
+- Added a disposable-key CI test for RPM signing, incorrect passwords and damaged packages.
+- Reduced temporary release artifact retention to one day. Store submission packages remain available for fourteen days.
+- Made development portable builds manual-only, with downloads kept for three days.
+- Added a read-only cleanup report for older Actions artifacts. Existing artifacts and published releases have not been deleted.
+
+Issues remain open for users to test and confirm.
 
 ## [1.4.12] - 2026-10-21
 

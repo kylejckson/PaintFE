@@ -21,12 +21,16 @@ sign_file() {
 }
 
 sign_rpm() {
-  gpg --batch --export "$SIGNING_KEY" >"$GNUPGHOME/public.gpg"
-  rpm --import "$GNUPGHOME/public.gpg"
+  gpg --batch --armor --export "$SIGNING_KEY" >"$GNUPGHOME/public.asc"
+  rpm --import "$GNUPGHOME/public.asc"
   # rpmsign invokes gpg itself; prime the agent, then use its cache.
   printf 'package signing\n' >"$GNUPGHOME/probe"
   sign_file --detach-sign "$GNUPGHOME/probe"
   rpmsign --define "_gpg_name $SIGNING_KEY" --define '_gpg_path %{getenv:GNUPGHOME}' \
-    --define '__gpg /usr/bin/gpg' --addsign "$1"
+    --define '__gpg /usr/bin/gpg' --define '_gpg_digest_algo sha256' --addsign "$1"
   rpmkeys --checksig "$1"
+  # An unsigned RPM can pass digest checks. Require an actual RSA header signature.
+  local signature
+  signature="$(rpm -qp --qf '%{RSAHEADER:pgpsig}' "$1")"
+  test -n "$signature" && test "$signature" != '(none)'
 }

@@ -1,5 +1,11 @@
 # Linux packages and updates
 
+RPM signing exports an ASCII-armored public key for compatibility with Ubuntu
+22.04's RPM tools, verifies the package and requires a real RSA header signature.
+CI runs `bash packaging/linux/test-signing.sh` on Ubuntu with a disposable,
+password-protected key. It checks signing, incorrect-password rejection and
+damaged-package rejection without using release secrets.
+
 PaintFE's DEB and RPM files wrap the existing x86-64 Linux release binary and
 Paint.NET compatibility host. There is no separate application edition and no
 application update checker. APT or DNF handles downloads and updates.

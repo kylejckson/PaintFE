@@ -2,9 +2,6 @@ name: Windows Portable Build
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - "**"
 
 permissions:
   contents: read
@@ -20,7 +17,7 @@ jobs:
       LIBCLANG_PATH: C:\Program Files\LLVM\bin
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
@@ -28,7 +25,7 @@ jobs:
           toolchain: 1.96.1
 
       - name: Cache cargo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
         with:
           path: |
             ~/.cargo/registry
@@ -58,7 +55,8 @@ jobs:
           Copy-Item -Recurse -Force target\release\paintdotnet-host dist\PaintFE-windows-x64\paintdotnet-host
 
       - name: Upload portable artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: PaintFE-windows-x64
+          retention-days: 3
           path: dist/PaintFE-windows-x64

@@ -66,6 +66,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: PaintFE-windows
+          retention-days: 1
           path: |
             target/release/PaintFE.exe
             target/release/paintdotnet-host
@@ -74,6 +75,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: optional-packs-build-windows
+          retention-days: 1
           path: target/optional-packs/*/release/*.pfepack
           if-no-files-found: error
 
@@ -141,6 +143,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: PaintFE-linux
+          retention-days: 1
           path: |
             target/release/PaintFE
             target/release/paintdotnet-host
@@ -149,6 +152,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: optional-packs-build-linux
+          retention-days: 1
           path: target/optional-packs/*/release/*.pfepack
           if-no-files-found: error
 
@@ -186,6 +190,7 @@ jobs:
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: PaintFE-linux-packages
+          retention-days: 1
           path: native-packages/*
           if-no-files-found: error
 
@@ -251,6 +256,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: PaintFE-appimage
+          retention-days: 1
           path: PaintFE-x86_64.AppImage
 
   # ── macOS build (Apple Silicon — aarch64) ────────────────────────────────────
@@ -311,12 +317,14 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: PaintFE-macos-arm64
+          retention-days: 1
           path: PaintFE-macOS-arm64.dmg
 
       - name: Upload optional feature packs
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: optional-packs-build-macos-arm
+          retention-days: 1
           path: target/optional-packs/*/release/*.pfepack
           if-no-files-found: error
 
@@ -380,6 +388,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: PaintFE-macos-x86_64
+          retention-days: 1
           path: PaintFE-macOS-x86_64.dmg
 
   # ── MSIX build (Microsoft Store submission package) ────────────────────────
@@ -387,6 +396,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: optional-packs-build-macos-x86
+          retention-days: 1
           path: target/optional-packs/*/release/*.pfepack
           if-no-files-found: error
 
@@ -481,9 +491,9 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: PaintFE-msix-store-submission
+          retention-days: 14
           path: PaintFE.msix
           if-no-files-found: error
-          retention-days: 30
 
   # ── Create GitHub Release ──────────────────────────────────────────────────
   release:
