@@ -108,7 +108,9 @@ impl Storage {
                 .join(super::file_dialogs::HISTORY_FILE_NAME),
             &mut files,
         )?;
-        for name in ["autosave", "scripts", "effects", "plugins", "packs"] {
+        for name in [
+            "autosave", "scripts", "effects", "plugins", "packs", "labels",
+        ] {
             collect_files(
                 &self.data_dir().join(name),
                 &target.data_dir().join(name),
@@ -536,7 +538,9 @@ mod tests {
             &f.storage.settings_path(),
             b"middle_click_close_tabs=false\n",
         );
-        for name in ["autosave", "scripts", "effects", "plugins", "packs"] {
+        for name in [
+            "autosave", "scripts", "effects", "plugins", "packs", "labels",
+        ] {
             f.write(&f.storage.data_dir().join(name).join("owned"), b"owned");
         }
         f.write(
@@ -550,7 +554,9 @@ mod tests {
             std::fs::read(target.data_dir().join(picker_history)).unwrap(),
             br#"{"themes":"C:/Themes"}"#
         );
-        for name in ["autosave", "scripts", "effects", "plugins", "packs"] {
+        for name in [
+            "autosave", "scripts", "effects", "plugins", "packs", "labels",
+        ] {
             assert_eq!(
                 std::fs::read(target.data_dir().join(name).join("owned")).unwrap(),
                 b"owned"

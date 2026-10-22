@@ -21,7 +21,7 @@ def expected_packs(tag):
     if not re.fullmatch(r'v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?', tag):
         raise ValueError('Expected a v-prefixed release version')
     return {f'PaintFE-pack-{pack}-{platform}-{tag}.pfepack': (pack, platform)
-            for platform in PLATFORMS for pack in ('cjk', 'jxl')}
+            for platform in PLATFORMS for pack in ('cjk', 'jxl', 'avif', 'heic')}
 
 
 def envelope(path):
@@ -60,8 +60,9 @@ def verify_pack(path, tag, pack, platform, key):
     if identity != (1, 1, tag[1:], pack, platform):
         raise ValueError(f'Wrong pack identity: {path.name}')
     payload = ('NotoSansCJK-Regular.otf' if pack == 'cjk' else
-               'paintfe-jxl-encoder.exe' if platform.startswith('windows-') else 'paintfe-jxl-encoder')
+               f'paintfe-{"avif-codec" if pack == "avif" else "heic-encoder" if pack == "heic" else "jxl-encoder"}' + ('.exe' if platform.startswith('windows-') else ''))
     names = {payload, 'LICENSE.txt'}
+    if pack == 'heic': names |= {'SOURCES.tar.gz', 'BUILDING.txt'}
     if Counter(f['name'] for f in manifest['files']) != Counter(names):
         raise ValueError(f'Invalid manifest file list: {path.name}')
     with zipfile.ZipFile(path) as archive:
@@ -81,7 +82,7 @@ def stage(source, destination, tag, core):
     expected = expected_packs(tag)
     found = list(Path(source).rglob('*.pfepack'))
     if Counter(p.name for p in found) != Counter(expected.keys()):
-        raise ValueError('Expected exactly eight unique release packs for this version')
+        raise ValueError('Expected exactly sixteen unique release packs for this version')
     paths = {p.name: p for p in found}
     reference = paths[f'PaintFE-pack-jxl-windows-x86_64-{tag}.pfepack']
     key = embedded_key(core, envelope(reference))

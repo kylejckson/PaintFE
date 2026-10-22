@@ -41,8 +41,9 @@ class ReleasePackTests(unittest.TestCase):
 
     def write_pack(self, path, pack, platform, version='1.4.13', corrupt=False):
         payload = ('NotoSansCJK-Regular.otf' if pack == 'cjk' else
-                   'paintfe-jxl-encoder.exe' if platform.startswith('windows-') else 'paintfe-jxl-encoder')
+                   f'paintfe-{"avif-codec" if pack == "avif" else "heic-encoder" if pack == "heic" else "jxl-encoder"}' + ('.exe' if platform.startswith('windows-') else ''))
         data = {payload:b'fixture payload', 'LICENSE.txt':b'fixture license'}
+        if pack == 'heic': data.update({'SOURCES.tar.gz':b'source archive','BUILDING.txt':b'build instructions'})
         manifest = json.dumps(dict(schema=1, protocol=1, app_version=version, pack=pack,
             platform=platform, files=[dict(name=n,size=len(b),sha256=hashlib.sha256(b).hexdigest())
                                       for n,b in data.items()]))
@@ -57,7 +58,7 @@ class ReleasePackTests(unittest.TestCase):
     def stage(self):
         return staging.stage(self.source,self.dest,'v1.4.13',self.core)
 
-    def test_nested_four_platform_artifacts_produce_exact_flat_eight_packs(self):
+    def test_nested_four_platform_artifacts_produce_exact_flat_sixteen_packs(self):
         self.assertEqual(self.stage(),sorted(self.expected))
         self.assertEqual(sorted(p.name for p in self.dest.iterdir()),sorted(self.expected))
         for name,path in self.paths.items():
@@ -65,14 +66,14 @@ class ReleasePackTests(unittest.TestCase):
 
     def test_missing_pack_fails_before_staging(self):
         next(iter(self.paths.values())).unlink()
-        with self.assertRaisesRegex(ValueError,'eight unique'):
+        with self.assertRaisesRegex(ValueError,'sixteen unique'):
             self.stage()
         self.assertFalse(self.dest.exists())
 
     def test_duplicate_pack_fails_before_staging(self):
         path=next(iter(self.paths.values()))
         (self.source/path.name).write_bytes(path.read_bytes())
-        with self.assertRaisesRegex(ValueError,'eight unique'):
+        with self.assertRaisesRegex(ValueError,'sixteen unique'):
             self.stage()
 
     def test_unexpected_version_filename_fails(self):
@@ -107,7 +108,7 @@ class ReleasePackTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'must be empty'):
             self.stage()
 
-    def test_public_urls_and_bytes_are_verified_for_all_eight(self):
+    def test_public_urls_and_bytes_are_verified_for_all_sixteen(self):
         self.stage()
         urls=[]
         def fetch(url,timeout):
@@ -115,7 +116,7 @@ class ReleasePackTests(unittest.TestCase):
             return io.BytesIO((self.dest/url.rsplit('/',1)[1]).read_bytes())
         with patch.object(staging,'urlopen',side_effect=fetch):
             staging.verify_published(self.dest,'v1.4.13')
-        self.assertEqual(len(urls),8)
+        self.assertEqual(len(urls),16)
         self.assertTrue(all('/releases/download/v1.4.13/' in u for u in urls))
 
     def test_public_404_and_wrong_bytes_fail(self):

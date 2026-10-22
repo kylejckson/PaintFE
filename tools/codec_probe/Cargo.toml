@@ -1,0 +1,26 @@
+[package]
+name = "paintfe-codec-probe"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[features]
+default = []
+heif = ["dep:heifer"]
+avif-encode = ["dep:image", "image/avif"]
+avif-fast = ["avif-encode", "image/nasm", "image/rayon"]
+avif-decode = ["dep:image", "image/avif-native"]
+
+[dependencies]
+heifer = { version = "=0.2.0", optional = true }
+image = { version = "=0.25.9", default-features = false, optional = true }
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+
+[patch.crates-io]
+heifer = { path = "../../vendor/heifer" }

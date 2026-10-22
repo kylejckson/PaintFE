@@ -8,20 +8,33 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ## [Unreleased]
 
-- Added native Linux DEB and RPM packaging for easier system installation.
-- Added signed Linux package repository publication for normal system updates.
-- Added the community Arabic translation and an offline Arabic font fallback.
+## [1.4.14] - 2026-10-22
 
-### Notes
+- Open HEIC/HEIF images and save them with an optional HEIC export pack.
+- Open and save AVIF images with an optional codec pack.
+- Customize interface labels with a searchable editor for each language.
 
-- Linux installation, upgrade and desktop checks still require distribution testing. Arabic mixed-direction text needs native-speaker review; full RTL layout is not implemented.
-- Package publication requires maintainer signing secrets and explicit Pages setup.
+### Images and saving
 
-### Release publishing
+- Corrected HEIF grid transparency using a local Heifer decoder patch.
+- Added separate offline HEIC and AVIF helpers, keeping their encoders out of the main app.
+- Toolbar Save now saves directly to the current file, matching Ctrl+S and File > Save.
+- HEIC saves keep the original format and destination. Missing export packs offer installation without switching to PNG.
 
-- Fixed optional feature packs being left out of releases because their artifact folders were nested.
-- Release publishing now checks all eight signed packs, stops on missing files or checksum errors, and verifies the public downloads.
-- Repaired the v1.4.13 JPEG XL encoder and CJK font downloads using the original signed packs. The existing application downloads are unchanged.
+### Interface and installation
+
+- Restyled Document Info, added the supplied icons, and made the label editor movable, resizable and bounded to the app window.
+- Matched Preferences section headings to the other dialogs. Related to #197.
+- Added Info and Duplicate above Print in the File menu. Related to #198.
+- Added DEB/RPM packages, signed Linux repositories and the community Arabic translation with an offline font fallback.
+
+### Release checks
+
+- Release publishing verifies all sixteen signed optional packs and their public downloads.
+- HEIC colour export is lossy 8-bit, including at quality 100; alpha is lossless.
+- Linux/macOS codec execution and Linux package installation still need platform testing. Arabic needs native-speaker review; full RTL layout is not implemented.
+
+Issues remain open for users to test and confirm.
 
 ## [1.4.13] - 2026-10-22
 

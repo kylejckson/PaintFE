@@ -276,3 +276,75 @@ fn download_transport_verifies_success_and_cleans_interrupted_or_invalid_files()
             .starts_with("https://github.com/kylejckson/PaintFE/releases/download/")
     );
 }
+
+#[test]
+fn heic_pack_requires_signed_corresponding_source_and_rejects_unknown_files() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("heic.pfepack");
+    let root = fixture.0.join("packs");
+    let mut data = manifest(Pack::Heic, b"helper");
+    let text = serde_json::to_string(&data).unwrap();
+    let incomplete = Envelope {
+        manifest: text.clone(),
+        signature: key()
+            .sign(text.as_bytes())
+            .to_bytes()
+            .iter()
+            .map(|v| format!("{v:02x}"))
+            .collect(),
+    };
+    assert!(
+        verify_manifest(
+            &serde_json::to_vec(&incomplete).unwrap(),
+            Pack::Heic,
+            &key().verifying_key().to_bytes()
+        )
+        .is_err()
+    );
+    for name in ["SOURCES.tar.gz", "BUILDING.txt"] {
+        data.files.push(PackFile {
+            name: name.into(),
+            sha256: format!("{:x}", Sha256::digest(b"source")),
+            size: 6,
+        });
+    }
+    let public = key().verifying_key().to_bytes();
+    let text = serde_json::to_string(&data).unwrap();
+    let envelope = Envelope {
+        manifest: text.clone(),
+        signature: key()
+            .sign(text.as_bytes())
+            .to_bytes()
+            .iter()
+            .map(|v| format!("{v:02x}"))
+            .collect(),
+    };
+    let mut zip = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+    for (name, bytes) in [
+        ("manifest.json", serde_json::to_vec(&envelope).unwrap()),
+        (Pack::Heic.payload(), b"helper".to_vec()),
+        ("LICENSE.txt", b"license".to_vec()),
+        ("SOURCES.tar.gz", b"source".to_vec()),
+        ("BUILDING.txt", b"source".to_vec()),
+    ] {
+        zip.start_file(name, SimpleFileOptions::default()).unwrap();
+        zip.write_all(&bytes).unwrap();
+    }
+    zip.finish().unwrap();
+    install_at(&path, Pack::Heic, &root, &public).unwrap();
+    let payload = installed_at(&root, Pack::Heic, &public).unwrap();
+    fs::write(payload.parent().unwrap().join("SOURCES.tar.gz"), b"damage").unwrap();
+    assert!(installed_at(&root, Pack::Heic, &public).is_err());
+    data.files[2].name = "../escape".into();
+    let text = serde_json::to_string(&data).unwrap();
+    let envelope = Envelope {
+        manifest: text.clone(),
+        signature: key()
+            .sign(text.as_bytes())
+            .to_bytes()
+            .iter()
+            .map(|v| format!("{v:02x}"))
+            .collect(),
+    };
+    assert!(verify_manifest(&serde_json::to_vec(&envelope).unwrap(), Pack::Heic, &public).is_err());
+}

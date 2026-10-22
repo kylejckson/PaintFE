@@ -6,6 +6,13 @@ from pathlib import Path
 if sys.version_info < (3, 11):
     raise SystemExit('Optional pack builds require Python 3.11 or later. Install Python 3.12 and retry.')
 import tomllib
+import importlib.util
+_avif_spec = importlib.util.spec_from_file_location("paintfe_avif_native", Path(__file__).with_name("build_avif_native.py"))
+build_avif_native = importlib.util.module_from_spec(_avif_spec)
+_avif_spec.loader.exec_module(build_avif_native)
+_heic_spec = importlib.util.spec_from_file_location("paintfe_heic_native", Path(__file__).with_name("build_heic_native.py"))
+build_heic_native = importlib.util.module_from_spec(_heic_spec)
+_heic_spec.loader.exec_module(build_heic_native)
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,7 +24,7 @@ def platform_id(target=None):
 
 def export_test_environment(output, pack_paths):
     metadata = json.loads((output/'build-env.json').read_text(encoding='utf-8'))
-    metadata.update(PAINTFE_TEST_JXL_PACK=str(pack_paths['jxl']), PAINTFE_TEST_STORAGE_DIR=str(ROOT/'target'/'codec-test-storage'))
+    metadata.update(PAINTFE_TEST_JXL_PACK=str(pack_paths['jxl']), PAINTFE_TEST_AVIF_PACK=str(pack_paths['avif']), PAINTFE_TEST_HEIC_PACK=str(pack_paths['heic']), PAINTFE_TEST_STORAGE_DIR=str(ROOT/'target'/'codec-test-storage'))
     with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as destination:
         for name, value in metadata.items():
             if '\n' in value or '\r' in value:
@@ -52,6 +59,21 @@ def run():
     binary_root /= profile
     suffix = '.exe' if os_name=='windows' else ''
     helper = binary_root/f'paintfe-jxl-encoder{suffix}'
+    avif_env, native_license = build_avif_native.prepare(target, env)
+    avif_manifest = ROOT/'optional/avif-codec/Cargo.toml'
+    subprocess.run(['cargo','build','-j','2','--manifest-path',str(avif_manifest),'--target-dir',str(ROOT/'target')]+extra,cwd=ROOT,env=avif_env,check=True)
+    avif_helper = binary_root/f'paintfe-avif-codec{suffix}'
+    metadata = json.loads(subprocess.check_output(['cargo','metadata','--format-version','1','--manifest-path',str(avif_manifest)],cwd=ROOT,env=avif_env))
+    notices = ['PaintFE optional AVIF codec: third-party license notices', native_license.read_text(encoding='utf-8')]
+    for package in sorted(metadata['packages'],key=lambda p:(p['name'],p['version'])):
+        folder=Path(package['manifest_path']).parent
+        notices.append(f"\n--- {package['name']} {package['version']} ({package.get('license') or 'see source'}) ---\n")
+        for file in sorted(folder.rglob('*')):
+            if file.is_file() and file.name.upper().startswith(('LICENSE','COPYING')):
+                notices.append(file.read_text(encoding='utf-8',errors='replace'))
+    avif_license = output/'avif-LICENSE.txt'
+    avif_license.write_text('\n'.join(notices),encoding='utf-8')
+    heic_helper, heic_license, heic_sources, heic_building = build_heic_native.prepare(target, env)
     if signing_key:
         key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(signing_key))
     else:
@@ -66,8 +88,12 @@ def run():
     for pack, payload, license_path in [
         ('cjk', ROOT/'assets/fonts/NotoSansCJK-Regular.otf', ROOT/'assets/fonts/NotoSansCJK-OFL.txt'),
         ('jxl', helper, ROOT/'optional/jxl-encoder/LICENSE.txt'),
+        ('avif', avif_helper, avif_license),
+        ('heic', heic_helper, heic_license),
     ]:
         data = {payload.name:payload.read_bytes(),'LICENSE.txt':license_path.read_bytes()}
+        if pack == 'heic':
+            data.update({'SOURCES.tar.gz': heic_sources.read_bytes(), 'BUILDING.txt': heic_building.read_bytes()})
         manifest = json.dumps(dict(schema=1,pack=pack,app_version=version,platform=system,protocol=1,
             files=[dict(name=name,sha256=hashlib.sha256(contents).hexdigest(),size=len(contents)) for name,contents in data.items()]),separators=(',',':'))
         envelope = json.dumps(dict(manifest=manifest,signature=key.sign(manifest.encode()).hex()),separators=(',',':')).encode()

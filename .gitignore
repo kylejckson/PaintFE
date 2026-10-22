@@ -26,3 +26,6 @@ PaintFE.code-workspace
 
 # Test failure artifacts (diffs, actual outputs)
 tests/output/
+
+# Python tooling caches
+__pycache__/

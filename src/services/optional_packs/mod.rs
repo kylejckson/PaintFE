@@ -11,6 +11,7 @@ use std::{
     },
 };
 
+pub mod avif;
 mod process;
 pub use process::encode_jxl;
 #[cfg(test)]
@@ -20,30 +21,52 @@ pub const MAX_PACK: u64 = 96 * 1024 * 1024;
 const MAX_MANIFEST: u64 = 32 * 1024;
 static LOCK: Mutex<()> = Mutex::new(());
 static REQUEST_JXL: AtomicBool = AtomicBool::new(false);
+static REQUEST_HEIC: AtomicBool = AtomicBool::new(false);
+static REQUEST_AVIF: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Pack {
     Cjk,
     Jxl,
+    Avif,
+    Heic,
 }
 impl Pack {
-    pub const ALL: [Self; 2] = [Self::Cjk, Self::Jxl];
+    pub const ALL: [Self; 4] = [Self::Cjk, Self::Jxl, Self::Avif, Self::Heic];
     pub fn id(self) -> &'static str {
         match self {
             Self::Cjk => "cjk",
             Self::Jxl => "jxl",
+            Self::Avif => "avif",
+            Self::Heic => "heic",
         }
     }
     pub fn title(self) -> String {
         crate::t!(match self {
             Self::Cjk => "packs.cjk",
             Self::Jxl => "packs.jxl",
+            Self::Avif => "packs.avif",
+            Self::Heic => "packs.heic",
         })
     }
     pub fn payload(self) -> &'static str {
         match self {
             Self::Cjk => "NotoSansCJK-Regular.otf",
+            Self::Heic => {
+                if cfg!(windows) {
+                    "paintfe-heic-encoder.exe"
+                } else {
+                    "paintfe-heic-encoder"
+                }
+            }
+            Self::Avif => {
+                if cfg!(windows) {
+                    "paintfe-avif-codec.exe"
+                } else {
+                    "paintfe-avif-codec"
+                }
+            }
             Self::Jxl => {
                 if cfg!(windows) {
                     "paintfe-jxl-encoder.exe"
@@ -52,6 +75,13 @@ impl Pack {
                 }
             }
         }
+    }
+    fn files(self) -> Vec<&'static str> {
+        let mut files = vec![self.payload(), "LICENSE.txt"];
+        if self == Self::Heic {
+            files.extend(["SOURCES.tar.gz", "BUILDING.txt"]);
+        }
+        files
     }
     pub fn asset(self) -> String {
         format!(
@@ -136,7 +166,7 @@ fn verify_manifest(bytes: &[u8], pack: Pack, key: &[u8; 32]) -> Result<Manifest,
     {
         return Err("This pack is for another feature, protocol or platform".into());
     }
-    let expected = [pack.payload(), "LICENSE.txt"];
+    let expected = pack.files();
     if manifest.files.len() != expected.len()
         || !expected.iter().all(|name| {
             manifest
@@ -206,7 +236,7 @@ fn install_at(path: &Path, pack: Pack, root: &Path, key: &[u8; 32]) -> Result<()
     let bytes = read_limited(path, MAX_PACK)?;
     let mut archive =
         zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| e.to_string())?;
-    if archive.len() != 3 {
+    if archive.len() != pack.files().len() + 1 {
         return Err("Unexpected pack contents".into());
     }
     let mut envelope = Vec::new();
@@ -256,7 +286,7 @@ fn install_at(path: &Path, pack: Pack, root: &Path, key: &[u8; 32]) -> Result<()
         }
         fs::write(stage.join("manifest.json"), envelope).map_err(|e| e.to_string())?;
         #[cfg(unix)]
-        if pack == Pack::Jxl {
+        if pack != Pack::Cjk {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(
                 stage.join(pack.payload()),
@@ -355,6 +385,12 @@ pub fn download(pack: Pack) -> Result<(), String> {
         Ok(())
     })
 }
+pub fn request_avif() {
+    REQUEST_AVIF.store(true, Ordering::Relaxed);
+}
+pub fn take_avif_request() -> bool {
+    REQUEST_AVIF.swap(false, Ordering::Relaxed)
+}
 pub fn request_jxl() {
     REQUEST_JXL.store(true, Ordering::Relaxed);
 }
@@ -385,4 +421,11 @@ pub(crate) fn test_encoder_available() -> bool {
         }
     });
     installed(Pack::Jxl).is_ok()
+}
+
+pub fn request_heic() {
+    REQUEST_HEIC.store(true, Ordering::Relaxed);
+}
+pub fn take_heic_request() -> bool {
+    REQUEST_HEIC.swap(false, Ordering::Relaxed)
 }

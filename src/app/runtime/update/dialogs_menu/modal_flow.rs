@@ -516,24 +516,31 @@ impl PaintFEApp {
                 }
                 match choice {
                     Some(0) => {
-                        let current_time = ctx.input(|i| i.time);
-                        self.handle_save_all(current_time);
-                        let untitled_dirty: Vec<usize> = self
-                            .projects
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, p)| p.is_dirty && !p.file_handler.has_current_path())
-                            .map(|(i, _)| i)
-                            .collect();
+                        // A missing HEIC export pack must not turn Save and Exit
+                        // into an exit without saving a document with a known path.
+                        let ready = (0..self.projects.len()).all(|idx| {
+                            !self.projects[idx].is_dirty || self.prepare_heic_save(idx)
+                        });
                         self.pending_exit = false;
-                        if untitled_dirty.is_empty() {
-                            self.force_exit = true;
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        } else {
-                            self.exit_save_queue = untitled_dirty;
-                            self.exit_save_active = true;
-                            let first = self.exit_save_queue.remove(0);
-                            self.open_save_as_for_project(first);
+                        if ready {
+                            let current_time = ctx.input(|i| i.time);
+                            self.handle_save_all(current_time);
+                            let untitled_dirty: Vec<usize> = self
+                                .projects
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, p)| p.is_dirty && !p.file_handler.has_current_path())
+                                .map(|(i, _)| i)
+                                .collect();
+                            if untitled_dirty.is_empty() {
+                                self.force_exit = true;
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            } else {
+                                self.exit_save_queue = untitled_dirty;
+                                self.exit_save_active = true;
+                                let first = self.exit_save_queue.remove(0);
+                                self.open_save_as_for_project(first);
+                            }
                         }
                     }
                     Some(1) => {
@@ -735,7 +742,21 @@ impl PaintFEApp {
             }
         }
 
-        self.document_modal_open()
+        #[cfg(not(target_arch = "wasm32"))]
+        let avif_active = crate::services::optional_packs::avif::active();
+        #[cfg(target_arch = "wasm32")]
+        let avif_active = false;
+        #[cfg(not(target_arch = "wasm32"))]
+        if avif_active {
+            egui::Modal::new(egui::Id::new("avif_processing")).show(ctx, |ui| {
+                ui.label(crate::t!("codec.processing"));
+                ui.spinner();
+                if ui.button(crate::t!("ui.cancel")).clicked() { crate::services::optional_packs::avif::cancel(); }
+            });
+            ctx.request_repaint_after(std::time::Duration::from_millis(40));
+        }
+        let label_editor_open = crate::ui::panels::label_editor::show(ctx, &self.assets);
+        self.document_modal_open() || label_editor_open || avif_active
     }
 
     /// First-run welcome / beta-disclaimer popup (web only). Shown once per

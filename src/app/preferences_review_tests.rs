@@ -798,3 +798,114 @@ fn window_restore_size_excludes_desktop_position_on_every_monitor() {
         assert_eq!(app.last_screen_size, (1000.0, 700.0));
     }
 }
+
+#[test]
+fn toolbar_save_overwrites_opened_heif_without_any_save_dialog() {
+    use crate::services::optional_packs::{self as packs, Pack};
+    let Some(pack) = std::env::var_os("PAINTFE_TEST_HEIC_PACK") else {
+        eprintln!("HEIF toolbar test needs PAINTFE_TEST_HEIC_PACK (provided by codec CI)");
+        return;
+    };
+    packs::install(std::path::Path::new(&pack), Pack::Heic).unwrap();
+    let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target/toolbar-save-tests")
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(&directory).unwrap();
+    for extension in ["heif", "HEIC", "hif", "png"] {
+        let path = directory.join(format!("source.{extension}"));
+        if extension == "png" {
+            image::RgbaImage::from_pixel(29, 100, image::Rgba([100, 80, 60, 255]))
+                .save(&path)
+                .unwrap();
+        } else {
+            std::fs::write(
+                &path,
+                include_bytes!("../../tests/fixtures/heif/RGBA_8__29x100.heif"),
+            )
+            .unwrap();
+        }
+        let before = std::fs::read(&path).unwrap();
+        let mut app = app();
+        let ctx = context();
+        app.open_file_by_path(path.clone(), 0.0);
+        let wait = |app: &mut PaintFEApp| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            while app.pending_io_ops > 0 {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "I/O timed out: {extension}"
+                );
+                app.update_runtime_lifecycle_async(&ctx);
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        };
+        wait(&mut app);
+        let idx = app.active_project_index;
+        assert_eq!(app.projects[idx].path.as_ref(), Some(&path));
+        // A visible opaque edit must change the actual encoded file.
+        app.projects[idx].canvas_state.layers[0].pixels = TiledImage::from_rgba_image(
+            &image::RgbaImage::from_pixel(29, 100, image::Rgba([220, 25, 60, 255])),
+        );
+        app.projects[idx].canvas_state.mark_dirty(None);
+        app.projects[idx].mark_dirty();
+        let frame = |app: &mut PaintFEApp, events| {
+            let _ = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1200.0, 900.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| app.show_runtime_dialogs_menu(&ctx, ui),
+            );
+        };
+        for _ in 0..3 {
+            frame(&mut app, vec![]);
+        }
+        let rect = ctx
+            .data(|d| d.get_temp::<egui::Rect>(egui::Id::new("toolbar_save_test_rect")))
+            .unwrap();
+        for pressed in [true, false] {
+            frame(
+                &mut app,
+                vec![
+                    egui::Event::PointerMoved(rect.center()),
+                    egui::Event::PointerButton {
+                        pos: rect.center(),
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+            );
+        }
+        assert!(
+            !app.save_file_dialog.open,
+            "toolbar Save opened Save As for {extension}"
+        );
+        assert!(
+            app.pending_io_ops > 0,
+            "toolbar Save must launch an actual write"
+        );
+        wait(&mut app);
+        assert!(!app.projects[idx].is_dirty);
+        assert_eq!(
+            app.projects[idx].file_handler.current_path.as_ref(),
+            Some(&path)
+        );
+        let after = std::fs::read(&path).unwrap();
+        assert_ne!(before, after, "Save must update the original file");
+        let decoded = crate::io::decode_image_bytes(&after).unwrap().to_rgba8();
+        assert_eq!(decoded.dimensions(), (29, 100));
+        let pixel = decoded.get_pixel(14, 50);
+        assert!(
+            pixel[0].abs_diff(220) <= 15
+                && pixel[1].abs_diff(25) <= 15
+                && pixel[2].abs_diff(60) <= 15,
+            "saved file must contain the edit: {pixel:?}"
+        );
+    }
+    std::fs::remove_dir_all(directory).unwrap();
+}

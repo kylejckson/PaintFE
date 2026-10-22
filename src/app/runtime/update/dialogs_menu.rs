@@ -123,6 +123,23 @@ impl PaintFEApp {
                             }
                         }
                         ui.separator();
+                        if self.assets.menu_item_enabled(
+                            ui, Icon::MenuFileInfo, &t!("menu.file.info"), has_project,
+                        ).clicked() {
+                            if let Some(project) = self.active_project() {
+                                ctx.data_mut(|d| d.insert_temp(egui::Id::new("document_info"), project.id));
+                            }
+                            ui.close();
+                        }
+                        if self.assets.menu_item_enabled(
+                            ui, Icon::Duplicate, &t!("menu.file.duplicate"), has_project,
+                        ).clicked() {
+                            if let Some(project) = self.active_project() {
+                                self.duplicate_project(project.id);
+                            }
+                            ui.close();
+                        }
+                        ui.separator();
                         if self
                             .assets
                             .menu_item_enabled(
@@ -1863,12 +1880,11 @@ impl PaintFEApp {
                         self.handle_open_file(ctx.input(|i| i.time));
                     }
                     let is_dirty = self.active_project().is_some_and(|p| p.is_dirty);
-                    if self
-                        .assets
-                        .icon_button_enabled(ui, Icon::Save, is_dirty)
-                        .clicked()
-                    {
-                        self.open_save_as_for_project(self.active_project_index);
+                    let save_button = self.assets.icon_button_enabled(ui, Icon::Save, is_dirty);
+                    #[cfg(test)]
+                    ctx.data_mut(|d| d.insert_temp(egui::Id::new("toolbar_save_test_rect"), save_button.rect));
+                    if save_button.clicked() {
+                        self.handle_save(ctx.input(|i| i.time));
                     }
 
                     ui.separator();
@@ -2718,28 +2734,20 @@ impl PaintFEApp {
         if let Some(id) = ctx.data(|d| d.get_temp::<uuid::Uuid>(info_id)) {
             let mut open = true;
             if let Some(project) = self.projects.iter().find(|p| p.id == id) {
-                egui::Window::new(crate::t!("ui.document_info"))
-                    .open(&mut open)
+                crate::ui::polish::window(ctx, "document_info_inspector")
+                    .title_bar(false)
+                    .collapsible(false)
+                    .resizable(true)
+                    .default_width(440.0)
+                    .min_width(280.0)
+                    .max_width((ctx.content_rect().width() - 24.0).max(280.0))
+                    .frame(self.theme.dialog_frame())
                     .show(ctx, |ui| {
-                        ui.label(&project.name);
-                        ui.label(crate::i18n::format_translation(
-                            "ui.0_1_pixels",
-                            &[
-                                ("0", format!("{}", project.canvas_state.width)),
-                                ("1", format!("{}", project.canvas_state.height)),
-                            ],
-                        ));
-                        ui.label(crate::i18n::format_translation(
-                            "ui.0_layers",
-                            &[("0", format!("{}", project.canvas_state.layers.len()))],
-                        ));
-                        ui.label(
-                            project
-                                .path
-                                .as_ref()
-                                .map(|p| crate::services::io::display_path(p))
-                                .unwrap_or_else(|| "Unsaved document".into()),
-                        );
+                        let path = project.path.as_ref().map(|p| crate::services::io::display_path(p));
+                        open &= !crate::ui::panels::document_info::contents(ui, &self.assets, crate::ui::panels::document_info::Info {
+                            name: &project.name, width: project.canvas_state.width, height: project.canvas_state.height,
+                            layers: project.canvas_state.layers.len(), path: path.as_deref(),
+                        });
                     });
             } else {
                 open = false;

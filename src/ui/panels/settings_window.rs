@@ -217,7 +217,7 @@ impl SettingsWindow {
         theme: &mut crate::theme::Theme,
         assets: &Assets,
     ) -> Option<egui::Rect> {
-        if !self.open {
+        if !self.open || super::label_editor::is_open(ctx) {
             return None;
         }
 
@@ -408,7 +408,7 @@ impl SettingsWindow {
                             #[cfg(not(target_arch = "wasm32"))]
                             (
                                 SettingsTab::OptionalFeatures,
-                                Icon::SettingsPlugins,
+                                Icon::SettingsOptionalFeatures,
                                 t!("packs.title"),
                             ),
                             #[cfg(not(target_arch = "wasm32"))]
@@ -794,7 +794,7 @@ impl SettingsWindow {
         }
     }
 
-    /// Draws a bold section label followed by a thin separator rule.
+    /// Draws a dialog-style section label followed by a thin separator rule.
     /// Used consistently across all settings tabs.
     pub(super) fn section_header(ui: &mut egui::Ui, label: &str) {
         ui.ctx().data_mut(|d| {
@@ -808,7 +808,8 @@ impl SettingsWindow {
             .ctx()
             .data(|d| d.get_temp::<(String, f64)>(egui::Id::new("preferences_search_highlight")))
             .is_some_and(|(target, until)| target == label && ui.input(|i| i.time) < until);
-        let text = egui::RichText::new(label).strong().size(13.0);
+        let colors = crate::ui::dialogs::DialogColors::from_ctx(ui.ctx());
+        let text = crate::ui::dialogs::section_label_text(ui.ctx(), &colors, label);
         let response = ui.label(if highlighted {
             text.background_color(ui.visuals().selection.bg_fill)
         } else {
@@ -1303,6 +1304,14 @@ impl SettingsWindow {
                 .weak(),
         )
         .search_target(ui, "ui.restart_recommended_after_changing_language");
+
+        if ui
+            .button(crate::t!("labels.edit"))
+            .search_target(ui, "labels.edit")
+            .clicked()
+        {
+            super::label_editor::open(ui.ctx());
+        }
 
         // -- History & Auto-save -------------------------------------------
         Self::section_header(ui, &t!("settings.general.history"));
@@ -1835,6 +1844,7 @@ impl SettingsWindow {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         (
             self.section_generation,
+            crate::i18n::label_revision(),
             std::sync::Arc::as_ptr(&ctx.global_style()) as usize,
             crate::i18n::current_language(),
             ui.ctx().pixels_per_point().to_bits(),
@@ -3752,7 +3762,12 @@ impl SettingsWindow {
                 .search_target(ui, "settings.ai.test")
                 .clicked()
             {
-                self.onnx_probe_result = None;
+                // Native probes complete asynchronously; browser probes replace
+                // the result immediately in every branch below.
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    self.onnx_probe_result = None;
+                }
                 match Self::validated_ai_path(&self.staged_onnx_path, false) {
                     Ok(path) if path.is_empty() => {
                         self.onnx_probe_result = Some(Err(t!("settings.ai.path_empty")))

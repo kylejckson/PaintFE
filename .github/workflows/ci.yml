@@ -58,8 +58,15 @@ jobs:
           python -m pip install cryptography==46.0.7
           python tools/build_optional_packs.py --helper-only --github-env
 
-      - name: Test JPEG XL codecs
-        run: cargo test -j1 --test jpeg_xl -- --test-threads=1
+      - name: Test image codecs and personal labels
+        run: |
+          cargo test -j1 --test jpeg_xl -- --test-threads=1
+          cargo test -j1 --test heif -- --test-threads=1
+          cargo test -j1 --test avif -- --test-threads=1
+          cargo test -j1 --test heic_export -- --test-threads=1
+          cargo test -j1 --lib toolbar_save_overwrites_opened_heif_without_any_save_dialog -- --test-threads=1
+          cargo test -j1 --test label_overrides -- --test-threads=1
+          cargo test -j1 --lib ui::panels::label_editor -- --test-threads=1
 
       - name: Test shared control interactions
         run: cargo test -j1 --lib ui::controls -- --test-threads=1
@@ -109,6 +116,9 @@ jobs:
       - name: Run cargo audit
         run: cargo audit
 
+      - name: Audit AVIF helper dependencies
+        run: cargo audit --file optional/avif-codec/Cargo.lock
+
   build-unix:
     name: Build check (${{ matrix.os }})
     strategy:
@@ -124,7 +134,11 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libvulkan-dev libwayland-dev libegl1-mesa-dev libssl-dev libfontconfig1-dev cmake libclang-dev pkg-config
+          sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libvulkan-dev libwayland-dev libegl1-mesa-dev libssl-dev libfontconfig1-dev cmake libclang-dev pkg-config nasm
+
+      - name: Install macOS assembler
+        if: runner.os == 'macOS'
+        run: brew install nasm
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
@@ -155,8 +169,15 @@ jobs:
           python -m pip install cryptography==46.0.7
           python tools/build_optional_packs.py --helper-only --github-env
 
-      - name: Test JPEG XL codecs
-        run: cargo test -j1 --test jpeg_xl -- --test-threads=1
+      - name: Test image codecs and personal labels
+        run: |
+          cargo test -j1 --test jpeg_xl -- --test-threads=1
+          cargo test -j1 --test heif -- --test-threads=1
+          cargo test -j1 --test avif -- --test-threads=1
+          cargo test -j1 --test heic_export -- --test-threads=1
+          cargo test -j1 --lib toolbar_save_overwrites_opened_heif_without_any_save_dialog -- --test-threads=1
+          cargo test -j1 --test label_overrides -- --test-threads=1
+          cargo test -j1 --lib ui::panels::label_editor -- --test-threads=1
 
       - name: Test optional pack and icon pack handling
         run: |

@@ -1,0 +1,17 @@
+PaintFE HEIC export helper is GPL-3.0-or-later. PaintFE communicates with this
+separate program through stdin/stdout. libheif is LGPL-3.0-or-later and Kvazaar
+is BSD-3-Clause. LICENSE.txt contains the upstream license texts.
+
+SOURCES.tar.gz in the same signed pack contains complete corresponding source:
+libheif, Kvazaar, this helper, and build_heic_native.py. No network is necessary
+when rebuilding from the included sources. Install a C/C++ toolchain, CMake
+3.25+ and Python 3.11+, extract SOURCES.tar.gz, and run from its root:
+
+  python build_heic_native.py --source-root .
+
+Windows requires Visual Studio 2022 C++ tools; Linux/macOS require their native
+C/C++ compiler. The helper uses static libraries and the static Windows CRT.
+The build script records a small libheif encoder adaptation: fast preset and
+four worker threads, and lossless auxiliary alpha. Colour remains lossy.
+Rebuilt helpers can be used with your own locally signed
+PaintFE build. Official pack signatures remain verified by official builds.

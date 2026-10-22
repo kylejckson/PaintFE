@@ -418,6 +418,7 @@ impl PaintFEApp {
                 self.settings.save();
             }
             match result {
+                IoResult::BytesDecoded { decoded, name_hint } => self.finish_image_from_bytes(decoded, name_hint),
                 IoResult::ImageLoaded {
                     tiled,
                     pixel_format,
@@ -441,7 +442,8 @@ impl PaintFEApp {
                     canvas_state.mark_dirty(None);
 
                     let file_handler = FileHandler {
-                        current_path: Some(path.clone()),
+                        current_path: (!(cfg!(target_arch = "wasm32") && crate::io::is_heif_path(&path)))
+                            .then(|| path.clone()),
                         last_format: format,
                         last_quality: 90,
                         last_tiff_compression: TiffCompression::None,

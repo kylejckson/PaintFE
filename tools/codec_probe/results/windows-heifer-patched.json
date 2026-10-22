@@ -1,0 +1,343 @@
+{
+  "heif": [
+    {
+      "file": "arrow.heic",
+      "input_bytes": 792052,
+      "status": "ok",
+      "exit": 0,
+      "wall_ms": 2396.145,
+      "stdout": "first_ms=301.441 median_ms=377.174 runs=5\nwidth=3024 height=4032 depth=8 alpha=false\nprimary_type=grid\noutput_bytes=48771072 fnv1a=c5c4bafd6fb53e8c",
+      "stderr": "",
+      "reference_size": [
+        3024,
+        4032
+      ],
+      "reference_median_ms": 913.051,
+      "sampled_rgb_mae": 0,
+      "sampled_rgb_max": 0,
+      "sampled_rgb_psnr_db": "exact",
+      "sampled_alpha_mae": 0,
+      "sampled_alpha_max": 0
+    },
+    {
+      "file": "corrupted.heic",
+      "input_bytes": 4785,
+      "status": "error",
+      "exit": 1,
+      "wall_ms": 71.67,
+      "stdout": "",
+      "stderr": "ERROR: container: unexpected end of data",
+      "reference_error": "Invalid input: Unspecified: Insufficient input data"
+    },
+    {
+      "file": "empty.heic",
+      "input_bytes": 0,
+      "status": "error",
+      "exit": 1,
+      "wall_ms": 50.556,
+      "stdout": "",
+      "stderr": "ERROR: container: missing required box `ftyp`",
+      "reference_error": "Invalid input: Unspecified: File size too small."
+    },
+    {
+      "file": "image_large.heic",
+      "input_bytes": 8664739,
+      "status": "ok",
+      "exit": 0,
+      "wall_ms": 7686.563,
+      "stdout": "first_ms=1048.347 median_ms=1048.347 runs=5\nwidth=8000 height=6000 depth=8 alpha=false\nprimary_type=grid\noutput_bytes=192000000 fnv1a=adc2121aa11758ef",
+      "stderr": "",
+      "reference_size": [
+        8000,
+        6000
+      ],
+      "reference_median_ms": 1391.97,
+      "sampled_rgb_mae": 0.0048,
+      "sampled_rgb_max": 1,
+      "sampled_rgb_psnr_db": 71.285,
+      "sampled_alpha_mae": 0,
+      "sampled_alpha_max": 0
+    },
+    {
+      "file": "LA_8__128x128.heif",
+      "input_bytes": 11781,
+      "status": "ok",
+      "exit": 0,
+      "wall_ms": 153.362,
+      "stdout": "first_ms=2.573 median_ms=2.397 runs=5\nwidth=128 height=128 depth=8 alpha=true\nprimary_type=hvc1\noutput_bytes=65536 fnv1a=1376d6d826ede075",
+      "stderr": "",
+      "reference_size": [
+        128,
+        128
+      ],
+      "reference_median_ms": 3.786,
+      "sampled_rgb_mae": 0,
+      "sampled_rgb_max": 0,
+      "sampled_rgb_psnr_db": "exact",
+      "sampled_alpha_mae": 0,
+      "sampled_alpha_max": 0
+    },
+    {
+      "file": "LA_8__29x100.heif",
+      "input_bytes": 4287,
+      "status": "ok",
+      "exit": 0,
+      "wall_ms": 43.914,
+      "stdout": "first_ms=0.917 median_ms=0.689 runs=5\nwidth=29 height=100 depth=8 alpha=true\nprimary_type=grid\noutput_bytes=11600 fnv1a=cfe18223bd8ed9f8",
+      "stderr": "",
+      "reference_size": [
+        29,
+        100
+      ],
+      "reference_median_ms": 3.135,
+      "sampled_rgb_mae": 0,
+      "sampled_rgb_max": 0,
+      "sampled_rgb_psnr_db": "exact",
+      "sampled_alpha_mae": 0,
+      "sampled_alpha_max": 0
+    },
+    {
+      "file": "pug.heic",
+      "input_bytes": 1299081,
+      "status": "ok",
+      "exit": 0,
+      "wall_ms": 1453.706,
+      "stdout": "first_ms=150.549 median_ms=158.679 runs=5\nwidth=4032 height=3024 depth=8 alpha=false\nprimary_type=grid\noutput_bytes=48771072 fnv1a=7b32e2d3016bc799",
+      "stderr": "",
+      "reference_size": [
+        4032,
+        3024
+      ],
+      "reference_median_ms": 289.145,
+      "sampled_rgb_mae": 0.0002,
+      "sampled_rgb_max": 1,
+      "sampled_rgb_psnr_db": 85.859,
+      "sampled_alpha_mae": 0,
+      "sampled_alpha_max": 0
+    },
+    {
+      "file": "RGB_10__128x128.heif",
+      "input_bytes": 11637,
+      "status": "ok",
+      "exit": 0,
+      "wall_ms": 72.75,
+      "stdout": "first_ms=1.989 median_ms=1.989 runs=5\nwidth=128 height=128 depth=10 alpha=false\nprimary_type=hvc1\noutput_bytes=65536 fnv1a=6c3be8e12f2e3ab8",
+      "stderr": "",
+      "reference_size": [
+        128,
+        128
+      ],
+      "reference_median_ms": 3.954,
+      "sampled_rgb_mae": 0.6026,
+      "sampled_rgb_max": 3,
+      "sampled_rgb_psnr_db": 49.552,
+      "sampled_alpha_mae": 0,
+      "sampled_alpha_max": 0
+    },
+    {
+      "file": "RGB_12__128x128.heif",
+      "input_bytes": 18468,
+      "status": "ok",
+      "exit": 0,
+      "wall_ms": 51.19,
+      "stdout": "first_ms=2.942 median_ms=2.592 runs=5\nwidth=128 height=128 depth=12 alpha=false\nprimary_type=hvc1\noutput_bytes=65536 fnv1a=5d302b1c0bd97010",
+      "stderr": "",
+      "reference_size": [
+        128,
+        128
+      ],
+      "reference_median_ms": 2.891,
+      "sampled_rgb_mae": 0.7246,
+      "sampled_rgb_max": 3,
+      "sampled_rgb_psnr_db": 48.343,
+      "sampled_alpha_mae": 0,
+      "sampled_alpha_max": 0
+    },
+    {
+      "file": "RGB_8__29x100.heif",
+      "input_bytes": 3479,
+      "status": "ok",
+      "exit": 0,
+      "wall_ms": 78.224,
+      "stdout": "first_ms=0.944 median_ms=0.785 runs=5\nwidth=29 height=100 depth=8 alpha=false\nprimary_type=grid\noutput_bytes=11600 fnv1a=3f1c5207e64fbe50",
+      "stderr": "",
+      "reference_size": [
+        29,
+        100
+      ],
+      "reference_median_ms": 2.286,
+      "sampled_rgb_mae": 0.0423,
+      "sampled_rgb_max": 1,
+      "sampled_rgb_psnr_db": 61.868,
+      "sampled_alpha_mae": 0,
+      "sampled_alpha_max": 0
+    },
+    {
+      "file": "RGB_8_chroma444.heif",
+      "input_bytes": 5261,
+      "status": "ok",
+      "exit": 0,
+      "wall_ms": 53.679,
+      "stdout": "first_ms=1.045 median_ms=0.839 runs=5\nwidth=29 height=100 depth=8 alpha=false\nprimary_type=hvc1\noutput_bytes=11600 fnv1a=e41dc56f1261fe71",
+      "stderr": "",
+      "reference_size": [
+        29,
+        100
+      ],
+      "reference_median_ms": 2.041,
+      "sampled_rgb_mae": 0,
+      "sampled_rgb_max": 0,
+      "sampled_rgb_psnr_db": "exact",
+      "sampled_alpha_mae": 0,
+      "sampled_alpha_max": 0
+    },
+    {
+      "file": "RGBA_10__128x128.heif",
+      "input_bytes": 14085,
+      "status": "ok",
+      "exit": 0,
+      "wall_ms": 73.839,
+      "stdout": "first_ms=3.281 median_ms=2.829 runs=5\nwidth=128 height=128 depth=10 alpha=true\nprimary_type=hvc1\noutput_bytes=65536 fnv1a=2f9371b41b262d80",
+      "stderr": "",
+      "reference_size": [
+        128,
+        128
+      ],
+      "reference_median_ms": 4.115,
+      "sampled_rgb_mae": 0.5985,
+      "sampled_rgb_max": 3,
+      "sampled_rgb_psnr_db": 49.572,
+      "sampled_alpha_mae": 0.1433,
+      "sampled_alpha_max": 1
+    },
+    {
+      "file": "RGBA_12__128x128.heif",
+      "input_bytes": 22821,
+      "status": "ok",
+      "exit": 0,
+      "wall_ms": 67.403,
+      "stdout": "first_ms=3.965 median_ms=3.489 runs=5\nwidth=128 height=128 depth=12 alpha=true\nprimary_type=hvc1\noutput_bytes=65536 fnv1a=44eea3af7bb15d99",
+      "stderr": "",
+      "reference_size": [
+        128,
+        128
+      ],
+      "reference_median_ms": 5.353,
+      "sampled_rgb_mae": 0.7184,
+      "sampled_rgb_max": 3,
+      "sampled_rgb_psnr_db": 48.366,
+      "sampled_alpha_mae": 0.199,
+      "sampled_alpha_max": 1
+    },
+    {
+      "file": "RGBA_8__128x128.heif",
+      "input_bytes": 16015,
+      "status": "ok",
+      "exit": 0,
+      "wall_ms": 81.716,
+      "stdout": "first_ms=3.200 median_ms=3.338 runs=5\nwidth=128 height=128 depth=8 alpha=true\nprimary_type=hvc1\noutput_bytes=65536 fnv1a=5b3eea612cac3d0a",
+      "stderr": "",
+      "reference_size": [
+        128,
+        128
+      ],
+      "reference_median_ms": 4.7,
+      "sampled_rgb_mae": 0.0405,
+      "sampled_rgb_max": 1,
+      "sampled_rgb_psnr_db": 62.06,
+      "sampled_alpha_mae": 0,
+      "sampled_alpha_max": 0
+    },
+    {
+      "file": "RGBA_8__29x100.heif",
+      "input_bytes": 5934,
+      "status": "ok",
+      "exit": 0,
+      "wall_ms": 53.738,
+      "stdout": "first_ms=1.305 median_ms=1.209 runs=5\nwidth=29 height=100 depth=8 alpha=true\nprimary_type=grid\noutput_bytes=11600 fnv1a=5716ef4a3edbbaa7",
+      "stderr": "",
+      "reference_size": [
+        29,
+        100
+      ],
+      "reference_median_ms": 2.846,
+      "sampled_rgb_mae": 0.0375,
+      "sampled_rgb_max": 1,
+      "sampled_rgb_psnr_db": 62.394,
+      "sampled_alpha_mae": 0,
+      "sampled_alpha_max": 0
+    },
+    {
+      "file": "spatial_photo.heic",
+      "input_bytes": 1274535,
+      "status": "ok",
+      "exit": 0,
+      "wall_ms": 588.336,
+      "stdout": "first_ms=80.066 median_ms=80.066 runs=5\nwidth=2560 height=2560 depth=8 alpha=false\nprimary_type=grid\noutput_bytes=26214400 fnv1a=edaa06f8fe2f9530",
+      "stderr": "",
+      "reference_size": [
+        2560,
+        2560
+      ],
+      "reference_median_ms": 175.09,
+      "sampled_rgb_mae": 0.0015,
+      "sampled_rgb_max": 1,
+      "sampled_rgb_psnr_db": 76.245,
+      "sampled_alpha_mae": 0,
+      "sampled_alpha_max": 0
+    },
+    {
+      "file": "stereo_pair.heic",
+      "input_bytes": 755,
+      "status": "ok",
+      "exit": 0,
+      "wall_ms": 58.429,
+      "stdout": "first_ms=0.269 median_ms=0.173 runs=5\nwidth=64 height=64 depth=8 alpha=false\nprimary_type=hvc1\noutput_bytes=16384 fnv1a=6e18f8125cb31d25",
+      "stderr": "",
+      "reference_size": [
+        64,
+        64
+      ],
+      "reference_median_ms": 2.523,
+      "sampled_rgb_mae": 0,
+      "sampled_rgb_max": 0,
+      "sampled_rgb_psnr_db": "exact",
+      "sampled_alpha_mae": 0,
+      "sampled_alpha_max": 0
+    },
+    {
+      "file": "truncated.heic",
+      "input_bytes": 3657,
+      "status": "error",
+      "exit": 1,
+      "wall_ms": 27.888,
+      "stdout": "",
+      "stderr": "ERROR: container: unexpected end of data",
+      "reference_size": [
+        16,
+        16
+      ],
+      "reference_median_ms": 1.332
+    }
+  ],
+  "avif": [],
+  "reference": {
+    "libheif": "1.23.6",
+    "HEIF": "x265 HEVC encoder (4.3+1-e9b8812)",
+    "AVIF": "",
+    "encoders": {
+      "x265": "x265 HEVC encoder (4.3+1-e9b8812)",
+      "mask": "mask"
+    },
+    "decoders": {
+      "libde265": "libde265 HEVC decoder, version 1.1.3"
+    }
+  },
+  "encoder_primitive": {
+    "status": "ok",
+    "exit": 0,
+    "wall_ms": 32.342,
+    "stdout": "CABAC primitive produced 3 bytes; not an HEVC image or HEIC file. No image encoder/container writer API exists in Heifer 0.2.0.",
+    "stderr": ""
+  }
+}

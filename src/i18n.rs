@@ -4,7 +4,9 @@
 //! The `t!("key")` macro looks up the current language, falling back to English.
 //! Language can be switched at runtime via `set_language()`.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+mod overrides;
+pub use overrides::*;
 use std::sync::Mutex;
 
 /// Global translation state.
@@ -16,6 +18,7 @@ struct I18nState {
     translations: HashMap<String, HashMap<String, String>>,
     /// Built-in English display labels used by enums and shared widgets.
     english_keys: HashMap<String, String>,
+    overrides: HashMap<String, BTreeMap<String, String>>,
 }
 
 /// Supported languages: (code, native_name)
@@ -103,6 +106,7 @@ pub fn init() {
         current_lang: "en".to_string(),
         translations,
         english_keys,
+        overrides: HashMap::new(),
     };
     *I18N.lock().unwrap() = Some(state);
 }
@@ -140,9 +144,15 @@ pub fn translate_english(text: &str) -> String {
             .get(text)
             .or_else(|| state.english_keys.get(&text.to_lowercase()))
         && let Some(value) = state
-            .translations
+            .overrides
             .get(&state.current_lang)
             .and_then(|m| m.get(key))
+            .or_else(|| {
+                state
+                    .translations
+                    .get(&state.current_lang)
+                    .and_then(|m| m.get(key))
+            })
     {
         return if text.chars().any(|c| c.is_ascii_uppercase())
             && !text.chars().any(|c| c.is_ascii_lowercase())
@@ -191,6 +201,13 @@ pub fn translate(key: &str) -> String {
     if let Ok(guard) = I18N.lock()
         && let Some(ref state) = *guard
     {
+        if let Some(value) = state
+            .overrides
+            .get(&state.current_lang)
+            .and_then(|m| m.get(key))
+        {
+            return value.clone();
+        }
         // Try current language
         if let Some(map) = state.translations.get(&state.current_lang)
             && let Some(val) = map.get(key)

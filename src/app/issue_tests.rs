@@ -1,6 +1,63 @@
 use super::*;
 
 #[test]
+fn heif_source_retains_save_target_and_repairs_pre_pack_documents() {
+    let mut app = app();
+    let path = PathBuf::from("document-directory/source.HEIC");
+    let image = image::RgbaImage::from_pixel(2, 2, image::Rgba([1, 2, 3, 128]));
+    app.io_sender
+        .send(IoResult::ImageLoaded {
+            tiled: TiledImage::from_rgba_image(&image),
+            width: 2,
+            height: 2,
+            pixel_format: crate::canvas::PixelFormat::RgbaU8,
+            deep_pixels: None,
+            hdr_metadata: Default::default(),
+            path: path.clone(),
+            format: SaveFormat::Heic,
+        })
+        .unwrap();
+    app.pending_io_ops = 1;
+    app.update_runtime_lifecycle_async(&egui::Context::default());
+    let idx = app.active_project_index;
+    assert_eq!(
+        app.projects[idx].file_handler.current_path.as_ref(),
+        Some(&path)
+    );
+    assert_eq!(app.projects[idx].file_handler.last_format, SaveFormat::Heic);
+    // Simulate an already-open document from the decode-only implementation.
+    app.projects[idx].file_handler.current_path = None;
+    app.projects[idx].file_handler.last_format = SaveFormat::Png;
+    let ready = app.prepare_heic_save(idx);
+    assert_eq!(
+        ready,
+        crate::services::optional_packs::is_present(crate::services::optional_packs::Pack::Heic)
+    );
+    assert_eq!(
+        app.projects[idx].file_handler.current_path.as_ref(),
+        Some(&path)
+    );
+    assert_eq!(app.projects[idx].file_handler.last_format, SaveFormat::Heic);
+    assert!(!app.save_file_dialog.open);
+    assert_eq!(app.pending_io_ops, 0);
+    // Save As to a new PNG must continue saving the chosen PNG, not the HEIC source.
+    let exported = path.with_extension("png");
+    app.projects[idx].file_handler.current_path = Some(exported.clone());
+    app.projects[idx].file_handler.last_format = SaveFormat::Png;
+    assert!(app.prepare_heic_save(idx));
+    assert_eq!(
+        app.projects[idx].file_handler.current_path.as_ref(),
+        Some(&exported)
+    );
+    assert_eq!(app.projects[idx].file_handler.last_format, SaveFormat::Png);
+    for extension in ["heic", "heif", "hif", "HEIC"] {
+        app.save_file_dialog
+            .set_from_path(&path.with_extension(extension));
+        assert_eq!(app.save_file_dialog.format(), SaveFormat::Heic);
+    }
+}
+
+#[test]
 fn preview_burst_keeps_only_latest_request_and_original_document() {
     let mut app = app();
     let ctx = egui::Context::default();

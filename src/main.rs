@@ -116,7 +116,7 @@ fn sanitize_window_position(pos: (f32, f32)) -> Option<[f32; 2]> {
 /// Inner main function — contains all actual logic.
 fn main_inner() -> Result<(), eframe::Error> {
     let startup_profile = paintfe::ui::perf::StartupSpan::new("process_to_event_loop");
-    paintfe::io::jxl::register();
+    paintfe::io::register_codecs();
     // -- Windows console management ------------------------------------
     // The binary is SUBSYSTEM:WINDOWS so Windows never allocates a console.
     // In CLI mode preserve inherited redirection and connect missing handles
@@ -262,6 +262,9 @@ fn main_inner() -> Result<(), eframe::Error> {
     // Initialize the internationalization system
     let profile = paintfe::ui::perf::StartupSpan::new("i18n");
     i18n::init();
+    for error in i18n::load_label_overrides() {
+        logger::write("WARN", &format!("Personal labels: {error}"));
+    }
     drop(profile);
 
     // Collect positional file arguments (e.g. `paintfe.exe photo.png` from

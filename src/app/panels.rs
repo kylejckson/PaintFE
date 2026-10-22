@@ -1228,7 +1228,7 @@ impl PaintFEApp {
                         ],
                     )
                     .pick_file()
-                    && let Ok(img) = image::open(&path)
+                    && let Ok(img) = crate::io::decode_image_path(&path)
                 {
                     let rgba = img.to_rgba8();
                     let name = path

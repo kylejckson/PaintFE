@@ -61,7 +61,7 @@ pub struct CliArgs {
     #[arg(long, value_name = "DIR")]
     pub output_dir: Option<PathBuf>,
 
-    /// Output format: png, jpeg, jxl, webp, bmp, tga, ico, tiff, gif, pfe.
+    /// Output format: png, jpeg, jxl, avif, heic, webp, bmp, tga, ico, tiff, gif, pfe.
     /// When omitted, the format is inferred from --output's extension, defaulting to png.
     #[arg(short, long, value_name = "FORMAT")]
     pub format: Option<String>,
@@ -426,6 +426,8 @@ fn parse_format(format_arg: Option<&str>, output: Option<&Path>) -> SaveFormat {
         return match f.to_lowercase().as_str() {
             "jpeg" | "jpg" => SaveFormat::Jpeg,
             "jxl" => SaveFormat::Jxl(Default::default()),
+            "avif" => SaveFormat::Avif,
+            "heic" | "heif" => SaveFormat::Heic,
             "webp" => SaveFormat::Webp,
             "bmp" => SaveFormat::Bmp,
             "tga" => SaveFormat::Tga,
@@ -447,6 +449,8 @@ fn parse_format(format_arg: Option<&str>, output: Option<&Path>) -> SaveFormat {
         {
             "jpg" | "jpeg" => SaveFormat::Jpeg,
             "jxl" => SaveFormat::Jxl(Default::default()),
+            "avif" => SaveFormat::Avif,
+            "heic" | "heif" => SaveFormat::Heic,
             "webp" => SaveFormat::Webp,
             "bmp" => SaveFormat::Bmp,
             "tga" => SaveFormat::Tga,

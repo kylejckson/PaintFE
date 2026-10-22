@@ -20,19 +20,57 @@ use crate::canvas::{
 };
 use crate::components::dialogs::SaveFormat;
 use crate::experimental::{DeepRgbaBuffer, f16_bits_to_f32, reinhard_tone_map_rgba};
+pub mod avif;
+pub mod heic;
 pub mod jxl;
+
+pub fn is_heif_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "heic" | "heif" | "hif"))
+}
+
+pub fn register_codecs() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        jxl::register();
+        heifer::image_crate::register_image_decoder_hooks();
+        avif::register();
+    });
+}
 
 /// Unlike image::load_from_memory, ImageReader's format guessing consults custom
 /// codec hooks. Use this for document, layer, clipboard and preview image bytes.
 pub fn decode_image_bytes(bytes: &[u8]) -> image::ImageResult<DynamicImage> {
     use image::ImageDecoder as _;
-    jxl::register();
+    register_codecs();
+    if avif::is_avif(bytes) {
+        return avif::decode(std::io::Cursor::new(bytes));
+    }
     let decoder = image::ImageReader::new(std::io::Cursor::new(bytes))
         .with_guessed_format()?
         .into_decoder()?;
     let (width, height) = decoder.dimensions();
     validate_open_dimensions(width, height)
         .map_err(|message| ImageError::IoError(std::io::Error::other(message)))?;
+    DynamicImage::from_decoder(decoder)
+}
+
+/// Decode once: custom decoders may already decode pixels to discover dimensions.
+pub fn decode_image_path(path: &Path) -> image::ImageResult<DynamicImage> {
+    use image::ImageDecoder as _;
+    register_codecs();
+    if path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("avif"))
+    {
+        return avif::decode(BufReader::new(File::open(path)?));
+    }
+    let decoder = image::ImageReader::open(path)?
+        .with_guessed_format()?
+        .into_decoder()?;
+    validate_open_dimensions(decoder.dimensions().0, decoder.dimensions().1)
+        .map_err(|e| ImageError::IoError(std::io::Error::other(e)))?;
     DynamicImage::from_decoder(decoder)
 }
 
@@ -700,7 +738,7 @@ pub(crate) fn dynamic_image_to_rgba_and_deep(
 /// - RAW camera files (CR2, NEF, ARW, DNG, etc.) — decoded to 8-bit sRGB RGBA
 /// - All standard raster formats supported by the `image` crate (PNG, JPEG, WEBP, BMP, …)
 pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
-    jxl::register();
+    register_codecs();
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -727,10 +765,7 @@ pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
             crate::canvas::HdrMetadata::default(),
         )
     } else {
-        if let Ok((w, h)) = image::image_dimensions(path) {
-            validate_open_dimensions(w, h)?;
-        }
-        dynamic_image_to_rgba_and_deep(image::open(path).map_err(|e| e.to_string())?)
+        dynamic_image_to_rgba_and_deep(decode_image_path(path).map_err(|e| e.to_string())?)
     };
 
     let w = img.width();
@@ -1773,6 +1808,16 @@ pub fn encode_and_write(
         std::fs::write(path, bytes)?;
         return Ok(());
     }
+    if format == SaveFormat::Heic {
+        let bytes = heic::encode_rgba8(image, quality)?;
+        std::fs::write(path, bytes)?;
+        return Ok(());
+    }
+    if format == SaveFormat::Avif {
+        let bytes = avif::encode_rgba8(image, quality)?;
+        std::fs::write(path, bytes)?;
+        return Ok(());
+    }
     let file = File::create(path)?;
     let mut writer = BufWriter::new(file);
 
@@ -1795,6 +1840,12 @@ pub fn encode_and_write(
                 rgb_image.height(),
                 image::ExtendedColorType::Rgb8,
             )?;
+        }
+        SaveFormat::Heic => {
+            writer.write_all(&heic::encode_rgba8(image, quality)?)?;
+        }
+        SaveFormat::Avif => {
+            writer.write_all(&avif::encode_rgba8(image, quality)?)?;
         }
         SaveFormat::Jxl(options) => {
             writer.write_all(&jxl::encode_rgba8(image, quality, options)?)?;
@@ -1958,7 +2009,7 @@ impl Default for FileHandler {
 
 impl FileHandler {
     pub fn new() -> Self {
-        jxl::register();
+        register_codecs();
         Self {
             current_path: None,
             last_format: SaveFormat::Png,
@@ -1995,10 +2046,10 @@ impl FileHandler {
         .add_filter(
             crate::t!("ui.all_supported"),
             &[
-                "pfe", "pdn", "png", "jpg", "jpeg", "jxl", "webp", "bmp", "tga", "gif", "ico",
-                "tiff", "tif", "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf",
-                "rw2", "pef", "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef",
-                "mos", "kdc", "dcr", "erf",
+                "pfe", "pdn", "png", "jpg", "jpeg", "jxl", "avif", "heic", "heif", "hif", "webp",
+                "bmp", "tga", "gif", "ico", "tiff", "tif", "cr2", "cr3", "nef", "nrw", "arw",
+                "srf", "sr2", "dng", "orf", "rw2", "pef", "raf", "raw", "rwl", "srw", "x3f", "3fr",
+                "fff", "iiq", "mrw", "mef", "mos", "kdc", "dcr", "erf",
             ],
         )
         .add_filter("PaintFE Project", &["pfe"])
@@ -2006,7 +2057,8 @@ impl FileHandler {
         .add_filter(
             crate::t!("ui.images"),
             &[
-                "png", "jpg", "jpeg", "jxl", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
+                "png", "jpg", "jpeg", "jxl", "avif", "heic", "heif", "hif", "webp", "bmp", "tga",
+                "gif", "ico", "tiff", "tif",
             ],
         )
         .add_filter(
@@ -2046,17 +2098,18 @@ impl FileHandler {
         .add_filter(
             crate::t!("ui.all_supported"),
             &[
-                "pfe", "png", "jpg", "jpeg", "jxl", "webp", "bmp", "tga", "gif", "ico", "tiff",
-                "tif", "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef",
-                "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos", "kdc",
-                "dcr", "erf",
+                "pfe", "png", "jpg", "jpeg", "jxl", "avif", "heic", "heif", "hif", "webp", "bmp",
+                "tga", "gif", "ico", "tiff", "tif", "cr2", "cr3", "nef", "nrw", "arw", "srf",
+                "sr2", "dng", "orf", "rw2", "pef", "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff",
+                "iiq", "mrw", "mef", "mos", "kdc", "dcr", "erf",
             ],
         )
         .add_filter("PaintFE Project", &["pfe"])
         .add_filter(
             crate::t!("ui.images"),
             &[
-                "png", "jpg", "jpeg", "jxl", "webp", "bmp", "tga", "gif", "ico", "tiff", "tif",
+                "png", "jpg", "jpeg", "jxl", "avif", "heic", "heif", "hif", "webp", "bmp", "tga",
+                "gif", "ico", "tiff", "tif",
             ],
         )
         .add_filter(
@@ -2070,21 +2123,15 @@ impl FileHandler {
         .add_filter(crate::t!("ui.all_files"), &["*"])
         .pick_file()?;
 
-        if let Ok((w, h)) = image::image_dimensions(&path)
-            && let Err(e) = validate_open_dimensions(w, h)
-        {
-            eprintln!("{}", e);
-            return None;
-        }
-
-        match image::open(&path) {
+        match decode_image_path(&path) {
             Ok(img) => {
                 let rgba = img.to_rgba8();
                 if let Err(e) = validate_open_dimensions(rgba.width(), rgba.height()) {
                     eprintln!("{}", e);
                     return None;
                 }
-                self.current_path = Some(path.clone());
+                self.current_path =
+                    (!(cfg!(target_arch = "wasm32") && is_heif_path(&path))).then(|| path.clone());
 
                 // Detect format from extension
                 if let Some(ext) = path.extension() {
@@ -2093,6 +2140,10 @@ impl FileHandler {
                         "jpg" | "jpeg" => SaveFormat::Jpeg,
                         "jxl" if cfg!(not(target_arch = "wasm32")) => {
                             SaveFormat::Jxl(Default::default())
+                        }
+                        "avif" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Avif,
+                        "heic" | "heif" | "hif" if cfg!(not(target_arch = "wasm32")) => {
+                            SaveFormat::Heic
                         }
                         "webp" => SaveFormat::Webp,
                         "bmp" => SaveFormat::Bmp,

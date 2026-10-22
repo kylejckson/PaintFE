@@ -1,6 +1,6 @@
 [package]
 name = "PaintFE"
-version = "1.4.13"
+version = "1.4.14"
 edition = "2024"
 
 [lib]
@@ -12,9 +12,10 @@ name = "PaintFE"
 path = "src/main.rs"
 
 [dependencies]
+heifer = { version = "=0.2.0", features = ["image"] }
 eframe = "0.35.0"    # Wrapper for egui (the GUI framework)
 egui = "0.35.0"      # The core GUI library
-image = { version = "0.25", features = ["jpeg", "png", "webp", "bmp", "tga", "ico", "tiff"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "bmp", "tga", "ico", "tiff", "gif", "dds", "exr", "ff", "hdr", "pnm", "qoi", "rayon"] }
 tiff = "0.9"         # Direct dependency for TIFF compression options
 rayon = "1.12"        # Parallel processing for faster compositing
 uuid = { version = "1.0", features = ["v4", "js"] }  # Unique identifiers for projects
@@ -104,3 +105,6 @@ opt-level = 2
 opt-level = 2
 [profile.dev.package.ttf-parser]
 opt-level = 2
+
+[patch.crates-io]
+heifer = { path = "vendor/heifer" }

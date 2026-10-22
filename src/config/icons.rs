@@ -75,6 +75,7 @@ pub enum Icon {
     Expand,
     Collapse,
     Info,
+    MenuFileInfo,
     Search,
     ClearSearch,
     MoveUp,
@@ -107,6 +108,7 @@ pub enum Icon {
     SettingsKeybinds,
     SettingsAI,
     SettingsPlugins,
+    SettingsOptionalFeatures,
 
     // === Menu: File ===
     MenuFileNew,
@@ -309,7 +311,8 @@ impl Icon {
             | Self::SettingsHardware
             | Self::SettingsKeybinds
             | Self::SettingsAI
-            | Self::SettingsPlugins => "settings",
+            | Self::SettingsPlugins
+            | Self::SettingsOptionalFeatures => "settings",
             // Colour panel.
             Self::SwapColors | Self::CopyHex | Self::ApplyPrimary => "color",
             // Shape tool modes.
@@ -455,6 +458,7 @@ impl Icon {
             Icon::SettingsKeybinds => "[K]",
             Icon::SettingsAI => "[A]",
             Icon::SettingsPlugins => "[P]",
+            Icon::SettingsOptionalFeatures => "[+]",
             Icon::SwapColors => "[<>]",
             Icon::CopyHex => "\u{2398}",
             Icon::Commit => "\u{2714}",
@@ -463,6 +467,7 @@ impl Icon {
             Icon::Collapse => "\u{25C2}",
             Icon::DropDown => "\u{25BE}",
             Icon::Info => "\u{2139}",
+            Icon::MenuFileInfo => "\u{2139}",
             Icon::Search => "\u{1F50D}",
             Icon::ClearSearch => "\u{00D7}",
             Icon::MoveUp => "\u{2191}",
@@ -658,6 +663,7 @@ impl Icon {
             Icon::SettingsKeybinds => "Keybinds",
             Icon::SettingsAI => "AI",
             Icon::SettingsPlugins => "Plugins",
+            Icon::SettingsOptionalFeatures => "Optional features",
             Icon::SwapColors => "Swap Colors",
             Icon::CopyHex => "Copy Hex",
             Icon::Commit => "Commit",
@@ -666,6 +672,7 @@ impl Icon {
             Icon::Collapse => "Collapse",
             Icon::DropDown => "Presets",
             Icon::Info => "Info",
+            Icon::MenuFileInfo => "Document Info",
             Icon::Search => "Search",
             Icon::ClearSearch => "Clear Search",
             Icon::MoveUp => "Move Up",

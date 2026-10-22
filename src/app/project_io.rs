@@ -169,7 +169,7 @@ impl PaintFEApp {
                             {
                                 continue;
                             }
-                            if let Ok(decoded) = image::open(&path) {
+                            if let Ok(decoded) = crate::io::decode_image_path(&path) {
                                 images.push(decoded.to_rgba8());
                                 decoded_any = true;
                                 break;
@@ -191,7 +191,21 @@ impl PaintFEApp {
     }
 
     fn open_image_from_bytes(&mut self, bytes: &[u8], name_hint: Option<String>) {
-        crate::io::jxl::register();
+        if bytes.get(4..8) == Some(b"ftyp") {
+            let bytes = bytes.to_vec();
+            let sender = self.io_sender.clone();
+            self.pending_io_ops += 1;
+            crate::par_compat::spawn(move || {
+                let result = match crate::io::decode_image_bytes(&bytes) {
+                    Ok(decoded) => IoResult::BytesDecoded { decoded, name_hint },
+                    Err(error) => IoResult::LoadFailed { path: None, error: error.to_string() },
+                };
+                let _ = sender.send(result);
+            });
+            return;
+        }
+
+        crate::io::register_codecs();
         let decoded = match crate::io::decode_image_bytes(bytes) {
             Ok(decoded) => decoded,
             Err(error) => {
@@ -203,6 +217,10 @@ impl PaintFEApp {
             }
         };
 
+        self.finish_image_from_bytes(decoded, name_hint);
+    }
+
+    fn finish_image_from_bytes(&mut self, decoded: image::DynamicImage, name_hint: Option<String>) {
         let (image, pixel_format, deep_pixels, hdr_metadata) = crate::io::dynamic_image_to_rgba_and_deep(decoded);
         let width = image.width();
         let height = image.height();
@@ -294,7 +312,7 @@ impl PaintFEApp {
                 .and_then(|e| e.to_str())
                 .map(|e| e.to_ascii_lowercase())
                 .as_deref(),
-            Some("png" | "jpg" | "jpeg" | "jxl" | "webp" | "bmp" | "tga" | "tif" | "tiff" | "gif" | "ico")
+            Some("png" | "jpg" | "jpeg" | "jxl" | "avif" | "heic" | "heif" | "hif" | "webp" | "bmp" | "tga" | "tif" | "tiff" | "gif" | "ico")
         )
     }
 
@@ -308,10 +326,19 @@ impl PaintFEApp {
             crate::par_compat::spawn(move || {
                 let result = (|| -> Result<_, String> {
                     let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
-                    let reader = image::ImageReader::new(std::io::Cursor::new(&bytes))
-                        .with_guessed_format()
-                        .map_err(|e| e.to_string())?;
-                    let (width, height) = reader.into_dimensions().map_err(|e| e.to_string())?;
+                    let (width, height) = if crate::io::avif::is_avif(&bytes) {
+                        // AVIF uses the optional helper rather than image's built-in decoder.
+                        let decoded = crate::io::decode_image_bytes(&bytes)
+                            .map_err(|e| e.to_string())?;
+                        (decoded.width(), decoded.height())
+                    } else {
+                        crate::io::register_codecs();
+                        image::ImageReader::new(std::io::Cursor::new(&bytes))
+                            .with_guessed_format()
+                            .map_err(|e| e.to_string())?
+                            .into_dimensions()
+                            .map_err(|e| e.to_string())?
+                    };
                     crate::io::validate_open_dimensions(width, height)
                         .map_err(|e| e.to_string())?;
                     Ok((bytes, width, height))
@@ -544,7 +571,8 @@ impl PaintFEApp {
                                 let format = match ext.as_str() {
                                     "gif" => SaveFormat::Gif,
                                     "jxl" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Jxl(Default::default()),
-                                "webp" => SaveFormat::Webp,
+                                "avif" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Avif,
+                                    "webp" => SaveFormat::Webp,
                                     _ => SaveFormat::Png,
                                 };
                                 let width = frames[0].0.width();
@@ -637,17 +665,7 @@ impl PaintFEApp {
                     return;
                 }
 
-                if let Ok((w, h)) = image::image_dimensions(&path)
-                    && let Err(e) = crate::io::validate_open_dimensions(w, h)
-                {
-                    let _ = sender.send(IoResult::LoadFailed {
-                        path: Some(path.clone()),
-                        error: e,
-                    });
-                    return;
-                }
-
-                match image::open(&path) {
+                match crate::io::decode_image_path(&path) {
                     Ok(img) => {
                         if crate::io::validate_open_dimensions(img.width(), img.height()).is_err() {
                             let _ = sender.send(IoResult::LoadFailed {
@@ -672,7 +690,9 @@ impl PaintFEApp {
                             .map(|ext| match ext.to_string_lossy().to_lowercase().as_str() {
                                 "jpg" | "jpeg" => SaveFormat::Jpeg,
                                 "jxl" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Jxl(Default::default()),
-                                "webp" => SaveFormat::Webp,
+                                "avif" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Avif,
+                                "heic" | "heif" | "hif" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Heic,
+                                    "webp" => SaveFormat::Webp,
                                 "bmp" => SaveFormat::Bmp,
                                 "tga" => SaveFormat::Tga,
                                 "ico" => SaveFormat::Ico,
@@ -702,6 +722,33 @@ impl PaintFEApp {
         }
     }
 
+    /// Repair the save target of HEIC documents opened before export was installed.
+    /// Never let a remembered PNG format write PNG bytes into a HEIC source.
+    fn prepare_heic_save(&mut self, idx: usize) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let project = &mut self.projects[idx];
+            let source = project
+                .file_handler
+                .current_path
+                .as_ref()
+                .or(project.path.as_ref());
+            if let Some(path) = source.filter(|path| crate::io::is_heif_path(path)).cloned() {
+                project.file_handler.current_path = Some(path);
+                project.file_handler.last_format = SaveFormat::Heic;
+            }
+            if project.file_handler.last_format == SaveFormat::Heic
+                && !crate::services::optional_packs::is_present(crate::services::optional_packs::Pack::Heic)
+            {
+                crate::services::optional_packs::request_heic();
+                return false;
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        let _ = idx;
+        true
+    }
+
     /// Handle save (quick save or open dialog) for the active project.
     /// For image formats, the encoding runs on a background thread so the UI
     /// stays responsive on large canvases.
@@ -711,6 +758,9 @@ impl PaintFEApp {
             return;
         }
 
+        if !self.prepare_heic_save(idx) {
+            return;
+        }
         let has_path = self.projects[idx].file_handler.has_current_path();
 
         if has_path {
@@ -922,10 +972,10 @@ impl PaintFEApp {
         if idx >= self.projects.len() {
             return false;
         }
-        if !self.projects[idx].file_handler.has_current_path() {
+        if !self.projects[idx].is_dirty || !self.prepare_heic_save(idx) {
             return false;
         }
-        if !self.projects[idx].is_dirty {
+        if !self.projects[idx].file_handler.has_current_path() {
             return false;
         }
 

@@ -583,6 +583,8 @@ pub enum SaveFormat {
     Jpeg,
     Jxl(crate::io::jxl::JxlOptions),
     Webp,
+    Avif,
+    Heic,
     Bmp,
     Tga,
     Ico,
@@ -606,6 +608,8 @@ impl SaveFormat {
             SaveFormat::Png => "png",
             SaveFormat::Jpeg => "jpg",
             SaveFormat::Jxl(_) => "jxl",
+            SaveFormat::Avif => "avif",
+            SaveFormat::Heic => "heic",
             SaveFormat::Webp => "webp",
             SaveFormat::Bmp => "bmp",
             SaveFormat::Tga => "tga",
@@ -621,6 +625,8 @@ impl SaveFormat {
             SaveFormat::Png => t!("format.png"),
             SaveFormat::Jpeg => t!("format.jpeg"),
             SaveFormat::Jxl(_) => t!("format.jxl"),
+            SaveFormat::Avif => t!("format.avif"),
+            SaveFormat::Heic => t!("format.heic"),
             SaveFormat::Webp => t!("format.webp"),
             SaveFormat::Bmp => t!("format.bmp"),
             SaveFormat::Tga => t!("format.tga"),
@@ -634,7 +640,11 @@ impl SaveFormat {
     pub fn supports_quality(&self) -> bool {
         matches!(
             self,
-            SaveFormat::Jpeg | SaveFormat::Webp | SaveFormat::Jxl(_)
+            SaveFormat::Jpeg
+                | SaveFormat::Webp
+                | SaveFormat::Jxl(_)
+                | SaveFormat::Avif
+                | SaveFormat::Heic
         )
     }
 
@@ -653,6 +663,10 @@ impl SaveFormat {
                 lossless: true,
                 effort: 5,
             }),
+            #[cfg(not(target_arch = "wasm32"))]
+            SaveFormat::Avif,
+            #[cfg(not(target_arch = "wasm32"))]
+            SaveFormat::Heic,
             SaveFormat::Webp,
             SaveFormat::Bmp,
             SaveFormat::Tga,
@@ -727,9 +741,23 @@ pub fn generate_preview(
                 preview_image: preview,
             })
         }
+        SaveFormat::Heic => {
+            let (bytes, preview_image) = crate::io::heic::preview(image, quality).ok()?;
+            Some(PreviewResult {
+                file_size: bytes.len(),
+                preview_image,
+            })
+        }
+        SaveFormat::Avif => {
+            let (bytes, preview_image) = crate::io::avif::preview(image, quality).ok()?;
+            Some(PreviewResult {
+                file_size: bytes.len(),
+                preview_image,
+            })
+        }
         SaveFormat::Jxl(options) => {
             let bytes = crate::io::jxl::encode_rgba8(image, quality, options).ok()?;
-            crate::io::jxl::register();
+            crate::io::register_codecs();
             let preview_image = crate::io::decode_image_bytes(&bytes).ok()?.to_rgba8();
             Some(PreviewResult {
                 file_size: bytes.len(),
@@ -1152,6 +1180,8 @@ impl SaveFileDialog {
                 "png" => SaveFormat::Png,
                 "jpg" | "jpeg" => SaveFormat::Jpeg,
                 "jxl" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Jxl(Default::default()),
+                "avif" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Avif,
+                "heic" | "heif" | "hif" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Heic,
                 "webp" => SaveFormat::Webp,
                 "bmp" => SaveFormat::Bmp,
                 "tga" => SaveFormat::Tga,
@@ -1170,11 +1200,18 @@ impl SaveFileDialog {
     fn update_preview_if_needed(&mut self, ctx: &egui::Context) {
         // Expensive JPEG XL preview encoding stays off the UI thread. At most
         // one job per dialog is active; stale results are discarded after edits.
-        if matches!(self.format, SaveFormat::Jxl(_)) {
+        if matches!(
+            self.format,
+            SaveFormat::Jxl(_) | SaveFormat::Avif | SaveFormat::Heic
+        ) {
             #[cfg(not(target_arch = "wasm32"))]
-            if !crate::services::optional_packs::is_present(
-                crate::services::optional_packs::Pack::Jxl,
-            ) {
+            if !crate::services::optional_packs::is_present(if self.format == SaveFormat::Heic {
+                crate::services::optional_packs::Pack::Heic
+            } else if self.format == SaveFormat::Avif {
+                crate::services::optional_packs::Pack::Avif
+            } else {
+                crate::services::optional_packs::Pack::Jxl
+            }) {
                 self.needs_preview_update = true;
                 return;
             }
@@ -1613,7 +1650,23 @@ impl SaveFileDialog {
                                 ui.label(crate::t!("packs.jxl_missing"));
                                 if ui.button(crate::t!("packs.install_jxl")).clicked() {crate::services::optional_packs::request_jxl();}
                             }
-                            if self.jxl_preview_job.is_some() && matches!(self.format, SaveFormat::Jxl(_)) { ui.spinner(); }
+                            #[cfg(not(target_arch = "wasm32"))]
+                            if self.format == SaveFormat::Heic {
+                                ui.weak(crate::t!("heic.export_note"));
+                                if !crate::services::optional_packs::is_present(crate::services::optional_packs::Pack::Heic) {
+                                    ui.label(crate::t!("packs.heic_missing"));
+                                    if ui.button(crate::t!("packs.install_heic")).clicked() { crate::services::optional_packs::request_heic(); }
+                                }
+                            }
+                            #[cfg(not(target_arch = "wasm32"))]
+                            if self.format == SaveFormat::Avif {
+                                ui.weak(crate::t!("avif.export_note"));
+                                if !crate::services::optional_packs::is_present(crate::services::optional_packs::Pack::Avif) {
+                                    ui.label(crate::t!("packs.avif_missing"));
+                                    if ui.button(crate::t!("packs.install_avif")).clicked() { crate::services::optional_packs::request_avif(); }
+                                }
+                            }
+                            if self.jxl_preview_job.is_some() && matches!(self.format, SaveFormat::Jxl(_) | SaveFormat::Avif | SaveFormat::Heic) { ui.spinner(); }
                             if let SaveFormat::Jxl(options) = &mut self.format {
                                 accent_separator(ui, &colors);
                                 ui.checkbox(&mut options.lossless, crate::t!("ui.lossless"));
@@ -1761,8 +1814,20 @@ impl SaveFileDialog {
                             #[cfg(target_arch = "wasm32")]
                             let needs_jxl = false;
                             #[cfg(not(target_arch = "wasm32"))]
+                            let needs_avif = self.format == SaveFormat::Avif && !crate::services::optional_packs::is_present(crate::services::optional_packs::Pack::Avif);
+                            #[cfg(target_arch = "wasm32")]
+                            let needs_avif = self.format == SaveFormat::Avif;
+                            #[cfg(not(target_arch = "wasm32"))]
+                            if save_clicked && needs_avif { crate::services::optional_packs::request_avif(); }
+                            #[cfg(not(target_arch = "wasm32"))]
                             if save_clicked && needs_jxl {crate::services::optional_packs::request_jxl();}
-                            if save_clicked && !needs_jxl {
+                            #[cfg(not(target_arch = "wasm32"))]
+                            let needs_heic = self.format == SaveFormat::Heic && !crate::services::optional_packs::is_present(crate::services::optional_packs::Pack::Heic);
+                            #[cfg(target_arch = "wasm32")]
+                            let needs_heic = self.format == SaveFormat::Heic;
+                            #[cfg(not(target_arch = "wasm32"))]
+                            if save_clicked && needs_heic { crate::services::optional_packs::request_heic(); }
+                            if save_clicked && !needs_jxl && !needs_avif && !needs_heic {
                                 let full_filename = format!("{}.{}", self.filename, self.format.extension());
                                 // Web has no native save-location picker: downloads always
                                 // go to the browser's default download folder, so we skip

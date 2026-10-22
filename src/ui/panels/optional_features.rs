@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex, mpsc};
 
 #[derive(Clone)]
 struct State {
-    status: [String; 2],
-    installed: [bool; 2],
+    status: [String; 4],
+    installed: [bool; 4],
     job: Option<Arc<Mutex<mpsc::Receiver<Result<(Pack, Option<Vec<u8>>), String>>>>>,
     prompt: Option<Pack>,
     pending_language: Option<String>,
@@ -18,7 +18,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             status: std::array::from_fn(|_| crate::t!("packs.not_installed")),
-            installed: [false; 2],
+            installed: [false; 4],
             job: None,
             prompt: None,
             pending_language: None,
@@ -39,6 +39,8 @@ fn index(pack: Pack) -> usize {
     match pack {
         Pack::Cjk => 0,
         Pack::Jxl => 1,
+        Pack::Avif => 2,
+        Pack::Heic => 3,
     }
 }
 fn available(ctx: &Context, language: &str) -> bool {
@@ -110,6 +112,11 @@ pub fn initialize_fonts(
     state.installed[1] = packs::installed(Pack::Jxl).is_ok();
     if state.installed[1] {
         state.status[1] = crate::t!("packs.installed");
+    }
+    state.installed[2] = packs::installed(Pack::Avif).is_ok();
+    state.installed[3] = packs::installed(Pack::Heic).is_ok();
+    if state.installed[2] {
+        state.status[2] = crate::t!("packs.installed");
     }
     for pack in Pack::ALL {
         if !state.installed[index(pack)] && packs::is_present(pack) {
@@ -212,11 +219,15 @@ pub fn show_settings(ui: &mut Ui) {
             ui.label(crate::t!(match pack {
                 Pack::Cjk => "packs.cjk_description",
                 Pack::Jxl => "packs.jxl_description",
+                Pack::Avif => "packs.avif_description",
+                Pack::Heic => "packs.heic_description",
             }));
             ui.label(&state.status[index(pack)]);
             if let Some(size) = match pack {
                 Pack::Cjk => option_env!("PAINTFE_CJK_PACK_SIZE"),
                 Pack::Jxl => option_env!("PAINTFE_JXL_PACK_SIZE"),
+                Pack::Avif => option_env!("PAINTFE_AVIF_PACK_SIZE"),
+                Pack::Heic => option_env!("PAINTFE_HEIC_PACK_SIZE"),
             } && let Ok(size) = size.parse::<u64>()
             {
                 ui.weak(format!("{:.2} MiB", size as f64 / 1048576.0));
@@ -307,6 +318,12 @@ pub fn frame(ctx: &Context, settings: &mut crate::config::settings::AppSettings)
     if packs::take_jxl_request() && !state.installed[1] {
         state.prompt = Some(Pack::Jxl);
     }
+    if packs::take_avif_request() && !state.installed[2] {
+        state.prompt = Some(Pack::Avif);
+    }
+    if packs::take_heic_request() && !state.installed[3] {
+        state.prompt = Some(Pack::Heic);
+    }
     let open = state.prompt.is_some();
     ctx.data_mut(|d| d.insert_temp(Id::new("optional_pack_modal_open"), open));
     if let Some(pack) = state.prompt {
@@ -318,11 +335,19 @@ pub fn frame(ctx: &Context, settings: &mut crate::config::settings::AppSettings)
             ui.label(crate::t!(if pack == Pack::Cjk {
                 "packs.cjk_size"
             } else {
-                "packs.jxl_size"
+                if pack == Pack::Heic {
+                    "packs.heic_size"
+                } else if pack == Pack::Avif {
+                    "packs.avif_size"
+                } else {
+                    "packs.jxl_size"
+                }
             }));
             if let Some(size) = match pack {
                 Pack::Cjk => option_env!("PAINTFE_CJK_PACK_SIZE"),
                 Pack::Jxl => option_env!("PAINTFE_JXL_PACK_SIZE"),
+                Pack::Avif => option_env!("PAINTFE_AVIF_PACK_SIZE"),
+                Pack::Heic => option_env!("PAINTFE_HEIC_PACK_SIZE"),
             } && let Ok(size) = size.parse::<u64>()
             {
                 ui.label(format!("{:.2} MiB", size as f64 / 1048576.0));

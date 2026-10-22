@@ -86,6 +86,7 @@ struct StraightenSession {
 
 /// Result delivered from a background IO thread.
 pub enum IoResult {
+    BytesDecoded { decoded: image::DynamicImage, name_hint: Option<String> },
     ImportReady {
         bytes: Vec<u8>,
         path: PathBuf,

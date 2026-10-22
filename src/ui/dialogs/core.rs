@@ -367,18 +367,25 @@ fn paint_dialog_header_impl(
     close_response.clicked()
 }
 
+/// Shared section typography for dialogs and Preferences.
+pub(crate) fn section_label_text(
+    ctx: &egui::Context,
+    colors: &DialogColors,
+    text: &str,
+) -> egui::RichText {
+    egui::RichText::new(text.to_uppercase())
+        .size(11.0 * crate::ui::polish::settings(ctx).text_scale)
+        .color(colors.text_muted)
+        .strong()
+        .monospace()
+}
+
 /// Styled section label with monospace uppercase styling.
 pub(crate) fn section_label(ui: &mut egui::Ui, colors: &DialogColors, text: &str) {
     ui.add_space(6.0);
     ui.horizontal(|ui| {
         ui.add_space(2.0);
-        ui.label(
-            egui::RichText::new(text.to_uppercase())
-                .size(11.0 * crate::ui::polish::settings(ui.ctx()).text_scale)
-                .color(colors.text_muted)
-                .strong()
-                .monospace(),
-        );
+        ui.label(section_label_text(ui.ctx(), colors, text));
     });
     ui.add_space(2.0);
 }

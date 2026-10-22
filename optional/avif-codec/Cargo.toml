@@ -1,0 +1,25 @@
+[package]
+name = "paintfe-avif-codec"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[features]
+default = ["asm"]
+asm = ["image/nasm"]
+
+[dependencies]
+image = { version = "=0.25.9", default-features = false, features = ["avif", "avif-native", "rayon"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security"] }
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

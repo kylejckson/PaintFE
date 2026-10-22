@@ -20,3 +20,6 @@ web-sys = { version = "0.3", features = ["HtmlCanvasElement"] }
 
 [profile.release]
 opt-level = 2
+
+[patch.crates-io]
+heifer = { path = "../vendor/heifer" }

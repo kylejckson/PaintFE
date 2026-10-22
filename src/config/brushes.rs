@@ -580,6 +580,17 @@ impl Assets {
             include_bytes!("../../assets/icons/ui/settings_plugins.png"),
         );
 
+        self.load_icon(
+            ctx,
+            Icon::MenuFileInfo,
+            include_bytes!("../../assets/icons/menu/file_info.png"),
+        );
+        self.load_icon(
+            ctx,
+            Icon::SettingsOptionalFeatures,
+            include_bytes!("../../assets/icons/menu/optional_plugins.png"),
+        );
+
         // === Menu: File ===
         self.load_icon(
             ctx,
@@ -2443,3 +2454,35 @@ pub const TEXT_SIZE_PRESETS: &[f32] = &[
     8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 28.0, 32.0, 36.0, 48.0, 64.0, 72.0, 96.0, 128.0,
     192.0, 256.0,
 ];
+
+#[cfg(test)]
+mod document_feature_icon_tests {
+    use super::*;
+
+    #[test]
+    fn supplied_document_and_optional_feature_pngs_are_registered_as_textures() {
+        let ctx = egui::Context::default();
+        let mut assets = Assets::new();
+        assets.init(&ctx);
+        for (icon, png) in [
+            (
+                Icon::MenuFileInfo,
+                include_bytes!("../../assets/icons/menu/file_info.png").as_slice(),
+            ),
+            (
+                Icon::SettingsOptionalFeatures,
+                include_bytes!("../../assets/icons/menu/optional_plugins.png").as_slice(),
+            ),
+        ] {
+            let expected = image::load_from_memory(png).unwrap().to_rgba8();
+            assert_eq!(assets.icon_pixels.get(&icon).unwrap(), expected.as_raw());
+            for dark in [false, true] {
+                assets.update_theme(&ctx, dark);
+                assert!(
+                    assets.get_texture(icon).is_some(),
+                    "missing {icon:?}, dark={dark}"
+                );
+            }
+        }
+    }
+}

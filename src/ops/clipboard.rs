@@ -371,7 +371,7 @@ pub fn get_from_system_clipboard() -> Option<RgbaImage> {
         #[cfg(target_os = "linux")]
         {
             for path in parse_file_uri_or_path_list(&text) {
-                if let Ok(dyn_img) = image::open(&path) {
+                if let Ok(dyn_img) = crate::io::decode_image_path(&path) {
                     return Some(dyn_img.to_rgba8());
                 }
             }
@@ -381,7 +381,7 @@ pub fn get_from_system_clipboard() -> Option<RgbaImage> {
         {
             let path = std::path::Path::new(text.trim());
             if path.is_file()
-                && let Ok(dyn_img) = image::open(path)
+                && let Ok(dyn_img) = crate::io::decode_image_path(path)
             {
                 return Some(dyn_img.to_rgba8());
             }
@@ -592,10 +592,22 @@ fn read_image_from_clipboard_file_list() -> Option<RgbaImage> {
                 .unwrap_or_default();
             let is_image = matches!(
                 ext.as_str(),
-                "png" | "jpg" | "jpeg" | "bmp" | "gif" | "webp" | "tiff" | "tga"
+                "png"
+                    | "jpg"
+                    | "jpeg"
+                    | "bmp"
+                    | "gif"
+                    | "webp"
+                    | "tiff"
+                    | "tga"
+                    | "jxl"
+                    | "avif"
+                    | "heic"
+                    | "heif"
+                    | "hif"
             );
 
-            if is_image && let Ok(dyn_img) = image::open(&path) {
+            if is_image && let Ok(dyn_img) = crate::io::decode_image_path(&path) {
                 result = Some(dyn_img.to_rgba8());
                 break;
             }

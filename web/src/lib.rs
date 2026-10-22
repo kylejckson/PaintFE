@@ -36,6 +36,8 @@ impl WebHandle {
                 eframe::WebOptions::default(),
                 Box::new(|cc| {
                     paintfe::i18n::init();
+                    paintfe::i18n::load_label_overrides();
+                    paintfe::io::register_codecs();
                     paintfe::web_bridge::set_egui_context(cc.egui_ctx.clone());
                     // No startup files (no CLI args in a browser) and an
                     // inert IPC receiver (single-instance IPC is a native-only

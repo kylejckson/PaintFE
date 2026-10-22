@@ -104,7 +104,7 @@ const OPEN_TAG: &str = "open";
 pub fn trigger_open_picker() {
     open_picker(
         OPEN_TAG,
-        ".pfe,.png,.jpg,.jpeg,.jxl,.webp,.bmp,.tga,.gif,.ico,.tiff,.tif",
+        ".pfe,.png,.jpg,.jpeg,.jxl,.heic,.heif,.hif,.webp,.bmp,.tga,.gif,.ico,.tiff,.tif",
         true,
     );
 }
