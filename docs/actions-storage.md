@@ -19,6 +19,19 @@ retry, rerun the build jobs that produce them before retrying publication.
 Changing these workflows does not shorten existing artifacts' expiry dates.
 Published release downloads are unaffected.
 
+Before publishing, `tools/stage_release_packs.py` collects nested pack artifacts
+into a flat directory and requires exactly eight correctly named packs for the
+release version. It verifies signatures against the public key embedded in the
+matching Windows core EXE, checks manifest identities and payload hashes, and
+rejects missing, duplicate or unexpected packs. All supported platforms use the
+same release signing key. No executable is run during verification.
+
+Checksum pipelines and unmatched release uploads fail the job. After publishing,
+the workflow downloads each of the eight public pack URLs and compares its hash
+with the staged file. `tools/tests/test_stage_release_packs.py` covers nested
+artifact paths, missing and duplicate packs, version/platform mismatches,
+payload tampering, core-key mismatches and public download failures.
+
 ## Reviewing existing artifacts
 
 Run this read-only report using an authenticated GitHub CLI:

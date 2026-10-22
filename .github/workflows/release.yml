@@ -506,6 +506,14 @@ jobs:
       - name: Checkout release notes
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
 
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
+      - name: Install pack verification tools
+        run: python -m pip install cryptography==46.0.7
+
       - name: Prepare release notes
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -566,7 +574,12 @@ jobs:
         with:
           pattern: optional-packs-*
           merge-multiple: true
-          path: dist/packs
+          path: dist/packs-input
+
+      - name: Verify and stage all optional feature packs
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python tools/stage_release_packs.py --tag "$RELEASE_TAG" --source dist/packs-input --destination dist/packs --core dist/windows/PaintFE.exe
 
       - name: Make binaries executable
         run: |
@@ -591,7 +604,9 @@ jobs:
           bash ../../packaging/macos/generate-cask.sh "${GITHUB_REF_NAME#v}" > paintfe.rb
 
       - name: Generate SHA-256 checksums
+        shell: bash
         run: |
+          set -euo pipefail
           cd dist
           sha256sum windows/PaintFE.exe \
             windows/paintdotnet-host/PaintFE.PaintDotNetHost.exe \
@@ -614,6 +629,7 @@ jobs:
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           body_path: release-notes.md
+          fail_on_unmatched_files: true
           files: |
             dist/windows/PaintFE.exe
             dist/linux/PaintFE
@@ -627,3 +643,8 @@ jobs:
             dist/macos/paintfe.rb
             dist/checksums-SHA256.txt
             dist/packs/*.pfepack
+
+      - name: Verify published optional feature downloads
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python tools/stage_release_packs.py --tag "$RELEASE_TAG" --destination dist/packs --verify-published

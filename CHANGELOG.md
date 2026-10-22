@@ -17,6 +17,12 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 - Linux installation, upgrade and desktop checks still require distribution testing. Arabic mixed-direction text needs native-speaker review; full RTL layout is not implemented.
 - Package publication requires maintainer signing secrets and explicit Pages setup.
 
+### Release publishing
+
+- Fixed optional feature packs being left out of releases because their artifact folders were nested.
+- Release publishing now checks all eight signed packs, stops on missing files or checksum errors, and verifies the public downloads.
+- Repaired the v1.4.13 JPEG XL encoder and CJK font downloads using the original signed packs. The existing application downloads are unchanged.
+
 ## [1.4.13] - 2026-10-22
 
 - Fixed the RPM signing error that blocked the previous release.
