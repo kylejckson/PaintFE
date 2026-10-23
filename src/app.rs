@@ -28,6 +28,7 @@ include!("app/bootstrap.rs");
 include!("app/paste_placement.rs");
 include!("app/runtime.rs");
 include!("app/project_io.rs");
+include!("app/save_flow.rs");
 include!("app/ops.rs");
 include!("app/panels.rs");
 
@@ -39,3 +40,5 @@ mod history_tests;
 mod issue_tests;
 #[cfg(test)]
 mod preferences_review_tests;
+#[cfg(test)]
+mod save_safety_tests;

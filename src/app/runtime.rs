@@ -15,6 +15,8 @@ impl PaintFEApp {
             || self.pending_oversized_import.is_some()
             || self.pending_exit
             || self.pending_close_index.is_some()
+            || self.save_warning.is_some()
+            || self.save_sequence.is_some()
     }
 }
 

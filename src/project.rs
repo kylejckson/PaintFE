@@ -15,6 +15,8 @@ pub struct Project {
     /// `None` for unsaved/untitled files.
     pub path: Option<PathBuf>,
     pub is_dirty: bool,
+    /// Monotonic edit identity for asynchronous save completion.
+    pub(crate) edit_revision: u64,
 
     /// Display name (derived from path or "Untitled-X")
     pub name: String,
@@ -41,6 +43,7 @@ impl Project {
             file_handler: FileHandler::new(),
             path: None,
             is_dirty: false,
+            edit_revision: 0,
             name,
             was_animated: false,
             animation_fps: 10.0,
@@ -62,6 +65,7 @@ impl Project {
             file_handler,
             path: Some(path),
             is_dirty: false,
+            edit_revision: 0,
             name,
             was_animated: false,
             animation_fps: 10.0,
@@ -71,6 +75,7 @@ impl Project {
     }
 
     pub fn mark_dirty(&mut self) {
+        self.edit_revision = self.edit_revision.wrapping_add(1);
         self.is_dirty = true;
     }
 

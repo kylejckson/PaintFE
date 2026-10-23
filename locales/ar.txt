@@ -1645,3 +1645,16 @@ format.heic=HEIC
 heic.export_note=8-bit lossy still image. Quality 100 is not lossless. Transparency is supported.
 codec.processing=Processing image...
 codec.cancelled=Image processing cancelled.
+
+# Save safety
+save.warning=Save without losing your work
+save.loss_intro=This format cannot preserve all the information in this document:
+save.loss_structure=Layers, editable text, masks and layer settings will not remain editable.
+save.loss_animation=Animation frames will be replaced by a single image.
+save.loss_alpha=Transparency cannot be fully preserved.
+save.loss_depth=The original colour bit depth will be reduced.
+save.keep_project=Save a PaintFE project to keep the editable document. Saving an image keeps the open document intact, but the image file cannot restore these features.
+save.project=Save PaintFE project...
+save.image=Save image anyway
+save.failed=The file could not be saved. Your document is still open.
+save.changed=The document changed while saving. It has been kept open so you can save the latest changes.

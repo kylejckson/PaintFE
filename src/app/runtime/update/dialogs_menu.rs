@@ -105,7 +105,7 @@ impl PaintFEApp {
                         }
                         {
                             let any_dirty =
-                                self.projects.iter().any(|p| p.is_dirty && p.path.is_some());
+                                self.projects.iter().any(|p| p.is_dirty);
                             if self
                                 .assets
                                 .menu_item_shortcut_enabled(
@@ -1882,7 +1882,9 @@ impl PaintFEApp {
                     let is_dirty = self.active_project().is_some_and(|p| p.is_dirty);
                     let save_button = self.assets.icon_button_enabled(ui, Icon::Save, is_dirty);
                     #[cfg(test)]
-                    ctx.data_mut(|d| d.insert_temp(egui::Id::new("toolbar_save_test_rect"), save_button.rect));
+                    ctx.data_mut(|d| {
+                        d.insert_temp(egui::Id::new("toolbar_save_test_rect"), save_button.rect)
+                    });
                     if save_button.clicked() {
                         self.handle_save(ctx.input(|i| i.time));
                     }
@@ -2743,11 +2745,21 @@ impl PaintFEApp {
                     .max_width((ctx.content_rect().width() - 24.0).max(280.0))
                     .frame(self.theme.dialog_frame())
                     .show(ctx, |ui| {
-                        let path = project.path.as_ref().map(|p| crate::services::io::display_path(p));
-                        open &= !crate::ui::panels::document_info::contents(ui, &self.assets, crate::ui::panels::document_info::Info {
-                            name: &project.name, width: project.canvas_state.width, height: project.canvas_state.height,
-                            layers: project.canvas_state.layers.len(), path: path.as_deref(),
-                        });
+                        let path = project
+                            .path
+                            .as_ref()
+                            .map(|p| crate::services::io::display_path(p));
+                        open &= !crate::ui::panels::document_info::contents(
+                            ui,
+                            &self.assets,
+                            crate::ui::panels::document_info::Info {
+                                name: &project.name,
+                                width: project.canvas_state.width,
+                                height: project.canvas_state.height,
+                                layers: project.canvas_state.layers.len(),
+                                path: path.as_deref(),
+                            },
+                        );
                     });
             } else {
                 open = false;

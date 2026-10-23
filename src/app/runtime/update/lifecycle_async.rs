@@ -31,7 +31,17 @@ impl PaintFEApp {
         if ctx.input(|i| i.viewport().close_requested()) {
             let current_time = ctx.input(|i| i.time);
             self.persist_window_state_if_changed(current_time, true);
-            if self.force_exit {
+            if !self.save_jobs.is_empty() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                if !self.force_exit && self.save_sequence.is_none() && self.save_warning.is_none() {
+                    self.pending_exit = true;
+                }
+            } else if self.save_sequence.is_some()
+                || self.save_warning.is_some()
+                || self.save_file_dialog.open
+            {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            } else if self.force_exit {
                 // Already confirmed — let eframe proceed with the close.
             } else if self.settings.confirm_on_exit {
                 let dirty_count = self.projects.iter().filter(|p| p.is_dirty).count();
@@ -392,9 +402,12 @@ impl PaintFEApp {
 
         // --- Poll async IO results (image load / save) ---
         // Keep completed loads queued while a dialog owns the current document.
-        while !self.document_modal_open()
-            && let Ok(result) = self.io_receiver.try_recv()
-        {
+        let mut deferred_loads = Vec::new();
+        while let Ok(result) = self.io_receiver.try_recv() {
+            if self.document_modal_open() && !matches!(result, IoResult::SaveFinished { .. }) {
+                deferred_loads.push(result);
+                continue;
+            }
             self.pending_io_ops = self.pending_io_ops.saturating_sub(1);
             if self.pending_io_ops == 0 {
                 self.io_ops_start_time = None;
@@ -404,8 +417,7 @@ impl PaintFEApp {
                 | IoResult::AnimatedLoaded { path, .. }
                 | IoResult::AnimatedFramesLoaded { path, .. }
                 | IoResult::PfeLoaded { path, .. }
-                | IoResult::PdnLoaded { path, .. }
-                | IoResult::SaveComplete { path, .. } => Some(path.clone()),
+                | IoResult::PdnLoaded { path, .. } => Some(path.clone()),
                 _ => None,
             };
             if let Some(path) = recent_path {
@@ -418,7 +430,9 @@ impl PaintFEApp {
                 self.settings.save();
             }
             match result {
-                IoResult::BytesDecoded { decoded, name_hint } => self.finish_image_from_bytes(decoded, name_hint),
+                IoResult::BytesDecoded { decoded, name_hint } => {
+                    self.finish_image_from_bytes(decoded, name_hint)
+                }
                 IoResult::ImageLoaded {
                     tiled,
                     pixel_format,
@@ -442,8 +456,9 @@ impl PaintFEApp {
                     canvas_state.mark_dirty(None);
 
                     let file_handler = FileHandler {
-                        current_path: (!(cfg!(target_arch = "wasm32") && crate::io::is_heif_path(&path)))
-                            .then(|| path.clone()),
+                        current_path: (!(cfg!(target_arch = "wasm32")
+                            && crate::io::is_heif_path(&path)))
+                        .then(|| path.clone()),
                         last_format: format,
                         last_quality: 90,
                         last_tiff_compression: TiffCompression::None,
@@ -492,46 +507,8 @@ impl PaintFEApp {
                     log_info!("FileIO: load failed — {}", error);
                     eprintln!("Failed to open image: {}", error);
                 }
-                IoResult::SaveComplete {
-                    project_index,
-                    path,
-                    format,
-                    quality,
-                    webp_lossless,
-                    tiff_compression,
-                    update_project_path,
-                } => {
-                    log_info!(
-                        "FileIO: save complete — project={} path={:?} format={:?}",
-                        project_index,
-                        path,
-                        format
-                    );
-                    self.settings.last_export_format = format.extension().into();
-                    self.settings.last_export_directory = path
-                        .parent()
-                        .map(|p| p.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    self.settings.save();
-                    if let Some(project) = self.projects.get_mut(project_index) {
-                        project.file_handler.current_path = Some(path.clone());
-                        project.file_handler.last_format = format;
-                        project.file_handler.last_quality = quality;
-                        project.file_handler.last_webp_lossless = webp_lossless;
-                        project.file_handler.last_tiff_compression = tiff_compression;
-                        if update_project_path {
-                            project.path = Some(path);
-                            project.update_name_from_path();
-                        }
-                        project.mark_clean();
-                    }
-                }
-                IoResult::SaveFailed {
-                    project_index: _,
-                    error,
-                } => {
-                    log_info!("FileIO: save failed — {}", error);
-                    eprintln!("Failed to save: {}", error);
+                IoResult::SaveFinished { project_id, result } => {
+                    self.finish_save(project_id, result)
                 }
                 IoResult::AnimatedLoaded {
                     tiled,
@@ -662,6 +639,12 @@ impl PaintFEApp {
                 }
             }
         }
+        for result in deferred_loads {
+            let _ = self.io_sender.send(result);
+        }
+        if self.force_exit && self.save_jobs.is_empty() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         if self.pending_io_ops > 0 {
             ctx.request_repaint();
         }
@@ -750,7 +733,9 @@ impl PaintFEApp {
             || !self.pending_import_queue.is_empty()
             || self.pending_oversized_import.is_some()
             || self.pending_exit
-            || self.pending_close_index.is_some();
+            || self.pending_close_index.is_some()
+            || self.save_warning.is_some()
+            || self.save_sequence.is_some();
 
         let _global_probe = ctx.input(|i| {
             let cmd = i.modifiers.ctrl || i.modifiers.command;

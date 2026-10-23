@@ -6,7 +6,20 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
-## [Unreleased]
+## [1.4.16] - 2026-10-24
+
+- Warn before saving a document to a format that loses editable information.
+- Offer PaintFE project saving to preserve layers, text and masks.
+- Wait for successful saves before closing documents or exiting.
+
+### Save safety
+
+- Save, Save As, Save All and save-on-close now share the same loss checks. Related to issue 205.
+- Image exports keep the layered document open and retain an existing PaintFE project save target.
+- Layer masks and their enabled state are now stored in PFE projects. Masked projects require this version or newer to reopen.
+- Failed writes leave the destination intact and keep the document open. Background save results track the original document and do not mark newer edits as saved.
+
+Related to issue 205. The issue remains open for users to test and confirm.
 
 ## [1.4.15] - 2026-10-23
 

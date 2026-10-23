@@ -86,7 +86,10 @@ struct StraightenSession {
 
 /// Result delivered from a background IO thread.
 pub enum IoResult {
-    BytesDecoded { decoded: image::DynamicImage, name_hint: Option<String> },
+    BytesDecoded {
+        decoded: image::DynamicImage,
+        name_hint: Option<String>,
+    },
     ImportReady {
         bytes: Vec<u8>,
         path: PathBuf,
@@ -109,19 +112,11 @@ pub enum IoResult {
         path: Option<std::path::PathBuf>,
         error: String,
     },
-    /// Image save completed successfully.
-    SaveComplete {
-        project_index: usize,
-        path: std::path::PathBuf,
-        format: SaveFormat,
-        quality: u8,
-        webp_lossless: bool,
-        tiff_compression: TiffCompression,
-        /// When saving from Save As, also update the project name/path.
-        update_project_path: bool,
+    /// Save results target a stable document identity; metadata remains in save_jobs.
+    SaveFinished {
+        project_id: uuid::Uuid,
+        result: Result<(), String>,
     },
-    /// Image save failed.
-    SaveFailed { project_index: usize, error: String },
     /// Animated file opened: first frame loaded as a project with this ID,
     /// remaining frames arrive separately.
     AnimatedLoaded {
@@ -294,14 +289,10 @@ pub struct PaintFEApp {
     /// next close_requested so the OS close actually goes through.
     force_exit: bool,
 
-    /// Queue of project indices (untitled/dirty) that still need Save As dialogs
-    /// before the app can exit. Populated when user clicks "Save" in the exit dialog.
-    /// Each entry is processed sequentially: switch to tab → open Save As → wait for
-    /// completion/cancel → advance to next or exit.
-    exit_save_queue: Vec<usize>,
-    /// True while working through exit_save_queue — the current Save As dialog
-    /// is part of the exit flow (not a normal Save As).
-    exit_save_active: bool,
+    save_sequence: Option<SaveSequence>,
+    save_warning: Option<SaveWarning>,
+    save_dialog_target: Option<uuid::Uuid>,
+    save_jobs: std::collections::HashMap<uuid::Uuid, SaveJob>,
 
     /// Instant of the last auto-save tick (used to measure the interval).
     last_autosave: crate::time_compat::Instant,
@@ -419,7 +410,9 @@ pub(crate) fn discover_system_cjk_font(language: &str) -> Option<(String, Vec<u8
             {
                 // Check the requested script instead of accepting an unrelated CJK font.
                 #[cfg(not(target_arch = "wasm32"))]
-                if !crate::services::optional_packs::font_covers(&data,language) { continue; }
+                if !crate::services::optional_packs::font_covers(&data, language) {
+                    continue;
+                }
                 #[cfg(target_arch = "wasm32")]
                 let _ = language;
                 return Some((name.to_string(), data));

@@ -23,6 +23,7 @@ use crate::experimental::{DeepRgbaBuffer, f16_bits_to_f32, reinhard_tone_map_rgb
 pub mod avif;
 pub mod heic;
 pub mod jxl;
+mod pfe_masks;
 
 pub fn is_heif_path(path: &Path) -> bool {
     path.extension()
@@ -289,22 +290,26 @@ impl From<Box<bincode::ErrorKind>> for PfeError {
 }
 
 /// Save a CanvasState as a .pfe project file.
-/// Uses V2 format when text layers are present, V1 otherwise for backward compatibility.
+/// Selects the oldest format that preserves the document's supported content.
 pub fn save_pfe(state: &CanvasState, path: &Path) -> Result<(), PfeError> {
     let data = build_pfe(state);
     write_pfe(&data, path)
 }
 
-/// Version-independent PFE project data — auto-selects V1 or V2 at build time.
+/// Version-independent PFE project data, selected from the document's content.
 pub enum PfeData {
     V1(ProjectFileV1),
     V2(ProjectFileV2),
     V3(ProjectFileV3),
+    V4(pfe_masks::ProjectFileV4),
 }
 
-/// Build a serializable PFE project, auto-selecting V1 or V2 based on content.
+/// Build a serializable PFE project, selecting V1 through V4 based on content.
 /// Safe to call on the main thread, then move the result to a background thread.
 pub fn build_pfe(state: &CanvasState) -> PfeData {
+    if state.layers.iter().any(|layer| layer.mask.is_some()) {
+        return PfeData::V4(pfe_masks::build(state));
+    }
     let has_layer_folders =
         !state.layer_folders.is_empty() || state.layers.iter().any(|l| l.folder_id.is_some());
     let has_experimental_layers = state.layers.iter().any(|l| {
@@ -338,6 +343,7 @@ pub fn write_pfe(data: &PfeData, path: &Path) -> Result<(), PfeError> {
         PfeData::V1(project) => write_pfe_v1(project, path),
         PfeData::V2(project) => write_pfe_v2(project, path),
         PfeData::V3(project) => write_pfe_v3(project, path),
+        PfeData::V4(project) => pfe_masks::write(project, path),
     }
 }
 
@@ -385,8 +391,9 @@ pub fn build_pfe_v1(state: &CanvasState) -> ProjectFileV1 {
 /// Safe to call on a background thread.
 pub fn write_pfe_v1(project: &ProjectFileV1, path: &Path) -> Result<(), PfeError> {
     let file = File::create(path)?;
-    let writer = BufWriter::new(file);
-    bincode::serialize_into(writer, &project)?;
+    let mut writer = BufWriter::new(file);
+    bincode::serialize_into(&mut writer, &project)?;
+    writer.flush()?;
     Ok(())
 }
 
@@ -448,8 +455,9 @@ pub fn build_pfe_v2(state: &CanvasState) -> ProjectFileV2 {
 /// Safe to call on a background thread.
 pub fn write_pfe_v2(project: &ProjectFileV2, path: &Path) -> Result<(), PfeError> {
     let file = File::create(path)?;
-    let writer = BufWriter::new(file);
-    bincode::serialize_into(writer, &project)?;
+    let mut writer = BufWriter::new(file);
+    bincode::serialize_into(&mut writer, &project)?;
+    writer.flush()?;
     Ok(())
 }
 
@@ -511,12 +519,13 @@ pub fn build_pfe_v3(state: &CanvasState) -> ProjectFileV3 {
 
 pub fn write_pfe_v3(project: &ProjectFileV3, path: &Path) -> Result<(), PfeError> {
     let file = File::create(path)?;
-    let writer = BufWriter::new(file);
-    bincode::serialize_into(writer, &project)?;
+    let mut writer = BufWriter::new(file);
+    bincode::serialize_into(&mut writer, &project)?;
+    writer.flush()?;
     Ok(())
 }
 
-/// Load a .pfe project file (supports both v0 flat and v1 tiled formats)
+/// Load a .pfe project file (supports V0 through V4).
 pub fn load_pfe(path: &Path) -> Result<CanvasState, PfeError> {
     let raw = std::fs::read(path)?;
     load_pfe_from_bytes(&raw)
@@ -535,6 +544,7 @@ pub fn load_pfe_from_bytes(raw: &[u8]) -> Result<CanvasState, PfeError> {
     let magic = std::str::from_utf8(&raw[8..12]).unwrap_or("");
 
     match magic {
+        "PFE4" => pfe_masks::load(raw),
         PFE_MAGIC_V3 => load_pfe_v3(raw),
         PFE_MAGIC_V2 => load_pfe_v2(raw),
         PFE_MAGIC_V1 => load_pfe_v1(raw),
@@ -859,9 +869,11 @@ pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
 
 /// Load a v3 tiled project file with experimental feature support.
 fn load_pfe_v3(raw: &[u8]) -> Result<CanvasState, PfeError> {
-    use crate::canvas::{AdjustmentLayerData, LayerContent};
+    canvas_from_pfe_v3(bincode::deserialize(raw)?)
+}
 
-    let project: ProjectFileV3 = bincode::deserialize(raw)?;
+fn canvas_from_pfe_v3(project: ProjectFileV3) -> Result<CanvasState, PfeError> {
+    use crate::canvas::{AdjustmentLayerData, LayerContent};
 
     validate_open_dimensions(project.width, project.height).map_err(PfeError::InvalidFormat)?;
     if project.layers.len() > MAX_LAYERS {

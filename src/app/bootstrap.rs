@@ -108,7 +108,9 @@ impl PaintFEApp {
             if let Some((name, data)) = discover_system_cjk_font(&crate::i18n::current_language()) {
                 #[cfg(not(target_arch = "wasm32"))]
                 for language in ["ja", "ko", "zh-CN", "zh-TW"] {
-                    if crate::services::optional_packs::font_covers(&data,language) {system_languages.push(language.to_owned());}
+                    if crate::services::optional_packs::font_covers(&data, language) {
+                        system_languages.push(language.to_owned());
+                    }
                 }
                 fonts
                     .font_data
@@ -138,9 +140,17 @@ impl PaintFEApp {
                 .families
                 .insert(egui::FontFamily::Name("WidgetTitle".into()), titles);
             #[cfg(not(target_arch = "wasm32"))]
-            crate::ui::panels::optional_features::initialize_fonts(&cc.egui_ctx,fonts,system_languages,settings.language.is_empty());
+            crate::ui::panels::optional_features::initialize_fonts(
+                &cc.egui_ctx,
+                fonts,
+                system_languages,
+                settings.language.is_empty(),
+            );
             #[cfg(target_arch = "wasm32")]
-            { let _ = &mut system_languages; cc.egui_ctx.set_fonts(fonts); }
+            {
+                let _ = &mut system_languages;
+                cc.egui_ctx.set_fonts(fonts);
+            }
         }
 
         drop(profile);
@@ -359,8 +369,10 @@ impl PaintFEApp {
             pending_close_index: None,
             pending_exit: false,
             force_exit: false,
-            exit_save_queue: Vec::new(),
-            exit_save_active: false,
+            save_sequence: None,
+            save_warning: None,
+            save_dialog_target: None,
+            save_jobs: Default::default(),
             last_autosave: crate::time_compat::Instant::now(),
             first_frame: true,
             last_viewport_title: None,

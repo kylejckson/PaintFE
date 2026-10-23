@@ -198,7 +198,10 @@ impl PaintFEApp {
             crate::par_compat::spawn(move || {
                 let result = match crate::io::decode_image_bytes(&bytes) {
                     Ok(decoded) => IoResult::BytesDecoded { decoded, name_hint },
-                    Err(error) => IoResult::LoadFailed { path: None, error: error.to_string() },
+                    Err(error) => IoResult::LoadFailed {
+                        path: None,
+                        error: error.to_string(),
+                    },
                 };
                 let _ = sender.send(result);
             });
@@ -221,7 +224,8 @@ impl PaintFEApp {
     }
 
     fn finish_image_from_bytes(&mut self, decoded: image::DynamicImage, name_hint: Option<String>) {
-        let (image, pixel_format, deep_pixels, hdr_metadata) = crate::io::dynamic_image_to_rgba_and_deep(decoded);
+        let (image, pixel_format, deep_pixels, hdr_metadata) =
+            crate::io::dynamic_image_to_rgba_and_deep(decoded);
         let width = image.width();
         let height = image.height();
         if let Err(error) = crate::io::validate_open_dimensions(width, height) {
@@ -312,7 +316,23 @@ impl PaintFEApp {
                 .and_then(|e| e.to_str())
                 .map(|e| e.to_ascii_lowercase())
                 .as_deref(),
-            Some("png" | "jpg" | "jpeg" | "jxl" | "avif" | "heic" | "heif" | "hif" | "webp" | "bmp" | "tga" | "tif" | "tiff" | "gif" | "ico")
+            Some(
+                "png"
+                    | "jpg"
+                    | "jpeg"
+                    | "jxl"
+                    | "avif"
+                    | "heic"
+                    | "heif"
+                    | "hif"
+                    | "webp"
+                    | "bmp"
+                    | "tga"
+                    | "tif"
+                    | "tiff"
+                    | "gif"
+                    | "ico"
+            )
         )
     }
 
@@ -328,8 +348,8 @@ impl PaintFEApp {
                     let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
                     let (width, height) = if crate::io::avif::is_avif(&bytes) {
                         // AVIF uses the optional helper rather than image's built-in decoder.
-                        let decoded = crate::io::decode_image_bytes(&bytes)
-                            .map_err(|e| e.to_string())?;
+                        let decoded =
+                            crate::io::decode_image_bytes(&bytes).map_err(|e| e.to_string())?;
                         (decoded.width(), decoded.height())
                     } else {
                         crate::io::register_codecs();
@@ -570,8 +590,10 @@ impl PaintFEApp {
                             Ok(frames) if !frames.is_empty() => {
                                 let format = match ext.as_str() {
                                     "gif" => SaveFormat::Gif,
-                                    "jxl" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Jxl(Default::default()),
-                                "avif" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Avif,
+                                    "jxl" if cfg!(not(target_arch = "wasm32")) => {
+                                        SaveFormat::Jxl(Default::default())
+                                    }
+                                    "avif" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Avif,
                                     "webp" => SaveFormat::Webp,
                                     _ => SaveFormat::Png,
                                 };
@@ -680,7 +702,8 @@ impl PaintFEApp {
                             });
                             return;
                         }
-                        let (image, pixel_format, deep_pixels, hdr_metadata) = crate::io::dynamic_image_to_rgba_and_deep(img);
+                        let (image, pixel_format, deep_pixels, hdr_metadata) =
+                            crate::io::dynamic_image_to_rgba_and_deep(img);
                         let width = image.width();
                         let height = image.height();
                         let tiled = TiledImage::from_rgba_image(&image);
@@ -689,10 +712,14 @@ impl PaintFEApp {
                             .extension()
                             .map(|ext| match ext.to_string_lossy().to_lowercase().as_str() {
                                 "jpg" | "jpeg" => SaveFormat::Jpeg,
-                                "jxl" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Jxl(Default::default()),
+                                "jxl" if cfg!(not(target_arch = "wasm32")) => {
+                                    SaveFormat::Jxl(Default::default())
+                                }
                                 "avif" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Avif,
-                                "heic" | "heif" | "hif" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Heic,
-                                    "webp" => SaveFormat::Webp,
+                                "heic" | "heif" | "hif" if cfg!(not(target_arch = "wasm32")) => {
+                                    SaveFormat::Heic
+                                }
+                                "webp" => SaveFormat::Webp,
                                 "bmp" => SaveFormat::Bmp,
                                 "tga" => SaveFormat::Tga,
                                 "ico" => SaveFormat::Ico,
@@ -704,7 +731,9 @@ impl PaintFEApp {
 
                         let _ = sender.send(IoResult::ImageLoaded {
                             tiled,
-                            pixel_format, deep_pixels, hdr_metadata,
+                            pixel_format,
+                            deep_pixels,
+                            hdr_metadata,
                             width,
                             height,
                             path,
@@ -738,7 +767,9 @@ impl PaintFEApp {
                 project.file_handler.last_format = SaveFormat::Heic;
             }
             if project.file_handler.last_format == SaveFormat::Heic
-                && !crate::services::optional_packs::is_present(crate::services::optional_packs::Pack::Heic)
+                && !crate::services::optional_packs::is_present(
+                    crate::services::optional_packs::Pack::Heic,
+                )
             {
                 crate::services::optional_packs::request_heic();
                 return false;
@@ -754,162 +785,23 @@ impl PaintFEApp {
     /// stays responsive on large canvases.
     fn handle_save(&mut self, current_time: f64) {
         let idx = self.active_project_index;
-        if idx >= self.projects.len() {
+        if idx >= self.projects.len() || self.save_warning.is_some() || self.save_sequence.is_some()
+        {
             return;
         }
-
         if !self.prepare_heic_save(idx) {
             return;
         }
-        let has_path = self.projects[idx].file_handler.has_current_path();
-
-        if has_path {
-            let project = &mut self.projects[idx];
-            let is_pfe = project.file_handler.last_format == SaveFormat::Pfe;
-            let is_animated = project.file_handler.last_animated
-                && project.file_handler.last_format.supports_animation();
-
-            if is_pfe {
-                // PFE save — build data snapshot, serialize in background
-                project.canvas_state.ensure_all_text_layers_rasterized();
-                if let Some(path) = project.file_handler.current_path.clone() {
-                    let pfe_data = crate::io::build_pfe(&project.canvas_state);
-                    let sender = self.io_sender.clone();
-                    if self.pending_io_ops == 0 {
-                        self.io_ops_start_time = Some(current_time);
-                    }
-                    self.pending_io_ops += 1;
-                    crate::par_compat::spawn(move || {
-                        match crate::io::write_pfe(&pfe_data, &path) {
-                            Ok(()) => {
-                                let _ = sender.send(IoResult::SaveComplete {
-                                    project_index: idx,
-                                    path,
-                                    format: SaveFormat::Pfe,
-                                    quality: 100,
-                                    webp_lossless: true,
-                                    tiff_compression: TiffCompression::None,
-                                    update_project_path: false,
-                                });
-                            }
-                            Err(e) => {
-                                let _ = sender.send(IoResult::SaveFailed {
-                                    project_index: idx,
-                                    error: format!("{}", e),
-                                });
-                            }
-                        }
-                    });
-                }
-            } else if is_animated {
-                // Quick-save animated format (include all layers, even hidden)
-                project.canvas_state.ensure_all_text_layers_rasterized();
-                let frames: Vec<image::RgbaImage> = project
-                    .canvas_state
-                    .layers
-                    .iter()
-                    .map(|l| l.pixels.to_rgba_image())
-                    .collect();
-                let path = project.file_handler.current_path.clone().unwrap();
-                let format = project.file_handler.last_format;
-                let quality = project.file_handler.last_quality;
-                let webp_lossless = project.file_handler.last_webp_lossless;
-                let tiff_compression = project.file_handler.last_tiff_compression;
-                let fps = project.file_handler.last_animation_fps;
-                let gif_colors = project.file_handler.last_gif_colors;
-                let gif_dither = project.file_handler.last_gif_dither;
-                let frame_modes: Vec<_> = project
-                    .canvas_state
-                    .layers
-                    .iter()
-                    .map(|l| l.webp_frame_compression)
-                    .collect();
-                let sender = self.io_sender.clone();
-                if self.pending_io_ops == 0 {
-                    self.io_ops_start_time = Some(current_time);
-                }
-                self.pending_io_ops += 1;
-                crate::par_compat::spawn(move || {
-                    let result = match format {
-                        SaveFormat::Gif => crate::io::encode_animated_gif(
-                            &frames, fps, gif_colors, gif_dither, &path,
-                        ),
-                        SaveFormat::Png => crate::io::encode_animated_png(&frames, fps, &path),
-                        SaveFormat::Webp => crate::io::encode_animated_webp(
-                            &frames,
-                            &frame_modes,
-                            fps,
-                            quality,
-                            &path,
-                        ),
-                        _ => Err("Format does not support animation".to_string()),
-                    };
-                    match result {
-                        Ok(()) => {
-                            let _ = sender.send(IoResult::SaveComplete {
-                                project_index: idx,
-                                path,
-                                format,
-                                quality,
-                                webp_lossless,
-                                tiff_compression,
-                                update_project_path: false,
-                            });
-                        }
-                        Err(e) => {
-                            let _ = sender.send(IoResult::SaveFailed {
-                                project_index: idx,
-                                error: e,
-                            });
-                        }
-                    }
-                });
-            } else {
-                // Static image save — composite on main thread (usually cached),
-                // encode + write on background thread.
-                project.canvas_state.ensure_all_text_layers_rasterized();
-                let export_image = crate::io::prepare_export_image(&project.canvas_state);
-                let path = project.file_handler.current_path.clone().unwrap();
-                let format = project.file_handler.last_format;
-                let quality = project.file_handler.last_quality;
-                let webp_lossless = project.file_handler.last_webp_lossless;
-                let tiff_compression = project.file_handler.last_tiff_compression;
-                let sender = self.io_sender.clone();
-                if self.pending_io_ops == 0 {
-                    self.io_ops_start_time = Some(current_time);
-                }
-                self.pending_io_ops += 1;
-                crate::par_compat::spawn(move || {
-                    match crate::io::encode_prepared_and_write(
-                        export_image,
-                        &path,
-                        format,
-                        quality,
-                        tiff_compression,
-                        webp_lossless,
-                    ) {
-                        Ok(()) => {
-                            let _ = sender.send(IoResult::SaveComplete {
-                                project_index: idx,
-                                path,
-                                format,
-                                quality,
-                                webp_lossless,
-                                tiff_compression,
-                                update_project_path: false,
-                            });
-                        }
-                        Err(e) => {
-                            let _ = sender.send(IoResult::SaveFailed {
-                                project_index: idx,
-                                error: format!("{}", e),
-                            });
-                        }
-                    }
-                });
-            }
+        if let Some(action) = self.quick_save_action(idx) {
+            self.request_save(
+                PendingSave {
+                    project_id: self.projects[idx].id,
+                    action,
+                    update_path: false,
+                },
+                current_time,
+            );
         } else {
-            // No existing path — open Save As dialog
             self.open_save_as_for_project(idx);
         }
     }
@@ -938,6 +830,7 @@ impl PaintFEApp {
         } else {
             None
         };
+        self.save_dialog_target = Some(project.id);
         self.save_file_dialog.reset();
         // A document's directory wins over the last successful export. Model
         // pickers and other native dialogs never influence this choice.
@@ -963,165 +856,28 @@ impl PaintFEApp {
             self.save_file_dialog
                 .set_source_animated(frames, was_animated, animation_fps);
         }
+        if project.has_editable_structure() {
+            let name = project
+                .path
+                .as_ref()
+                .map(|p| p.with_extension("pfe"))
+                .unwrap_or_else(|| PathBuf::from("Untitled.pfe"));
+            self.save_file_dialog.set_from_path(&name);
+        }
         self.save_file_dialog.open = true;
     }
 
-    /// Save a specific project by index (only if it has a path — skips dialog).
-    /// Returns true if a background save was launched.
-    fn handle_save_project(&mut self, idx: usize, current_time: f64) -> bool {
-        if idx >= self.projects.len() {
-            return false;
-        }
-        if !self.projects[idx].is_dirty || !self.prepare_heic_save(idx) {
-            return false;
-        }
-        if !self.projects[idx].file_handler.has_current_path() {
-            return false;
-        }
-
-        let project = &mut self.projects[idx];
-        let is_pfe = project.file_handler.last_format == SaveFormat::Pfe;
-        let is_animated = project.file_handler.last_animated
-            && project.file_handler.last_format.supports_animation();
-
-        if is_pfe {
-            project.canvas_state.ensure_all_text_layers_rasterized();
-            if let Some(path) = project.file_handler.current_path.clone() {
-                let pfe_data = crate::io::build_pfe(&project.canvas_state);
-                let sender = self.io_sender.clone();
-                if self.pending_io_ops == 0 {
-                    self.io_ops_start_time = Some(current_time);
-                }
-                self.pending_io_ops += 1;
-                crate::par_compat::spawn(move || match crate::io::write_pfe(&pfe_data, &path) {
-                    Ok(()) => {
-                        let _ = sender.send(IoResult::SaveComplete {
-                            project_index: idx,
-                            path,
-                            format: SaveFormat::Pfe,
-                            quality: 100,
-                            webp_lossless: true,
-                            tiff_compression: TiffCompression::None,
-                            update_project_path: false,
-                        });
-                    }
-                    Err(e) => {
-                        let _ = sender.send(IoResult::SaveFailed {
-                            project_index: idx,
-                            error: format!("{}", e),
-                        });
-                    }
-                });
-            }
-        } else if is_animated {
-            project.canvas_state.ensure_all_text_layers_rasterized();
-            let frames: Vec<image::RgbaImage> = project
-                .canvas_state
-                .layers
+    /// Save all dirty documents sequentially, including required warnings and pickers.
+    fn handle_save_all(&mut self, _current_time: f64) {
+        self.begin_save_sequence(
+            self.projects
                 .iter()
-                .map(|l| l.pixels.to_rgba_image())
-                .collect();
-            let path = project.file_handler.current_path.clone().unwrap();
-            let format = project.file_handler.last_format;
-            let quality = project.file_handler.last_quality;
-            let webp_lossless = project.file_handler.last_webp_lossless;
-            let tiff_compression = project.file_handler.last_tiff_compression;
-            let fps = project.file_handler.last_animation_fps;
-            let gif_colors = project.file_handler.last_gif_colors;
-            let gif_dither = project.file_handler.last_gif_dither;
-            let frame_modes: Vec<_> = project
-                .canvas_state
-                .layers
-                .iter()
-                .map(|l| l.webp_frame_compression)
-                .collect();
-            let sender = self.io_sender.clone();
-            if self.pending_io_ops == 0 {
-                self.io_ops_start_time = Some(current_time);
-            }
-            self.pending_io_ops += 1;
-            crate::par_compat::spawn(move || {
-                let result = match format {
-                    SaveFormat::Gif => {
-                        crate::io::encode_animated_gif(&frames, fps, gif_colors, gif_dither, &path)
-                    }
-                    SaveFormat::Png => crate::io::encode_animated_png(&frames, fps, &path),
-                    SaveFormat::Webp => {
-                        crate::io::encode_animated_webp(&frames, &frame_modes, fps, quality, &path)
-                    }
-                    _ => Err("Format does not support animation".to_string()),
-                };
-                match result {
-                    Ok(()) => {
-                        let _ = sender.send(IoResult::SaveComplete {
-                            project_index: idx,
-                            path,
-                            format,
-                            quality,
-                            webp_lossless,
-                            tiff_compression,
-                            update_project_path: false,
-                        });
-                    }
-                    Err(e) => {
-                        let _ = sender.send(IoResult::SaveFailed {
-                            project_index: idx,
-                            error: e,
-                        });
-                    }
-                }
-            });
-        } else {
-            project.canvas_state.ensure_all_text_layers_rasterized();
-            let export_image = crate::io::prepare_export_image(&project.canvas_state);
-            let path = project.file_handler.current_path.clone().unwrap();
-            let format = project.file_handler.last_format;
-            let quality = project.file_handler.last_quality;
-            let webp_lossless = project.file_handler.last_webp_lossless;
-            let tiff_compression = project.file_handler.last_tiff_compression;
-            let sender = self.io_sender.clone();
-            if self.pending_io_ops == 0 {
-                self.io_ops_start_time = Some(current_time);
-            }
-            self.pending_io_ops += 1;
-            crate::par_compat::spawn(move || {
-                match crate::io::encode_prepared_and_write(
-                    export_image,
-                    &path,
-                    format,
-                    quality,
-                    tiff_compression,
-                    webp_lossless,
-                ) {
-                    Ok(()) => {
-                        let _ = sender.send(IoResult::SaveComplete {
-                            project_index: idx,
-                            path,
-                            format,
-                            quality,
-                            webp_lossless,
-                            tiff_compression,
-                            update_project_path: false,
-                        });
-                    }
-                    Err(e) => {
-                        let _ = sender.send(IoResult::SaveFailed {
-                            project_index: idx,
-                            error: format!("{}", e),
-                        });
-                    }
-                }
-            });
-        }
-        true
-    }
-
-    /// Save all dirty projects that already have a file path.
-    fn handle_save_all(&mut self, current_time: f64) {
-        let count = self.projects.len();
-        for i in 0..count {
-            self.handle_save_project(i, current_time);
-        }
+                .filter(|p| p.is_dirty)
+                .map(|p| p.id)
+                .collect(),
+            false,
+            false,
+        );
     }
 }
 
