@@ -100,6 +100,19 @@ x86_64, Apple Silicon and Intel macOS.
 python tools/build_optional_packs.py --release
 ```
 
+The HEIC builder discovers Visual Studio 2022/2026 x64 C++ installations with
+vswhere and chooses a matching CMake generator and instance. CMake 4.2+ is
+required for VS 2026; VS 2022 and Unix retain the 3.25+ minimum. If needed,
+online builds bootstrap an isolated pinned CMake (4.2.3 or 3.31.6). Offline
+source rebuilds never install tools. Compiler-specific cache directories avoid
+reusing a VS 2022 configuration with VS 2026.
+
+Linux CI installs Mesa's software Vulkan driver and runs
+`tools/check_ci_vulkan.py` before compiling the codec/UI tests. The preflight
+selects Lavapipe, checks it with `vulkaninfo --summary`, then exports the driver
+and private runtime directory to later steps. The real toolbar-save regression
+stays enabled and needs no physical GPU or desktop session.
+
 The AVIF helper builds separately from `optional/avif-codec/Cargo.toml`.
 `tools/build_avif_native.py` downloads a SHA-256-pinned dav1d 1.5.4 source archive
 and uses isolated pinned Meson/Ninja tools. Windows uses a verified portable

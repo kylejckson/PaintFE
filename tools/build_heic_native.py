@@ -1,6 +1,7 @@
 """Pinned, offline-capable HEIC export helper build and corresponding-source pack."""
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import platform
@@ -18,26 +19,56 @@ SOURCES = (
 )
 
 
-def cmake_path(work, env, offline=False):
-    found = shutil.which('cmake')
+def windows_toolchain(env):
+    """Find a complete VS installation with x64 C++ tools, including Build Tools."""
+    locator = shutil.which('vswhere', path=env.get('PATH', ''))
+    if not locator:
+        locator = Path(env.get('ProgramFiles(x86)', 'C:/Program Files (x86)')) / 'Microsoft Visual Studio/Installer/vswhere.exe'
+        if not locator.is_file():
+            raise RuntimeError('Install Visual Studio 2022 or 2026 with the x64 C++ build tools (vswhere was not found)')
+    instances = json.loads(subprocess.check_output([
+        str(locator), '-products', '*', '-requires',
+        'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-format', 'json', '-utf8',
+    ], env=env, text=True, encoding='utf-8-sig'))
+    supported = []
+    for instance in instances:
+        version = tuple(map(int, re.findall(r'\d+', instance.get('installationVersion', ''))))
+        if version and version[0] in (17, 18) and instance.get('installationPath'):
+            supported.append((version, instance))
+    if not supported:
+        raise RuntimeError('No supported Visual Studio 2022/2026 installation with x64 C++ tools was found')
+    version, instance = max(supported, key=lambda pair: pair[0])
+    generator = 'Visual Studio 18 2026' if version[0] == 18 else 'Visual Studio 17 2022'
+    minimum = (4, 2) if version[0] == 18 else (3, 25)
+    path = instance['installationPath']
+    identity = f'{generator}|{path.casefold()}|x64'
+    cache = f'vs{version[0]}-' + hashlib.sha256(identity.encode()).hexdigest()[:12]
+    return dict(generator=generator, instance=path, minimum=minimum, cache=cache)
+
+
+def cmake_path(work, env, offline=False, toolchain=None):
+    minimum = toolchain['minimum'] if toolchain else (3, 25)
+    found = shutil.which('cmake', path=env.get('PATH', ''))
     candidates = [found] if found else []
-    if os.name == 'nt':
-        vs = Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'Microsoft Visual Studio/2022'
-        candidates += sorted(vs.glob('*/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe'))
+    if toolchain:
+        bundled = Path(toolchain['instance']) / 'Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe'
+        if bundled.is_file():
+            candidates.append(str(bundled))
     for candidate in candidates:
         version = subprocess.check_output([str(candidate), '--version'], env=env, text=True)
         match = re.search(r'version (\d+)\.(\d+)', version)
-        if match and tuple(map(int, match.groups())) >= (3, 25):
+        if match and tuple(map(int, match.groups())) >= minimum:
             return str(candidate)
     if offline:
-        raise RuntimeError('Install CMake 3.25 or later to rebuild the included HEIC source')
-    tools = work / 'tools'
+        raise RuntimeError(f'Install CMake {minimum[0]}.{minimum[1]} or later to rebuild the included HEIC source')
+    pin = '4.2.3' if minimum >= (4, 2) else '3.31.6'
+    tools = work / 'tools' / f'cmake-{pin}'
     python = tools / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
     if not python.exists():
         subprocess.run([sys.executable, '-m', 'venv', str(tools)], env=env, check=True)
     cmake = python.parent / ('cmake.exe' if os.name == 'nt' else 'cmake')
     if not cmake.exists():
-        subprocess.run([str(python), '-m', 'pip', 'install', 'cmake==3.31.6'], env=env, check=True)
+        subprocess.run([str(python), '-m', 'pip', 'install', f'cmake=={pin}'], env=env, check=True)
     return str(cmake)
 
 
@@ -82,13 +113,18 @@ def prepare(target=None, env=None, source_root=None):
         plugin.write_text(text.replace(lossy_alpha, exact_alpha), encoding='utf-8')
     elif exact_alpha not in text:
         raise ValueError('Unexpected pinned HEIC alpha configuration')
-    build = work / ('build-' + (target or f'{platform.system()}-{platform.machine()}'))
+    toolchain = windows_toolchain(env) if platform.system() == 'Windows' else None
+    build_name = 'build-' + (target or f'{platform.system()}-{platform.machine()}')
+    if toolchain:
+        build_name += '-' + toolchain['cache']
+    build = work / build_name
     build.mkdir(parents=True, exist_ok=True)
     prefix = build / 'install'
-    cmake = cmake_path(work, env, offline=bool(source_root))
+    cmake = cmake_path(work, env, offline=bool(source_root), toolchain=toolchain)
     common = ['-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_POSITION_INDEPENDENT_CODE=ON', '-DCMAKE_POLICY_DEFAULT_CMP0091=NEW', '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded']
-    if os.name == 'nt':
-        common += ['-G', 'Visual Studio 17 2022', '-A', 'x64']
+    if toolchain:
+        common += ['-G', toolchain['generator'], '-A', 'x64',
+                   f'-DCMAKE_GENERATOR_INSTANCE={toolchain["instance"]}']
     if target and 'apple' in target:
         common += [f'-DCMAKE_OSX_ARCHITECTURES={"x86_64" if target.startswith("x86_64") else "arm64"}']
         if target.startswith('x86_64') and platform.machine() in ('arm64', 'aarch64'):
@@ -101,7 +137,7 @@ def prepare(target=None, env=None, source_root=None):
     run(['--install', str(build / 'kvazaar'), '--config', 'Release'])
     run(['-S', str(helper), '-B', str(build / 'helper'), f'-DHEIF_SOURCE={work / "libheif-1.23.6"}', f'-DCMAKE_PREFIX_PATH={prefix}'] + common)
     run(['--build', str(build / 'helper'), '--config', 'Release', '--target', 'paintfe-heic-encoder', '-j', '2'])
-    binary = build / 'helper' / ('Release/paintfe-heic-encoder.exe' if os.name == 'nt' else 'paintfe-heic-encoder')
+    binary = build / 'helper' / ('Release/paintfe-heic-encoder.exe' if toolchain else 'paintfe-heic-encoder')
     notices = build / 'LICENSE.txt'
     notices.write_text('PaintFE HEIC helper: GPL-3.0-or-later. Complete corresponding source is in SOURCES.tar.gz.\n\n' + (work / 'libheif-1.23.6/COPYING').read_text(encoding='utf-8') + '\n\nKvazaar:\n' + (work / 'kvazaar-2.3.2/LICENSE').read_text(encoding='utf-8'), encoding='utf-8')
     sources = build / 'SOURCES.tar.gz'

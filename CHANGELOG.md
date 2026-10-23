@@ -8,6 +8,20 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ## [Unreleased]
 
+## [1.4.15] - 2026-10-23
+
+- Open HEIC/HEIF images and save them with an optional HEIC export pack.
+- Open and save AVIF images with an optional codec pack.
+- Customize interface labels with a searchable editor for each language.
+
+### Release build fixes
+
+- Detect Visual Studio 2022 or 2026 when building the HEIC export helper, with a compatible CMake version and separate compiler caches.
+- Set up and verify a software Vulkan driver for Linux CI so the toolbar-save test runs without a physical GPU.
+- Include the changes prepared for v1.4.14, whose release was blocked by these build and CI setup errors.
+
+Issues remain open for users to test and confirm.
+
 ## [1.4.14] - 2026-10-22
 
 - Open HEIC/HEIF images and save them with an optional HEIC export pack.

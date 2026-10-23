@@ -134,7 +134,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libvulkan-dev libwayland-dev libegl1-mesa-dev libssl-dev libfontconfig1-dev cmake libclang-dev pkg-config nasm
+          sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libvulkan-dev libwayland-dev libegl1-mesa-dev libssl-dev libfontconfig1-dev cmake libclang-dev pkg-config nasm mesa-vulkan-drivers vulkan-tools
 
       - name: Install macOS assembler
         if: runner.os == 'macOS'
@@ -144,6 +144,10 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
         with:
           python-version: '3.12'
+
+      - name: Verify Linux software Vulkan
+        if: runner.os == 'Linux'
+        run: python tools/check_ci_vulkan.py
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
