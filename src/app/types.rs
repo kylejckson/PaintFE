@@ -29,6 +29,7 @@ pub struct FilterResult {
 /// Result delivered from a background canvas-wide operation (resize image/canvas).
 /// Unlike `FilterResult` which targets a single layer, this carries all layers.
 pub struct CanvasOpResult {
+    pub guides: crate::canvas::guides::Guides,
     pub project_index: usize,
     /// Snapshot of the canvas state before the operation (for undo).
     pub before: crate::components::history::CanvasSnapshot,
@@ -169,6 +170,7 @@ pub struct PaintFEApp {
     new_file_dialog: NewFileDialog,
     save_file_dialog: SaveFileDialog,
     settings_window: SettingsWindow,
+    guide_dialog_open: bool,
     /// Web only: first-run welcome/beta-disclaimer popup, shown once per
     /// browser (dismissal persisted to localStorage).
     #[cfg(target_arch = "wasm32")]

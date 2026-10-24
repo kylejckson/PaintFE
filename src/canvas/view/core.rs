@@ -1099,6 +1099,11 @@ impl Canvas {
             Pos2::new(temp_rect.max.x.round(), temp_rect.max.y.round()),
         );
         self.last_image_rect = Some(image_rect);
+        let move_tool = tools.as_ref().is_some_and(|t| matches!(t.active_tool, crate::components::tools::Tool::MovePixels | crate::components::tools::Tool::MoveSelection | crate::components::tools::Tool::Pan));
+        let guide_input = crate::ui::guides::interact(ui, state, image_rect, canvas_rect, self.zoom, move_tool,
+            modal_open || pointer_over_blocking_ui || ui_blocks_canvas_input || egui::Popup::is_any_open(ui.ctx()));
+        let ui_blocks_canvas_input = ui_blocks_canvas_input || guide_input;
+
 
         // Fill background with theme color
         painter.rect_filled(canvas_rect, 0.0, bg_color);
@@ -1428,6 +1433,10 @@ impl Canvas {
                 || ui_blocks_canvas_input;
             paste_consumed_input =
                 overlay.handle_input(ui, image_rect, canvas_rect, self.zoom, paste_input_blocked);
+            if !paste_input_blocked && overlay.active_handle == Some(crate::ops::clipboard::HandleKind::Move) {
+                let bounds = Rect::from_points(&overlay.corners_canvas());
+                overlay.center += state.guides.snap_delta(bounds, self.zoom);
+            }
             if (!paste_input_blocked || overlay.active_handle.is_some())
                 && let Some(pos) = ui.input(|i| i.pointer.interact_pos())
             {
@@ -1585,7 +1594,8 @@ impl Canvas {
                     state.mark_dirty(None);
                 }
             }
-            ui.ctx().request_repaint();
+            // Pointer events and preview changes already request redraws. A stationary
+            // pasted image must not keep the entire editor rendering continuously.
 
             // Draw handles/border on top of the composite.
             if state.show_pixel_grid && self.zoom >= 8.0 {
@@ -1725,6 +1735,7 @@ impl Canvas {
         if state.show_guidelines {
             self.draw_guidelines(&painter, image_rect, state, canvas_rect);
         }
+        crate::ui::guides::paint(ui, state, image_rect, canvas_rect, self.zoom);
 
         // ====================================================================
         // EXTRACT DEBUG INFO before tools is consumed

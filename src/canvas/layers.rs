@@ -387,6 +387,8 @@ pub struct LayerFolder {
 }
 
 pub struct Layer {
+    /// Session identity: pending edits never follow a reordered layer index.
+    pub runtime_id: uuid::Uuid,
     pub name: String,
     pub visible: bool,
     pub folder_id: Option<u64>,
@@ -447,6 +449,7 @@ impl Layer {
         let pixels = TiledImage::new_filled(width, height, fill_color);
 
         Self {
+            runtime_id: uuid::Uuid::new_v4(),
             name,
             visible: true,
             folder_id: None,
@@ -469,6 +472,7 @@ impl Layer {
     /// Create a new text layer with default empty text data.
     pub fn new_text(name: String, width: u32, height: u32) -> Self {
         Self {
+            runtime_id: uuid::Uuid::new_v4(),
             name,
             visible: true,
             folder_id: None,

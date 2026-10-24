@@ -296,7 +296,11 @@ fn main_inner() -> Result<(), eframe::Error> {
     drop(profile);
 
     // Define the native window options
-    let preferred_backend = paintfe::services::graphics::preferred_backends();
+    let preferred_backend = if startup_settings.preferred_gpu == "Auto" {
+        paintfe::services::graphics::preferred_backends()
+    } else {
+        None
+    };
     let options = eframe::NativeOptions {
         viewport: {
             let mut vp = egui::ViewportBuilder::default()
@@ -319,6 +323,10 @@ fn main_inner() -> Result<(), eframe::Error> {
         event_loop_builder: Some(Box::new(configure_event_loop)),
         wgpu_options: {
             let mut wgpu_options = eframe::egui_wgpu::WgpuConfiguration::default();
+            paintfe::services::graphics::configure_adapter(
+                &mut wgpu_options,
+                &startup_settings.preferred_gpu,
+            );
             if let Some(backends) = preferred_backend
                 && let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut wgpu_options.wgpu_setup
             {
@@ -351,13 +359,21 @@ fn main_inner() -> Result<(), eframe::Error> {
     let renderer_profile = paintfe::ui::perf::StartupSpan::new("event_loop_to_app_creation");
     let app_created = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let creation_flag = app_created.clone();
-    let result = eframe::run_native(
+    paintfe::services::frame_pacing::set_policy(
+        startup_settings.frame_rate_detect_screen,
+        startup_settings.frame_rate_limit,
+    );
+    let result = paintfe::services::frame_pacing::run_native(
         "PaintFE",
         options,
         Box::new(move |cc| {
             drop(renderer_profile);
+            if let Some(window) = cc.winit_window() {
+                paintfe::services::frame_pacing::register_window(window.clone());
+            }
             creation_flag.store(true, std::sync::atomic::Ordering::Release);
             if let Some(state) = &cc.wgpu_render_state {
+                paintfe::services::graphics::record_render_state(state);
                 paintfe::services::graphics::record_working_backend(
                     state.adapter.get_info().backend,
                 );
@@ -367,8 +383,8 @@ fn main_inner() -> Result<(), eframe::Error> {
             Ok(Box::new(PaintFEApp::new(cc, startup_files, ipc_receiver)))
         }),
     );
-    if result.is_err()
-        && preferred_backend.is_some()
+    if (preferred_backend.is_some() || startup_settings.preferred_gpu != "Auto")
+        && std::env::var_os("PAINTFE_GRAPHICS_RECOVERY_PARENT").is_none()
         && !app_created.load(std::sync::atomic::Ordering::Acquire)
     {
         logger::write(
@@ -379,12 +395,24 @@ fn main_inner() -> Result<(), eframe::Error> {
             return Ok(());
         }
     }
+    if !app_created.load(std::sync::atomic::Ordering::Acquire) {
+        return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(
+            "Graphics startup failed before the editor could be created",
+        ))));
+    }
     result
 }
 
 /// Entry point — on Windows, wraps main_inner with SEH protection to catch
 /// assertion failures from third-party injected DLLs (e.g. AlphaRing overlay).
 fn main() -> Result<(), eframe::Error> {
+    #[cfg(not(target_arch = "wasm32"))]
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "--paintfe-system-heic")
+    {
+        std::process::exit(paintfe::io::heic::run_worker());
+    }
     #[cfg(target_os = "windows")]
     {
         run_with_seh_protection(main_inner)

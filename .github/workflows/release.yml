@@ -76,7 +76,7 @@ jobs:
         with:
           name: optional-packs-build-windows
           retention-days: 1
-          path: target/optional-packs/*/release/*.pfepack
+          path: target/optional-packs/*/release/*-${{ github.ref_name }}.pfepack
           if-no-files-found: error
 
 
@@ -154,7 +154,7 @@ jobs:
         with:
           name: optional-packs-build-linux
           retention-days: 1
-          path: target/optional-packs/*/release/*.pfepack
+          path: target/optional-packs/*/release/*-${{ github.ref_name }}.pfepack
           if-no-files-found: error
 
 
@@ -328,7 +328,7 @@ jobs:
         with:
           name: optional-packs-build-macos-arm
           retention-days: 1
-          path: target/optional-packs/*/release/*.pfepack
+          path: target/optional-packs/*/release/*-${{ github.ref_name }}.pfepack
           if-no-files-found: error
 
 
@@ -401,7 +401,7 @@ jobs:
         with:
           name: optional-packs-build-macos-x86
           retention-days: 1
-          path: target/optional-packs/*/release/*.pfepack
+          path: target/optional-packs/*/release/*-${{ github.ref_name }}.pfepack
           if-no-files-found: error
 
 

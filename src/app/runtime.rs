@@ -5,6 +5,7 @@ impl PaintFEApp {
         #[cfg(not(target_arch = "wasm32"))]
         let welcome_open = false;
         self.filter_error.is_some()
+            || self.guide_dialog_open
             || welcome_open
             || self.settings_window.open
             || self.save_file_dialog.open
@@ -47,6 +48,8 @@ impl eframe::App for PaintFEApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.guide_dialog_open = crate::ui::guides::dialog_open(&ctx);
+        crate::ui::guides::set_appearance(&ctx, &self.settings.ruler);
         let _profile = crate::ui::perf::Frame::begin(&ctx, frame.info().cpu_usage);
         ctx.data_mut(|d| {
             d.insert_temp(
@@ -83,6 +86,11 @@ impl eframe::App for PaintFEApp {
         {
             let _scope = crate::ui::perf::Scope::new(6);
             self.show_runtime_canvas_tail(&ctx, ui, modal_open);
+        }
+        if let Some(project) = self.active_project_mut() {
+            crate::ui::guides::begin(&ctx, project.id);
+            crate::ui::guides::dialog(&ctx, project);
+            crate::ui::guides::drain(&ctx, project);
         }
     }
 }

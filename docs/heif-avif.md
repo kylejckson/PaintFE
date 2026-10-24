@@ -1,61 +1,98 @@
 # HEIC/HEIF and AVIF
 
-## HEIC/HEIF
+## HEIC/HEIF: installed system codecs
 
-HEVC-based HEIC/HEIF still-image opening is bundled. No download or external
-system codec is needed. `vendor/heifer/` contains Heifer 0.2.0 with PaintFE's
-local grid-alpha fix and upstream licenses. The patch stays in this repository;
-`vendor/heifer/PAINTFE-PATCHES.md` documents its scope.
+PaintFE no longer compiles the Heifer image decoder or its HEVC implementation. The old
+HEIC export pack is no longer offered, installed or used. Existing pack files
+are left on disk; PaintFE does not delete user data. No HEVC codec is downloaded
+by PaintFE. JPEG XL and AVIF keep their existing implementations.
 
-The final Windows corpus run opened all 15 valid samples and rejected three
-malformed inputs. Both formerly broken grid-alpha samples now match reference
-alpha exactly; 10/12-bit alpha differs by at most one RGBA8 level after conversion.
-Measured results are in
-[`windows-heifer-patched.json`](../tools/codec_probe/results/windows-heifer-patched.json).
+- Windows uses WIC and the installed HEIF Image Extensions / HEVC Video
+  Extensions. Install missing extensions from Microsoft Store and restart PaintFE.
+- macOS uses Apple's ImageIO and CoreGraphics frameworks.
+- Linux loads the installed `libheif.so.1`. Its HEVC decoder/encoder must also
+  be installed through the distribution. Available packages and licence terms
+  depend on the distribution; PaintFE does not install them.
+- The browser build does not contain an HEVC decoder. HEIC requires the desktop
+  app and a supported system codec.
 
-The import hooks preserve supported 8/10/12-bit data through PaintFE's existing
-high-depth import path. Container orientation/crop/mirror are applied by the
-decoder. A 64-million-pixel limit and 256-MiB compressed-input limit bound imports.
-Very large files can still require substantial memory. This does not implement
-HDR gain-map import or ICC colour management beyond existing application paths.
+Preferences > Optional features includes a **HEIC / HEIF (system codecs)** section
+with separate Open and Save availability. Availability is cached for the session;
+restart after installing or changing system codecs. Presence does not guarantee
+support for every HEIF variant. Errors explain when the installed codec cannot
+handle an operation. No capability check uses the network.
 
-An opened HEIC document retains its path and HEIC format. Save writes back to
-that file when the optional export pack is installed; otherwise it offers the
-pack without opening a file browser or changing the format. Use Save As to
-choose a different destination or format. This is image import, not full support
-for HEIF video sequences, depth maps or every auxiliary image type.
+The bridge exchanges 8-bit or 16-bit RGBA still images. Higher-depth inputs require
+a native path exposing that precision; otherwise import is rejected rather than
+silently reduced to 8-bit. Supported 16-bit buffers use the editor's existing
+deep-pixel import path. HDR gain maps, ICC/EXIF metadata and image sequences are
+not preserved by this interface. HEIC export currently takes 8-bit RGBA.
+Export is normally lossy even at quality 100. Use PNG/TIFF/PFE for appropriate
+preservation workflows. Existing HEIC save targets are retained; saves still pass
+through the shared format-loss checks and atomic replacement path.
 
-## HEIC export optional pack
+### Windows validation and limitations
 
-Install **HEIC export** in Preferences > Optional features, or import its signed
-`.pfepack` offline. Opening HEIC remains built in. Save As > HEIC offers the pack
-when it is missing. Export is a flattened, lossy 8-bit still image with alpha;
-quality 100 does not mean lossless. PFE retains editable layers.
+Locally checked with HEIF Image Extension 1.2.57.0 and HEVC Video Extension
+2.4.109.0. The source-transform alpha plane must be requested separately: a
+normal WIC RGB-to-RGBA conversion synthesized opaque alpha. The new bridge reads
+that plane and matches the three 8-bit reference alpha fixtures exactly.
 
-The separate helper contains statically linked libheif 1.23.6 and Kvazaar 2.3.2,
-with a fast preset, four worker threads and lossless auxiliary alpha. No HEVC encoder library is linked
-into PaintFE. Saving and preview encoding use the existing asynchronous I/O,
-signed-pack verification, bounded stdin/stdout protocol, cancellation, timeout
-and process-memory limits. HEIC previews reopen the result with bundled Heifer.
-No external process is used to decode ordinary HEIC imports.
+This Windows codec does not expose the required precision for the supplied
+10/12-bit fixtures. They are rejected rather than imported as 8-bit or opaque
+copies. Its HEIC encoder does not accept
+transparent input; PaintFE reports that limitation and leaves the destination
+untouched. Opaque 29x100, 32x32 and 128x128 export round trips are covered.
 
-The Windows signed pack is approximately **3.54 MiB**, including corresponding
-source. Tests cover tiny/odd sizes, transparency, malformed requests, cancelled
-jobs, CLI output and preserving existing files when a pack is missing. Independent-decoder samples from 1x1 to 512x512 retained alpha exactly.
-The helper explicitly forces lossless alpha, including complex masks, while
-colour remains lossy. These
-checks are not full codec conformance or colour-managed/HDR validation.
+Native Windows chroma reconstruction differs from libheif on the synthetic RGB
+grid: measured RGB mean absolute difference 8.04/255, maximum 44/255; alpha is
+exact. Tests use both mean and peak bounds for this native path, rather than
+claiming pixel-identical RGB output between independent codecs.
 
-The helper is GPL-3.0-or-later, libheif is LGPL-3.0-or-later, and Kvazaar is
-BSD-3-Clause. The pack includes LICENSE.txt, BUILDING.txt and SOURCES.tar.gz with
-complete sources and the build script, allowing users to rebuild and modify the
-separate program offline. The signed manifest checks all four payload files;
-other packs retain their existing two-file whitelist. Official signatures are
-not bypassed for replacement executables. Maintainers can rebuild and sign a
-local PaintFE/helper pair using the existing local pack-build workflow.
+A wider Windows corpus check covered fourteen nominally valid images: ten
+opened with reference-matching dimensions, including rotated and spatial photos;
+four high-depth variants were unsupported. The 48-MP sample was skipped to limit
+PC memory use. Corrupt, empty and truncated samples were rejected by the container
+preflight instead of relying on the native codec's partial-image recovery.
 
-All four desktop release targets are configured. Windows native runtime is
-locally tested; Linux/macOS native builds and execution remain pending CI.
+Linux was tested locally under Ubuntu 26.04.1 in WSL2 with system libheif 1.21.2
+and its libde265 decoder and x265 encoder plugins. All seven Rust import/export
+tests passed, including the same-binary worker, malformed input, alpha, 10/12-bit
+precision, file loading and export round trips. The three 8-bit reference fixtures
+matched exactly; 10/12-bit comparisons converted to 8-bit had maximum RGB error
+3/255 and alpha error 1/255, while decoded buffers retained 16-bit precision.
+On this Ubuntu installation the codec plugins needed to be installed separately:
+`sudo apt install libheif1 libheif-plugin-libde265 libheif-plugin-x265`.
+Other distributions may use different package names. macOS still needs native
+testing. No claim of full HEIF conformance is made.
+
+A disposable-profile Linux GUI smoke check also launched and exited cleanly
+through WSLg/X11 using Mesa software rendering. The X11 keyboard library
+`libxkbcommon-x11-0` was required on this installation. This is a startup check,
+not validation of a physical Linux GPU or desktop performance.
+
+### Isolation and distribution
+
+Codec operations run in a private mode of the same PaintFE executable, before GUI
+or settings startup. There is no extra codec executable to install. The bridge
+uses only platform APIs/system libraries, with bounded stdin/stdout, serialized
+jobs, cancellation, a 120-second timeout, 64-million-pixel / 256-MiB input limits,
+and worker memory limits. Decoded RGBA and encoded output lengths are validated.
+Process separation contains crashes but is not a security sandbox.
+
+The small `heifer-isobmff` dependency reads container metadata only. It has no
+HEVC decoding/encoding implementation. It validates primary and auxiliary-alpha
+dimensions, identifies source precision and bounds derived-item traversal before
+the system codec runs. The HEVC decoder/encoder crates are absent from the app's
+dependency graph. No manual byte-pattern heuristic substitutes for item associations.
+
+Transparent exports are either preserved by the installed encoder (checked by
+decoding the result) or rejected. Unsupported transparency is never flattened
+silently. These measures avoid distributing an HEVC implementation; they do not
+constitute a patent licence or legal clearance for every use or jurisdiction.
+
+The former local Heifer grid-alpha patch and its provenance remain available
+for an upstream report. Nothing has been posted upstream on the user's behalf.
 
 ## AVIF optional pack
 
@@ -92,20 +129,20 @@ PaintFE --input input.png --output output.avif --format avif --quality 80
 ## Maintainer builds
 
 No new account or secret is required. Existing `OPTIONAL_PACK_SIGNING_KEY`
-release setup signs AVIF and HEIC too. The build tool now produces four packs per
-platform, and publication verifies sixteen assets across Windows x86_64, Linux
+release setup continues to sign the CJK, JPEG XL and AVIF packs. From v1.4.17,
+publication verifies twelve assets across Windows x86_64, Linux
 x86_64, Apple Silicon and Intel macOS.
 
 ```sh
 python tools/build_optional_packs.py --release
 ```
 
-The HEIC builder discovers Visual Studio 2022/2026 x64 C++ installations with
-vswhere and chooses a matching CMake generator and instance. CMake 4.2+ is
-required for VS 2026; VS 2022 and Unix retain the 3.25+ minimum. If needed,
-online builds bootstrap an isolated pinned CMake (4.2.3 or 3.31.6). Offline
-source rebuilds never install tools. Compiler-specific cache directories avoid
-reusing a VS 2022 configuration with VS 2026.
+The system bridge is built by Cargo using the platform C++ compiler. On macOS
+this includes Objective-C++ and the system frameworks. Linux requires no libheif
+headers or HEVC implementation at build time; the codec library is loaded only
+when requested. The old HEIC source-build tool is historical and is not invoked
+by the optional-pack/release pipeline. Older signed releases retain their original
+sixteen-pack staging rules for repair; no existing release assets are removed.
 
 Linux CI installs Mesa's software Vulkan driver and runs
 `tools/check_ci_vulkan.py` before compiling the codec/UI tests. The preflight
@@ -128,5 +165,6 @@ official release or replace an existing release's signed assets.
 
 See [the original experiments](codec-experiments.md) for measured performance,
 resource use and the independent-reference transparency failures that motivated
-the patch. Windows execution is locally tested. Unix runtime checks are configured
-in CI and remain unverified until an approved push runs them.
+the patch. Windows system-codec execution and Ubuntu WSL2 runtime checks are
+locally tested; CI checks still need confirmation on an approved push. macOS
+still needs testing on a Mac.

@@ -1,4 +1,57 @@
 impl ToolsPanel {
+    pub fn commit_pending_line_edit(&mut self, state: &mut CanvasState) {
+        if self.line_state.line_tool.stage != LineStage::Editing {
+            return;
+        }
+        if let Some(target) = self.line_target_layer(state) {
+            self.stroke_tracker.layer_index = target;
+            if let Some(bounds) = self.line_state.line_tool.last_bounds {
+                self.stroke_tracker.expand_bounds(bounds);
+            }
+            let event = self.stroke_tracker.finish(state);
+            state.mirror_preview_layer();
+            if self.line_state.line_tool.source_mask {
+                self.commit_preview_to_layer_mask(state, false);
+            } else {
+                self.commit_bezier_to_layer(state, [0.0; 4]);
+            }
+            self.pending_stroke_event = event;
+            state.mark_dirty(None);
+        } else {
+            self.stroke_tracker.cancel();
+        }
+        state.clear_preview_state();
+        self.line_state.line_tool.stage = LineStage::Idle;
+        self.line_state.line_tool.source_layer = None;
+        self.line_state.line_tool.last_bounds = None;
+    }
+    fn capture_line_target(&mut self, state: &CanvasState) {
+        self.line_state.line_tool.source_layer = state
+            .layers
+            .get(state.active_layer_index)
+            .map(|l| l.runtime_id);
+        self.line_state.line_tool.source_mask = state.edit_layer_mask
+            && state
+                .layers
+                .get(state.active_layer_index)
+                .is_some_and(|l| l.has_live_mask());
+    }
+    fn line_target_layer(&self, state: &CanvasState) -> Option<usize> {
+        let id = self.line_state.line_tool.source_layer?;
+        state.layers.iter().position(|l| {
+            l.runtime_id == id && (!self.line_state.line_tool.source_mask || l.has_live_mask())
+        })
+    }
+    fn preview_commit_target(&self, state: &CanvasState) -> Option<usize> {
+        if self.line_state.line_tool.stage != LineStage::Idle
+            && self.line_state.line_tool.source_layer.is_some()
+        {
+            self.line_target_layer(state)
+        } else {
+            Some(state.active_layer_index).filter(|i| *i < state.layers.len())
+        }
+    }
+
     fn draw_bezier_handles(&self, painter: &egui::Painter, canvas_rect: Rect, zoom: f32) {
         let points = self.line_state.line_tool.control_points;
 
@@ -120,7 +173,9 @@ impl ToolsPanel {
             .as_ref()
             .map(|m| m as *const GrayImage);
 
-        if let Some(active_layer) = canvas_state.get_active_layer_mut() {
+        if let Some(target) = self.preview_commit_target(canvas_state)
+            && let Some(active_layer) = canvas_state.layers.get_mut(target)
+        {
             let mask_ref = mask_ptr.map(|p| unsafe { &*p });
             for (cx, cy, preview_chunk) in &preview_chunks {
                 let base_x = cx * CHUNK_SIZE;
@@ -241,7 +296,9 @@ impl ToolsPanel {
             .as_ref()
             .map(|m| m as *const GrayImage);
 
-        if let Some(active_layer) = canvas_state.layers.get_mut(canvas_state.active_layer_index) {
+        if let Some(target) = self.preview_commit_target(canvas_state)
+            && let Some(active_layer) = canvas_state.layers.get_mut(target)
+        {
             active_layer.ensure_mask();
             let Some(mask) = active_layer.mask.as_mut() else {
                 return;
@@ -303,6 +360,80 @@ impl ToolsPanel {
     // sub-frame events produce segments too short (~2 px) for meaningful
     // spline curvature.  The EMA naturally accumulates across consecutive
     // direction changes, rounding off corners regardless of input density.
-
 }
 
+#[cfg(test)]
+mod line_ownership_tests {
+    use super::*;
+    use crate::canvas::Layer;
+    use crate::components::history::{BrushCommand, Command, PixelPatch};
+    fn pending(mask: bool) -> (ToolsPanel, CanvasState, uuid::Uuid) {
+        let mut s = CanvasState::new(16, 16);
+        s.layers[0].pixels = TiledImage::new(16, 16);
+        if mask {
+            s.layers[0].ensure_mask();
+            s.edit_layer_mask = true;
+        }
+        let id = s.layers[0].runtime_id;
+        let mut t = ToolsPanel {
+            active_tool: Tool::Line,
+            ..Default::default()
+        };
+        t.capture_line_target(&s);
+        t.line_state.line_tool.stage = LineStage::Editing;
+        t.line_state.line_tool.last_bounds =
+            Some(Rect::from_min_max(Pos2::new(2.0, 2.0), Pos2::new(4.0, 4.0)));
+        if mask {
+            t.stroke_tracker.start_preview_mask_tool(
+                0,
+                HistoryAction::MaskLine.label("Line"),
+                s.layers[0].mask.clone(),
+                true,
+            );
+        } else {
+            t.stroke_tracker
+                .start_preview_tool(0, HistoryAction::Line.label("Line"));
+        }
+        let mut preview = TiledImage::new(16, 16);
+        preview.put_pixel(3, 3, Rgba([255, 0, 0, 255]));
+        s.preview_layer = Some(preview);
+        (t, s, id)
+    }
+    #[test]
+    fn line_commit_and_undo_follow_original_layer_after_insert_and_switch() {
+        let (mut t, mut s, id) = pending(false);
+        s.layers
+            .insert(0, Layer::new("Other".into(), 16, 16, Rgba([0, 0, 0, 0])));
+        s.active_layer_index = 0;
+        t.commit_pending_line_edit(&mut s);
+        assert_eq!(s.layers[1].runtime_id, id);
+        assert_eq!(s.layers[1].pixels.get_pixel(3, 3)[0], 255);
+        assert_eq!(s.layers[0].pixels.get_pixel(3, 3)[3], 0);
+        let e = t.pending_stroke_event.take().unwrap();
+        assert_eq!(e.layer_index, 1);
+        let after = PixelPatch::capture(&s, e.layer_index, e.bounds.expand(10.0));
+        let c = BrushCommand::new(e.description, e.before_snapshot.unwrap(), after);
+        c.undo(&mut s);
+        assert_eq!(s.layers[1].pixels.get_pixel(3, 3)[3], 0);
+        c.redo(&mut s);
+        assert_eq!(s.layers[1].pixels.get_pixel(3, 3)[0], 255);
+    }
+    #[test]
+    fn mask_target_is_frozen_and_deleted_source_never_redirects() {
+        let (mut t, mut s, _) = pending(true);
+        s.layers
+            .push(Layer::new("Other".into(), 16, 16, Rgba([0, 0, 0, 0])));
+        s.active_layer_index = 1;
+        s.edit_layer_mask = false;
+        t.commit_pending_line_edit(&mut s);
+        assert!(s.layers[0].mask.as_ref().unwrap().get_pixel(3, 3)[3] > 0);
+        assert!(s.layers[1].mask.is_none());
+        let (mut t, mut s, _) = pending(false);
+        s.layers.clear();
+        s.layers
+            .push(Layer::new("Replacement".into(), 16, 16, Rgba([0, 0, 0, 0])));
+        t.commit_pending_line_edit(&mut s);
+        assert!(t.pending_stroke_event.is_none());
+        assert_eq!(s.layers[0].pixels.get_pixel(3, 3)[3], 0);
+    }
+}

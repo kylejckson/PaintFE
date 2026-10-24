@@ -27,6 +27,31 @@ fn title_case(s: &str) -> String {
 }
 
 fn main() {
+    let target = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
+    println!("cargo:rerun-if-changed=src/io/system_heic");
+    if matches!(target.as_str(), "windows" | "linux" | "macos") {
+        let mut bridge = cc::Build::new();
+        bridge.cpp(true).std("c++17").include("src/io/system_heic");
+        bridge.file("src/io/system_heic/common.cpp");
+        bridge.file(format!(
+            "src/io/system_heic/{target}.{}",
+            if target == "macos" { "mm" } else { "cpp" }
+        ));
+        bridge.compile("paintfe_system_heic");
+        match target.as_str() {
+            "windows" => {
+                for lib in ["ole32", "oleaut32", "windowscodecs", "shlwapi", "mfuuid"] {
+                    println!("cargo:rustc-link-lib={lib}");
+                }
+            }
+            "macos" => {
+                for lib in ["Foundation", "CoreGraphics", "ImageIO", "CoreFoundation"] {
+                    println!("cargo:rustc-link-lib=framework={lib}");
+                }
+            }
+            _ => println!("cargo:rustc-link-lib=dl"),
+        }
+    }
     println!("cargo:rerun-if-env-changed=PAINTFE_PACK_PUBLIC_KEY");
     println!("cargo:rerun-if-env-changed=PAINTFE_CJK_PACK_SIZE");
     println!("cargo:rerun-if-env-changed=PAINTFE_JXL_PACK_SIZE");

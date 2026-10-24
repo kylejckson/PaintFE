@@ -1205,13 +1205,17 @@ impl SaveFileDialog {
             SaveFormat::Jxl(_) | SaveFormat::Avif | SaveFormat::Heic
         ) {
             #[cfg(not(target_arch = "wasm32"))]
-            if !crate::services::optional_packs::is_present(if self.format == SaveFormat::Heic {
-                crate::services::optional_packs::Pack::Heic
-            } else if self.format == SaveFormat::Avif {
-                crate::services::optional_packs::Pack::Avif
-            } else {
-                crate::services::optional_packs::Pack::Jxl
-            }) {
+            if (self.format == SaveFormat::Heic && !crate::io::heic::capabilities().encode)
+                || (self.format != SaveFormat::Heic
+                    && !crate::services::optional_packs::is_present(
+                        if self.format == SaveFormat::Avif {
+                            crate::services::optional_packs::Pack::Avif
+                        } else {
+                            crate::services::optional_packs::Pack::Jxl
+                        },
+                    ))
+            {
+                self.jxl_preview_job = None;
                 self.needs_preview_update = true;
                 return;
             }
@@ -1653,10 +1657,7 @@ impl SaveFileDialog {
                             #[cfg(not(target_arch = "wasm32"))]
                             if self.format == SaveFormat::Heic {
                                 ui.weak(crate::t!("heic.export_note"));
-                                if !crate::services::optional_packs::is_present(crate::services::optional_packs::Pack::Heic) {
-                                    ui.label(crate::t!("packs.heic_missing"));
-                                    if ui.button(crate::t!("packs.install_heic")).clicked() { crate::services::optional_packs::request_heic(); }
-                                }
+                                ui.label(crate::io::heic::setup_message());
                             }
                             #[cfg(not(target_arch = "wasm32"))]
                             if self.format == SaveFormat::Avif {
@@ -1822,11 +1823,10 @@ impl SaveFileDialog {
                             #[cfg(not(target_arch = "wasm32"))]
                             if save_clicked && needs_jxl {crate::services::optional_packs::request_jxl();}
                             #[cfg(not(target_arch = "wasm32"))]
-                            let needs_heic = self.format == SaveFormat::Heic && !crate::services::optional_packs::is_present(crate::services::optional_packs::Pack::Heic);
+                            let needs_heic = self.format == SaveFormat::Heic && !crate::io::heic::capabilities().encode;
                             #[cfg(target_arch = "wasm32")]
                             let needs_heic = self.format == SaveFormat::Heic;
                             #[cfg(not(target_arch = "wasm32"))]
-                            if save_clicked && needs_heic { crate::services::optional_packs::request_heic(); }
                             if save_clicked && !needs_jxl && !needs_avif && !needs_heic {
                                 let full_filename = format!("{}.{}", self.filename, self.format.extension());
                                 // Web has no native save-location picker: downloads always

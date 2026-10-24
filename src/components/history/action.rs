@@ -14,6 +14,7 @@ macro_rules! history_actions {
     };
 }
 history_actions! {
+    Guides => GuidesOn,
     Brush => Brush,
     Eraser => Eraser,
     Pencil => Pencil,

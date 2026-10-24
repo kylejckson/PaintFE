@@ -4,13 +4,14 @@ version = 4
 
 [[package]]
 name = "PaintFE"
-version = "1.4.16"
+version = "1.4.17"
 dependencies = [
  "ab_glyph",
  "arboard",
  "base64",
  "bincode",
  "bytemuck",
+ "cc",
  "clap",
  "color_quant",
  "ed25519-dalek",
@@ -21,7 +22,7 @@ dependencies = [
  "gif 0.13.3",
  "glob",
  "half",
- "heifer",
+ "heifer-isobmff",
  "image 0.25.9",
  "imagepipe",
  "js-sys",
@@ -2192,36 +2193,6 @@ name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
-
-[[package]]
-name = "heifer"
-version = "0.2.0"
-dependencies = [
- "heifer-hevc-dec",
- "heifer-hevc-enc",
- "heifer-isobmff",
- "image 0.25.9",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "heifer-hevc-dec"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f90b761515402a361a4fd65c786b33986c9f41ef9dfdb65f12ce878d8ad506dd"
-dependencies = [
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "heifer-hevc-enc"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c70a53ac73f467a1246dc17c4c143f5ea5b51099381a3b383a5fd3477a120fed"
-dependencies = [
- "heifer-hevc-dec",
- "thiserror 2.0.18",
-]
 
 [[package]]
 name = "heifer-isobmff"

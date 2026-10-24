@@ -9,3 +9,5 @@ use crate::ops::text_layer::TextLayerData;
 
 include!("canvas/defs.rs");
 include!("canvas/view_full.rs");
+
+pub mod guides;

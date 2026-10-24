@@ -13,7 +13,11 @@ impl PaintFEApp {
             && !matches!(tool, Tool::MovePixels | Tool::Pan) {
             self.commit_paste_overlay(true);
         }
-        let ui_blocks_canvas_input = self.ui_pointer_capture_active;
+        let guide_pointer = self.active_project().zip(self.canvas.last_image_rect).zip(self.canvas.last_canvas_rect).is_some_and(|((p,image),view)| {
+            crate::ui::guides::owns_pointer(ctx, &p.canvas_state, image, view, self.canvas.view_state().0,
+                matches!(self.tools_panel.active_tool, Tool::MovePixels | Tool::MoveSelection | Tool::Pan))
+        });
+        let ui_blocks_canvas_input = self.ui_pointer_capture_active || (guide_pointer && ctx.input(|i|i.pointer.primary_down() || i.pointer.primary_pressed() || i.pointer.primary_released()));
         // Keep editing/navigation keys with focused panel text and numeric fields.
         let escape_event = ctx.input(|i| i.key_pressed(egui::Key::Escape));
         let (previous_field, previous_popup) = ctx
@@ -23,7 +27,7 @@ impl PaintFEApp {
             .unwrap_or_default();
         let escaped_field = escape_event
             && previous_field.is_some_and(|id| ctx.memory(|m| m.had_focus_last_frame(id)));
-        let panel_keyboard_focus = escaped_field
+        let panel_keyboard_focus = crate::ui::guides::gesture_active(ctx) || escaped_field
             || (self.window_visibility.colors && self.colors_panel.is_hex_editing())
             || (ctx.text_edit_focused()
                 && ctx
@@ -1650,13 +1654,22 @@ impl PaintFEApp {
                     .unwrap_or(crate::ops::shapes::ShapeHandle::Move)
                     == crate::ops::shapes::ShapeHandle::Move
                 {
-                    let dx = cx - lx;
-                    let dy = cy - ly;
+                    let mut dx = cx - lx;
+                    let mut dy = cy - ly;
+                    let zoom = self.canvas.view_state().0;
+                    let snap = self.active_project().is_some_and(|p|p.canvas_state.guides.snap && p.canvas_state.guides.visible);
+                    if snap && let (Some(start),Some(current),Some(project)) = (self.move_sel_start_bounds,
+                        self.active_project().and_then(|p|p.canvas_state.selection_mask_bounds()), self.active_project()) {
+                        let rect=egui::Rect::from_min_max(egui::pos2(start.0 as f32+dx as f32,start.1 as f32+dy as f32),egui::pos2(start.2 as f32+1.0+dx as f32,start.3 as f32+1.0+dy as f32));
+                        let delta=project.canvas_state.guides.snap_delta(rect,zoom);
+                        dx=(rect.left()+delta.x).round() as i32-current.0 as i32;
+                        dy=(rect.top()+delta.y).round() as i32-current.1 as i32;
+                    }
                     if dx != 0 || dy != 0 {
                         if let Some(project) = self.active_project_mut() {
                             project.canvas_state.translate_selection(dx, dy);
                         }
-                        self.move_sel_last_canvas = Some((cx, cy));
+                        if !snap { self.move_sel_last_canvas = Some((cx, cy)); }
                     }
                 } else if let (Some(canvas_dimensions), Some(start_bounds), Some(handle)) = (
                     self.move_sel_start_mask

@@ -78,14 +78,27 @@ impl GpuContext {
             _ => wgpu::PowerPreference::HighPerformance, // default to fast
         };
 
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: power,
-                compatible_surface: None, // headless — we only need compute + offscreen
-                force_fallback_adapter: force_fallback,
-            })
-            .await
-            .ok()?;
+        let selected = if !force_fallback && preferred_gpu != "Auto" {
+            instance
+                .enumerate_adapters(backends)
+                .await
+                .into_iter()
+                .find(|a| crate::services::graphics::adapter_matches(&a.get_info(), preferred_gpu))
+        } else {
+            None
+        };
+        let adapter = if let Some(adapter) = selected {
+            adapter
+        } else {
+            instance
+                .request_adapter(&wgpu::RequestAdapterOptions {
+                    power_preference: power,
+                    compatible_surface: None, // headless — we only need compute + offscreen
+                    force_fallback_adapter: force_fallback,
+                })
+                .await
+                .ok()?
+        };
 
         let adapter_name = adapter.get_info().name.clone();
         let limits = adapter.limits();
@@ -111,6 +124,7 @@ impl GpuContext {
 
         // wgpu 0.20: device loss is handled by polling.  We just proceed.
 
+        crate::services::graphics::record_adapter(&adapter.get_info());
         Some(Self {
             device: Arc::new(device),
             queue: Arc::new(queue),

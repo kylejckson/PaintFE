@@ -936,6 +936,7 @@ pub struct SnapshotCommand {
 /// A lightweight snapshot of the canvas state (layers + dimensions).
 #[derive(Clone)]
 pub struct CanvasSnapshot {
+    pub guides: crate::canvas::guides::Guides,
     pub width: u32,
     pub height: u32,
     pub layers: Vec<LayerSnapshot>,
@@ -948,6 +949,7 @@ pub struct CanvasSnapshot {
 
 #[derive(Clone)]
 pub struct LayerSnapshot {
+    pub runtime_id: uuid::Uuid,
     pub name: String,
     pub visible: bool,
     pub folder_id: Option<u64>,
@@ -967,6 +969,7 @@ pub struct LayerSnapshot {
 impl CanvasSnapshot {
     pub fn capture(state: &CanvasState) -> Self {
         Self {
+            guides: state.guides.clone(),
             width: state.width,
             height: state.height,
             active_layer_index: state.active_layer_index,
@@ -978,6 +981,7 @@ impl CanvasSnapshot {
                 .layers
                 .iter()
                 .map(|l| LayerSnapshot {
+                    runtime_id: l.runtime_id,
                     name: l.name.clone(),
                     visible: l.visible,
                     folder_id: l.folder_id,
@@ -998,6 +1002,7 @@ impl CanvasSnapshot {
     }
 
     pub fn restore_into(&self, state: &mut CanvasState) {
+        state.guides = self.guides.clone();
         state.width = self.width;
         state.height = self.height;
         state.active_layer_index = self.active_layer_index;
@@ -1012,6 +1017,7 @@ impl CanvasSnapshot {
                 snap.pixels.height(),
                 Rgba([0, 0, 0, 0]),
             );
+            layer.runtime_id = snap.runtime_id;
             layer.pixels = snap.pixels.clone();
             layer.visible = snap.visible;
             layer.folder_id = snap.folder_id;

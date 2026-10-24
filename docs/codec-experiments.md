@@ -1,10 +1,13 @@
 # HEIC and AVIF experiment
 
 Local experiment on 2026-10-22, Windows x86_64, Intel Core i9-9900KF
-(16 logical processors), Rust 1.96.1. These measurements describe the initial isolated experiment. PaintFE now bundles
-a locally patched Heifer decoder and supports a signed optional AVIF pack.
-See [implementation details](heif-avif.md). The separate [probe package](../tools/codec_probe/README.md) has its own
-manifest and lockfile. Production codec dependencies are unchanged.
+(16 logical processors), Rust 1.96.1. These measurements describe the initial
+isolated experiment and the former bundled Heifer decoder. The separate
+[probe package](../tools/codec_probe/README.md) has its own manifest and lockfile.
+
+Current HEIC implementation uses installed platform codecs instead. The results
+below are historical experiments, including the original grid-alpha failure,
+not a description of the current shipped backend. See [current details](heif-avif.md).
 
 ## Method and reproducibility
 

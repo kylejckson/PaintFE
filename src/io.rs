@@ -35,7 +35,6 @@ pub fn register_codecs() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
         jxl::register();
-        heifer::image_crate::register_image_decoder_hooks();
         avif::register();
     });
 }
@@ -45,6 +44,9 @@ pub fn register_codecs() {
 pub fn decode_image_bytes(bytes: &[u8]) -> image::ImageResult<DynamicImage> {
     use image::ImageDecoder as _;
     register_codecs();
+    if heic::is_heif(bytes) {
+        return heic::decode(bytes);
+    }
     if avif::is_avif(bytes) {
         return avif::decode(std::io::Cursor::new(bytes));
     }
@@ -61,6 +63,14 @@ pub fn decode_image_bytes(bytes: &[u8]) -> image::ImageResult<DynamicImage> {
 pub fn decode_image_path(path: &Path) -> image::ImageResult<DynamicImage> {
     use image::ImageDecoder as _;
     register_codecs();
+    if is_heif_path(path) {
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        File::open(path)?
+            .take(256 * 1024 * 1024 + 1)
+            .read_to_end(&mut bytes)?;
+        return heic::decode(&bytes);
+    }
     if path
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("avif"))
@@ -302,11 +312,15 @@ pub enum PfeData {
     V2(ProjectFileV2),
     V3(ProjectFileV3),
     V4(pfe_masks::ProjectFileV4),
+    V5(pfe_guides::ProjectFileV5),
 }
 
 /// Build a serializable PFE project, selecting V1 through V4 based on content.
 /// Safe to call on the main thread, then move the result to a background thread.
 pub fn build_pfe(state: &CanvasState) -> PfeData {
+    if !state.guides.items.is_empty() {
+        return PfeData::V5(pfe_guides::build(state));
+    }
     if state.layers.iter().any(|layer| layer.mask.is_some()) {
         return PfeData::V4(pfe_masks::build(state));
     }
@@ -344,6 +358,7 @@ pub fn write_pfe(data: &PfeData, path: &Path) -> Result<(), PfeError> {
         PfeData::V2(project) => write_pfe_v2(project, path),
         PfeData::V3(project) => write_pfe_v3(project, path),
         PfeData::V4(project) => pfe_masks::write(project, path),
+        PfeData::V5(project) => pfe_guides::write(project, path),
     }
 }
 
@@ -545,6 +560,7 @@ pub fn load_pfe_from_bytes(raw: &[u8]) -> Result<CanvasState, PfeError> {
 
     match magic {
         "PFE4" => pfe_masks::load(raw),
+        "PFE5" => pfe_guides::load(raw),
         PFE_MAGIC_V3 => load_pfe_v3(raw),
         PFE_MAGIC_V2 => load_pfe_v2(raw),
         PFE_MAGIC_V1 => load_pfe_v1(raw),
@@ -788,6 +804,7 @@ pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
         .to_string();
 
     let layer = Layer {
+        runtime_id: uuid::Uuid::new_v4(),
         name,
         visible: true,
         folder_id: None,
@@ -819,6 +836,7 @@ pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
         commit_composite_flush_rect: None,
         preview_clear_pending: false,
         show_pixel_grid: true,
+        guides: crate::canvas::guides::Guides::default(),
         show_guidelines: false,
         mirror_mode: crate::canvas::MirrorMode::None,
         show_wrap_preview: false,
@@ -931,6 +949,7 @@ fn canvas_from_pfe_v3(project: ProjectFileV3) -> Result<CanvasState, PfeError> {
         };
 
         layers.push(Layer {
+            runtime_id: uuid::Uuid::new_v4(),
             name: ld.name,
             visible: ld.visible,
             folder_id: ld.folder_id,
@@ -968,6 +987,7 @@ fn canvas_from_pfe_v3(project: ProjectFileV3) -> Result<CanvasState, PfeError> {
         commit_composite_flush_rect: None,
         preview_clear_pending: false,
         show_pixel_grid: true,
+        guides: crate::canvas::guides::Guides::default(),
         show_guidelines: false,
         mirror_mode: crate::canvas::MirrorMode::None,
         show_wrap_preview: false,
@@ -1086,6 +1106,7 @@ fn load_pfe_v2(raw: &[u8]) -> Result<CanvasState, PfeError> {
         };
 
         layers.push(Layer {
+            runtime_id: uuid::Uuid::new_v4(),
             name: ld.name,
             visible: ld.visible,
             folder_id: None,
@@ -1124,6 +1145,7 @@ fn load_pfe_v2(raw: &[u8]) -> Result<CanvasState, PfeError> {
         commit_composite_flush_rect: None,
         preview_clear_pending: false,
         show_pixel_grid: true,
+        guides: crate::canvas::guides::Guides::default(),
         show_guidelines: false,
         mirror_mode: crate::canvas::MirrorMode::None,
         show_wrap_preview: false,
@@ -1212,6 +1234,7 @@ fn load_pfe_v1(raw: &[u8]) -> Result<CanvasState, PfeError> {
         }
 
         layers.push(Layer {
+            runtime_id: uuid::Uuid::new_v4(),
             name: ld.name,
             visible: ld.visible,
             folder_id: None,
@@ -1250,6 +1273,7 @@ fn load_pfe_v1(raw: &[u8]) -> Result<CanvasState, PfeError> {
         commit_composite_flush_rect: None,
         preview_clear_pending: false,
         show_pixel_grid: true,
+        guides: crate::canvas::guides::Guides::default(),
         show_guidelines: false,
         mirror_mode: crate::canvas::MirrorMode::None,
         show_wrap_preview: false,
@@ -1335,6 +1359,7 @@ fn load_pfe_v0(raw: &[u8]) -> Result<CanvasState, PfeError> {
             })?;
 
         layers.push(Layer {
+            runtime_id: uuid::Uuid::new_v4(),
             name: layer_data.name,
             visible: layer_data.visible,
             folder_id: None,
@@ -1373,6 +1398,7 @@ fn load_pfe_v0(raw: &[u8]) -> Result<CanvasState, PfeError> {
         commit_composite_flush_rect: None,
         preview_clear_pending: false,
         show_pixel_grid: true,
+        guides: crate::canvas::guides::Guides::default(),
         show_guidelines: false,
         mirror_mode: crate::canvas::MirrorMode::None,
         show_wrap_preview: false,
@@ -3014,3 +3040,5 @@ fn quantize_rgba(image: &RgbaImage, max_colors: usize) -> (Vec<u8>, Vec<u8>) {
 
     (palette, indices)
 }
+
+mod pfe_guides;

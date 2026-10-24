@@ -29,6 +29,7 @@ impl PaintFEApp {
         // --- Intercept OS window-close button ---
         // If the user hasn't yet confirmed the exit dialog, cancel the close and show it.
         if ctx.input(|i| i.viewport().close_requested()) {
+            self.finish_pending_line_edit();
             let current_time = ctx.input(|i| i.time);
             self.persist_window_state_if_changed(current_time, true);
             if !self.save_jobs.is_empty() {
@@ -229,6 +230,7 @@ impl PaintFEApp {
                         state.layers[i].gpu_generation += 1;
                     }
                 }
+                state.guides = result.guides;
                 state.width = result.new_width;
                 state.height = result.new_height;
                 state.composite_cache = None;
@@ -564,6 +566,7 @@ impl PaintFEApp {
                     {
                         for (tiled, name) in frames {
                             let layer = Layer {
+            runtime_id: uuid::Uuid::new_v4(),
                                 name,
                                 visible: true,
                                 folder_id: None,

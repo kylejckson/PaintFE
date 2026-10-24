@@ -1,6 +1,6 @@
 [package]
 name = "PaintFE"
-version = "1.4.16"
+version = "1.4.17"
 edition = "2024"
 
 [lib]
@@ -12,7 +12,6 @@ name = "PaintFE"
 path = "src/main.rs"
 
 [dependencies]
-heifer = { version = "=0.2.0", features = ["image"] }
 eframe = "0.35.0"    # Wrapper for egui (the GUI framework)
 egui = "0.35.0"      # The core GUI library
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "bmp", "tga", "ico", "tiff", "gif", "dds", "exr", "ff", "hdr", "pnm", "qoi", "rayon"] }
@@ -41,7 +40,6 @@ zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "windef", "shellapi", "dwmapi", "sysinfoapi"] }
-winit = "0.30"                                   # Event loop hook for suppressing Windows keyboard dings
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11-dl = "2.21"
@@ -50,6 +48,9 @@ x11-dl = "2.21"
 # enumeration, dynamic library loading, RAW demosaicing needing a C toolchain,
 # CLI arg parsing, and the OS clipboard).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+winit = "0.30"                                   # Native frame pacing and Windows keyboard hook
+# Container metadata only; no HEVC decoding or encoding implementation.
+heifer-isobmff = "=0.2.0"
 ed25519-dalek = { version = "2.2", default-features = false, features = ["std"] }
 rfd = "0.12"
 webp = "0.3"
@@ -80,6 +81,7 @@ js-sys = "0.3"
 serde_json = "1"
 
 [build-dependencies]
+cc = "1"
 # Embeds the ICO file into the Windows EXE (window icon, taskbar icon, explorer icon)
 winresource = "0.1"
 
@@ -105,6 +107,3 @@ opt-level = 2
 opt-level = 2
 [profile.dev.package.ttf-parser]
 opt-level = 2
-
-[patch.crates-io]
-heifer = { path = "vendor/heifer" }

@@ -69,16 +69,20 @@ class PackBuilderTests(unittest.TestCase):
                 (binary_root/f'PaintFE{suffix}').write_bytes(b'editor')
                 env_file = root/'github-env'
                 seed = '11'*32  # Public test fixture, never used for production.
+                stale=root/'target/optional-packs'/expected_platform/'release'/f'PaintFE-pack-heic-{expected_platform}-v1.2.3.pfepack'
+                stale.parent.mkdir(parents=True,exist_ok=True)
+                stale.write_bytes(b'cached legacy HEIC pack')
                 argv = ['packager', '--release', '--github-env']
                 if target:
                     argv += ['--target', target]
-                with patch.object(builder, 'ROOT', root), patch.object(sys, 'argv', argv), patch.dict(os.environ, {'CI':'true', 'PAINTFE_PACK_SIGNING_KEY':seed, 'GITHUB_ENV':str(env_file)}, clear=True), patch.object(builder.platform, 'system', return_value=system), patch.object(builder.platform, 'machine', return_value=machine), patch.object(builder.build_avif_native, 'prepare', return_value=({}, root/'optional/jxl-encoder/LICENSE.txt')), patch.object(builder.build_heic_native, 'prepare', return_value=(binary_root/f'paintfe-heic-encoder{suffix}', root/'optional/jxl-encoder/LICENSE.txt', root/'sources.tar.gz', root/'optional/jxl-encoder/LICENSE.txt')), patch.object(builder.subprocess, 'check_output', return_value=b'{"packages": []}'), patch.object(builder.subprocess, 'run') as native_build, contextlib.redirect_stdout(io.StringIO()):
+                with patch.object(builder, 'ROOT', root), patch.object(sys, 'argv', argv), patch.dict(os.environ, {'CI':'true', 'PAINTFE_PACK_SIGNING_KEY':seed, 'GITHUB_ENV':str(env_file)}, clear=True), patch.object(builder.platform, 'system', return_value=system), patch.object(builder.platform, 'machine', return_value=machine), patch.object(builder.build_avif_native, 'prepare', return_value=({}, root/'optional/jxl-encoder/LICENSE.txt')), patch.object(builder.subprocess, 'check_output', return_value=b'{"packages": []}'), patch.object(builder.subprocess, 'run') as native_build, contextlib.redirect_stdout(io.StringIO()):
                     builder.run()
                 self.assertEqual(native_build.call_count, 3)
                 for call in native_build.call_args_list:
                     self.assertNotIn('PAINTFE_PACK_SIGNING_KEY', call.kwargs['env'])
                 exported = dict(line.split('=', 1) for line in env_file.read_text().splitlines())
-                self.assertEqual(set(exported), {'PAINTFE_PACK_PUBLIC_KEY', 'PAINTFE_CJK_PACK_SIZE', 'PAINTFE_JXL_PACK_SIZE', 'PAINTFE_TEST_JXL_PACK', 'PAINTFE_TEST_AVIF_PACK', 'PAINTFE_AVIF_PACK_SIZE', 'PAINTFE_HEIC_PACK_SIZE', 'PAINTFE_TEST_HEIC_PACK', 'PAINTFE_TEST_STORAGE_DIR'})
+                self.assertFalse(list((root/'target/optional-packs').rglob('*pack-heic*')))
+                self.assertEqual(set(exported), {'PAINTFE_PACK_PUBLIC_KEY', 'PAINTFE_CJK_PACK_SIZE', 'PAINTFE_JXL_PACK_SIZE', 'PAINTFE_TEST_JXL_PACK', 'PAINTFE_TEST_AVIF_PACK', 'PAINTFE_AVIF_PACK_SIZE', 'PAINTFE_TEST_STORAGE_DIR'})
                 jxl = Path(exported['PAINTFE_TEST_JXL_PACK'])
                 self.assertTrue(jxl.is_file())
                 self.assertEqual(jxl.parent.parent.name, expected_platform)

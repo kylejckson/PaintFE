@@ -1,4 +1,8 @@
-"""Pinned, offline-capable HEIC export helper build and corresponding-source pack."""
+"""Historical HEIC experiment, retained for source reproducibility only.
+
+Production HEIC uses installed system codecs. The optional-pack and release
+builders never call this tool or distribute its HEVC output.
+"""
 import argparse
 import hashlib
 import json

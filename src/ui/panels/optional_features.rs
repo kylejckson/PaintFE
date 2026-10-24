@@ -114,7 +114,6 @@ pub fn initialize_fonts(
         state.status[1] = crate::t!("packs.installed");
     }
     state.installed[2] = packs::installed(Pack::Avif).is_ok();
-    state.installed[3] = packs::installed(Pack::Heic).is_ok();
     if state.installed[2] {
         state.status[2] = crate::t!("packs.installed");
     }
@@ -263,6 +262,28 @@ pub fn show_settings(ui: &mut Ui) {
     if let Some(message) = &state.message {
         ui.label(message);
     }
+    super::settings_window::SettingsWindow::section_header(ui, &crate::t!("heic.system_title"));
+    ui.label(crate::t!("heic.system_description"));
+    ui.label(crate::io::heic::setup_message());
+    let caps = crate::io::heic::capabilities();
+    ui.label(format!(
+        "{}: {}   {}: {}",
+        crate::t!("heic.import"),
+        crate::t!(if caps.decode {
+            "heic.available"
+        } else {
+            "heic.unavailable"
+        }),
+        crate::t!("heic.export"),
+        crate::t!(if caps.encode {
+            "heic.available"
+        } else {
+            "heic.unavailable"
+        })
+    ));
+    if !caps.detail.is_empty() {
+        ui.weak(&caps.detail);
+    }
     save(&ctx, state);
 }
 pub fn frame(ctx: &Context, settings: &mut crate::config::settings::AppSettings) -> bool {
@@ -320,9 +341,6 @@ pub fn frame(ctx: &Context, settings: &mut crate::config::settings::AppSettings)
     }
     if packs::take_avif_request() && !state.installed[2] {
         state.prompt = Some(Pack::Avif);
-    }
-    if packs::take_heic_request() && !state.installed[3] {
-        state.prompt = Some(Pack::Heic);
     }
     let open = state.prompt.is_some();
     ctx.data_mut(|d| d.insert_temp(Id::new("optional_pack_modal_open"), open));
@@ -434,11 +452,15 @@ mod tests {
                     )),
                     ..Default::default()
                 };
-                let _ = ctx.run_ui(input, |ui| {
+                let output = ctx.run_ui(input, |ui| {
                     ui.set_width(440.0);
                     show_settings(ui);
                     assert!(ui.min_rect().width() <= 442.0, "{:?}", ui.min_rect());
                 });
+                text_center(
+                    &output.shapes,
+                    &crate::t!("heic.system_title").to_uppercase(),
+                );
                 assert!(state(&ctx).job.is_none());
                 assert!(state(&ctx).prompt.is_none());
             }

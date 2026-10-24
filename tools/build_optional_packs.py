@@ -10,9 +10,6 @@ import importlib.util
 _avif_spec = importlib.util.spec_from_file_location("paintfe_avif_native", Path(__file__).with_name("build_avif_native.py"))
 build_avif_native = importlib.util.module_from_spec(_avif_spec)
 _avif_spec.loader.exec_module(build_avif_native)
-_heic_spec = importlib.util.spec_from_file_location("paintfe_heic_native", Path(__file__).with_name("build_heic_native.py"))
-build_heic_native = importlib.util.module_from_spec(_heic_spec)
-_heic_spec.loader.exec_module(build_heic_native)
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,7 +21,7 @@ def platform_id(target=None):
 
 def export_test_environment(output, pack_paths):
     metadata = json.loads((output/'build-env.json').read_text(encoding='utf-8'))
-    metadata.update(PAINTFE_TEST_JXL_PACK=str(pack_paths['jxl']), PAINTFE_TEST_AVIF_PACK=str(pack_paths['avif']), PAINTFE_TEST_HEIC_PACK=str(pack_paths['heic']), PAINTFE_TEST_STORAGE_DIR=str(ROOT/'target'/'codec-test-storage'))
+    metadata.update(PAINTFE_TEST_JXL_PACK=str(pack_paths['jxl']), PAINTFE_TEST_AVIF_PACK=str(pack_paths['avif']), PAINTFE_TEST_STORAGE_DIR=str(ROOT/'target'/'codec-test-storage'))
     with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as destination:
         for name, value in metadata.items():
             if '\n' in value or '\r' in value:
@@ -45,7 +42,12 @@ def run():
     profile = 'release' if args.release else 'debug'
     output = ROOT/'target'/'optional-packs'/system/profile
     output.mkdir(parents=True,exist_ok=True)
+    # This is an owned build-cache artifact, never an already-published download.
+    # Prevent a cached legacy HEIC pack from being uploaded for the new build.
+    (output/f'PaintFE-pack-heic-{system}-v{version}.pfepack').unlink(missing_ok=True)
     env = os.environ.copy()
+    for obsolete in ('PAINTFE_HEIC_PACK_SIZE', 'PAINTFE_TEST_HEIC_PACK'):
+        env.pop(obsolete, None)
     signing_key = env.pop("PAINTFE_PACK_SIGNING_KEY", "")
     if os.environ.get("CI") and args.release and not signing_key:
         raise SystemExit("Set the OPTIONAL_PACK_SIGNING_KEY repository secret before publishing optional packs.")
@@ -73,7 +75,6 @@ def run():
                 notices.append(file.read_text(encoding='utf-8',errors='replace'))
     avif_license = output/'avif-LICENSE.txt'
     avif_license.write_text('\n'.join(notices),encoding='utf-8')
-    heic_helper, heic_license, heic_sources, heic_building = build_heic_native.prepare(target, env)
     if signing_key:
         key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(signing_key))
     else:
@@ -89,11 +90,8 @@ def run():
         ('cjk', ROOT/'assets/fonts/NotoSansCJK-Regular.otf', ROOT/'assets/fonts/NotoSansCJK-OFL.txt'),
         ('jxl', helper, ROOT/'optional/jxl-encoder/LICENSE.txt'),
         ('avif', avif_helper, avif_license),
-        ('heic', heic_helper, heic_license),
     ]:
         data = {payload.name:payload.read_bytes(),'LICENSE.txt':license_path.read_bytes()}
-        if pack == 'heic':
-            data.update({'SOURCES.tar.gz': heic_sources.read_bytes(), 'BUILDING.txt': heic_building.read_bytes()})
         manifest = json.dumps(dict(schema=1,pack=pack,app_version=version,platform=system,protocol=1,
             files=[dict(name=name,sha256=hashlib.sha256(contents).hexdigest(),size=len(contents)) for name,contents in data.items()]),separators=(',',':'))
         envelope = json.dumps(dict(manifest=manifest,signature=key.sign(manifest.encode()).hex()),separators=(',',':')).encode()

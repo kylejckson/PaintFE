@@ -21,7 +21,6 @@ pub const MAX_PACK: u64 = 96 * 1024 * 1024;
 const MAX_MANIFEST: u64 = 32 * 1024;
 static LOCK: Mutex<()> = Mutex::new(());
 static REQUEST_JXL: AtomicBool = AtomicBool::new(false);
-static REQUEST_HEIC: AtomicBool = AtomicBool::new(false);
 static REQUEST_AVIF: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -33,7 +32,8 @@ pub enum Pack {
     Heic,
 }
 impl Pack {
-    pub const ALL: [Self; 4] = [Self::Cjk, Self::Jxl, Self::Avif, Self::Heic];
+    // Retain the old enum value only to reject obsolete HEIC packs explicitly.
+    pub const ALL: [Self; 3] = [Self::Cjk, Self::Jxl, Self::Avif];
     pub fn id(self) -> &'static str {
         match self {
             Self::Cjk => "cjk",
@@ -226,9 +226,15 @@ fn installed_at(root: &Path, pack: Pack, key: &[u8; 32]) -> Result<PathBuf, Stri
     Ok(directory.join(pack.payload()))
 }
 pub fn installed(pack: Pack) -> Result<PathBuf, String> {
+    if pack == Pack::Heic {
+        return Err(crate::io::heic::setup_message());
+    }
     installed_at(&root(), pack, &trusted_key()?)
 }
 pub fn is_present(pack: Pack) -> bool {
+    if pack == Pack::Heic {
+        return false;
+    }
     pack.directory(&root()).exists()
 }
 
@@ -315,6 +321,9 @@ fn install_at(path: &Path, pack: Pack, root: &Path, key: &[u8; 32]) -> Result<()
     result
 }
 pub fn install(path: &Path, pack: Pack) -> Result<(), String> {
+    if pack == Pack::Heic {
+        return Err(crate::io::heic::setup_message());
+    }
     let _guard = LOCK.lock().map_err(|e| e.to_string())?;
     install_at(path, pack, &root(), &trusted_key()?)
 }
@@ -346,6 +355,9 @@ fn download_with(
 }
 /// Only called in a worker after the user explicitly chooses Download.
 pub fn download(pack: Pack) -> Result<(), String> {
+    if pack == Pack::Heic {
+        return Err(crate::io::heic::setup_message());
+    }
     let key = trusted_key()?;
     download_with(pack, &root(), &key, |path| {
         let mut command = process::hidden_command(&process::curl_path());
@@ -421,11 +433,4 @@ pub(crate) fn test_encoder_available() -> bool {
         }
     });
     installed(Pack::Jxl).is_ok()
-}
-
-pub fn request_heic() {
-    REQUEST_HEIC.store(true, Ordering::Relaxed);
-}
-pub fn take_heic_request() -> bool {
-    REQUEST_HEIC.swap(false, Ordering::Relaxed)
 }

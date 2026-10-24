@@ -20,6 +20,19 @@ spec.loader.exec_module(staging)
 
 
 class ReleasePackTests(unittest.TestCase):
+    def test_system_codec_releases_have_twelve_packs_without_heic(self):
+        expected=staging.expected_packs('v1.4.17')
+        self.assertEqual(len(expected),12)
+        self.assertNotIn('heic',{pack for pack,platform in expected.values()})
+        self.assertEqual(len(staging.expected_packs('v1.4.16')),16)
+        source=self.root/'system-input'
+        destination=self.root/'system-packs'
+        for name,(pack,platform) in expected.items():
+            path=source/platform/'release'/name
+            path.parent.mkdir(parents=True,exist_ok=True)
+            self.write_pack(path,pack,platform,version='1.4.17')
+        self.assertEqual(len(staging.stage(source,destination,'v1.4.17',self.core)),12)
+
     def setUp(self):
         parent = SCRIPT.parents[1] / 'target' / 'release-pack-tests'
         parent.mkdir(parents=True, exist_ok=True)
@@ -66,14 +79,14 @@ class ReleasePackTests(unittest.TestCase):
 
     def test_missing_pack_fails_before_staging(self):
         next(iter(self.paths.values())).unlink()
-        with self.assertRaisesRegex(ValueError,'sixteen unique'):
+        with self.assertRaisesRegex(ValueError,'16 unique'):
             self.stage()
         self.assertFalse(self.dest.exists())
 
     def test_duplicate_pack_fails_before_staging(self):
         path=next(iter(self.paths.values()))
         (self.source/path.name).write_bytes(path.read_bytes())
-        with self.assertRaisesRegex(ValueError,'sixteen unique'):
+        with self.assertRaisesRegex(ValueError,'16 unique'):
             self.stage()
 
     def test_unexpected_version_filename_fails(self):

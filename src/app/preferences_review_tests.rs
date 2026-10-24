@@ -801,12 +801,10 @@ fn window_restore_size_excludes_desktop_position_on_every_monitor() {
 
 #[test]
 fn toolbar_save_overwrites_opened_heif_without_any_save_dialog() {
-    use crate::services::optional_packs::{self as packs, Pack};
-    let Some(pack) = std::env::var_os("PAINTFE_TEST_HEIC_PACK") else {
-        eprintln!("HEIF toolbar test needs PAINTFE_TEST_HEIC_PACK (provided by codec CI)");
+    if !crate::io::heic::capabilities().decode || !crate::io::heic::capabilities().encode {
+        eprintln!("HEIF toolbar test needs an installed system decoder and encoder");
         return;
-    };
-    packs::install(std::path::Path::new(&pack), Pack::Heic).unwrap();
+    }
     let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("target/toolbar-save-tests")
         .join(uuid::Uuid::new_v4().to_string());

@@ -450,6 +450,10 @@ impl PaintFEApp {
             window = window.fixed_size(size);
         }
         let resp = window.show(ctx, |ui| {
+            if ctx.input(|i| i.pointer.primary_pressed() && i.pointer.interact_pos().is_some_and(|p|ui.clip_rect().contains(p))) {
+                self.finish_pending_line_edit();
+            }
+
             // Signal Grid panel header
             if signal_widgets::panel_header(
                 ui,

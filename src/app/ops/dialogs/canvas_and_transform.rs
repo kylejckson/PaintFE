@@ -66,7 +66,10 @@ impl PaintFEApp {
                                         options,
                                         protection_mask,
                                     );
+                                let mut guides = before.guides.clone();
+                                guides.scale(w as f32/before.width as f32,h as f32/before.height as f32);
                                 let _ = sender.send(CanvasOpResult {
+                                    guides,
                                     project_index,
                                     before,
                                     result_layers,
@@ -135,7 +138,11 @@ impl PaintFEApp {
                                     anchor,
                                     fill,
                                 );
+                                let mut guides = before.guides.clone();
+                                let offset = |new:u32,old:u32,a:u32| match a {0=>0,1=>(new as i32-old as i32)/2,_=>new as i32-old as i32};
+                                guides.translate_clip(offset(w,old_w,anchor.0) as f32,offset(h,old_h,anchor.1) as f32,w,h);
                                 let _ = sender.send(CanvasOpResult {
+                                    guides,
                                     project_index,
                                     before,
                                     result_layers,

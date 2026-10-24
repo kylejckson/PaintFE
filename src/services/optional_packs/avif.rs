@@ -35,6 +35,46 @@ pub(crate) fn exchange_for(
     data: &[u8],
     tracked: bool,
 ) -> Result<Vec<u8>, String> {
+    let helper = installed(pack).map_err(|_| {
+        request_avif();
+        crate::t!("packs.avif_missing")
+    })?;
+    exchange_command(process::hidden_command(&helper), header, data, tracked)
+}
+
+pub(crate) fn exchange_system_heic(
+    header: [u8; 40],
+    data: &[u8],
+    tracked: bool,
+) -> Result<Vec<u8>, String> {
+    let mut path = std::env::current_exe().map_err(|e| e.to_string())?;
+    if path
+        .parent()
+        .and_then(|p| p.file_name())
+        .is_some_and(|p| p == "deps")
+    {
+        path = path
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join(if cfg!(windows) {
+                "PaintFE.exe"
+            } else {
+                "PaintFE"
+            });
+    }
+    let mut command = process::hidden_command(&path);
+    command.arg("--paintfe-system-heic");
+    exchange_command(command, header, data, tracked)
+}
+
+fn exchange_command(
+    mut command: std::process::Command,
+    header: [u8; 40],
+    data: &[u8],
+    tracked: bool,
+) -> Result<Vec<u8>, String> {
     let generation = GENERATION.load(Ordering::Relaxed);
     if tracked {
         ACTIVE.fetch_add(1, Ordering::Relaxed);
@@ -44,16 +84,7 @@ pub(crate) fn exchange_for(
     if generation != GENERATION.load(Ordering::Relaxed) {
         return Err(crate::t!("codec.cancelled"));
     }
-    let helper = installed(pack).map_err(|_| {
-        if pack == Pack::Heic {
-            request_heic();
-            crate::t!("packs.heic_missing")
-        } else {
-            request_avif();
-            crate::t!("packs.avif_missing")
-        }
-    })?;
-    let mut child = process::hidden_command(&helper)
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -134,7 +165,7 @@ pub(crate) fn exchange_for(
             return Err(if diagnostic.trim().is_empty() {
                 format!("Image codec helper exited with {status}")
             } else {
-                format!("AVIF: {}", diagnostic.trim())
+                format!("Image codec: {}", diagnostic.trim())
             });
         }
         written.map_err(|e| e.to_string())?;

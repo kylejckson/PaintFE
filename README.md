@@ -123,14 +123,14 @@ Photo sources and artwork details are listed in [screenshot credits](screenshot/
 | | Formats |
 |---|---|
 | **Read** | PNG, JPEG, JPEG XL, HEIC/HEIF, AVIF (optional desktop pack), WebP, BMP, TIFF, TGA, GIF, APNG, PFE, PDN, and supported camera RAW files |
-| **Write** | PNG, JPEG, JPEG XL (desktop), AVIF (optional desktop pack), WebP, BMP, TIFF, TGA, ICO, GIF, APNG, and PFE |
+| **Write** | PNG, JPEG, JPEG XL (desktop), HEIC/HEIF (system codec), AVIF (optional desktop pack), WebP, BMP, TIFF, TGA, ICO, GIF, APNG, and PFE |
 | **Animation** | GIF, APNG, and WebP import and export |
 
 PFE is PaintFE's layered project format. Animated export uses each visible layer as a frame, with frame rate, loop count, and format-specific compression options in the export dialog.
 
 JPEG XL supports still images with lossless or lossy compression and an encoding-effort setting. Native exports preserve 8-bit and supported 16-bit RGBA data, including transparency. JPEG XL import is built in. Desktop export uses an optional offline encoder pack installed through Preferences > Optional features. See [JPEG XL details](docs/jpeg-xl.md) for limits and CLI options.
 
-HEIC/HEIF import is bundled through a locally patched Rust decoder; saving an imported HEIC file uses Save As. AVIF import and export use a signed optional offline pack. See [HEIC and AVIF](docs/heif-avif.md) for installation, limits and build details.
+HEIC/HEIF uses installed system codecs: Windows HEIF/HEVC extensions, macOS ImageIO, or Linux libheif. PaintFE does not bundle or download an HEVC codec. Available image variants and save options depend on the installed codec. AVIF import and export use a signed optional offline pack. See [HEIC and AVIF](docs/heif-avif.md) for setup and limitations.
 
 RAW decoding uses `rawloader` and `imagepipe`. Recognized extensions include CR2, CR3, NEF, ARW, DNG, ORF, RW2, SRW, PEF, and RAF; decoding depends on the camera and file variant.
 

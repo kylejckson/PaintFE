@@ -148,6 +148,17 @@ impl ToolsPanel {
         // different layer, reordered, deleted, etc.), commit any tool that
         // has uncommitted state - mirrors the auto-commit-on-tool-switch
         // logic below.
+        if self.line_state.line_tool.stage != LineStage::Idle {
+            if let Some(target) = self.line_target_layer(canvas_state) {
+                self.stroke_tracker.layer_index = target;
+            } else if self.line_state.line_tool.source_layer.is_some() {
+                // The originating document/layer/mask no longer exists.
+                self.stroke_tracker.cancel();
+                self.line_state.line_tool.stage = LineStage::Idle;
+                self.line_state.line_tool.source_layer = None;
+                canvas_state.clear_preview_state();
+            }
+        }
         let prev_layer_index = self.last_tracked_layer_index;
         let layer_changed = canvas_state.active_layer_index != self.last_tracked_layer_index
             || canvas_state.layers.len() != self.last_tracked_layer_count;
@@ -156,11 +167,7 @@ impl ToolsPanel {
             if self.active_tool == Tool::Line
                 && self.line_state.line_tool.stage == LineStage::Editing
             {
-                let line_editing_mask = canvas_state.edit_layer_mask
-                    && canvas_state
-                        .layers
-                        .get(canvas_state.active_layer_index)
-                        .is_some_and(|l| l.has_live_mask());
+                let line_editing_mask = self.line_state.line_tool.source_mask;
                 if let Some(final_bounds) = self.line_state.line_tool.last_bounds {
                     self.stroke_tracker.expand_bounds(final_bounds);
                 }
@@ -306,11 +313,7 @@ impl ToolsPanel {
 
         // Auto-commit Bezier line if tool changed away from Line tool
         if self.active_tool != Tool::Line && self.line_state.line_tool.stage == LineStage::Editing {
-            let line_editing_mask = canvas_state.edit_layer_mask
-                && canvas_state
-                    .layers
-                    .get(canvas_state.active_layer_index)
-                    .is_some_and(|l| l.has_live_mask());
+            let line_editing_mask = self.line_state.line_tool.source_mask;
             // Capture "before" for undo (layer still unchanged, line is in preview)
             if let Some(final_bounds) = self.line_state.line_tool.last_bounds {
                 self.stroke_tracker.expand_bounds(final_bounds);

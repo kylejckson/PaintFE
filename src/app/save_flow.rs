@@ -42,7 +42,8 @@ impl Project {
     }
 
     fn has_editable_structure(&self) -> bool {
-        self.canvas_state.layers.len() > 1
+        !self.canvas_state.guides.items.is_empty()
+            || self.canvas_state.layers.len() > 1
             || !self.canvas_state.layer_folders.is_empty()
             || self.canvas_state.layers.iter().any(|layer| {
                 !matches!(layer.content, crate::canvas::LayerContent::Raster)
@@ -58,6 +59,7 @@ impl Project {
             return Vec::new();
         }
         let mut losses = Vec::new();
+        if !self.canvas_state.guides.items.is_empty() { losses.push(crate::t!("guides.save_loss")); }
         if self.has_editable_structure() {
             losses.push(crate::t!("save.loss_structure"));
         }
@@ -119,6 +121,7 @@ impl PaintFEApp {
     }
 
     fn request_save(&mut self, request: PendingSave, current_time: f64) {
+        self.finish_pending_line_edit();
         let Some(idx) = self
             .projects
             .iter()

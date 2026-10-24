@@ -1,6 +1,38 @@
 use super::*;
 
 #[test]
+fn dropped_heic_uses_system_codec_and_keeps_alpha_and_save_target() {
+    if !crate::io::heic::capabilities().decode {
+        return;
+    }
+    let mut app = app();
+    let source =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/heif/RGBA_8__29x100.heif");
+    let ctx = egui::Context::default();
+    let finish = |app: &mut PaintFEApp| {
+        let result = app
+            .io_receiver
+            .recv_timeout(std::time::Duration::from_secs(15))
+            .unwrap();
+        app.io_sender.send(result).unwrap();
+        let _ = ctx.run_ui(egui::RawInput::default(), |_| {
+            app.update_runtime_lifecycle_async(&ctx);
+        });
+    };
+    app.queue_import_or_open(source.clone(), 0.0);
+    finish(&mut app);
+    assert_eq!(app.pending_import_queue.len(), 1);
+    let item = app.pending_import_queue.remove(0);
+    assert_eq!((item.width, item.height), (29, 100));
+    app.apply_import_choice(&item, 0, 1.0);
+    finish(&mut app);
+    let project = &app.projects[app.active_project_index];
+    assert_eq!(project.file_handler.current_path.as_ref(), Some(&source));
+    assert_eq!(project.file_handler.last_format, SaveFormat::Heic);
+    assert!(project.canvas_state.layers[0].pixels.get_pixel(0, 0)[3] < 255);
+}
+
+#[test]
 fn heif_source_retains_save_target_and_repairs_pre_pack_documents() {
     let mut app = app();
     let path = PathBuf::from("document-directory/source.HEIC");
@@ -29,10 +61,7 @@ fn heif_source_retains_save_target_and_repairs_pre_pack_documents() {
     app.projects[idx].file_handler.current_path = None;
     app.projects[idx].file_handler.last_format = SaveFormat::Png;
     let ready = app.prepare_heic_save(idx);
-    assert_eq!(
-        ready,
-        crate::services::optional_packs::is_present(crate::services::optional_packs::Pack::Heic)
-    );
+    assert_eq!(ready, crate::io::heic::capabilities().encode);
     assert_eq!(
         app.projects[idx].file_handler.current_path.as_ref(),
         Some(&path)
@@ -776,4 +805,206 @@ fn renamed_script_fails_preflight_before_import_prompt() {
     assert_eq!(app.projects.len(), 1);
     assert_eq!(app.pending_io_ops, 0);
     std::fs::remove_file(source).unwrap();
+}
+
+#[test]
+fn issue_206_switching_documents_commits_line_to_original_document() {
+    let (mut app, original) = issue_206_line_fixture();
+    app.projects.push(Project::new_untitled(2, 32, 24));
+    app.switch_to_project(1);
+    assert_eq!(app.projects[0].canvas_state.layers[0].runtime_id, original);
+    assert_eq!(
+        app.projects[0].canvas_state.layers[0]
+            .pixels
+            .get_pixel(3, 3)[0],
+        255
+    );
+    assert_eq!(app.projects[0].history.undo_count(), 1);
+    assert_eq!(app.projects[1].history.undo_count(), 0);
+    assert_eq!(
+        app.tools_panel.line_state.line_tool.stage,
+        crate::components::tools::LineStage::Idle
+    );
+}
+
+pub(super) fn issue_206_line_fixture() -> (PaintFEApp, uuid::Uuid) {
+    let mut app = super::history_tests::app();
+    let state = &mut app.projects[0].canvas_state;
+    let original = state.layers[0].runtime_id;
+    let mut preview = TiledImage::new(state.width, state.height);
+    preview.put_pixel(3, 3, image::Rgba([255, 0, 0, 255]));
+    state.preview_layer = Some(preview);
+    app.tools_panel.active_tool = crate::components::tools::Tool::Line;
+    app.tools_panel.line_state.line_tool.source_layer = Some(original);
+    app.tools_panel.line_state.line_tool.stage = crate::components::tools::LineStage::Editing;
+    app.tools_panel.line_state.line_tool.last_bounds = Some(egui::Rect::from_min_max(
+        egui::pos2(2.0, 2.0),
+        egui::pos2(4.0, 4.0),
+    ));
+    app.tools_panel
+        .stroke_tracker
+        .start_preview_tool(0, HistoryAction::Line.label("Line"));
+    (app, original)
+}
+
+#[test]
+fn issue_206_production_canvas_paints_guides_and_rulers() {
+    fn guide_segments(shape: &egui::Shape) -> usize {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().map(guide_segments).sum(),
+            egui::Shape::LineSegment { stroke, .. }
+                if stroke.color == egui::Color32::from_rgb(50, 150, 230) =>
+            {
+                1
+            }
+            _ => 0,
+        }
+    }
+    let mut app = super::history_tests::app();
+    let ctx = super::history_tests::context();
+    for dark in [false, true] {
+        ctx.set_visuals(if dark {
+            egui::Visuals::dark()
+        } else {
+            egui::Visuals::light()
+        });
+        for enabled in [false, true] {
+            let state = &mut app.projects[0].canvas_state;
+            state.guides.items.clear();
+            state.guides.rulers = enabled;
+            if enabled {
+                state.guides.add(
+                    crate::canvas::guides::Axis::Horizontal,
+                    12.0,
+                    state.width,
+                    state.height,
+                );
+            }
+            let output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(640.0, 480.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    crate::ui::guides::begin(&ctx, app.projects[0].id);
+                    app.canvas.show_with_state(
+                        ui,
+                        &mut app.projects[0].canvas_state,
+                        None,
+                        [0.0, 0.0, 0.0, 1.0],
+                        [1.0; 4],
+                        egui::Color32::GRAY,
+                        None,
+                        None,
+                        false,
+                        &app.settings,
+                        0,
+                        0,
+                        egui::Color32::BLUE,
+                        None,
+                        None,
+                        "",
+                        false,
+                        false,
+                        false,
+                    );
+                },
+            );
+            let segments: usize = output.shapes.iter().map(|s| guide_segments(&s.shape)).sum();
+            assert_eq!(
+                segments > 0,
+                enabled,
+                "guide paint must reach the actual canvas"
+            );
+            let ruler_label = output.shapes.iter().any(|s| {
+                matches!(&s.shape,
+                egui::Shape::Text(text) if text.galley.text() == "0")
+            });
+            assert_eq!(
+                ruler_label, enabled,
+                "ruler ticks must reach the actual canvas"
+            );
+        }
+    }
+}
+
+#[test]
+fn issue_206_close_checks_pending_line_before_dirty_state() {
+    let (mut app, _) = issue_206_line_fixture();
+    app.projects[0].mark_clean();
+    app.close_project(0);
+    assert_eq!(app.projects.len(), 1);
+    assert_eq!(app.pending_close_index, Some(0));
+    assert_eq!(app.projects[0].history.undo_count(), 1);
+    assert!(app.projects[0].is_dirty);
+}
+
+#[test]
+fn issue_206_escape_cancels_guide_drag_without_deselecting() {
+    let mut app = super::history_tests::app();
+    let ctx = super::history_tests::context();
+    app.projects[0].canvas_state.guides.rulers = true;
+    app.projects[0].canvas_state.selection_all = true;
+    let image = egui::Rect::from_min_size(egui::pos2(100.0, 80.0), egui::vec2(64.0, 48.0));
+    let view = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(640.0, 480.0));
+    let point = egui::pos2(140.0, 70.0);
+    let _ = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(view),
+            events: vec![
+                egui::Event::PointerMoved(point),
+                egui::Event::PointerButton {
+                    pos: point,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Default::default(),
+                },
+            ],
+            ..Default::default()
+        },
+        |ui| {
+            crate::ui::guides::begin(&ctx, app.projects[0].id);
+            crate::ui::guides::interact(
+                ui,
+                &mut app.projects[0].canvas_state,
+                image,
+                view,
+                2.0,
+                false,
+                false,
+            );
+        },
+    );
+    assert!(crate::ui::guides::gesture_active(&ctx));
+    let _ = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(view),
+            events: vec![egui::Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Default::default(),
+            }],
+            ..Default::default()
+        },
+        |ui| {
+            app.update_runtime_input(&ctx);
+            crate::ui::guides::interact(
+                ui,
+                &mut app.projects[0].canvas_state,
+                image,
+                view,
+                2.0,
+                false,
+                false,
+            );
+        },
+    );
+    assert!(!crate::ui::guides::gesture_active(&ctx));
+    assert!(app.projects[0].canvas_state.selection_all);
+    assert_eq!(app.projects[0].history.undo_count(), 0);
 }

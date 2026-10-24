@@ -31,8 +31,6 @@ pub struct SettingsWindow {
     dirty: bool,
     /// Cached list of available GPU adapter names
     gpu_adapters: Vec<String>,
-    /// Receiver for the background GPU enumeration task (None when not running)
-    gpu_adapters_receiver: Option<std::sync::mpsc::Receiver<Vec<String>>>,
     /// Staging copy of ONNX Runtime DLL path (AI tab)
     staged_onnx_path: String,
     /// Staging copy of BiRefNet model path (AI tab)
@@ -163,7 +161,6 @@ impl Default for SettingsWindow {
             staged_mode: ThemeMode::Light,
             dirty: false,
             gpu_adapters: Vec::new(),
-            gpu_adapters_receiver: None,
             staged_onnx_path: String::new(),
             staged_model_path: String::new(),
             onnx_probe_result: None,
@@ -482,8 +479,11 @@ impl SettingsWindow {
                             job.wrap.break_anywhere = true;
                             let galley = ui.painter().layout_job(job);
                             let origin = egui::pos2(text_pos.x, text_pos.y - galley.size().y * 0.5);
+                            let clipped = galley.elided;
                             ui.painter().galley(origin, galley, text_color);
-                            response.on_hover_text(label);
+                            if clipped {
+                                response.on_hover_text(label);
+                            }
                         }
                     });
 
@@ -1582,52 +1582,10 @@ impl SettingsWindow {
         // -- Preferred Adapter --------------------------------------------
         Self::section_header(ui, &t!("settings.hardware.preferred_gpu"));
 
-        // Poll background GPU enumeration result
-        if let Some(rx) = &self.gpu_adapters_receiver
-            && let Ok(adapters) = rx.try_recv()
-        {
-            self.gpu_adapters = adapters;
-            self.gpu_adapters_receiver = None;
-        }
-
-        // GPU adapter enumeration needs a background thread (std::thread::spawn,
-        // unavailable on wasm32) and blocks on an async wgpu call that never
-        // resolves synchronously in the browser sandbox — not available on web.
-        #[cfg(target_arch = "wasm32")]
+        // Reuse the adapters eframe enumerated before creating the live device.
+        // Opening Preferences must not create a second graphics instance.
         if self.gpu_adapters.is_empty() {
-            self.gpu_adapters = vec!["Auto".to_string()];
-        }
-
-        // Kick off background enumeration on first visit (non-blocking)
-        #[cfg(not(target_arch = "wasm32"))]
-        if self.gpu_adapters.is_empty() && self.gpu_adapters_receiver.is_none() {
-            let (tx, rx) = std::sync::mpsc::channel();
-            self.gpu_adapters_receiver = Some(rx);
-            std::thread::spawn(move || {
-                // Use wgpu's own adapter enumeration — zero child processes spawned,
-                // no console flash, and it returns the same GPU names the app actually uses.
-                let mut adapters = vec!["Auto".to_string()];
-
-                let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-                    backends: wgpu::Backends::all(),
-                    ..wgpu::InstanceDescriptor::new_without_display_handle()
-                });
-                for adapter in
-                    pollster::block_on(instance.enumerate_adapters(wgpu::Backends::all()))
-                {
-                    let info = adapter.get_info();
-                    // Skip software/fallback adapters (CPU-simulated or unknown)
-                    if info.device_type != wgpu::DeviceType::Other
-                        && info.device_type != wgpu::DeviceType::Cpu
-                    {
-                        let name = info.name.clone();
-                        if !name.is_empty() && !adapters.contains(&name) {
-                            adapters.push(name);
-                        }
-                    }
-                }
-                let _ = tx.send(adapters);
-            });
+            self.gpu_adapters = crate::services::graphics::available_adapter_keys();
         }
 
         egui::Grid::new("hardware_gpu_grid")
@@ -1636,25 +1594,23 @@ impl SettingsWindow {
             .show(ui, |ui| {
                 ui.label(t!("settings.hardware.adapter"))
                     .search_target(ui, "settings.hardware.adapter");
-                if self.gpu_adapters_receiver.is_some() {
-                    // Still loading — show a spinner label
-                    ui.weak(crate::t!("ui.detecting_gpus"))
-                        .search_target(ui, "ui.detecting_gpus");
-                    ui.ctx().request_repaint();
-                } else {
-                    egui::ComboBox::from_id_salt("gpu_adapter_sel")
-                        .selected_text(&settings.preferred_gpu)
-                        .show_ui(ui, |ui| {
-                            for adapter in &self.gpu_adapters {
-                                if ui
-                                    .selectable_label(settings.preferred_gpu == *adapter, adapter)
-                                    .clicked()
-                                {
-                                    settings.preferred_gpu = adapter.clone();
-                                }
+                egui::ComboBox::from_id_salt("gpu_adapter_sel")
+                    .selected_text(crate::services::graphics::adapter_label(
+                        &settings.preferred_gpu,
+                    ))
+                    .show_ui(ui, |ui| {
+                        for adapter in &self.gpu_adapters {
+                            if ui
+                                .selectable_label(
+                                    settings.preferred_gpu == *adapter,
+                                    crate::services::graphics::adapter_label(adapter),
+                                )
+                                .clicked()
+                            {
+                                settings.preferred_gpu = adapter.clone();
                             }
-                        });
-                }
+                        }
+                    });
                 ui.end_row();
             });
         ui.label(
@@ -1666,9 +1622,34 @@ impl SettingsWindow {
 
         // -- Status -----------------------------------------------------
         Self::section_header(ui, &t!("settings.hardware.status"));
-        let status_text =
-            t!("settings.hardware.running_on").replace("{0}", &settings.preferred_gpu);
+        let status_text = t!("settings.hardware.running_on")
+            .replace("{0}", &crate::services::graphics::running_adapter());
         ui.label(egui::RichText::new(status_text).strong());
+        if let Some(reason) = crate::services::graphics::selection_notice(&settings.preferred_gpu) {
+            ui.weak(reason);
+        }
+
+        Self::section_header(ui, &t!("graphics.rendering"));
+        ui.checkbox(
+            &mut settings.frame_rate_detect_screen,
+            t!("graphics.detect_screen"),
+        );
+        crate::ui::controls::without_wheel_adjustment(ui, |ui| {
+            ui.add_enabled_ui(!settings.frame_rate_detect_screen, |ui| {
+                ui.add(
+                    crate::ui::controls::Slider::new(&mut settings.frame_rate_limit, 15..=360)
+                        .text(t!("graphics.frame_limit"))
+                        .suffix(" FPS")
+                        .reset_to(60),
+                );
+            });
+        });
+        ui.weak(t!("graphics.frame_limit_hint"));
+        #[cfg(not(target_arch = "wasm32"))]
+        crate::services::frame_pacing::set_policy(
+            settings.frame_rate_detect_screen,
+            settings.frame_rate_limit,
+        );
 
         // -- Reset ------------------------------------------------------
         ui.add_space(16.0);
@@ -1681,7 +1662,6 @@ impl SettingsWindow {
         {
             settings.preferred_gpu = "Auto".to_string();
             self.gpu_adapters.clear();
-            self.gpu_adapters_receiver = None;
         }
         settings.save();
     }
@@ -2391,6 +2371,11 @@ impl SettingsWindow {
                 settings.save();
                 self.pending_icon_pack_reload = true;
             }
+        });
+        super::settings_sections::show(ui, "ruler", revision, force, |ui| {
+            Self::section_header(ui, &crate::t!("ruler.appearance"));
+            Self::show_ruler_appearance(ui, settings);
+            ui.add_space(8.0);
         });
         super::settings_sections::show(ui, "canvas", revision, force, |ui| {
             // -- Canvas Rendering -----------------------------------------
@@ -3479,6 +3464,136 @@ impl SettingsWindow {
 
     /// Render an optional color override row with an enable checkbox + color picker + alpha input + reset button.
     #[track_caller]
+    fn show_ruler_appearance(ui: &mut egui::Ui, settings: &mut AppSettings) {
+        let before = settings.ruler.clone();
+        let style = &mut settings.ruler;
+        ui.horizontal(|ui| {
+            ui.label(crate::t!("ruler.font"))
+                .search_target(ui, "ruler.font");
+            egui::ComboBox::from_id_salt("ruler_font_family")
+                .selected_text(if style.monospace {
+                    crate::t!("ruler.font_monospace")
+                } else {
+                    crate::t!("ruler.font_ui")
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut style.monospace,
+                        true,
+                        crate::t!("ruler.font_monospace"),
+                    );
+                    ui.selectable_value(&mut style.monospace, false, crate::t!("ruler.font_ui"));
+                });
+        });
+        ui.horizontal(|ui| {
+            ui.label(crate::t!("ruler.font_size"))
+                .search_target(ui, "ruler.font_size");
+            ui.add(
+                crate::ui::controls::Slider::new(&mut style.font_size, 8.0..=24.0)
+                    .suffix(" pt")
+                    .reset_to(9.0),
+            );
+        });
+        ui.checkbox(
+            &mut style.compact_vertical,
+            crate::t!("ruler.compact_vertical"),
+        )
+        .search_target(ui, "ruler.compact_vertical");
+        ui.add_enabled_ui(style.compact_vertical, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(crate::t!("ruler.vertical_scale"))
+                    .search_target(ui, "ruler.vertical_scale");
+                ui.add(
+                    crate::ui::controls::Slider::new(&mut style.vertical_scale, 0.6..=1.0)
+                        .reset_to(0.8)
+                        .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
+                        .custom_parser(|text| {
+                            crate::ui::numeric::evaluate_dimension_expression(
+                                text.trim().trim_end_matches('%'),
+                            )
+                            .map(|value| f64::from(value) / 100.0)
+                        }),
+                );
+            })
+        });
+        ui.weak(crate::t!("ruler.vertical_scale_hint"));
+        ui.checkbox(&mut style.minor_ticks, crate::t!("ruler.minor_ticks"))
+            .search_target(ui, "ruler.minor_ticks");
+        for (key, value, fallback) in [
+            (
+                "ruler.text_color",
+                &mut style.text_color,
+                ui.visuals().text_color(),
+            ),
+            (
+                "ruler.tick_color",
+                &mut style.tick_color,
+                ui.visuals().text_color(),
+            ),
+            (
+                "ruler.background_color",
+                &mut style.background_color,
+                ui.visuals().panel_fill,
+            ),
+        ] {
+            ui.push_id(key, |ui| {
+                ui.horizontal(|ui| {
+                    let mut custom = value.is_some();
+                    let mut rgb = value.unwrap_or([fallback.r(), fallback.g(), fallback.b()]);
+                    if ui
+                        .checkbox(&mut custom, crate::i18n::translate(key))
+                        .search_target(ui, key)
+                        .changed()
+                    {
+                        *value = custom.then_some(rgb);
+                    }
+                    if custom {
+                        if crate::ui::controls::color_edit_button_srgb(ui, &mut rgb).changed() {
+                            *value = Some(rgb);
+                        }
+                    } else {
+                        ui.weak(crate::t!("ui.preset_default"));
+                    }
+                })
+            });
+        }
+        for (key, value, default) in [
+            ("ruler.opacity", &mut style.opacity, 1.0),
+            (
+                "ruler.background_opacity",
+                &mut style.background_opacity,
+                0.75,
+            ),
+        ] {
+            ui.push_id(key, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(crate::i18n::translate(key)).search_target(ui, key);
+                    ui.add(
+                        crate::ui::controls::Slider::new(value, 0.0..=1.0)
+                            .id_salt(key)
+                            .reset_to(default)
+                            .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
+                            .custom_parser(|text| {
+                                crate::ui::numeric::evaluate_dimension_expression(
+                                    text.trim().trim_end_matches('%'),
+                                )
+                                .map(|value| f64::from(value) / 100.0)
+                            }),
+                    );
+                })
+            });
+        }
+        if crate::ui::controls::reset(ui, *style != Default::default()).clicked() {
+            *style = Default::default();
+        }
+        style.normalize();
+        if settings.ruler != before {
+            settings.save();
+            crate::ui::guides::set_appearance(ui.ctx(), &settings.ruler);
+            ui.ctx().request_repaint();
+        }
+    }
+
     fn opt_color_row(ui: &mut egui::Ui, label: &str, opt: &mut Option<Color32>, dirty: &mut bool) {
         let label = crate::i18n::translate_english(label);
         ui.horizontal(|ui| {
@@ -4524,6 +4639,159 @@ impl SettingsWindow {
 #[cfg(test)]
 mod preference_consistency_tests {
     use super::*;
+
+    fn labelled_rects(output: &egui::FullOutput, needle: &str) -> Vec<egui::Rect> {
+        fn collect(shape: &egui::Shape, needle: &str, rects: &mut Vec<egui::Rect>) {
+            match shape {
+                egui::Shape::Text(t) if t.galley.job.text == needle => {
+                    rects.push(egui::Rect::from_min_size(t.pos, t.galley.size()))
+                }
+                egui::Shape::Vec(v) => {
+                    for s in v {
+                        collect(s, needle, rects);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut rects = Vec::new();
+        for s in &output.shapes {
+            collect(&s.shape, needle, &mut rects);
+        }
+        rects
+    }
+    #[test]
+    fn issue_204_visible_navigation_label_has_no_duplicate_tooltip() {
+        crate::i18n::init();
+        crate::i18n::set_language("en");
+        let ctx = context();
+        let mut settings = AppSettings::default();
+        let mut theme = crate::theme::Theme::light();
+        let mut assets = Assets::new();
+        assets.init(&ctx);
+        let mut window = SettingsWindow {
+            open: true,
+            ..Default::default()
+        };
+        let label = crate::t!("settings.tab.general");
+        let mut output = egui::FullOutput::default();
+        for frame in 0..4 {
+            output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1200.0, 900.0),
+                    )),
+                    time: Some(frame as f64 * 0.1),
+                    ..Default::default()
+                },
+                |_| {
+                    window.show(&ctx, &mut settings, &mut theme, &assets);
+                },
+            );
+        }
+        let rects = labelled_rects(&output, &label);
+        assert_eq!(rects.len(), 1);
+        let point = rects[0].center();
+        for time in [1.0, 2.0, 3.0] {
+            output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1200.0, 900.0),
+                    )),
+                    time: Some(time),
+                    events: vec![egui::Event::PointerMoved(point)],
+                    ..Default::default()
+                },
+                |_| {
+                    window.show(&ctx, &mut settings, &mut theme, &assets);
+                },
+            );
+        }
+        assert_eq!(
+            labelled_rects(&output, &label).len(),
+            1,
+            "fully visible navigation label spawned a duplicate tooltip"
+        );
+    }
+    #[test]
+    fn issue_203_hardware_controls_fit_both_themes_and_ignore_wheel_adjustment() {
+        crate::i18n::init();
+        crate::i18n::set_language("en");
+        for dark in [false, true] {
+            for scale in [1.0, 1.5] {
+                let ctx = context();
+                ctx.set_visuals(if dark {
+                    egui::Visuals::dark()
+                } else {
+                    egui::Visuals::light()
+                });
+                ctx.style_mut_of(
+                    if dark {
+                        egui::Theme::Dark
+                    } else {
+                        egui::Theme::Light
+                    },
+                    |style| {
+                        for font in style.text_styles.values_mut() {
+                            font.size *= scale;
+                        }
+                    },
+                );
+                let mut settings = AppSettings {
+                    frame_rate_detect_screen: false,
+                    frame_rate_limit: 30,
+                    ..Default::default()
+                };
+                let mut window = SettingsWindow {
+                    gpu_adapters: vec!["Auto".into()],
+                    ..Default::default()
+                };
+                let mut output = egui::FullOutput::default();
+                for _ in 0..2 {
+                    output = ctx.run_ui(
+                        egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                egui::vec2(1000.0, 800.0),
+                            )),
+                            ..Default::default()
+                        },
+                        |ui| {
+                            ui.set_width(600.0);
+                            window.show_hardware_tab(ui, &mut settings);
+                            assert!(ui.min_rect().width() <= 602.0);
+                        },
+                    );
+                }
+                let rect = labelled_rects(&output, "30 FPS")
+                    .into_iter()
+                    .next()
+                    .or_else(|| labelled_rects(&output, "30").into_iter().next())
+                    .expect("frame-rate numeric field");
+                let _ = ctx.run_ui(
+                    egui::RawInput {
+                        events: vec![
+                            egui::Event::PointerMoved(rect.center()),
+                            egui::Event::MouseWheel {
+                                unit: egui::MouseWheelUnit::Point,
+                                delta: egui::vec2(0.0, 60.0),
+                                modifiers: Default::default(),
+                                phase: egui::TouchPhase::Move,
+                            },
+                        ],
+                        ..Default::default()
+                    },
+                    |ui| {
+                        ui.set_width(600.0);
+                        window.show_hardware_tab(ui, &mut settings);
+                    },
+                );
+                assert_eq!(settings.frame_rate_limit, 30);
+            }
+        }
+    }
 
     #[test]
     fn unchanged_ai_paths_are_not_probed_on_scrolling_frames() {

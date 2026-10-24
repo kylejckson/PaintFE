@@ -10,3 +10,6 @@ pub mod storage;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod optional_packs;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub mod frame_pacing;

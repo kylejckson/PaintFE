@@ -61,7 +61,10 @@ impl PaintFEApp {
                             if recent.is_empty() { ui.weak(crate::t!("ui.no_recent_files")); }
                             for path in recent {
                                 let label = crate::services::io::display_path(std::path::Path::new(&path));
-                                if ui.add_sized([width, 22.0], egui::Button::new("").left_text(egui::RichText::new(&label)).truncate()).on_hover_text(&label).clicked() {
+                                let clipped = ui.painter().layout_no_wrap(label.clone(), font.clone(), ui.visuals().text_color()).size().x > width - 2.0 * ui.spacing().button_padding.x;
+                                let response = ui.add_sized([width, 22.0], egui::Button::new("").left_text(egui::RichText::new(&label)).truncate());
+                                let response = if clipped { response.on_hover_text(&label) } else { response };
+                                if response.clicked() {
                                     self.open_file_by_path(PathBuf::from(path), ctx.input(|i| i.time));
                                     ui.close();
                                 }
@@ -172,6 +175,7 @@ impl PaintFEApp {
                             .clicked()
                         {
                             ui.close();
+                            self.finish_pending_line_edit();
                             let dirty_count = self.projects.iter().filter(|p| p.is_dirty).count();
                             if self.settings.confirm_on_exit && dirty_count > 0 {
                                 self.pending_exit = true;
@@ -1728,6 +1732,10 @@ impl PaintFEApp {
                             && let Some(project) = self.active_project_mut()
                         {
                             project.canvas_state.show_pixel_grid = grid_checked;
+                        }
+
+                        if let Some(project) = self.active_project_mut() {
+                            ui.menu_button(t!("guides.menu"), |ui| crate::ui::guides::menu(ui, project));
                         }
 
                         // CMYK soft proof toggle

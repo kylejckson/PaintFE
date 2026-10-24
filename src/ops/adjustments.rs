@@ -797,6 +797,9 @@ pub fn crop_to_selection(state: &mut CanvasState) {
         layer.pixels = TiledImage::from_rgba_image(&cropped);
     }
 
+    state
+        .guides
+        .translate_clip(-(min_x as f32), -(min_y as f32), new_w, new_h);
     state.width = new_w;
     state.height = new_h;
     state.selection_mask = None;

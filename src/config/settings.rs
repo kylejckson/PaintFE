@@ -25,6 +25,79 @@ impl ZoomFilterMode {
     }
 }
 
+/// Canvas ruler appearance. Missing colors inherit the current theme.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct RulerSettings {
+    pub monospace: bool,
+    pub font_size: f32,
+    pub compact_vertical: bool,
+    pub vertical_scale: f32,
+    pub minor_ticks: bool,
+    pub text_color: Option<[u8; 3]>,
+    pub tick_color: Option<[u8; 3]>,
+    pub background_color: Option<[u8; 3]>,
+    pub opacity: f32,
+    pub background_opacity: f32,
+}
+impl Default for RulerSettings {
+    fn default() -> Self {
+        Self {
+            monospace: true,
+            font_size: 9.0,
+            compact_vertical: true,
+            vertical_scale: 0.8,
+            minor_ticks: true,
+            text_color: None,
+            tick_color: None,
+            background_color: None,
+            opacity: 1.0,
+            background_opacity: 0.75,
+        }
+    }
+}
+impl RulerSettings {
+    pub fn normalize(&mut self) {
+        self.font_size = if self.font_size.is_finite() {
+            self.font_size.clamp(8.0, 24.0)
+        } else {
+            9.0
+        };
+        self.vertical_scale = if self.vertical_scale.is_finite() {
+            self.vertical_scale.clamp(0.6, 1.0)
+        } else {
+            0.8
+        };
+        for (opacity, default) in [
+            (&mut self.opacity, 1.0),
+            (&mut self.background_opacity, 0.75),
+        ] {
+            *opacity = if opacity.is_finite() {
+                opacity.clamp(0.0, 1.0)
+            } else {
+                default
+            };
+        }
+    }
+    pub fn font(&self) -> egui::FontId {
+        egui::FontId::new(
+            self.font_size,
+            if self.monospace {
+                egui::FontFamily::Monospace
+            } else {
+                egui::FontFamily::Proportional
+            },
+        )
+    }
+    pub fn vertical_font(&self) -> egui::FontId {
+        let mut font = self.font();
+        if self.compact_vertical {
+            font.size = (font.size * self.vertical_scale).max(6.0);
+        }
+        font
+    }
+}
+
 /// Appearance of the horizontal tool-options bar. Kept separate from keybindings.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -163,6 +236,7 @@ pub struct AppSettings {
     /// None follows the current theme's subtle text color.
     pub resize_grip_color: Option<Color32>,
     pub resize_grip_opacity: f32,
+    pub ruler: RulerSettings,
     pub last_export_format: String,
     pub last_export_directory: String,
     pub recent_files: Vec<String>,
@@ -178,6 +252,8 @@ pub struct AppSettings {
     /// Mailbox) over vsync queueing and queue at most one frame. Trades possible
     /// screen tearing for visibly snappier input response. Applied at startup.
     pub low_latency_present: bool,
+    pub frame_rate_detect_screen: bool,
+    pub frame_rate_limit: u32,
     /// Animate selection marching ants (faster scroll). When off, selections
     /// render a static pattern and the app can go fully idle with a selection
     /// active.
@@ -426,6 +502,8 @@ impl Default for AppSettings {
             zoom_filter_mode: ZoomFilterMode::Linear,
             checkerboard_brightness: 1.0,
             low_latency_present: true,
+            frame_rate_detect_screen: true,
+            frame_rate_limit: 60,
             animated_selection_ants: true,
             icon_pack_path: String::new(),
             bundled_icon_style: crate::config::icon_packs::BundledIconStyle::Luminous,
@@ -435,6 +513,7 @@ impl Default for AppSettings {
             tooltip_delay: 0.5,
             resize_grip_color: None,
             resize_grip_opacity: 0.5,
+            ruler: RulerSettings::default(),
             last_export_format: "png".into(),
             last_export_directory: String::new(),
             recent_files: Vec::new(),
@@ -793,6 +872,9 @@ impl AppSettings {
         if let Some(v) = self.menu_rounding {
             content.push_str(&format!("menu_rounding={v}\n"));
         }
+        if let Ok(value) = serde_json::to_string(&self.ruler) {
+            content.push_str(&format!("ruler={value}\n"));
+        }
         if let Ok(value) = serde_json::to_string(&self.tool_shelf) {
             content.push_str(&format!("tool_shelf={value}\n"));
         }
@@ -975,6 +1057,12 @@ impl AppSettings {
         {
             shelf.normalize();
             self.tool_shelf = shelf;
+        }
+        if let Some(value) = map.get("ruler")
+            && let Ok(mut ruler) = serde_json::from_str::<RulerSettings>(value)
+        {
+            ruler.normalize();
+            self.ruler = ruler;
         }
         if let Some(v) = map.get("tools_show_colors") {
             self.tools_show_colors = *v == "true";
@@ -1159,6 +1247,11 @@ impl AppSettings {
         );
         // Append keybinding lines
         let mut content = content;
+        content.push_str(&format!(
+            "frame_rate_detect_screen={}\nframe_rate_limit={}\n",
+            self.frame_rate_detect_screen,
+            self.frame_rate_limit.clamp(15, 360)
+        ));
         content.push_str(&format!("info_font_size={}\n", self.info_font_size));
         content.push_str(&format!("info_opacity={}\n", self.info_opacity));
         for (key, color) in [
@@ -1183,6 +1276,7 @@ impl AppSettings {
         ));
         for (key, value) in [
             ("ui_polish", serde_json::to_string(&self.ui_polish)),
+            ("ruler", serde_json::to_string(&self.ruler)),
             ("tooltip_delay", serde_json::to_string(&self.tooltip_delay)),
             (
                 "resize_grip_color",
@@ -1768,6 +1862,10 @@ impl AppSettings {
                 "checkerboard_brightness" => {
                     s.checkerboard_brightness = val.parse().unwrap_or(1.0);
                 }
+                "frame_rate_detect_screen" => s.frame_rate_detect_screen = val == "true",
+                "frame_rate_limit" => {
+                    s.frame_rate_limit = val.parse::<u32>().unwrap_or(60).clamp(15, 360)
+                }
                 "low_latency_present" => {
                     s.low_latency_present = val == "true";
                 }
@@ -1795,6 +1893,12 @@ impl AppSettings {
                         && delay.is_finite()
                     {
                         s.tooltip_delay = delay.clamp(0.0, 3.0);
+                    }
+                }
+                "ruler" => {
+                    if let Ok(mut ruler) = serde_json::from_str::<RulerSettings>(val) {
+                        ruler.normalize();
+                        s.ruler = ruler;
                     }
                 }
                 "resize_grip_color" => {
@@ -2323,8 +2427,49 @@ mod refinement_tests {
     use super::*;
 
     #[test]
+    fn ruler_theme_roundtrip_legacy_and_invalid_settings_are_safe() {
+        let source = AppSettings {
+            ruler: RulerSettings {
+                monospace: false,
+                font_size: 24.0,
+                compact_vertical: false,
+                vertical_scale: 0.7,
+                minor_ticks: false,
+                text_color: Some([30, 100, 200]),
+                opacity: 0.5,
+                background_opacity: 0.25,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut target = AppSettings::default();
+        target.import_theme_from_string(&source.export_theme_to_string());
+        assert_eq!(target.ruler, source.ruler);
+        target.import_theme_from_string("ruler=malformed\n");
+        assert_eq!(target.ruler, source.ruler);
+        target.import_theme_from_string("ruler={\"font_size\":100,\"opacity\":-1}\n");
+        assert_eq!(target.ruler.font_size, 24.0);
+        assert_eq!(target.ruler.opacity, 0.0);
+        assert_eq!(target.ruler.background_opacity, 0.75);
+        assert!(target.ruler.compact_vertical);
+        assert_eq!(target.ruler.vertical_scale, 0.8);
+        assert!(target.ruler.minor_ticks);
+        assert!(!crate::canvas::guides::Guides::default().rulers);
+    }
+
+    #[test]
     fn preferences_roundtrip_preserves_tab_and_onnx_options() {
         let settings = AppSettings {
+            ruler: RulerSettings {
+                monospace: false,
+                font_size: 18.0,
+                text_color: Some([40, 150, 220]),
+                tick_color: Some([220, 90, 30]),
+                background_color: Some([15, 25, 35]),
+                opacity: 0.8,
+                background_opacity: 0.6,
+                ..Default::default()
+            },
             info_font_size: 18.0,
             info_opacity: 0.65,
             info_text_color: Some([12, 34, 56]),
@@ -2362,6 +2507,7 @@ mod refinement_tests {
         settings.save();
         crate::config::persistence::drain().unwrap();
         let restored = AppSettings::load();
+        assert_eq!(restored.ruler, settings.ruler);
         assert_eq!(restored.info_font_size, 18.0);
         assert_eq!(restored.info_opacity, 0.65);
         assert_eq!(restored.info_text_color, Some([12, 34, 56]));

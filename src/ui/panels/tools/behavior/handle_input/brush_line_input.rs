@@ -499,11 +499,10 @@ impl ToolsPanel {
                 }
             }
             Tool::Line => {
-                let line_editing_mask = canvas_state.edit_layer_mask
-                    && canvas_state
-                        .layers
-                        .get(canvas_state.active_layer_index)
-                        .is_some_and(|l| l.has_live_mask());
+                if self.line_state.line_tool.stage == LineStage::Idle && is_primary_pressed {
+                    self.capture_line_target(canvas_state);
+                }
+                let line_editing_mask = self.line_state.line_tool.source_mask;
 
                 // Guard: auto-rasterize text layers before destructive line tool
                 if is_primary_pressed

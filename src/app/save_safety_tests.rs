@@ -612,3 +612,52 @@ fn native_close_waits_for_inflight_write_even_when_exit_confirmation_is_disabled
     assert!(!app.force_exit);
     assert!(app.pending_exit);
 }
+
+#[test]
+fn issue_206_image_save_warns_about_guides_but_project_save_preserves_them() {
+    let mut app = app();
+    let p = &mut app.projects[0];
+    p.canvas_state
+        .guides
+        .add(crate::canvas::guides::Axis::Horizontal, 2.0, 4, 4);
+    let before = p.canvas_state.composite();
+    assert!(
+        p.save_losses(&action(PathBuf::from("guide.png"), SaveFormat::Png))
+            .contains(&crate::t!("guides.save_loss"))
+    );
+    assert!(
+        p.save_losses(&action(PathBuf::from("guide.pfe"), SaveFormat::Pfe))
+            .is_empty()
+    );
+    assert_eq!(p.canvas_state.composite(), before);
+    assert!(matches!(
+        crate::io::build_pfe(&p.canvas_state),
+        crate::io::PfeData::V5(_)
+    ));
+}
+
+#[test]
+fn issue_206_quick_save_and_save_as_include_pending_line_pixels() {
+    let (mut app, _) = super::issue_tests::issue_206_line_fixture();
+    let ctx = egui::Context::default();
+    let path = directory().join("line.png");
+    app.projects[0].file_handler.current_path = Some(path.clone());
+    app.handle_save(0.0);
+    wait(&mut app, &ctx);
+    assert_eq!(
+        image::open(&path).unwrap().to_rgba8().get_pixel(3, 3)[0],
+        255
+    );
+    assert_eq!(app.projects[0].history.undo_count(), 1);
+    assert!(app.save_warning.is_none());
+    let (mut app, _) = super::issue_tests::issue_206_line_fixture();
+    app.open_save_as_for_project(0);
+    assert_eq!(
+        app.projects[0].canvas_state.layers[0]
+            .pixels
+            .get_pixel(3, 3)[0],
+        255
+    );
+    assert_eq!(app.projects[0].history.undo_count(), 1);
+    assert!(app.save_file_dialog.open);
+}

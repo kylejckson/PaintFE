@@ -343,6 +343,8 @@ impl Default for LineOptions {
 
 #[derive(Clone, Debug)]
 pub struct LineToolState {
+    pub source_layer: Option<uuid::Uuid>,
+    pub source_mask: bool,
     pub stage: LineStage,
     pub control_points: [Pos2; 4], // [Start, Control1, Control2, End]
     pub options: LineOptions,
@@ -365,6 +367,8 @@ impl Default for LineToolState {
     fn default() -> Self {
         Self {
             stage: LineStage::Idle,
+            source_layer: None,
+            source_mask: false,
             control_points: [Pos2::ZERO; 4],
             options: LineOptions::default(),
             dragging_handle: None,

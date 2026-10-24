@@ -412,6 +412,7 @@ impl PaintFEApp {
                             self.settings.selection_stripe_alpha,
                         );
                     });
+                    crate::ui::guides::begin(ctx, project.id);
                     let render_profile = crate::ui::perf::Scope::new(7);
                     self.canvas.show_with_state(
                         ui,

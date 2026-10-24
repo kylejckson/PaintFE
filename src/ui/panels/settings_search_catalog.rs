@@ -1,5 +1,21 @@
 // Search catalogue: stable label keys, English fallback and owning section.
 const SEARCH_ENTRIES: &[SearchEntry] = &[
+    SearchEntry { tab: SettingsTab::Interface, key: "ruler.compact_vertical", english: "Compact vertical ruler", section: "ruler.appearance" },
+    SearchEntry { tab: SettingsTab::Interface, key: "ruler.vertical_scale", english: "Vertical text scale", section: "ruler.appearance" },
+    SearchEntry { tab: SettingsTab::Interface, key: "ruler.minor_ticks", english: "Intermediate ruler ticks", section: "ruler.appearance" },
+
+    SearchEntry { tab: SettingsTab::Interface, key: "ruler.appearance", english: "Ruler Ruler appearance", section: "ruler.appearance" },
+    SearchEntry { tab: SettingsTab::Interface, key: "ruler.font", english: "Ruler Font", section: "ruler.appearance" },
+    SearchEntry { tab: SettingsTab::Interface, key: "ruler.font_size", english: "Ruler Font size", section: "ruler.appearance" },
+    SearchEntry { tab: SettingsTab::Interface, key: "ruler.text_color", english: "Ruler Text color", section: "ruler.appearance" },
+    SearchEntry { tab: SettingsTab::Interface, key: "ruler.tick_color", english: "Ruler Tick color", section: "ruler.appearance" },
+    SearchEntry { tab: SettingsTab::Interface, key: "ruler.background_color", english: "Ruler Background color", section: "ruler.appearance" },
+    SearchEntry { tab: SettingsTab::Interface, key: "ruler.opacity", english: "Ruler Ruler opacity", section: "ruler.appearance" },
+    SearchEntry { tab: SettingsTab::Interface, key: "ruler.background_opacity", english: "Ruler Background opacity", section: "ruler.appearance" },
+
+    SearchEntry { tab: SettingsTab::Hardware, key: "graphics.rendering", english: "Rendering frame rate limit FPS detect screen monitor refresh", section: "graphics.rendering" },
+    #[cfg(not(target_arch = "wasm32"))]
+    SearchEntry { tab: SettingsTab::OptionalFeatures, key: "heic.system_title", english: "HEIC HEIF system codecs Windows HEVC extensions macOS ImageIO Linux libheif opening saving", section: "heic.system_title" },
     SearchEntry { tab:SettingsTab::General,key:"labels.edit",english:"Customize labels language rename interface wording",section:"ui.language" },
     #[cfg(not(target_arch = "wasm32"))]
     SearchEntry {tab:SettingsTab::OptionalFeatures, key:"packs.title",english:"Optional features fonts CJK JPEG XL AVIF import export install download packs",section:"packs.title"},

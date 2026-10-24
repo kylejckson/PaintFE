@@ -6,6 +6,30 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.17] - 2026-10-24
+
+- Use installed operating-system codecs for HEIC and HEIF images.
+- Line up artwork with canvas rulers and document guides.
+- Choose a preferred GPU and automatic or custom frame-rate limits.
+
+### Guides and interface
+
+- Add document guides, optional rulers, exact positioning, locking and undo. Guides are saved in PFE5 projects and excluded from image exports. Related to issue 206.
+- Keep rulers against the canvas edges as you pan and zoom, with right-aligned vertical labels and intermediate ticks. Rulers are off by default.
+- Add ruler font, size, color and opacity settings in Preferences. Compact vertical labels default to 80% text size, and ruler backgrounds default to 75% opacity. Both can be adjusted independently.
+- Add optional guide snapping for the edges and centres of pasted content and moved selections.
+- Keep line previews and their undo history attached to the original layer and mask target when switching or reordering layers.
+- Remove repetitive Preferences and Recent Files tooltips when their text is already fully visible. Related to issue 204.
+- Add automatic monitor-refresh detection and a manual frame-rate limit, preserving mouse and pen samples. Stationary paste previews can go idle. Related to issue 203.
+- Apply the preferred GPU at startup and show the actual adapter, pending changes and fallback status. Related to issue 202.
+
+### HEIC support
+
+- Remove the bundled HEVC decoder and retire the HEIC export download. Windows uses WIC, macOS ImageIO, and Linux installed libheif. JPEG XL and AVIF are unchanged.
+- Show separate HEIC opening and saving availability in Preferences, with guidance when a required system codec is missing.
+- Keep codec work in a bounded, cancellable process using the same executable. Save safety and original-file protection remain in place.
+- Report unsupported transparency or precision instead of silently losing it. Related to issue 196.
+
 ## [1.4.16] - 2026-10-24
 
 - Warn before saving a document to a format that loses editable information.

@@ -23,6 +23,7 @@ pub struct CanvasState {
     /// Reset by `clear_preview_state`.
     pub preview_clear_pending: bool,
     pub show_pixel_grid: bool,             // Toggle for pixel grid overlay
+    pub guides: crate::canvas::guides::Guides,
     pub show_guidelines: bool,             // Toggle for center/thirds guidelines overlay
     pub mirror_mode: MirrorMode,           // Symmetry mirror mode
     pub show_wrap_preview: bool,           // Toggle for 4-side seamless edge preview
@@ -165,6 +166,7 @@ impl CanvasState {
             commit_composite_flush_rect: None,
             preview_clear_pending: false,
             show_pixel_grid: true,  // Enable by default
+            guides: crate::canvas::guides::Guides::default(),
             show_guidelines: false, // Disabled by default
             mirror_mode: MirrorMode::None,
             show_wrap_preview: false,

@@ -20,8 +20,11 @@ MAX_FILE = 128 * 1024 * 1024
 def expected_packs(tag):
     if not re.fullmatch(r'v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?', tag):
         raise ValueError('Expected a v-prefixed release version')
+    # Repairing older releases must still preserve their original signed packs.
+    version = tuple(map(int, tag[1:].split('-')[0].split('.')))
+    packs = ('cjk', 'jxl', 'avif') if version >= (1, 4, 17) else ('cjk', 'jxl', 'avif', 'heic')
     return {f'PaintFE-pack-{pack}-{platform}-{tag}.pfepack': (pack, platform)
-            for platform in PLATFORMS for pack in ('cjk', 'jxl', 'avif', 'heic')}
+            for platform in PLATFORMS for pack in packs}
 
 
 def envelope(path):
@@ -82,7 +85,7 @@ def stage(source, destination, tag, core):
     expected = expected_packs(tag)
     found = list(Path(source).rglob('*.pfepack'))
     if Counter(p.name for p in found) != Counter(expected.keys()):
-        raise ValueError('Expected exactly sixteen unique release packs for this version')
+        raise ValueError(f'Expected exactly {len(expected)} unique release packs for this version')
     paths = {p.name: p for p in found}
     reference = paths[f'PaintFE-pack-jxl-windows-x86_64-{tag}.pfepack']
     key = embedded_key(core, envelope(reference))

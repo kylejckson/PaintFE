@@ -294,6 +294,7 @@ impl PaintFEApp {
             new_file_dialog: NewFileDialog::default(),
             save_file_dialog: SaveFileDialog::default(),
             settings_window: SettingsWindow::default(),
+            guide_dialog_open: false,
             #[cfg(target_arch = "wasm32")]
             show_welcome_popup: !crate::web_storage::has_seen_welcome(),
             assets,
@@ -627,6 +628,7 @@ impl PaintFEApp {
 
     /// Close a project by index, with dirty check
     fn close_project(&mut self, index: usize) {
+        if index == self.active_project_index { self.finish_pending_line_edit(); }
         if index >= self.projects.len() {
             return;
         }
@@ -682,6 +684,7 @@ impl PaintFEApp {
     /// Switch to a different project tab
     fn switch_to_project(&mut self, index: usize) {
         if index < self.projects.len() && index != self.active_project_index {
+            self.finish_pending_line_edit();
             self.persist_active_project_view();
             // Commit any active paste overlay before switching tabs.
             // The overlay belongs to the current project's canvas — switching

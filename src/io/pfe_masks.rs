@@ -46,6 +46,15 @@ pub(super) fn write(project: &ProjectFileV4, path: &Path) -> Result<(), PfeError
 
 pub(super) fn load(raw: &[u8]) -> Result<CanvasState, PfeError> {
     let project: ProjectFileV4 = bincode::deserialize(raw)?;
+    load_project(project)
+}
+
+pub(super) fn load_project(project: ProjectFileV4) -> Result<CanvasState, PfeError> {
+    if project.magic != "PFE4" {
+        return Err(PfeError::InvalidFormat(
+            "Invalid layer-mask project header".into(),
+        ));
+    }
     if project.masks.len() != project.document.layers.len() {
         return Err(PfeError::InvalidFormat(
             "Layer mask count does not match layers".into(),

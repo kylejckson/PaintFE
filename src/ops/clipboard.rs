@@ -1441,7 +1441,7 @@ impl PasteOverlay {
     }
 
     /// Get the 4 corner positions of the overlay in canvas coords (rotated).
-    fn corners_canvas(&self) -> [Pos2; 4] {
+    pub(crate) fn corners_canvas(&self) -> [Pos2; 4] {
         let hs = self.scaled_half();
         let c = self.center;
         let tl = Pos2::new(c.x - hs.x, c.y - hs.y);

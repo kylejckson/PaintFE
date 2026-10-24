@@ -1642,7 +1642,7 @@ packs.heic_missing=Install the optional HEIC export pack to save HEIC images.
 packs.install_heic=Install HEIC export...
 packs.heic_size=This download adds an offline HEIC encoder and its corresponding source.
 format.heic=HEIC
-heic.export_note=8-bit lossy still image. Quality 100 is not lossless. Transparency is supported.
+heic.export_note=Uses the installed system encoder. Export is 8-bit and usually lossy. Quality 100 does not guarantee lossless output. Transparency support depends on the codec; use PNG or PFE to preserve it.
 codec.processing=Processing image...
 codec.cancelled=Image processing cancelled.
 
@@ -1658,3 +1658,57 @@ save.project=Save PaintFE project...
 save.image=Save image anyway
 save.failed=The file could not be saved. Your document is still open.
 save.changed=The document changed while saving. It has been kept open so you can save the latest changes.
+
+# System HEIC support (English fallback pending native review)
+heic.system_title=HEIC / HEIF (system codecs)
+heic.system_description=Uses codecs installed on your operating system. No HEVC codec is bundled or downloaded by PaintFE. Older HEIC packs are no longer used.
+heic.setup_windows=Uses Windows HEIF Image Extensions and HEVC Video Extensions. Install missing extensions through Microsoft Store, then restart PaintFE. Supported save options depend on the installed codec.
+heic.setup_macos=Uses macOS ImageIO. HEIC support and save options depend on your macOS version.
+heic.setup_linux=Requires system libheif with an HEVC decoder or encoder. Install the codec through your distribution, then restart PaintFE. PaintFE does not download HEVC codecs.
+heic.setup_unsupported=HEIC requires a supported desktop operating system and an installed system codec.
+heic.import=Open
+heic.export=Save
+heic.available=Available
+heic.unavailable=Unavailable
+
+# Guides and rendering settings (English fallback pending translation review)
+graphics.not_initialized=Not initialized
+graphics.selection_notice=Selected for next restart: {0}. If this device is unavailable, PaintFE uses a compatible fallback.
+graphics.rendering=Rendering
+graphics.detect_screen=Detect frame-rate limit from screen
+graphics.frame_limit=Frame-rate limit
+graphics.frame_limit_hint=Automatic uses the current monitor refresh rate, or 60 FPS when unavailable. Input samples are preserved at lower frame rates.
+guides.edit=Edit guides
+guides.menu=Guides
+guides.rulers=Show rulers
+guides.visible=Show guides
+guides.locked=Lock guides
+guides.snap=Snap to guides
+guides.new=New guide...
+guides.clear=Clear guides
+guides.horizontal=Horizontal
+guides.vertical=Vertical
+guides.percent=Position as percentage
+guides.position=Position
+guides.add=Add
+guides.cancel=Cancel
+guides.save_hint=Guides are saved in PaintFE projects and never appear in exported images.
+guides.save_loss=This image format cannot retain editable guides. Save a PaintFE project to keep them.
+
+graphics.selection_pending=Selected for next restart: {0}.
+graphics.selection_fallback=The requested GPU ({0}) was unavailable. PaintFE is using the compatible adapter shown above.
+
+ruler.appearance=Ruler appearance
+ruler.font=Font
+ruler.font_monospace=Monospace
+ruler.font_ui=Interface font
+ruler.font_size=Font size
+ruler.text_color=Text color
+ruler.tick_color=Tick color
+ruler.background_color=Background color
+ruler.opacity=Ruler opacity
+ruler.background_opacity=Background opacity
+ruler.compact_vertical=Compact vertical ruler
+ruler.vertical_scale=Vertical text scale
+ruler.vertical_scale_hint=Vertical labels stay at least 6 pt for readability.
+ruler.minor_ticks=Intermediate ruler ticks

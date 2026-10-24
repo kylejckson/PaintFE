@@ -346,19 +346,20 @@ impl PaintFEApp {
             crate::par_compat::spawn(move || {
                 let result = (|| -> Result<_, String> {
                     let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
-                    let (width, height) = if crate::io::avif::is_avif(&bytes) {
-                        // AVIF uses the optional helper rather than image's built-in decoder.
-                        let decoded =
-                            crate::io::decode_image_bytes(&bytes).map_err(|e| e.to_string())?;
-                        (decoded.width(), decoded.height())
-                    } else {
-                        crate::io::register_codecs();
-                        image::ImageReader::new(std::io::Cursor::new(&bytes))
-                            .with_guessed_format()
-                            .map_err(|e| e.to_string())?
-                            .into_dimensions()
-                            .map_err(|e| e.to_string())?
-                    };
+                    let (width, height) =
+                        if crate::io::avif::is_avif(&bytes) || crate::io::heic::is_heif(&bytes) {
+                            // External/system codecs do not use image's built-in decoder.
+                            let decoded =
+                                crate::io::decode_image_bytes(&bytes).map_err(|e| e.to_string())?;
+                            (decoded.width(), decoded.height())
+                        } else {
+                            crate::io::register_codecs();
+                            image::ImageReader::new(std::io::Cursor::new(&bytes))
+                                .with_guessed_format()
+                                .map_err(|e| e.to_string())?
+                                .into_dimensions()
+                                .map_err(|e| e.to_string())?
+                        };
                     crate::io::validate_open_dimensions(width, height)
                         .map_err(|e| e.to_string())?;
                     Ok((bytes, width, height))
@@ -767,11 +768,9 @@ impl PaintFEApp {
                 project.file_handler.last_format = SaveFormat::Heic;
             }
             if project.file_handler.last_format == SaveFormat::Heic
-                && !crate::services::optional_packs::is_present(
-                    crate::services::optional_packs::Pack::Heic,
-                )
+                && !crate::io::heic::capabilities().encode
             {
-                crate::services::optional_packs::request_heic();
+                self.filter_error = Some(crate::io::heic::setup_message());
                 return false;
             }
         }
@@ -784,6 +783,7 @@ impl PaintFEApp {
     /// For image formats, the encoding runs on a background thread so the UI
     /// stays responsive on large canvases.
     fn handle_save(&mut self, current_time: f64) {
+        self.finish_pending_line_edit();
         let idx = self.active_project_index;
         if idx >= self.projects.len() || self.save_warning.is_some() || self.save_sequence.is_some()
         {
@@ -813,6 +813,7 @@ impl PaintFEApp {
             return;
         }
         self.switch_to_project(idx);
+        self.finish_pending_line_edit();
         let project = &mut self.projects[idx];
         project.canvas_state.ensure_all_text_layers_rasterized();
         let composite = project.canvas_state.composite();
@@ -869,6 +870,7 @@ impl PaintFEApp {
 
     /// Save all dirty documents sequentially, including required warnings and pickers.
     fn handle_save_all(&mut self, _current_time: f64) {
+        self.finish_pending_line_edit();
         self.begin_save_sequence(
             self.projects
                 .iter()

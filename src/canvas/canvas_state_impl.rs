@@ -2,6 +2,7 @@
             composite_cache: None,
             dirty_rect: None,
             show_pixel_grid: true,  // Enable by default
+            guides: crate::canvas::guides::Guides::default(),
             show_guidelines: false, // Disabled by default
             mirror_mode: MirrorMode::None,
             show_wrap_preview: false,

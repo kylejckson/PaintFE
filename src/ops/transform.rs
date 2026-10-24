@@ -144,6 +144,7 @@ pub fn flip_canvas_horizontal(state: &mut CanvasState) {
     if try_transform_selected_region(state, SelectionCanvasTransform::FlipHorizontal) {
         return;
     }
+    state.guides.flip(true, state.width, state.height);
     state.layers.par_iter_mut().for_each(|layer| {
         layer.pixels.flip_horizontal_chunked();
     });
@@ -155,6 +156,7 @@ pub fn flip_canvas_vertical(state: &mut CanvasState) {
     if try_transform_selected_region(state, SelectionCanvasTransform::FlipVertical) {
         return;
     }
+    state.guides.flip(false, state.width, state.height);
     state.layers.par_iter_mut().for_each(|layer| {
         layer.pixels.flip_vertical_chunked();
     });
@@ -166,6 +168,7 @@ pub fn rotate_canvas_90cw(state: &mut CanvasState) {
     if try_transform_selected_region(state, SelectionCanvasTransform::Rotate90Cw) {
         return;
     }
+    state.guides.rotate_quarter(true, state.width, state.height);
     let new_pixels: Vec<_> = state
         .layers
         .par_iter()
@@ -185,6 +188,9 @@ pub fn rotate_canvas_90ccw(state: &mut CanvasState) {
     if try_transform_selected_region(state, SelectionCanvasTransform::Rotate90Ccw) {
         return;
     }
+    state
+        .guides
+        .rotate_quarter(false, state.width, state.height);
     let new_pixels: Vec<_> = state
         .layers
         .par_iter()
@@ -204,6 +210,8 @@ pub fn rotate_canvas_180(state: &mut CanvasState) {
     if try_transform_selected_region(state, SelectionCanvasTransform::Rotate180) {
         return;
     }
+    state.guides.flip(true, state.width, state.height);
+    state.guides.flip(false, state.width, state.height);
     state.layers.par_iter_mut().for_each(|layer| {
         layer.pixels.rotate_180_chunked();
     });
@@ -426,6 +434,10 @@ fn transform_gray_region(src: &GrayImage, transform: SelectionCanvasTransform) -
 
 /// Resize the entire image (all layers) to new dimensions with given interpolation.
 pub fn resize_image(state: &mut CanvasState, new_w: u32, new_h: u32, interp: Interpolation) {
+    state.guides.scale(
+        new_w as f32 / state.width as f32,
+        new_h as f32 / state.height as f32,
+    );
     let filter = interp.to_filter();
     for layer in &mut state.layers {
         let flat = layer.pixels.to_rgba_image();
@@ -882,6 +894,9 @@ pub fn resize_canvas(
         }
         layer.pixels = TiledImage::from_rgba_image(&new_img);
     }
+    state
+        .guides
+        .translate_clip(offset_x as f32, offset_y as f32, new_w, new_h);
     state.width = new_w;
     state.height = new_h;
     state.composite_cache = None;

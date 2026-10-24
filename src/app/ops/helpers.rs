@@ -443,6 +443,13 @@ impl PaintFEApp {
         }
     }
 
+    fn finish_pending_line_edit(&mut self) {
+        if let Some(project) = self.projects.get_mut(self.active_project_index) {
+            self.tools_panel.commit_pending_line_edit(&mut project.canvas_state);
+        }
+        self.commit_pending_tool_history();
+    }
+
     fn commit_pending_tool_history(&mut self) {
         let pending_cmds: Vec<_> = self
             .tools_panel
