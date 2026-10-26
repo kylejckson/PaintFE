@@ -6,6 +6,12 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.19] - 2026-10-26
+
+- Fix the Linux build failure that blocked release downloads.
+- Improve colour precision in transparent HEIF images on macOS.
+- Make Rust toolchain setup consistent across build workflows.
+
 ## [1.4.18] - 2026-10-26
 
 - Open and edit large photos at their original resolution.

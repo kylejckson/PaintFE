@@ -41,11 +41,26 @@ Image decode(const uint8_t* data, size_t size, bool requires_alpha, bool high_de
         Image result; result.width=CGImageGetWidth(image); result.height=CGImageGetHeight(image);
         result.bits=high_depth?16:8;
         result.bytes.resize(pixel_bytes(result.width,result.height)*(result.bits/8));
+        // Unpremultiplying an 8-bit raster amplifies rounding errors at low alpha.
+        // Keep transparent inputs at 16-bit precision until the final RGBA8 conversion.
+        const bool precise_alpha=requires_alpha && !high_depth;
+        const unsigned raster_bits=(high_depth || precise_alpha)?16:8;
+        std::vector<uint8_t> alpha_raster;
+        if(precise_alpha) alpha_raster.resize(pixel_bytes(result.width,result.height)*2);
+        auto& raster=precise_alpha?alpha_raster:result.bytes;
         CF<CGColorSpaceRef> color(CGColorSpaceCreateWithName(kCGColorSpaceSRGB));
-        CF<CGContextRef> context(CGBitmapContextCreate(result.bytes.data(),result.width,result.height,result.bits,result.width*4*(result.bits/8),color,kCGImageAlphaPremultipliedLast|(high_depth?kCGBitmapByteOrder16Little:kCGBitmapByteOrder32Big)));
+        CF<CGContextRef> context(CGBitmapContextCreate(raster.data(),result.width,result.height,raster_bits,result.width*4*(raster_bits/8),color,kCGImageAlphaPremultipliedLast|(raster_bits==16?kCGBitmapByteOrder16Little:kCGBitmapByteOrder32Big)));
         if (!context.value) throw std::runtime_error("macOS HEIC raster allocation failed");
         CGContextDrawImage(context,CGRectMake(0,0,result.width,result.height),image);
-        if(high_depth) {
+        if(precise_alpha) {
+            auto sample=[&](size_t i)->uint32_t{return raster[i]|(uint32_t(raster[i+1])<<8);};
+            for(size_t i=0,j=0;i<raster.size();i+=8,j+=4) {
+                auto a=sample(i+6);
+                for(size_t c=0;c<3;c++)
+                    result.bytes[j+c]=a?std::min(255u,(sample(i+c*2)*255+a/2)/a):0;
+                result.bytes[j+3]=(a+128)/257;
+            }
+        } else if(high_depth) {
             auto sample=[&](size_t i)->uint32_t{return result.bytes[i]|(uint32_t(result.bytes[i+1])<<8);};
             for(size_t i=0;i<result.bytes.size();i+=8) {
                 auto a=sample(i+6);

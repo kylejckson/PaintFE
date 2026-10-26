@@ -30,7 +30,7 @@ jobs:
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
           toolchain: 1.96.1
-          components: clippy
+          components: clippy, rustfmt
 
       - name: Cache cargo
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
@@ -109,6 +109,7 @@ jobs:
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
           toolchain: 1.96.1
+          components: clippy, rustfmt
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
@@ -153,7 +154,7 @@ jobs:
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
           toolchain: 1.96.1
-          components: clippy
+          components: clippy, rustfmt
 
       - name: Cache cargo
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5

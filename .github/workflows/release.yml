@@ -31,6 +31,7 @@ jobs:
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
           toolchain: 1.96.1
+          components: clippy, rustfmt
 
       - name: Cache cargo
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
@@ -115,6 +116,7 @@ jobs:
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
           toolchain: 1.96.1
+          components: clippy, rustfmt
 
       - name: Cache cargo
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
@@ -227,6 +229,7 @@ jobs:
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
           toolchain: 1.96.1
+          components: clippy, rustfmt
 
       - name: Cache cargo
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
@@ -278,6 +281,7 @@ jobs:
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
           toolchain: 1.96.1
+          components: clippy, rustfmt
 
       - name: Cache cargo
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
@@ -349,6 +353,7 @@ jobs:
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
           toolchain: 1.96.1
+          components: clippy, rustfmt
           targets: x86_64-apple-darwin
 
       - name: Cache cargo
@@ -422,6 +427,7 @@ jobs:
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
           toolchain: 1.96.1
+          components: clippy, rustfmt
 
       - name: Cache cargo
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25

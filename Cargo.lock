@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "PaintFE"
-version = "1.4.18"
+version = "1.4.19"
 dependencies = [
  "ab_glyph",
  "arboard",
