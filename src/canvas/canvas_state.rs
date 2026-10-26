@@ -22,11 +22,11 @@ pub struct CanvasState {
     /// otherwise the stroke visibly disappears for a frame on release.
     /// Reset by `clear_preview_state`.
     pub preview_clear_pending: bool,
-    pub show_pixel_grid: bool,             // Toggle for pixel grid overlay
+    pub show_pixel_grid: bool, // Toggle for pixel grid overlay
     pub guides: crate::canvas::guides::Guides,
-    pub show_guidelines: bool,             // Toggle for center/thirds guidelines overlay
-    pub mirror_mode: MirrorMode,           // Symmetry mirror mode
-    pub show_wrap_preview: bool,           // Toggle for 4-side seamless edge preview
+    pub show_guidelines: bool, // Toggle for center/thirds guidelines overlay
+    pub mirror_mode: MirrorMode, // Symmetry mirror mode
+    pub show_wrap_preview: bool, // Toggle for 4-side seamless edge preview
     pub preview_layer: Option<TiledImage>, // For non-destructive tool previews (e.g., Bézier curves)
     pub preview_blend_mode: BlendMode,     // Blend mode for the preview layer
     /// When true, forces the blend-aware composite path for the preview overlay,
@@ -165,7 +165,7 @@ impl CanvasState {
             dirty_rect: None,
             commit_composite_flush_rect: None,
             preview_clear_pending: false,
-            show_pixel_grid: true,  // Enable by default
+            show_pixel_grid: true, // Enable by default
             guides: crate::canvas::guides::Guides::default(),
             show_guidelines: false, // Disabled by default
             mirror_mode: MirrorMode::None,
@@ -728,6 +728,24 @@ impl CanvasState {
     /// The caller paints the resulting texture at the full `image_rect` — egui
     /// stretches it to fill.
     pub fn composite_partial_downscaled(&self, rect: Rect, scale: u32) -> (ColorImage, [usize; 2]) {
+        self.composite_downscaled_region(rect, scale, true)
+    }
+
+    /// Committed pixels only; live previews are painted separately by the canvas.
+    pub(crate) fn composite_committed_downscaled(
+        &self,
+        rect: Rect,
+        scale: u32,
+    ) -> (ColorImage, [usize; 2]) {
+        self.composite_downscaled_region(rect, scale, false)
+    }
+
+    fn composite_downscaled_region(
+        &self,
+        rect: Rect,
+        scale: u32,
+        include_preview: bool,
+    ) -> (ColorImage, [usize; 2]) {
         let min_x = rect.min.x.floor() as u32;
         let min_y = rect.min.y.floor() as u32;
         let max_x = (rect.max.x.ceil() as u32).min(self.width);
@@ -742,11 +760,15 @@ impl CanvasState {
             .map(|idx| self.layer_effectively_visible(idx))
             .collect();
         let layers = &self.layers;
-        let preview_layer = &self.preview_layer;
+        let preview_layer = if include_preview {
+            self.preview_layer.as_ref()
+        } else {
+            None
+        };
         let preview_blend_mode = self.preview_blend_mode;
         let preview_is_eraser = self.preview_is_eraser;
         let preview_replaces = self.preview_replaces_layer;
-        let preview_targets_mask = self.preview_targets_mask;
+        let preview_targets_mask = include_preview && self.preview_targets_mask;
         let preview_mask_reveal = self.preview_mask_reveal;
         let active_layer_index = self.active_layer_index;
 
@@ -1653,7 +1675,8 @@ impl CanvasState {
 
     /// Return tight bounds of the current selection mask as (min_x, min_y, max_x, max_y).
     pub fn selection_dimensions(&self) -> Option<(u32, u32)> {
-        self.selection_mask_bounds().map(|(x0, y0, x1, y1)| (x1 - x0 + 1, y1 - y0 + 1))
+        self.selection_mask_bounds()
+            .map(|(x0, y0, x1, y1)| (x1 - x0 + 1, y1 - y0 + 1))
     }
 
     pub fn selection_mask_bounds(&self) -> Option<(u32, u32, u32, u32)> {

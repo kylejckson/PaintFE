@@ -400,7 +400,7 @@ impl GpuRenderer {
         data: &[u8],
         generation: u64,
     ) {
-        if !self.available {
+        if !self.available || !self.ctx.supports_size(width, height) {
             return;
         }
 
@@ -607,7 +607,7 @@ impl GpuRenderer {
         canvas_h: u32,
         layer_info: &[(usize, f32, bool, u8)],
     ) -> Option<Vec<u8>> {
-        if !self.available {
+        if !self.available || !self.ctx.supports_size(canvas_w, canvas_h) {
             return None;
         }
 
@@ -663,7 +663,7 @@ impl GpuRenderer {
         layer_info: &[(usize, f32, bool, u8)],
         dirty_rect: Option<egui::Rect>,
     ) -> Option<(Vec<u8>, u32, u32, u32, u32, bool)> {
-        if !self.available {
+        if !self.available || !self.ctx.supports_size(canvas_w, canvas_h) {
             return None;
         }
 
@@ -753,7 +753,7 @@ impl GpuRenderer {
         layer_info: &[(usize, f32, bool, u8)],
         dirty_rect: Option<egui::Rect>,
     ) -> Option<(Vec<u8>, u32, u32, u32, u32, bool)> {
-        if !self.available {
+        if !self.available || !self.ctx.supports_size(canvas_w, canvas_h) {
             return None;
         }
 
@@ -880,7 +880,7 @@ impl GpuRenderer {
         layer_info: &[(usize, f32, bool, u8)],
         use_linear_filter: bool,
     ) -> Option<(wgpu::TextureView, u64)> {
-        if !self.available {
+        if !self.available || !self.ctx.supports_size(canvas_w, canvas_h) {
             return None;
         }
 
@@ -1014,6 +1014,9 @@ impl GpuRenderer {
 
     /// Median filter (CPU ↔ GPU round-trip).  Returns None if radius > 7.
     pub fn median_rgba(&self, data: &[u8], w: u32, h: u32, radius: u32) -> Option<Vec<u8>> {
+        if !self.ctx.supports_size(w, h) {
+            return None;
+        }
         self.median_pipeline.apply(&self.ctx, data, w, h, radius)
     }
 

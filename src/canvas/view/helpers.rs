@@ -205,3 +205,38 @@ mod mega_pass_motion_tests {
         );
     }
 }
+
+/// Display-only bounds for large paste/selection/straighten previews. Source pixels
+/// and document coordinates are untouched. Color32 values are already premultiplied.
+pub(crate) fn bound_canvas_image(ctx: &egui::Context, image: impl Into<ImageData>) -> ImageData {
+    let ImageData::Color(image) = image.into();
+    let limit = ctx.input(|i| i.max_texture_side).max(1);
+    let [width, height] = image.size;
+    let mut scale = 1usize;
+    while width.div_ceil(scale) > limit
+        || height.div_ceil(scale) > limit
+        || width.div_ceil(scale).saturating_mul(height.div_ceil(scale)) > 4_194_304
+    {
+        scale = scale.saturating_mul(2);
+    }
+    if scale == 1 {
+        return ImageData::Color(image);
+    }
+    let target = [width.div_ceil(scale), height.div_ceil(scale)];
+    let pixels = (0..target[0] * target[1])
+        .map(|i| image.pixels[(i / target[0] * scale) * width + (i % target[0] * scale)])
+        .collect();
+    ImageData::Color(Arc::new(ColorImage {
+        size: target,
+        source_size: image.source_size,
+        pixels,
+    }))
+}
+pub(crate) fn load_canvas_texture(
+    ctx: &egui::Context,
+    name: impl Into<String>,
+    image: impl Into<ImageData>,
+    options: TextureOptions,
+) -> egui::TextureHandle {
+    ctx.load_texture(name, bound_canvas_image(ctx, image), options)
+}

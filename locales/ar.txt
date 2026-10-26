@@ -1590,8 +1590,8 @@ packs.cjk_size=CJK font: 15.68 MiB installed. The download is smaller.
 packs.jxl_size=The export helper is downloaded for your operating system and processor.
 packs.github=Download source: PaintFE GitHub Releases. Installation verifies the pack signature and file contents.
 
-labels.edit=Customize labels...
-labels.title=Customize interface labels
+labels.edit=تخصيص تسميات الواجهة...
+labels.title=تخصيص تسميات الواجهة
 labels.description=Personal wording for this language
 labels.search=Search labels, original text or keys
 labels.modified_only=Show customized labels only
@@ -1712,3 +1712,9 @@ ruler.compact_vertical=Compact vertical ruler
 ruler.vertical_scale=Vertical text scale
 ruler.vertical_scale_hint=Vertical labels stay at least 6 pt for readability.
 ruler.minor_ticks=Intermediate ruler ticks
+
+document.copy_suffix=نسخة
+
+ui.language_applies_immediately=يُطبّق تغيير اللغة فوراً.
+packs.ready=تم التثبيت وأصبحت الميزة جاهزة للاستخدام. لا حاجة لإعادة التشغيل.
+packs.removed=تمت إزالة الحزمة الاختيارية.

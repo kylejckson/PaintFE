@@ -116,3 +116,10 @@ creating a shape for every pixel. Re-sample caller closures each frame and
 upload only changed pixels; do not cache by closure identity. Keep checkerboard
 textures theme-specific and track resolution aware of DPI. The paint tests
 check bounded geometry and invalidation; shared interaction tests still apply.
+
+## Text direction
+
+Shared widgets use the patched egui/epaint layout pipeline for RTL UI text. Keep
+values and clipboard text in logical order. Do not add per-widget reversal or
+custom numeric text editors. See `docs/rtl-text.md` and the vendored patch notes
+when upgrading the renderer or editing selection/caret behaviour.

@@ -16,7 +16,7 @@ const SEARCH_ENTRIES: &[SearchEntry] = &[
     SearchEntry { tab: SettingsTab::Hardware, key: "graphics.rendering", english: "Rendering frame rate limit FPS detect screen monitor refresh", section: "graphics.rendering" },
     #[cfg(not(target_arch = "wasm32"))]
     SearchEntry { tab: SettingsTab::OptionalFeatures, key: "heic.system_title", english: "HEIC HEIF system codecs Windows HEVC extensions macOS ImageIO Linux libheif opening saving", section: "heic.system_title" },
-    SearchEntry { tab:SettingsTab::General,key:"labels.edit",english:"Customize labels language rename interface wording",section:"ui.language" },
+    SearchEntry { tab:SettingsTab::Interface,key:"labels.edit",english:"Customize interface labels language rename wording",section:"ui.language" },
     #[cfg(not(target_arch = "wasm32"))]
     SearchEntry {tab:SettingsTab::OptionalFeatures, key:"packs.title",english:"Optional features fonts CJK JPEG XL AVIF import export install download packs",section:"packs.title"},
     SearchEntry {tab: SettingsTab::Interface, key: "ui.double_click_slider_reset", english: "Double-click sliders to reset", section: "ui.motion_and_interaction"},
@@ -71,9 +71,9 @@ const SEARCH_ENTRIES: &[SearchEntry] = &[
     SearchEntry { tab: SettingsTab::General, key: "settings.storage.restart", english: "Storage change takes effect after restart. Source data is retained.", section: "settings.storage.heading" },
     SearchEntry { tab: SettingsTab::General, key: "settings.storage.replace", english: "Replace conflicting destination files (keep backups)", section: "settings.storage.heading" },
     SearchEntry { tab: SettingsTab::General, key: "ui.language", english: "Language", section: "ui.language" },
-    SearchEntry { tab: SettingsTab::General, key: "ui.language_2", english: "Language:", section: "ui.language" },
+    SearchEntry { tab: SettingsTab::Interface, key: "ui.language_2", english: "Language:", section: "ui.language" },
     SearchEntry { tab: SettingsTab::General, key: "ui.auto_system", english: "Auto (System)", section: "ui.language" },
-    SearchEntry { tab: SettingsTab::General, key: "ui.restart_recommended_after_changing_language", english: "Restart recommended after changing language.", section: "ui.language" },
+    SearchEntry { tab: SettingsTab::Interface, key: "ui.language_applies_immediately", english: "Language changes apply immediately.", section: "ui.language" },
     SearchEntry { tab: SettingsTab::General, key: "settings.general.history", english: "History", section: "settings.general.history" },
     SearchEntry { tab: SettingsTab::General, key: "settings.general.max_undo_steps", english: "Max Undo Steps:", section: "settings.general.history" },
     SearchEntry { tab: SettingsTab::General, key: "ui.auto_save_interval", english: "Auto-save interval:", section: "settings.general.history" },

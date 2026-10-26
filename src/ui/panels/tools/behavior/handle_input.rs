@@ -138,6 +138,7 @@ impl ToolsPanel {
         mut gpu_renderer: Option<&mut crate::gpu::GpuRenderer>,
         ui_blocks_canvas_input: bool,
     ) {
+        gpu_renderer = gpu_renderer.filter(|gpu| gpu.ctx.supports_size(canvas_state.width, canvas_state.height));
         let mut stroke_event: Option<StrokeEvent> = None;
 
         self.poll_active_layer_rgba_prewarm();

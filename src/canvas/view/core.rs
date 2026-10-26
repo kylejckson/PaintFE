@@ -94,6 +94,7 @@ impl Canvas {
     ) -> Self {
         Self {
             zoom: 1.0,
+            large_display: Default::default(),
             pan_offset: Vec2::ZERO,
             last_filter_was_linear: None,
             last_canvas_rect: None,
@@ -166,7 +167,7 @@ impl Canvas {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn gpu_renderer_for_sync_readback(&mut self) -> Option<&mut crate::gpu::GpuRenderer> {
-        Some(&mut self.gpu_renderer)
+        (!self.large_display.active).then_some(&mut self.gpu_renderer)
     }
 
     /// GPU adapter name (for status bar display).
@@ -345,9 +346,10 @@ impl Canvas {
                         };
                         let image_data = ImageData::Color(Arc::new(color_image));
                         if let Some(ref mut tex) = state.preview_texture_cache {
-                            tex.set(image_data, tex_options);
+                            tex.set(bound_canvas_image(ui.ctx(), image_data), tex_options);
                         } else {
-                            state.preview_texture_cache = Some(ui.ctx().load_texture(
+                            state.preview_texture_cache = Some(load_canvas_texture(
+                                ui.ctx(),
                                 "preview_overlay",
                                 image_data,
                                 tex_options,
@@ -375,9 +377,10 @@ impl Canvas {
 
                     let image_data = ImageData::Color(Arc::new(color_image));
                     if let Some(ref mut tex) = state.preview_texture_cache {
-                        tex.set(image_data, tex_options);
+                        tex.set(bound_canvas_image(ui.ctx(), image_data), tex_options);
                     } else {
-                        state.preview_texture_cache = Some(ui.ctx().load_texture(
+                        state.preview_texture_cache = Some(load_canvas_texture(
+                            ui.ctx(),
                             "preview_overlay",
                             image_data,
                             tex_options,
@@ -472,8 +475,12 @@ impl Canvas {
             } else {
                 state.preview_tile_textures.insert(
                     (cx, cy),
-                    ui.ctx()
-                        .load_texture(format!("brush_preview_{cx}_{cy}"), image, options),
+                    load_canvas_texture(
+                        ui.ctx(),
+                        format!("brush_preview_{cx}_{cy}"),
+                        image,
+                        options,
+                    ),
                 );
             }
         }
@@ -589,7 +596,44 @@ impl Canvas {
         //   D: bytemuck cast_slice for zero-copy Color32 conversion
         //   E: Dirty-rect only GPU readback + persistent CPU pixel buffer
         //   A: Avoid recomposite when only filter mode changes (tex options only)
-        {
+        let large_document = !self
+            .gpu_renderer
+            .ctx
+            .supports_size(state.width, state.height)
+            || state.layers.iter().any(|l| {
+                !self
+                    .gpu_renderer
+                    .ctx
+                    .supports_size(l.pixels.width(), l.pixels.height())
+            });
+        let large_document = large_document
+            || (state
+                .layers
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| state.layer_effectively_visible(*i))
+                .count() as u64
+                + 2)
+            .saturating_mul(u64::from(state.width) * u64::from(state.height) * 4)
+                > 256 * 1024 * 1024;
+        self.large_display.active = large_document;
+        if !large_document {
+            self.large_display.clear();
+        }
+        if large_document {
+            if let (Some(rs), Some(id)) = (
+                self.egui_render_state.as_ref(),
+                self.native_composite_texture.take(),
+            ) {
+                rs.renderer.write().free_texture(&id);
+            }
+            self.native_composite_key = None;
+            self.gpu_renderer.async_readback.cancel_pending();
+            self.gpu_renderer.clear_layers();
+            state.composite_cache = None;
+            // Preview uploads are already bounded. Keep unchanged live-preview
+            // caches across frames instead of rebuilding a large stroke each frame.
+        } else {
             let gpu = &mut self.gpu_renderer;
             Self::flush_committed_preview_region(ui, state, texture_options);
             let has_display_texture =
@@ -644,9 +688,10 @@ impl Canvas {
                 };
                 let image_data = ImageData::Color(Arc::new(color_image));
                 if let Some(ref mut tex) = state.composite_cache {
-                    tex.set(image_data, texture_options);
+                    tex.set(bound_canvas_image(ui.ctx(), image_data), texture_options);
                 } else {
-                    state.composite_cache = Some(ui.ctx().load_texture(
+                    state.composite_cache = Some(load_canvas_texture(
+                        ui.ctx(),
                         "canvas_composite",
                         image_data,
                         texture_options,
@@ -667,7 +712,8 @@ impl Canvas {
                     let has_live_mask = layer.mask_enabled && layer.mask.is_some();
 
                     if gpu.layer_is_current(idx, layer.gpu_generation)
-                        && gpu.layer_has_texture(idx, layer.pixels.width(), layer.pixels.height()) {
+                        && gpu.layer_has_texture(idx, layer.pixels.width(), layer.pixels.height())
+                    {
                         continue;
                     }
 
@@ -846,9 +892,13 @@ impl Canvas {
 
                                 let image_data = ImageData::Color(Arc::new(color_image));
                                 if let Some(ref mut tex) = state.composite_cache {
-                                    tex.set(image_data, texture_options);
+                                    tex.set(
+                                        bound_canvas_image(ui.ctx(), image_data),
+                                        texture_options,
+                                    );
                                 } else {
-                                    state.composite_cache = Some(ui.ctx().load_texture(
+                                    state.composite_cache = Some(load_canvas_texture(
+                                        ui.ctx(),
                                         "canvas_composite",
                                         image_data,
                                         texture_options,
@@ -904,7 +954,8 @@ impl Canvas {
                                         pixels: display_pixels,
                                     };
                                     let image_data = ImageData::Color(Arc::new(color_image));
-                                    state.composite_cache = Some(ui.ctx().load_texture(
+                                    state.composite_cache = Some(load_canvas_texture(
+                                        ui.ctx(),
                                         "canvas_composite",
                                         image_data,
                                         texture_options,
@@ -946,7 +997,7 @@ impl Canvas {
                             state.composite_cpu_buffer.extend_from_slice(src);
                             let image_data = ImageData::Color(Arc::new(color_image));
                             if let Some(ref mut tex) = state.composite_cache {
-                                tex.set(image_data, texture_options);
+                                tex.set(bound_canvas_image(ui.ctx(), image_data), texture_options);
                             }
                         } else {
                             let canvas_w = state.width as usize;
@@ -1010,9 +1061,10 @@ impl Canvas {
                             state.composite_cpu_buffer.extend_from_slice(src);
                             let image_data = ImageData::Color(Arc::new(color_image));
                             if let Some(ref mut tex) = state.composite_cache {
-                                tex.set(image_data, texture_options);
+                                tex.set(bound_canvas_image(ui.ctx(), image_data), texture_options);
                             } else {
-                                state.composite_cache = Some(ui.ctx().load_texture(
+                                state.composite_cache = Some(load_canvas_texture(
+                                    ui.ctx(),
                                     "canvas_composite",
                                     image_data,
                                     texture_options,
@@ -1069,9 +1121,10 @@ impl Canvas {
                 };
                 let image_data = ImageData::Color(Arc::new(color_image));
                 if let Some(ref mut tex) = state.composite_cache {
-                    tex.set(image_data, texture_options);
+                    tex.set(bound_canvas_image(ui.ctx(), image_data), texture_options);
                 } else {
-                    state.composite_cache = Some(ui.ctx().load_texture(
+                    state.composite_cache = Some(load_canvas_texture(
+                        ui.ctx(),
                         "canvas_composite",
                         image_data,
                         texture_options,
@@ -1099,11 +1152,27 @@ impl Canvas {
             Pos2::new(temp_rect.max.x.round(), temp_rect.max.y.round()),
         );
         self.last_image_rect = Some(image_rect);
-        let move_tool = tools.as_ref().is_some_and(|t| matches!(t.active_tool, crate::components::tools::Tool::MovePixels | crate::components::tools::Tool::MoveSelection | crate::components::tools::Tool::Pan));
-        let guide_input = crate::ui::guides::interact(ui, state, image_rect, canvas_rect, self.zoom, move_tool,
-            modal_open || pointer_over_blocking_ui || ui_blocks_canvas_input || egui::Popup::is_any_open(ui.ctx()));
+        let move_tool = tools.as_ref().is_some_and(|t| {
+            matches!(
+                t.active_tool,
+                crate::components::tools::Tool::MovePixels
+                    | crate::components::tools::Tool::MoveSelection
+                    | crate::components::tools::Tool::Pan
+            )
+        });
+        let guide_input = crate::ui::guides::interact(
+            ui,
+            state,
+            image_rect,
+            canvas_rect,
+            self.zoom,
+            move_tool,
+            modal_open
+                || pointer_over_blocking_ui
+                || ui_blocks_canvas_input
+                || egui::Popup::is_any_open(ui.ctx()),
+        );
         let ui_blocks_canvas_input = ui_blocks_canvas_input || guide_input;
-
 
         // Fill background with theme color
         painter.rect_filled(canvas_rect, 0.0, bg_color);
@@ -1202,7 +1271,19 @@ impl Canvas {
             .as_ref()
             .is_some_and(|o| o.overwrite_transparent_pixels);
         if !is_overwrite_paste && straighten_preview.is_none() {
-            self.paint_composite_texture(&painter, image_rect, canvas_rect, state, Color32::WHITE);
+            if large_document {
+                self.large_display
+                    .paint(&painter, image_rect, canvas_rect, state, texture_options);
+                state.dirty_rect = None;
+            } else {
+                self.paint_composite_texture(
+                    &painter,
+                    image_rect,
+                    canvas_rect,
+                    state,
+                    Color32::WHITE,
+                );
+            }
         }
         if let Some((generation, preview, angle_degrees)) = straighten_preview {
             self.paint_straighten_preview(
@@ -1426,14 +1507,18 @@ impl Canvas {
 
             // Handle interaction (move, resize, rotate) BEFORE drawing below, so
             // drags update the overlay in the same frame as the pointer event.
-            let paste_input_blocked = tools.as_ref().is_some_and(|t| t.active_tool == crate::components::tools::Tool::Pan)
+            let paste_input_blocked = tools
+                .as_ref()
+                .is_some_and(|t| t.active_tool == crate::components::tools::Tool::Pan)
                 || modal_open
                 || egui::Popup::is_any_open(ui.ctx())
                 || pointer_over_blocking_ui
                 || ui_blocks_canvas_input;
             paste_consumed_input =
                 overlay.handle_input(ui, image_rect, canvas_rect, self.zoom, paste_input_blocked);
-            if !paste_input_blocked && overlay.active_handle == Some(crate::ops::clipboard::HandleKind::Move) {
+            if !paste_input_blocked
+                && overlay.active_handle == Some(crate::ops::clipboard::HandleKind::Move)
+            {
                 let bounds = Rect::from_points(&overlay.corners_canvas());
                 overlay.center += state.guides.snap_delta(bounds, self.zoom);
             }
@@ -1455,7 +1540,8 @@ impl Canvas {
                 if self.paste_layers_below_cache.is_none()
                     && let Some(below_image) = state.composite_layers_below_active()
                 {
-                    let handle = ui.ctx().load_texture(
+                    let handle = load_canvas_texture(
+                        ui.ctx(),
                         "paste_layers_below",
                         below_image,
                         TextureOptions {
@@ -1485,7 +1571,8 @@ impl Canvas {
                             [state.width as usize, state.height as usize],
                             base.as_raw(),
                         );
-                        self.paste_overwrite_base_cache = Some(ui.ctx().load_texture(
+                        self.paste_overwrite_base_cache = Some(load_canvas_texture(
+                            ui.ctx(),
                             "paste_overwrite_base",
                             color_image,
                             TextureOptions {
@@ -1514,7 +1601,7 @@ impl Canvas {
                         );
                         if let Some(ref mut existing) = self.paste_overwrite_preview_cache {
                             existing.set(
-                                color_image,
+                                bound_canvas_image(ui.ctx(), color_image),
                                 TextureOptions {
                                     magnification: TextureFilter::Nearest,
                                     minification: TextureFilter::Nearest,
@@ -1522,7 +1609,8 @@ impl Canvas {
                                 },
                             );
                         } else {
-                            self.paste_overwrite_preview_cache = Some(ui.ctx().load_texture(
+                            self.paste_overwrite_preview_cache = Some(load_canvas_texture(
+                                ui.ctx(),
                                 "paste_overwrite_preview",
                                 color_image,
                                 TextureOptions {
@@ -1564,7 +1652,8 @@ impl Canvas {
                 if self.paste_layers_above_cache.is_none()
                     && let Some(above_image) = state.composite_layers_above()
                 {
-                    let handle = ui.ctx().load_texture(
+                    let handle = load_canvas_texture(
+                        ui.ctx(),
                         "paste_layers_above",
                         above_image,
                         TextureOptions {
@@ -2114,7 +2203,8 @@ impl Canvas {
                     || tools.shapes_state.placed.is_some()
                     || tools.perspective_crop_state.active);
             let allow_input = !modal_open
-                && (paste_overlay.is_none() || tools.active_tool == crate::components::tools::Tool::Pan)
+                && (paste_overlay.is_none()
+                    || tools.active_tool == crate::components::tools::Tool::Pan)
                 && !paste_consumed_input
                 && (!ui_blocking
                     || raw_pointer_button_on_canvas
@@ -2767,16 +2857,24 @@ impl Canvas {
                                 &rgba_black,
                             );
                             if let Some(ref mut tex) = self.brush_tip_cursor_tex {
-                                tex.set(ci_w, opts);
+                                tex.set(bound_canvas_image(ui.ctx(), ci_w), opts);
                             } else {
-                                self.brush_tip_cursor_tex =
-                                    Some(ui.ctx().load_texture("brush_tip_cursor_w", ci_w, opts));
+                                self.brush_tip_cursor_tex = Some(load_canvas_texture(
+                                    ui.ctx(),
+                                    "brush_tip_cursor_w",
+                                    ci_w,
+                                    opts,
+                                ));
                             }
                             if let Some(ref mut tex) = self.brush_tip_cursor_tex_inv {
-                                tex.set(ci_b, opts);
+                                tex.set(bound_canvas_image(ui.ctx(), ci_b), opts);
                             } else {
-                                self.brush_tip_cursor_tex_inv =
-                                    Some(ui.ctx().load_texture("brush_tip_cursor_b", ci_b, opts));
+                                self.brush_tip_cursor_tex_inv = Some(load_canvas_texture(
+                                    ui.ctx(),
+                                    "brush_tip_cursor_b",
+                                    ci_b,
+                                    opts,
+                                ));
                             }
                             self.brush_tip_cursor_key = key;
                         }
@@ -2981,10 +3079,22 @@ impl Canvas {
             } else {
                 // Default — build custom info based on settings
                 let mut parts = Vec::new();
-                let key = (state.selection_overlay_generation, state.selection_all, state.width, state.height);
-                let cache_id = egui::Id::new(("information_selection_bounds", state as *const CanvasState as usize));
-                let cached = ui.ctx().data(|d| d.get_temp::<((u64, bool, u32, u32), Option<(u32, u32)>)>(cache_id));
-                let dimensions = if let Some((previous, value)) = cached.filter(|(previous, _)| *previous == key) {
+                let key = (
+                    state.selection_overlay_generation,
+                    state.selection_all,
+                    state.width,
+                    state.height,
+                );
+                let cache_id = egui::Id::new((
+                    "information_selection_bounds",
+                    state as *const CanvasState as usize,
+                ));
+                let cached = ui
+                    .ctx()
+                    .data(|d| d.get_temp::<((u64, bool, u32, u32), Option<(u32, u32)>)>(cache_id));
+                let dimensions = if let Some((previous, value)) =
+                    cached.filter(|(previous, _)| *previous == key)
+                {
                     let _ = previous;
                     value
                 } else {
@@ -2993,7 +3103,12 @@ impl Canvas {
                     value
                 };
                 if let Some((width, height)) = dimensions {
-                    parts.push(format!("{}: {}x{}", crate::t!("info.selection_bounds"), width, height));
+                    parts.push(format!(
+                        "{}: {}x{}",
+                        crate::t!("info.selection_bounds"),
+                        width,
+                        height
+                    ));
                 }
                 if debug_settings.debug_show_canvas_size {
                     parts.push(format!("{}x{}", state.width, state.height));
@@ -3028,7 +3143,8 @@ impl Canvas {
             let text_galley = ui.painter().layout(
                 debug_text,
                 egui::FontId::monospace(debug_settings.info_font_size.clamp(10.0, 24.0)),
-                debug_settings.info_text_color
+                debug_settings
+                    .info_text_color
                     .map(|[r, g, b]| egui::Color32::from_rgb(r, g, b))
                     .unwrap_or_else(|| ui.visuals().strong_text_color())
                     .gamma_multiply(debug_settings.info_opacity.clamp(0.0, 1.0)),
@@ -3042,7 +3158,8 @@ impl Canvas {
                 egui::Align2::LEFT_TOP.anchor_rect(egui::Rect::from_min_size(debug_pos, text_size));
 
             // Theme-aware defaults; explicit colours and opacity apply only to this panel.
-            let background = debug_settings.info_background_color
+            let background = debug_settings
+                .info_background_color
                 .map(|[r, g, b]| egui::Color32::from_rgb(r, g, b))
                 .unwrap_or(ui.visuals().panel_fill)
                 .gamma_multiply(debug_settings.info_opacity.clamp(0.0, 1.0));

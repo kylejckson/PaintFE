@@ -1246,73 +1246,6 @@ impl SettingsWindow {
             }
             ui.add_space(8.0);
         }
-        // -- Language -------------------------------------------
-        Self::section_header(ui, &crate::t!("ui.language"));
-        ui.horizontal(|ui| {
-            ui.label(crate::t!("ui.language_2"))
-                .search_target(ui, "ui.language_2");
-            let current_code = if settings.language.is_empty() {
-                "auto".to_string()
-            } else {
-                settings.language.clone()
-            };
-            let display_text = if current_code == "auto" {
-                crate::t!("ui.auto_system")
-            } else {
-                crate::i18n::LANGUAGES
-                    .iter()
-                    .find(|(c, _)| *c == current_code.as_str())
-                    .map(|(_, name)| name.to_string())
-                    .unwrap_or_else(|| current_code.clone())
-            };
-            egui::ComboBox::from_id_salt("language_select")
-                .selected_text(&display_text)
-                .show_ui(ui, |ui| {
-                    if ui
-                        .selectable_label(current_code == "auto", crate::t!("ui.auto_system"))
-                        .clicked()
-                    {
-                        settings.language = String::new();
-                        let detected = crate::i18n::detect_system_language();
-                        #[cfg(not(target_arch = "wasm32"))]
-                        if !super::optional_features::select_language(ui.ctx(), &detected, true) {
-                            return;
-                        }
-                        crate::i18n::set_language(&detected);
-                    }
-                    for &(code, name) in crate::i18n::LANGUAGES {
-                        if ui
-                            .selectable_label(
-                                current_code.as_str() == code,
-                                format!("{} ({})", name, code),
-                            )
-                            .clicked()
-                        {
-                            #[cfg(not(target_arch = "wasm32"))]
-                            if !super::optional_features::select_language(ui.ctx(), code, false) {
-                                continue;
-                            }
-                            settings.language = code.to_string();
-                            crate::i18n::set_language(code);
-                        }
-                    }
-                });
-        });
-        ui.label(
-            egui::RichText::new(crate::t!("ui.restart_recommended_after_changing_language"))
-                .small()
-                .weak(),
-        )
-        .search_target(ui, "ui.restart_recommended_after_changing_language");
-
-        if ui
-            .button(crate::t!("labels.edit"))
-            .search_target(ui, "labels.edit")
-            .clicked()
-        {
-            super::label_editor::open(ui.ctx());
-        }
-
         // -- History & Auto-save -------------------------------------------
         Self::section_header(ui, &t!("settings.general.history"));
         egui::Grid::new("general_history_grid")
@@ -1769,6 +1702,80 @@ impl SettingsWindow {
             });
     }
 
+    fn show_language_section(&mut self, ui: &mut egui::Ui, settings: &mut AppSettings) {
+        let before = settings.language.clone();
+        // -- Language -------------------------------------------
+        Self::section_header(ui, &crate::t!("ui.language"));
+        ui.horizontal(|ui| {
+            ui.label(crate::t!("ui.language_2"))
+                .search_target(ui, "ui.language_2");
+            let current_code = if settings.language.is_empty() {
+                "auto".to_string()
+            } else {
+                settings.language.clone()
+            };
+            let display_text = if current_code == "auto" {
+                crate::t!("ui.auto_system")
+            } else {
+                crate::i18n::LANGUAGES
+                    .iter()
+                    .find(|(c, _)| *c == current_code.as_str())
+                    .map(|(_, name)| name.to_string())
+                    .unwrap_or_else(|| current_code.clone())
+            };
+            egui::ComboBox::from_id_salt("language_select")
+                .selected_text(&display_text)
+                .show_ui(ui, |ui| {
+                    if ui
+                        .selectable_label(current_code == "auto", crate::t!("ui.auto_system"))
+                        .clicked()
+                    {
+                        settings.language = String::new();
+                        let detected = crate::i18n::detect_system_language();
+                        #[cfg(not(target_arch = "wasm32"))]
+                        if !super::optional_features::select_language(ui.ctx(), &detected, true) {
+                            return;
+                        }
+                        crate::i18n::set_language(&detected);
+                    }
+                    for &(code, name) in crate::i18n::LANGUAGES {
+                        if ui
+                            .selectable_label(
+                                current_code.as_str() == code,
+                                format!("{} ({})", name, code),
+                            )
+                            .clicked()
+                        {
+                            #[cfg(not(target_arch = "wasm32"))]
+                            if !super::optional_features::select_language(ui.ctx(), code, false) {
+                                continue;
+                            }
+                            settings.language = code.to_string();
+                            crate::i18n::set_language(code);
+                        }
+                    }
+                });
+        });
+        ui.label(
+            egui::RichText::new(crate::t!("ui.language_applies_immediately"))
+                .small()
+                .weak(),
+        )
+        .search_target(ui, "ui.language_applies_immediately");
+
+        if ui
+            .button(crate::t!("labels.edit"))
+            .search_target(ui, "labels.edit")
+            .clicked()
+        {
+            super::label_editor::open(ui.ctx());
+        }
+
+        if settings.language != before {
+            settings.save();
+        }
+    }
+
     // -- Interface Tab ----------------------------------------------
     fn show_interface_tab(
         &mut self,
@@ -1825,6 +1832,10 @@ impl SettingsWindow {
         (
             self.section_generation,
             crate::i18n::label_revision(),
+            ctx.data(|d| {
+                d.get_temp::<u64>(egui::Id::new("font_layout_revision"))
+                    .unwrap_or(0)
+            }),
             std::sync::Arc::as_ptr(&ctx.global_style()) as usize,
             crate::i18n::current_language(),
             ui.ctx().pixels_per_point().to_bits(),
@@ -1840,6 +1851,9 @@ impl SettingsWindow {
                     || d.get_temp::<u32>(egui::Id::new("preferences_search_jump_frames"))
                         .is_some_and(|frames| frames > 0)
             });
+        super::settings_sections::show(ui, "ui.language", revision, force, |ui| {
+            self.show_language_section(ui, settings);
+        });
         super::settings_sections::show(ui, "toolbar", revision, force, |ui| {
             if ui
                 .checkbox(
@@ -5454,6 +5468,27 @@ mod shared_colour_row_tests {
             for (actual, expected) in [(r, 200_u8), (g, 100), (b, 50)] {
                 assert!(actual.abs_diff(expected) <= 3);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod issue_199_tests {
+    use super::*;
+    #[test]
+    fn language_and_label_search_targets_are_in_interface() {
+        crate::i18n::init();
+        for key in [
+            "labels.edit",
+            "ui.language_2",
+            "ui.language_applies_immediately",
+        ] {
+            let entry = SEARCH_ENTRIES
+                .iter()
+                .find(|entry| entry.key == key)
+                .unwrap();
+            assert_eq!(entry.tab, SettingsTab::Interface);
+            assert_eq!(entry.section, "ui.language");
         }
     }
 }

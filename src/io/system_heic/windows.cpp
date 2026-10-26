@@ -123,7 +123,10 @@ void limits() {
     if(!job) throw std::runtime_error("Could not create system codec memory limit");
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION info{};
     info.BasicLimitInformation.LimitFlags=JOB_OBJECT_LIMIT_PROCESS_MEMORY;
-    info.ProcessMemoryLimit=size_t(2)*1024*1024*1024;
+    // WIC needs over 2 GiB of private commit to decode the 8736x5856 issue-207
+    // sample. This is an upper bound, not a reservation; keep the worker capped
+    // at 3 GiB, as on Linux, alongside the input/pixel limits and parent timeout.
+    info.ProcessMemoryLimit=size_t(3)*1024*1024*1024;
     if(!SetInformationJobObject(job,JobObjectExtendedLimitInformation,&info,sizeof(info)) || !AssignProcessToJobObject(job,GetCurrentProcess())) {
         CloseHandle(job); throw std::runtime_error("Could not apply system codec memory limit");
     }

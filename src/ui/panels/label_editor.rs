@@ -101,7 +101,6 @@ fn results(ui: &mut egui::Ui, editor: &mut Editor, filtered: &[usize], height: f
                             foreground,
                         );
                     }
-                    response.clone().on_hover_text(&entry.key);
                     #[cfg(test)]
                     ui.ctx().data_mut(|d| {
                         d.insert_temp(Id::new(("label_test_row", &entry.key)), response.rect)
@@ -354,14 +353,18 @@ pub fn show(ctx: &Context, assets: &crate::assets::Assets) -> bool {
                             }
                         });
                     });
-                    ui.collapsing(crate::t!("labels.reset_options"), |ui| {
-                        if ui.button(crate::t!("labels.reset_all")).clicked() {
-                            for entry in &mut editor.entries {
-                                entry.custom = None;
-                            }
-                            editor.dirty = true;
+                    if ui
+                        .add_enabled(
+                            editor.entries.iter().any(|e| e.custom.is_some()),
+                            egui::Button::new(crate::t!("labels.reset_all")),
+                        )
+                        .clicked()
+                    {
+                        for entry in &mut editor.entries {
+                            entry.custom = None;
                         }
-                    });
+                        editor.dirty = true;
+                    }
                 });
             ui.separator();
             if let Some(message) = &editor.message {

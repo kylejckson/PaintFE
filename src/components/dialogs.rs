@@ -1099,6 +1099,11 @@ impl SaveFileDialog {
     pub fn format(&self) -> SaveFormat {
         self.format
     }
+
+    #[cfg(test)]
+    pub(crate) fn filename(&self) -> &str {
+        &self.filename
+    }
     /// Reset dialog state for a fresh "Save As"
     pub fn reset(&mut self) {
         self.encoded_preview = None;

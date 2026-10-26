@@ -1529,9 +1529,17 @@ impl PasteOverlay {
         };
         let image_data = egui::ImageData::Color(std::sync::Arc::new(color_image));
         if let Some(ref mut tex) = self.gpu_texture {
-            tex.set(image_data, tex_options);
+            tex.set(
+                crate::canvas::bound_canvas_image(ctx, image_data),
+                tex_options,
+            );
         } else {
-            let tex = ctx.load_texture("paste_overlay_gpu", image_data, tex_options);
+            let tex = crate::canvas::load_canvas_texture(
+                ctx,
+                "paste_overlay_gpu",
+                image_data,
+                tex_options,
+            );
             self.gpu_texture = Some(tex);
         }
     }

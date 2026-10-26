@@ -34,7 +34,7 @@ impl GpuContext {
     // `Canvas::new`) — it's already proven to work, and initialization is
     // fully synchronous from here since eframe did the async setup already.
     pub fn from_egui_render_state(rs: &eframe::egui_wgpu::RenderState) -> Self {
-        let limits = rs.adapter.limits();
+        let limits = rs.device.limits();
         Self {
             device: Arc::new(rs.device.clone()),
             queue: Arc::new(rs.queue.clone()),
@@ -133,9 +133,14 @@ impl GpuContext {
         })
     }
 
-    /// Check if a texture of the given dimensions can be created.
+    /// Whether a full-canvas allocation fits the device and per-texture budget.
+    /// Larger documents retain their source pixels and use bounded display tiles.
     pub fn supports_size(&self, width: u32, height: u32) -> bool {
-        width <= self.max_texture_dim && height <= self.max_texture_dim
+        width > 0
+            && height > 0
+            && width <= self.max_texture_dim
+            && height <= self.max_texture_dim
+            && u64::from(width) * u64::from(height) * 4 <= 64 * 1024 * 1024
     }
 
     /// Submit a single encoder's commands.

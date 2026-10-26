@@ -10,6 +10,7 @@ pub enum PasteAction {
 
 pub struct Canvas {
     pub zoom: f32,
+    large_display: large_image::LargeDisplay,
     pan_offset: Vec2,
     last_filter_was_linear: Option<bool>, // Track last filter state to detect changes
     pub last_canvas_rect: Option<Rect>,
@@ -80,6 +81,7 @@ pub struct Canvas {
     checkerboard_cached_size: (usize, usize),
 }
 
+mod large_image { include!("view/large_image.rs"); }
 include!("view/core.rs");
 include!("view/overlay.rs");
 include!("view/helpers.rs");

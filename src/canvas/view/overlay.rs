@@ -200,7 +200,8 @@ impl Canvas {
                 [preview.width() as usize, preview.height() as usize],
                 preview.as_raw(),
             );
-            self.straighten_preview_texture = Some(ui.ctx().load_texture(
+            self.straighten_preview_texture = Some(load_canvas_texture(
+                ui.ctx(),
                 "straighten_preview",
                 image,
                 egui::TextureOptions::LINEAR,

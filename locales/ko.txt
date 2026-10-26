@@ -1711,3 +1711,9 @@ ruler.compact_vertical=Compact vertical ruler
 ruler.vertical_scale=Vertical text scale
 ruler.vertical_scale_hint=Vertical labels stay at least 6 pt for readability.
 ruler.minor_ticks=Intermediate ruler ticks
+
+document.copy_suffix=copy
+
+ui.language_applies_immediately=Language changes apply immediately.
+packs.ready=Installed and ready to use. No restart is required.
+packs.removed=Optional pack removed.

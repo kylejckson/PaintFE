@@ -6,6 +6,26 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.18] - 2026-10-26
+
+- Open and edit large photos at their original resolution.
+- Improve Arabic text direction across the interface.
+- Preserve duplicate document names and make language settings easier to find.
+
+### Fixes
+
+- Respect the graphics device's limits and use smaller display tiles for large canvases, keeping the original pixels and dimensions intact. Related to issue 207.
+- Give the bounded Windows HEIF decoder enough temporary memory to open the reported 51 MP photo. Related to issue 207.
+- Show an error dialog with the log location when an unexpected interface error stops the app.
+- Correct Arabic interface word order, including cursor movement, selection and copying with mixed filenames and numbers. Related to discussion 194.
+- Name duplicated documents `photo (copy).jpg` and keep that name when changing the export format. Duplicates remain separate from the original save target. Related to issue 198.
+- Keep JPEG XL in the Open filters regardless of the export pack, and apply installed fonts immediately with refreshed settings layouts. Related to issue 195.
+
+### Interface
+
+- Move language and label customisation into Preferences > Interface, with a clearer Customize interface labels button. Related to issue 199.
+- Keep Reset all visible in the label editor and remove redundant label-key tooltips. Changes still take effect after Apply. Related to issue 199.
+
 ## [1.4.17] - 2026-10-24
 
 - Use installed operating-system codecs for HEIC and HEIF images.

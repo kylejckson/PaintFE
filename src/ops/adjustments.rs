@@ -1062,6 +1062,11 @@ pub fn brightness_contrast_gpu(
     contrast: f32,
     gpu: &crate::gpu::GpuRenderer,
 ) {
+    if !gpu.ctx.supports_size(state.width, state.height) {
+        brightness_contrast(state, layer_idx, brightness, contrast);
+        return;
+    }
+
     if layer_idx >= state.layers.len() {
         return;
     }
@@ -1101,6 +1106,11 @@ pub fn brightness_contrast_from_flat_gpu(
     original_flat: &RgbaImage,
     gpu: &crate::gpu::GpuRenderer,
 ) {
+    if !gpu.ctx.supports_size(state.width, state.height) {
+        brightness_contrast_from_flat(state, layer_idx, brightness, contrast, original_flat);
+        return;
+    }
+
     if layer_idx >= state.layers.len() {
         return;
     }
@@ -1140,6 +1150,11 @@ pub fn hue_saturation_lightness_gpu(
     lightness: f32,
     gpu: &crate::gpu::GpuRenderer,
 ) {
+    if !gpu.ctx.supports_size(state.width, state.height) {
+        hue_saturation_lightness(state, layer_idx, hue_shift, saturation, lightness);
+        return;
+    }
+
     if layer_idx >= state.layers.len() {
         return;
     }
@@ -1187,6 +1202,18 @@ pub fn hue_saturation_lightness_from_flat_gpu(
     original_flat: &RgbaImage,
     gpu: &crate::gpu::GpuRenderer,
 ) {
+    if !gpu.ctx.supports_size(state.width, state.height) {
+        hue_saturation_lightness_from_flat(
+            state,
+            layer_idx,
+            hue_shift,
+            saturation,
+            lightness,
+            original_flat,
+        );
+        return;
+    }
+
     if layer_idx >= state.layers.len() {
         return;
     }
@@ -1237,6 +1264,11 @@ pub fn invert_colors_gpu(
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn invert_colors_gpu(state: &mut CanvasState, layer_idx: usize, gpu: &crate::gpu::GpuRenderer) {
+    if !gpu.ctx.supports_size(state.width, state.height) {
+        invert_colors(state, layer_idx);
+        return;
+    }
+
     if layer_idx >= state.layers.len() {
         return;
     }

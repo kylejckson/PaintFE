@@ -1,6 +1,6 @@
 [package]
 name = "PaintFE"
-version = "1.4.17"
+version = "1.4.18"
 edition = "2024"
 
 [lib]
@@ -107,3 +107,8 @@ opt-level = 2
 opt-level = 2
 [profile.dev.package.ttf-parser]
 opt-level = 2
+
+# Shared bidi layout and selection fixes; see vendor/epaint/PAINTFE-PATCHES.md.
+[patch.crates-io]
+epaint = { path = "vendor/epaint" }
+egui = { path = "vendor/egui" }

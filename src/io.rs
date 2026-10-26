@@ -94,6 +94,19 @@ pub const RAW_EXTENSIONS: &[&str] = &[
     "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos", "kdc", "dcr", "erf",
 ];
 
+/// Shared picker catalogue. Opening JPEG XL is built in and never depends on packs.
+pub const IMAGE_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "jxl", "avif", "heic", "heif", "hif", "webp", "bmp", "tga", "gif", "ico",
+    "tiff", "tif",
+];
+pub fn document_extensions() -> Vec<&'static str> {
+    ["pfe", "pdn"]
+        .into_iter()
+        .chain(IMAGE_EXTENSIONS.iter().copied())
+        .chain(RAW_EXTENSIONS.iter().copied())
+        .collect()
+}
+
 /// Check if a file extension is a known RAW format.
 pub fn is_raw_extension(ext: &str) -> bool {
     RAW_EXTENSIONS.contains(&ext.to_lowercase().as_str())
@@ -2081,32 +2094,11 @@ impl FileHandler {
             crate::services::file_dialogs::Purpose::Documents,
             self.current_path.as_deref(),
         )
-        .add_filter(
-            crate::t!("ui.all_supported"),
-            &[
-                "pfe", "pdn", "png", "jpg", "jpeg", "jxl", "avif", "heic", "heif", "hif", "webp",
-                "bmp", "tga", "gif", "ico", "tiff", "tif", "cr2", "cr3", "nef", "nrw", "arw",
-                "srf", "sr2", "dng", "orf", "rw2", "pef", "raf", "raw", "rwl", "srw", "x3f", "3fr",
-                "fff", "iiq", "mrw", "mef", "mos", "kdc", "dcr", "erf",
-            ],
-        )
+        .add_filter(crate::t!("ui.all_supported"), &document_extensions())
         .add_filter("PaintFE Project", &["pfe"])
         .add_filter(crate::t!("ui.paint_net_project_read_only"), &["pdn"])
-        .add_filter(
-            crate::t!("ui.images"),
-            &[
-                "png", "jpg", "jpeg", "jxl", "avif", "heic", "heif", "hif", "webp", "bmp", "tga",
-                "gif", "ico", "tiff", "tif",
-            ],
-        )
-        .add_filter(
-            crate::t!("ui.raw_files"),
-            &[
-                "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef", "raf",
-                "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos", "kdc", "dcr",
-                "erf",
-            ],
-        )
+        .add_filter(crate::t!("ui.images"), IMAGE_EXTENSIONS)
+        .add_filter(crate::t!("ui.raw_files"), RAW_EXTENSIONS)
         .add_filter(crate::t!("ui.all_files"), &["*"])
         .pick_files()
         .unwrap_or_default();
@@ -2133,31 +2125,10 @@ impl FileHandler {
             crate::services::file_dialogs::Purpose::Documents,
             self.current_path.as_deref(),
         )
-        .add_filter(
-            crate::t!("ui.all_supported"),
-            &[
-                "pfe", "png", "jpg", "jpeg", "jxl", "avif", "heic", "heif", "hif", "webp", "bmp",
-                "tga", "gif", "ico", "tiff", "tif", "cr2", "cr3", "nef", "nrw", "arw", "srf",
-                "sr2", "dng", "orf", "rw2", "pef", "raf", "raw", "rwl", "srw", "x3f", "3fr", "fff",
-                "iiq", "mrw", "mef", "mos", "kdc", "dcr", "erf",
-            ],
-        )
+        .add_filter(crate::t!("ui.all_supported"), &document_extensions())
         .add_filter("PaintFE Project", &["pfe"])
-        .add_filter(
-            crate::t!("ui.images"),
-            &[
-                "png", "jpg", "jpeg", "jxl", "avif", "heic", "heif", "hif", "webp", "bmp", "tga",
-                "gif", "ico", "tiff", "tif",
-            ],
-        )
-        .add_filter(
-            crate::t!("ui.raw_files"),
-            &[
-                "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef", "raf",
-                "raw", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mrw", "mef", "mos", "kdc", "dcr",
-                "erf",
-            ],
-        )
+        .add_filter(crate::t!("ui.images"), IMAGE_EXTENSIONS)
+        .add_filter(crate::t!("ui.raw_files"), RAW_EXTENSIONS)
         .add_filter(crate::t!("ui.all_files"), &["*"])
         .pick_file()?;
 

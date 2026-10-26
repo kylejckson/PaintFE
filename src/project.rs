@@ -14,6 +14,8 @@ pub struct Project {
     pub file_handler: FileHandler,
     /// `None` for unsaved/untitled files.
     pub path: Option<PathBuf>,
+    /// Filename suggestion only; never an overwrite target for an unsaved copy.
+    pub suggested_save_name: Option<PathBuf>,
     pub is_dirty: bool,
     /// Monotonic edit identity for asynchronous save completion.
     pub(crate) edit_revision: u64,
@@ -42,6 +44,7 @@ impl Project {
             history: HistoryManager::new(50), // Default 50 history steps
             file_handler: FileHandler::new(),
             path: None,
+            suggested_save_name: None,
             is_dirty: false,
             edit_revision: 0,
             name,
@@ -64,6 +67,7 @@ impl Project {
             history: HistoryManager::new(50),
             file_handler,
             path: Some(path),
+            suggested_save_name: None,
             is_dirty: false,
             edit_revision: 0,
             name,

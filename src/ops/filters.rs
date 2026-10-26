@@ -47,6 +47,11 @@ pub fn gaussian_blur_layer_gpu(
     sigma: f32,
     gpu: &crate::gpu::GpuRenderer,
 ) {
+    if !gpu.ctx.supports_size(state.width, state.height) {
+        gaussian_blur_layer(state, layer_idx, sigma);
+        return;
+    }
+
     if layer_idx >= state.layers.len() {
         return;
     }
@@ -107,6 +112,11 @@ pub fn gaussian_blur_layer_from_flat_gpu(
     original_flat: &RgbaImage,
     gpu: &crate::gpu::GpuRenderer,
 ) {
+    if !gpu.ctx.supports_size(state.width, state.height) {
+        gaussian_blur_layer_from_flat(state, layer_idx, sigma, original_flat);
+        return;
+    }
+
     if layer_idx >= state.layers.len() {
         return;
     }

@@ -258,6 +258,7 @@ fn main_inner() -> Result<(), eframe::Error> {
 
     // Initialize session log (overwrites previous session log)
     logger::init();
+    logger::enable_gui_panic_dialog();
 
     // Initialize the internationalization system
     let profile = paintfe::ui::perf::StartupSpan::new("i18n");
@@ -339,6 +340,26 @@ fn main_inner() -> Result<(), eframe::Error> {
                         Err("Profiling: simulated preferred backend failure".into())
                     }));
                 }
+            }
+            if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut wgpu_options.wgpu_setup {
+                let original = setup.device_descriptor.clone();
+                setup.device_descriptor = std::sync::Arc::new(move |adapter| {
+                    let mut descriptor = original(adapter);
+                    descriptor.required_limits.max_texture_dimension_2d =
+                        adapter.limits().max_texture_dimension_2d;
+                    #[cfg(debug_assertions)]
+                    if let Some(limit) = std::env::var("PAINTFE_REVIEW_TEXTURE_LIMIT")
+                        .ok()
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .filter(|v| *v >= 1024)
+                    {
+                        descriptor.required_limits.max_texture_dimension_2d = descriptor
+                            .required_limits
+                            .max_texture_dimension_2d
+                            .min(limit);
+                    }
+                    descriptor
+                });
             }
             if startup_settings.low_latency_present {
                 // AutoNoVsync picks the first supported mode out of Immediate →

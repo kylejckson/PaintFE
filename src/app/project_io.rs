@@ -6,7 +6,23 @@ impl PaintFEApp {
         let snapshot = crate::components::history::CanvasSnapshot::capture(&source.canvas_state);
         let mut copy = Project::new_untitled(0, snapshot.width, snapshot.height);
         snapshot.restore_into(&mut copy.canvas_state);
-        copy.name = format!("{} (copy)", source.name);
+        let source_name = source.path.as_ref().or(source.suggested_save_name.as_ref())
+            .and_then(|path| path.file_name()).map(std::path::Path::new)
+            .unwrap_or_else(|| std::path::Path::new(&source.name));
+        let stem = source_name.file_stem().unwrap_or(source_name.as_os_str()).to_string_lossy();
+        let extension = source_name.extension().map(|ext| ext.to_string_lossy());
+        let mut index = 1;
+        loop {
+            let suffix = if index == 1 { crate::t!("document.copy_suffix") }
+                else { format!("{} {}", crate::t!("document.copy_suffix"), index) };
+            let name = format!("{stem} ({suffix}){}", extension.as_ref().map(|e| format!(".{e}")).unwrap_or_default());
+            if !self.projects.iter().any(|p| p.name == name) {
+                copy.name = name;
+                break;
+            }
+            index += 1;
+        }
+        copy.suggested_save_name = Some(PathBuf::from(&copy.name));
         copy.was_animated = source.was_animated;
         copy.animation_fps = source.animation_fps;
         copy.view_zoom = source.view_zoom;
@@ -835,10 +851,10 @@ impl PaintFEApp {
         self.save_file_dialog.reset();
         // A document's directory wins over the last successful export. Model
         // pickers and other native dialogs never influence this choice.
-        self.save_file_dialog.set_from_path(&PathBuf::from(format!(
-            "Untitled.{}",
-            self.settings.last_export_format
-        )));
+        let suggested_name = project.suggested_save_name.as_ref()
+            .map(|name| name.with_extension(&self.settings.last_export_format))
+            .unwrap_or_else(|| PathBuf::from(format!("Untitled.{}", self.settings.last_export_format)));
+        self.save_file_dialog.set_from_path(&suggested_name);
         self.save_file_dialog.target_directory = if self.settings.last_export_directory.is_empty() {
             std::env::var_os("USERPROFILE")
                 .or_else(|| std::env::var_os("HOME"))
@@ -862,6 +878,7 @@ impl PaintFEApp {
                 .path
                 .as_ref()
                 .map(|p| p.with_extension("pfe"))
+                .or_else(|| project.suggested_save_name.as_ref().map(|name| name.with_extension("pfe")))
                 .unwrap_or_else(|| PathBuf::from("Untitled.pfe"));
             self.save_file_dialog.set_from_path(&name);
         }

@@ -1,6 +1,24 @@
 //! Independent libheif-generated reference pixels; test fixtures are BSD-3-Clause.
 use paintfe::io;
 
+/// Keep the public sample outside the repository. This uses a real native codec
+/// and intentionally runs separately from small CI tests because it is 51 MP.
+#[test]
+#[ignore = "requires PAINTFE_TEST_ISSUE207_HEIF pointing to the 8736x5856 sample1.heif"]
+fn issue_207_large_heif_decodes_in_the_bounded_worker() {
+    let path =
+        std::env::var_os("PAINTFE_TEST_ISSUE207_HEIF").expect("set PAINTFE_TEST_ISSUE207_HEIF");
+    let decoded =
+        io::decode_image_path(std::path::Path::new(&path)).expect("large HEIF worker decode");
+    assert_eq!((decoded.width(), decoded.height()), (8736, 5856));
+    let pixels = decoded.as_rgba8().expect("8-bit source must remain 8-bit");
+    let samples = [(0, 0), (4368, 2928), (8735, 5855)];
+    for (x, y) in samples {
+        assert_eq!(pixels.get_pixel(x, y)[3], 255);
+    }
+    assert_ne!(pixels.get_pixel(0, 0), pixels.get_pixel(4368, 2928));
+}
+
 const CASES: &[(&str, &[u8], &[u8], u8)] = &[
     (
         "gray grid alpha",

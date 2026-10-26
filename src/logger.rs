@@ -22,6 +22,16 @@ use std::sync::{Mutex, OnceLock};
 
 static LOG_FILE: OnceLock<Mutex<File>> = OnceLock::new();
 static LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
+#[cfg(not(target_arch = "wasm32"))]
+static GUI_THREAD: OnceLock<std::thread::ThreadId> = OnceLock::new();
+#[cfg(not(target_arch = "wasm32"))]
+static REPORTING_PANIC: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Enable fatal-error reporting only in the GUI process, never codec workers or CLI jobs.
+pub fn enable_gui_panic_dialog() {
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = GUI_THREAD.set(std::thread::current().id());
+}
 
 /// Returns the path to the current session log file.
 pub fn log_path() -> Option<&'static PathBuf> {
@@ -119,6 +129,22 @@ pub fn init() {
             && let Ok(mut file) = mutex.lock()
         {
             let _ = file.flush();
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if GUI_THREAD.get() == Some(&std::thread::current().id())
+            && !REPORTING_PANIC.swap(true, std::sync::atomic::Ordering::Relaxed)
+        {
+            let location = LOG_PATH
+                .get()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            rfd::MessageDialog::new()
+                .set_level(rfd::MessageLevel::Error)
+                .set_title("PaintFE encountered an unexpected error")
+                .set_description(format!(
+                    "PaintFE could not continue.\n\nDetails were written to:\n{location}\n\n{msg}"
+                ))
+                .show();
         }
         prev(info);
     }));

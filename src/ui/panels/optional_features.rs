@@ -89,6 +89,11 @@ fn apply_font(ctx: &Context, font: Option<Vec<u8>>) {
     }
     ctx.data_mut(|d| d.insert_temp(Id::new("cjk_available_languages"), languages));
     ctx.set_fonts(definitions);
+    ctx.data_mut(|d| {
+        let id = Id::new("font_layout_revision");
+        let revision = d.get_temp::<u64>(id).unwrap_or(0);
+        d.insert_temp(id, revision.wrapping_add(1));
+    });
 }
 /// Base definitions include a small language-picker subset, never the full CJK font.
 pub fn initialize_fonts(
@@ -308,7 +313,11 @@ pub fn frame(ctx: &Context, settings: &mut crate::config::settings::AppSettings)
                 } else {
                     "packs.not_installed"
                 });
-                state.message = Some(crate::t!("packs.complete"));
+                state.message = Some(crate::t!(if state.installed[index(pack)] {
+                    "packs.ready"
+                } else {
+                    "packs.removed"
+                }));
                 if pack == Pack::Cjk {
                     apply_font(ctx, font);
                     if state.installed[0] {
@@ -662,5 +671,37 @@ mod language_prompt_tests {
         assert!(state(&ctx).job.is_none());
         assert_eq!(crate::i18n::current_language(), "ja");
         crate::i18n::set_language(&previous);
+    }
+}
+
+#[cfg(test)]
+mod issue_195_activation_tests {
+    use super::*;
+    #[test]
+    fn font_changes_invalidate_layout_measurements_without_restart() {
+        let ctx = Context::default();
+        initialize_fonts(&ctx, FontDefinitions::default(), Vec::new(), false);
+        let before = ctx
+            .data(|d| d.get_temp::<u64>(Id::new("font_layout_revision")))
+            .unwrap();
+        apply_font(
+            &ctx,
+            Some(include_bytes!("../../../assets/fonts/NotoSansArabic.ttf").to_vec()),
+        );
+        assert!(
+            ctx.data(|d| d.get_temp::<u64>(Id::new("font_layout_revision")))
+                .unwrap()
+                > before
+        );
+    }
+    #[test]
+    fn opening_catalogue_always_includes_jxl_with_no_pack_dependency() {
+        assert!(crate::io::IMAGE_EXTENSIONS.contains(&"jxl"));
+        assert!(crate::io::document_extensions().contains(&"jxl"));
+        let mut unique = crate::io::document_extensions();
+        let length = unique.len();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), length);
     }
 }

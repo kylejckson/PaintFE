@@ -1008,3 +1008,52 @@ fn issue_206_escape_cancels_guide_drag_without_deselecting() {
     assert!(app.projects[0].canvas_state.selection_all);
     assert_eq!(app.projects[0].history.undo_count(), 0);
 }
+#[test]
+fn issue_198_duplicate_name_is_a_hint_and_never_the_original_save_target() {
+    let mut app = app();
+    crate::i18n::set_language("en");
+    app.projects[0].path = Some(PathBuf::from("source-folder/my.photo.jpeg"));
+    app.projects[0].name = "my.photo.jpeg".into();
+    let source = app.projects[0].id;
+    app.settings.last_export_format = "webp".into();
+    app.duplicate_project(source);
+    let index = app.active_project_index;
+    assert_eq!(app.projects[index].name, "my.photo (copy).jpeg");
+    assert!(app.projects[index].path.is_none());
+    assert!(app.projects[index].file_handler.current_path.is_none());
+    assert!(app.projects[index].is_dirty);
+    app.open_save_as_for_project(index);
+    assert_eq!(app.save_file_dialog.filename(), "my.photo (copy)");
+    assert_eq!(app.save_file_dialog.format(), SaveFormat::Webp);
+    assert_eq!(
+        app.projects[0].path.as_deref(),
+        Some(std::path::Path::new("source-folder/my.photo.jpeg"))
+    );
+    app.duplicate_project(source);
+    assert_eq!(
+        app.projects[app.active_project_index].name,
+        "my.photo (copy 2).jpeg"
+    );
+}
+#[test]
+fn issue_198_layered_and_unicode_copies_keep_their_name_when_pfe_is_recommended() {
+    let mut app = app();
+    crate::i18n::set_language("en");
+    app.projects[0].path = Some(PathBuf::from("source/рисунок.jpeg"));
+    app.projects[0].name = "рисунок.jpeg".into();
+    app.projects[0]
+        .canvas_state
+        .layers
+        .push(crate::canvas::Layer::new(
+            "Other".into(),
+            16,
+            16,
+            image::Rgba([0, 0, 0, 0]),
+        ));
+    let id = app.projects[0].id;
+    app.duplicate_project(id);
+    app.open_save_as_for_project(app.active_project_index);
+    assert_eq!(app.save_file_dialog.filename(), "рисунок (copy)");
+    assert_eq!(app.save_file_dialog.format(), SaveFormat::Pfe);
+    assert!(app.projects[app.active_project_index].path.is_none());
+}
