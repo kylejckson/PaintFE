@@ -83,11 +83,18 @@ impl Pack {
         }
         files
     }
+    fn pack_platform(self) -> String {
+        if self == Self::Cjk {
+            "universal".into()
+        } else {
+            platform()
+        }
+    }
     pub fn asset(self) -> String {
         format!(
             "PaintFE-pack-{}-{}-v{}.pfepack",
             self.id(),
-            platform(),
+            self.pack_platform(),
             env!("CARGO_PKG_VERSION")
         )
     }
@@ -162,7 +169,8 @@ fn verify_manifest(bytes: &[u8], pack: Pack, key: &[u8; 32]) -> Result<Manifest,
     if manifest.schema != 1
         || manifest.protocol != 1
         || manifest.pack != pack
-        || manifest.platform != platform()
+        || (manifest.platform != platform()
+            && !(pack == Pack::Cjk && manifest.platform == "universal"))
     {
         return Err("This pack is for another feature, protocol or platform".into());
     }

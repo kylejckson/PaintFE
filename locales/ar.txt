@@ -1662,7 +1662,7 @@ save.changed=The document changed while saving. It has been kept open so you can
 # System HEIC support (English fallback pending native review)
 heic.system_title=HEIC / HEIF (system codecs)
 heic.system_description=Uses codecs installed on your operating system. No HEVC codec is bundled or downloaded by PaintFE. Older HEIC packs are no longer used.
-heic.setup_windows=Uses Windows HEIF Image Extensions and HEVC Video Extensions. Install missing extensions through Microsoft Store, then restart PaintFE. Supported save options depend on the installed codec.
+heic.setup_windows=استخدم امتدادات Windows HEIF وHEVC المثبتة، أو اختر مكتبة libheif DLL الخاصة بك في التفضيلات > الميزات الاختيارية. تعتمد خيارات الحفظ المتاحة على برنامج الترميز المحدد.
 heic.setup_macos=Uses macOS ImageIO. HEIC support and save options depend on your macOS version.
 heic.setup_linux=Requires system libheif with an HEVC decoder or encoder. Install the codec through your distribution, then restart PaintFE. PaintFE does not download HEVC codecs.
 heic.setup_unsupported=HEIC requires a supported desktop operating system and an installed system codec.
@@ -1718,3 +1718,17 @@ document.copy_suffix=نسخة
 ui.language_applies_immediately=يُطبّق تغيير اللغة فوراً.
 packs.ready=تم التثبيت وأصبحت الميزة جاهزة للاستخدام. لا حاجة لإعادة التشغيل.
 packs.removed=تمت إزالة الحزمة الاختيارية.
+
+processing.cancelling=جارٍ الإلغاء... قد تحتاج خطوة المعالجة الحالية إلى الانتهاء.
+
+heic.custom_library=مكتبة HEIC الاختيارية
+
+heic.custom_hint=استخدم ملف libheif DLL الذي تثق به، مع تبعياته المطابقة ومكوناته الإضافية لبرنامج الترميز. لم يتم تنزيل أي شيء. يؤدي اختيار هذا إلى استبدال الواجهة الخلفية للنظام HEIC حتى تحدد استخدام برنامج ترميز النظام.
+
+heic.choose_library=اختر libheif DLL...
+
+heic.use_system=استخدم برنامج ترميز النظام
+
+heic.test_library=تحقق من دعم HEIC
+
+heic.test_hint=حدد التحقق من دعم HEIC لاختبار ما إذا كان بإمكان هذه المكتبة فتح صور HEIC وحفظها.

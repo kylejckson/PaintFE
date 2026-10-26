@@ -91,11 +91,12 @@ def run():
         ('jxl', helper, ROOT/'optional/jxl-encoder/LICENSE.txt'),
         ('avif', avif_helper, avif_license),
     ]:
-        data = {payload.name:payload.read_bytes(),'LICENSE.txt':license_path.read_bytes()}
-        manifest = json.dumps(dict(schema=1,pack=pack,app_version=version,platform=system,protocol=1,
+        data = {payload.name:payload.read_bytes(),'LICENSE.txt':license_path.read_bytes().replace(b'\r\n', b'\n')}
+        pack_platform = 'universal' if pack == 'cjk' else system
+        manifest = json.dumps(dict(schema=1,pack=pack,app_version=version,platform=pack_platform,protocol=1,
             files=[dict(name=name,sha256=hashlib.sha256(contents).hexdigest(),size=len(contents)) for name,contents in data.items()]),separators=(',',':'))
         envelope = json.dumps(dict(manifest=manifest,signature=key.sign(manifest.encode()).hex()),separators=(',',':')).encode()
-        path=output/f'PaintFE-pack-{pack}-{system}-v{version}.pfepack'
+        path=output/f'PaintFE-pack-{pack}-{pack_platform}-v{version}.pfepack'
         with zipfile.ZipFile(path,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as archive:
             archive.writestr('manifest.json',envelope)
             for name,contents in data.items(): archive.writestr(name,contents)

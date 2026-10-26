@@ -127,3 +127,75 @@ fn native_photo_preserves_rgb_and_has_opaque_foreground() {
         actual.save(path).unwrap();
     }
 }
+
+#[test]
+fn cancelled_background_removal_never_loads_the_runtime() {
+    let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let result = paintfe::ops::ai::remove_background_cancellable(
+        "not-a-runtime.dll",
+        "not-a-model.onnx",
+        &image::RgbaImage::new(2, 2),
+        &Default::default(),
+        &options(),
+        cancelled,
+    );
+    assert!(result.unwrap_err().to_string().contains("Cancelled"));
+}
+
+#[test]
+#[ignore = "Requires PAINTFE_ONNX_RUNTIME and PAINTFE_MODEL_PATH; cancels a real inference"]
+fn native_running_inference_observes_cancellation() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    use std::time::{Duration, Instant};
+    paintfe::logger::init();
+    let log = paintfe::logger::log_path().expect("isolated log").clone();
+    let cancel = Arc::new(AtomicBool::new(false));
+    let done = Arc::new(AtomicBool::new(false));
+    let stopped = cancel.clone();
+    let complete = done.clone();
+    let watch = std::thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(120);
+        while !complete.load(Ordering::Acquire) && Instant::now() < deadline {
+            if std::fs::read_to_string(&log)
+                .unwrap_or_default()
+                .contains("AI phase=inference input=")
+            {
+                std::thread::sleep(Duration::from_millis(100));
+                let requested = Instant::now();
+                stopped.store(true, Ordering::Relaxed);
+                return Some(requested);
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        None
+    });
+    let runtime = std::env::var("PAINTFE_ONNX_RUNTIME").unwrap();
+    let model = std::env::var("PAINTFE_MODEL_PATH").unwrap();
+    let image = image::RgbaImage::from_pixel(64, 64, image::Rgba([120, 160, 200, 255]));
+    let result = paintfe::ops::ai::remove_background_cancellable(
+        &runtime,
+        &model,
+        &image,
+        &RemoveBgSettings {
+            model_profile: ModelProfile::BiRefNet,
+            ..Default::default()
+        },
+        &options(),
+        cancel,
+    );
+    done.store(true, Ordering::Release);
+    let requested = watch.join().unwrap().expect("inference actually started");
+    let error = result.unwrap_err().to_string();
+    assert!(
+        error.to_lowercase().contains("terminate"),
+        "Expected Runtime termination, got {error}"
+    );
+    eprintln!(
+        "Native inference cancelled and returned after {:.3} seconds",
+        requested.elapsed().as_secs_f64()
+    );
+    assert!(requested.elapsed() < Duration::from_secs(30));
+}

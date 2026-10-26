@@ -26,15 +26,20 @@ impl PaintFEApp {
                         crate::ui::dialogs::remember::mark_applied(ctx);
                         self.settings.persist_resize_lock_aspect = dlg.lock_aspect;
                         self.active_dialog = ActiveDialog::None;
+                        if let Err(error) = crate::io::validate_open_dimensions(w, h) {
+                            self.filter_error = Some(error);
+                            return true;
+                        }
+                        self.operation_cancel =
+                            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                        let cancel = self.operation_cancel.clone();
                         if let Some(project) = self.active_project_mut() {
-                            // Rasterize text layers before extracting pixels for resize
-                            project.canvas_state.ensure_all_text_layers_rasterized();
-                            for layer in &mut project.canvas_state.layers {
-                                if layer.is_text_layer() {
-                                    layer.content = crate::canvas::LayerContent::Raster;
-                                }
-                            }
+                            let project_id = project.id;
+                            let revision = project.save_revision();
                             let before = CanvasSnapshot::capture(&project.canvas_state);
+                            // Prepare raster caches without changing editable layer content.
+                            project.canvas_state.ensure_all_text_layers_rasterized();
+
                             let flat_layers: Vec<RgbaImage> = project
                                 .canvas_state
                                 .layers
@@ -50,7 +55,6 @@ impl PaintFEApp {
                                 None
                             };
                             let sender = self.canvas_op_sender.clone();
-                            let project_index = self.active_project_index;
                             let current_time = ctx.input(|i| i.time);
                             if self.pending_filter_jobs == 0 {
                                 self.filter_ops_start_time = Some(current_time);
@@ -58,19 +62,42 @@ impl PaintFEApp {
                             self.filter_status_description = "Resize Image".to_string();
                             self.pending_filter_jobs += 1;
                             crate::par_compat::spawn(move || {
-                                let result_layers =
-                                    crate::ops::transform::resize_layers_with_options(
-                                        flat_layers,
-                                        w,
-                                        h,
-                                        options,
-                                        protection_mask,
-                                    );
+                                let outcome =
+                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                                            return Err("Cancelled".into());
+                                        }
+                                        crate::ops::transform::resize_layers_with_options(
+                                            flat_layers,
+                                            w,
+                                            h,
+                                            options,
+                                            protection_mask,
+                                            &cancel,
+                                        )
+                                    }));
+                                let (result_layers, error) = match outcome {
+                                    Ok(Ok(layers)) => (layers, None),
+                                    Ok(Err(error)) => (Vec::new(), Some(error)),
+                                    Err(_) => (
+                                        Vec::new(),
+                                        Some(
+                                            "Image resizing failed. The document was not changed."
+                                                .to_owned(),
+                                        ),
+                                    ),
+                                };
                                 let mut guides = before.guides.clone();
-                                guides.scale(w as f32/before.width as f32,h as f32/before.height as f32);
+                                guides.scale(
+                                    w as f32 / before.width as f32,
+                                    h as f32 / before.height as f32,
+                                );
                                 let _ = sender.send(CanvasOpResult {
                                     guides,
-                                    project_index,
+                                    project_id,
+                                    revision,
+                                    error,
+                                    cancel,
                                     before,
                                     result_layers,
                                     new_width: w,
@@ -103,14 +130,18 @@ impl PaintFEApp {
                         } else {
                             fill
                         };
+                        if let Err(error) = crate::io::validate_open_dimensions(w, h) {
+                            self.filter_error = Some(error);
+                            return true;
+                        }
+                        self.operation_cancel =
+                            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                        let cancel = self.operation_cancel.clone();
                         if let Some(project) = self.active_project_mut() {
+                            let project_id = project.id;
+                            let revision = project.save_revision();
                             // Rasterize text layers before extracting pixels for canvas resize
                             project.canvas_state.ensure_all_text_layers_rasterized();
-                            for layer in &mut project.canvas_state.layers {
-                                if layer.is_text_layer() {
-                                    layer.content = crate::canvas::LayerContent::Raster;
-                                }
-                            }
                             let before = CanvasSnapshot::capture(&project.canvas_state);
                             let old_w = project.canvas_state.width;
                             let old_h = project.canvas_state.height;
@@ -121,7 +152,6 @@ impl PaintFEApp {
                                 .map(|l| l.pixels.to_rgba_image())
                                 .collect();
                             let sender = self.canvas_op_sender.clone();
-                            let project_index = self.active_project_index;
                             let current_time = ctx.input(|i| i.time);
                             if self.pending_filter_jobs == 0 {
                                 self.filter_ops_start_time = Some(current_time);
@@ -129,21 +159,51 @@ impl PaintFEApp {
                             self.filter_status_description = "Resize Canvas".to_string();
                             self.pending_filter_jobs += 1;
                             crate::par_compat::spawn(move || {
-                                let result_layers = crate::ops::transform::resize_canvas_layers(
-                                    flat_layers,
-                                    old_w,
-                                    old_h,
+                                let outcome =
+                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                                            return Err("Cancelled".into());
+                                        }
+                                        crate::ops::transform::resize_canvas_layers(
+                                            flat_layers,
+                                            old_w,
+                                            old_h,
+                                            w,
+                                            h,
+                                            anchor,
+                                            fill,
+                                            &cancel,
+                                        )
+                                    }));
+                                let (result_layers, error) = match outcome {
+                                    Ok(Ok(layers)) => (layers, None),
+                                    Ok(Err(error)) => (Vec::new(), Some(error)),
+                                    Err(_) => (
+                                        Vec::new(),
+                                        Some(
+                                            "Canvas resizing failed. The document was not changed."
+                                                .to_owned(),
+                                        ),
+                                    ),
+                                };
+                                let mut guides = before.guides.clone();
+                                let offset = |new: u32, old: u32, a: u32| match a {
+                                    0 => 0,
+                                    1 => (new as i32 - old as i32) / 2,
+                                    _ => new as i32 - old as i32,
+                                };
+                                guides.translate_clip(
+                                    offset(w, old_w, anchor.0) as f32,
+                                    offset(h, old_h, anchor.1) as f32,
                                     w,
                                     h,
-                                    anchor,
-                                    fill,
                                 );
-                                let mut guides = before.guides.clone();
-                                let offset = |new:u32,old:u32,a:u32| match a {0=>0,1=>(new as i32-old as i32)/2,_=>new as i32-old as i32};
-                                guides.translate_clip(offset(w,old_w,anchor.0) as f32,offset(h,old_h,anchor.1) as f32,w,h);
                                 let _ = sender.send(CanvasOpResult {
                                     guides,
-                                    project_index,
+                                    project_id,
+                                    revision,
+                                    error,
+                                    cancel,
                                     before,
                                     result_layers,
                                     new_width: w,

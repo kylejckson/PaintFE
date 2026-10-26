@@ -8,6 +8,7 @@ impl PaintFEApp {
         let profile = crate::ui::perf::StartupSpan::new("app_settings_language");
         // Initialize settings from disk (or defaults if no saved file)
         let mut settings = AppSettings::load();
+        crate::io::heic::set_library_path(&settings.heic_library_path);
 
         // Apply saved language preference (or auto-detect on first boot)
         if settings.language.is_empty() {
@@ -220,10 +221,17 @@ impl PaintFEApp {
         drop(profile);
         let profile = crate::ui::perf::StartupSpan::new("initial_project");
         // Initialize with one default project (or empty if disabled in settings)
+        let mut startup_dimension_error = None;
         let (initial_projects, initial_counter) = if settings.create_canvas_on_startup {
             let w = settings.default_canvas_width.max(1);
             let h = settings.default_canvas_height.max(1);
-            (vec![Project::new_untitled(1, w, h)], 1usize)
+            match crate::io::validate_open_dimensions(w, h) {
+                Ok(()) => (vec![Project::new_untitled(1, w, h)], 1usize),
+                Err(error) => {
+                    startup_dimension_error = Some(error);
+                    (Vec::new(), 0usize)
+                }
+            }
         } else {
             (Vec::new(), 0usize)
         };
@@ -342,13 +350,15 @@ impl PaintFEApp {
             filter_receiver,
             pending_filter_jobs: 0,
             background_removal_pending: false,
-            filter_error: crate::services::storage::initialize().warning.clone(),
+            filter_error: startup_dimension_error
+                .or_else(|| crate::services::storage::initialize().warning.clone()),
             filter_ops_start_time: None,
             filter_status_description: String::new(),
             preview_job_token: 1,
             preview_job_running: false,
             pending_preview: None,
             filter_cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            operation_cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             canvas_op_sender,
             canvas_op_receiver,
             io_sender,
@@ -527,6 +537,10 @@ impl PaintFEApp {
 
     /// Create a new untitled project and switch to it
     fn new_project(&mut self, width: u32, height: u32) {
+        if let Err(error) = crate::io::validate_open_dimensions(width, height) {
+            self.filter_error = Some(error);
+            return;
+        }
         if self.paste_overlay.is_some() {
             self.commit_paste_overlay(false);
         }
@@ -628,7 +642,9 @@ impl PaintFEApp {
 
     /// Close a project by index, with dirty check
     fn close_project(&mut self, index: usize) {
-        if index == self.active_project_index { self.finish_pending_line_edit(); }
+        if index == self.active_project_index {
+            self.finish_pending_line_edit();
+        }
         if index >= self.projects.len() {
             return;
         }

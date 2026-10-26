@@ -148,3 +148,44 @@ fn extension_file_loading_preserves_grid_alpha() {
     assert_eq!((state.width, state.height), (29, 100));
     assert!(state.layers[0].pixels.get_pixel(0, 0)[3] < 255);
 }
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires PAINTFE_TEST_HEIF_LIBRARY pointing to a user-supplied libheif DLL"]
+fn user_supplied_windows_libheif_opens_alpha_fixtures_and_can_export() {
+    let path = std::env::var("PAINTFE_TEST_HEIF_LIBRARY").expect("set PAINTFE_TEST_HEIF_LIBRARY");
+    io::heic::set_library_path(&path);
+    let caps = io::heic::capabilities();
+    assert!(caps.decode, "{}", caps.detail);
+    for &(_, input, reference, alpha_tolerance) in CASES {
+        let actual = io::decode_image_bytes(input).unwrap().to_rgba8();
+        let expected = image::load_from_memory(reference).unwrap().to_rgba8();
+        assert_eq!(actual.dimensions(), expected.dimensions());
+        for (actual, expected) in actual.pixels().zip(expected.pixels()) {
+            assert!(actual[3].abs_diff(expected[3]) <= alpha_tolerance);
+            for c in 0..3 {
+                assert!(
+                    actual[c].abs_diff(expected[c]) <= 8,
+                    "{actual:?} != {expected:?}"
+                );
+            }
+        }
+    }
+    if caps.encode {
+        let image = image::RgbaImage::from_pixel(8, 8, image::Rgba([40, 100, 200, 128]));
+        let bytes = io::heic::encode_rgba8(&image, 90).unwrap();
+        let restored = io::decode_image_bytes(&bytes).unwrap().to_rgba8();
+        assert_eq!(restored.dimensions(), image.dimensions());
+        assert!(restored.pixels().all(|pixel| pixel[3].abs_diff(128) <= 1));
+    }
+    let bad = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join(format!("invalid-heif-{}.dll", uuid::Uuid::new_v4()));
+    std::fs::write(&bad, b"not a library").unwrap();
+    io::heic::set_library_path(bad.to_str().unwrap());
+    let invalid = io::heic::capabilities();
+    assert!(!invalid.decode && !invalid.encode);
+    assert!(!invalid.detail.is_empty());
+    io::heic::set_library_path("");
+    std::fs::remove_file(bad).unwrap();
+}

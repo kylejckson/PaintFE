@@ -1057,3 +1057,86 @@ fn issue_198_layered_and_unicode_copies_keep_their_name_when_pfe_is_recommended(
     assert_eq!(app.save_file_dialog.format(), SaveFormat::Pfe);
     assert!(app.projects[app.active_project_index].path.is_none());
 }
+
+#[test]
+fn oversized_resize_and_new_document_are_rejected_without_mutation() {
+    let mut app = app();
+    let id = app.projects[0].id;
+    app.new_project(20_000, 20_000);
+    assert_eq!(app.projects.len(), 1);
+    assert_eq!(app.projects[0].id, id);
+    assert!(app.filter_error.as_ref().unwrap().contains("256 million"));
+}
+
+#[test]
+fn canvas_job_results_use_identity_revision_and_cancellation() {
+    let mut app = app();
+    let target = app.projects[0].id;
+    let revision = app.projects[0].save_revision();
+    let before = crate::components::history::CanvasSnapshot::capture(&app.projects[0].canvas_state);
+    app.projects.insert(0, Project::new_untitled(2, 8, 8));
+    let send = |app: &PaintFEApp, revision, cancelled| {
+        app.canvas_op_sender
+            .send(CanvasOpResult {
+                project_id: target,
+                revision,
+                error: None,
+                cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(cancelled)),
+                guides: before.guides.clone(),
+                before: before.clone(),
+                result_layers: vec![TiledImage::new(4, 4)],
+                new_width: 4,
+                new_height: 4,
+                description: HistoryAction::ResizeImage.label("Resize Image".to_string()),
+            })
+            .unwrap();
+    };
+    send(&app, revision, true);
+    app.pending_filter_jobs = 1;
+    app.update_runtime_lifecycle_async(&egui::Context::default());
+    assert_eq!(app.projects[1].canvas_state.width, 16);
+    app.projects[1].mark_dirty();
+    send(&app, revision, false);
+    app.update_runtime_lifecycle_async(&egui::Context::default());
+    assert_eq!(app.projects[1].canvas_state.width, 16);
+    let revision = app.projects[1].save_revision();
+    send(&app, revision, false);
+    app.update_runtime_lifecycle_async(&egui::Context::default());
+    assert_eq!(app.projects[0].canvas_state.width, 8);
+    assert_eq!(app.projects[1].canvas_state.width, 4);
+    assert_eq!(app.projects[1].id, target);
+    app.projects.remove(1);
+    send(&app, revision, false);
+    app.update_runtime_lifecycle_async(&egui::Context::default());
+    assert_eq!(app.projects[0].canvas_state.width, 8);
+}
+
+#[test]
+fn closing_preview_does_not_cancel_a_committed_operation() {
+    let mut app = app();
+    app.operation_cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    app.cancel_preview_jobs();
+    assert!(app.filter_cancel.load(std::sync::atomic::Ordering::Relaxed));
+    assert!(
+        !app.operation_cancel
+            .load(std::sync::atomic::Ordering::Relaxed)
+    );
+}
+
+#[test]
+fn invalid_startup_dimensions_are_reported_without_allocating_a_document() {
+    let saved = AppSettings::load();
+    let mut invalid = saved.clone();
+    invalid.create_canvas_on_startup = true;
+    invalid.default_canvas_width = 20000;
+    invalid.default_canvas_height = 20000;
+    invalid.save();
+    crate::config::persistence::drain().unwrap();
+    let ctx = egui::Context::default();
+    let cc = eframe::CreationContext::_new_kittest(ctx);
+    let app = PaintFEApp::new(&cc, Vec::new(), mpsc::channel().1);
+    assert!(app.projects.is_empty());
+    assert!(app.filter_error.as_ref().unwrap().contains("256 million"));
+    saved.save();
+    crate::config::persistence::drain().unwrap();
+}

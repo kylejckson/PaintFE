@@ -93,13 +93,15 @@ fn process() -> Result<(), String> {
     let mut stdin = std::io::stdin().lock();
     let mut header = [0; 40];
     stdin.read_exact(&mut header).map_err(|e| e.to_string())?;
-    if &header[..8] != b"PFEHIC02" || !matches!(header[8], 1 | 2) {
+    if &header[..8] != b"PFEHIC02" || !matches!(header[8], 0..=2) {
         return Err("Invalid system HEIC request".into());
     }
     let size = u64::from_le_bytes(header[32..40].try_into().unwrap());
     let w = u32::from_le_bytes(header[12..16].try_into().unwrap());
     let h = u32::from_le_bytes(header[16..20].try_into().unwrap());
-    let limit = if header[8] == 1 {
+    let limit = if header[8] == 0 {
+        0
+    } else if header[8] == 1 {
         if w == 0 || h == 0 || u64::from(w) * u64::from(h) > 64_000_000 {
             return Err("Invalid HEIC dimensions".into());
         }

@@ -784,15 +784,19 @@ fn register_transform_api(engine: &mut Engine, ctx: SharedContext) {
     let c = ctx.clone();
     engine.register_fn(
         "resize_image",
-        move |new_w: i64, new_h: i64, method: ImmutableString| {
-            let new_w = (new_w.max(1) as u32).min(32768);
-            let new_h = (new_h.max(1) as u32).min(32768);
+        move |new_w: i64, new_h: i64, method: ImmutableString| -> Result<(), Box<EvalAltResult>> {
+            let new_w = u32::try_from(new_w)
+                .map_err(|_| Box::<EvalAltResult>::from("Invalid image width"))?;
+            let new_h = u32::try_from(new_h)
+                .map_err(|_| Box::<EvalAltResult>::from("Invalid image height"))?;
+            crate::io::validate_open_dimensions(new_w, new_h)
+                .map_err(Box::<EvalAltResult>::from)?;
             let filter = parse_script_filter(&method);
             let mut lock = c.lock().unwrap_or_else(|e| e.into_inner());
             let w = lock.width;
             let h = lock.height;
             if new_w == w && new_h == h {
-                return;
+                return Ok(());
             }
             if let Some(img) = RgbaImage::from_raw(w, h, lock.pixels.clone()) {
                 let resized = imageops::resize(&img, new_w, new_h, filter.to_image_filter());
@@ -805,6 +809,7 @@ fn register_transform_api(engine: &mut Engine, ctx: SharedContext) {
                 h: new_h,
                 filter,
             });
+            Ok(())
         },
     );
 
@@ -816,9 +821,13 @@ fn register_transform_api(engine: &mut Engine, ctx: SharedContext) {
     let c = ctx.clone();
     engine.register_fn(
         "resize_canvas",
-        move |new_w: i64, new_h: i64, anchor: ImmutableString| {
-            let new_w = (new_w.max(1) as u32).min(32768);
-            let new_h = (new_h.max(1) as u32).min(32768);
+        move |new_w: i64, new_h: i64, anchor: ImmutableString| -> Result<(), Box<EvalAltResult>> {
+            let new_w = u32::try_from(new_w)
+                .map_err(|_| Box::<EvalAltResult>::from("Invalid image width"))?;
+            let new_h = u32::try_from(new_h)
+                .map_err(|_| Box::<EvalAltResult>::from("Invalid image height"))?;
+            crate::io::validate_open_dimensions(new_w, new_h)
+                .map_err(Box::<EvalAltResult>::from)?;
             let anchor_tuple = parse_anchor(&anchor);
             let mut lock = c.lock().unwrap_or_else(|e| e.into_inner());
             let old_w = lock.width;
@@ -853,6 +862,7 @@ fn register_transform_api(engine: &mut Engine, ctx: SharedContext) {
                 new_h,
                 anchor: anchor_tuple,
             });
+            Ok(())
         },
     );
 }

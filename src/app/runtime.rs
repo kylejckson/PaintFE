@@ -1,10 +1,58 @@
 impl PaintFEApp {
+    fn restore_script_original(&mut self) {
+        if let Some((id, layer, original, revision)) = self.script_original_pixels.take()
+            && let Some(project) = self
+                .projects
+                .iter_mut()
+                .find(|p| p.id == id && p.edit_revision == revision)
+            && let Some(target) = project.canvas_state.layers.get_mut(layer)
+        {
+            target.pixels = original;
+            project.canvas_state.mark_dirty(None);
+        }
+    }
+
+    fn processing_busy(&self) -> bool {
+        self.pending_filter_jobs > 0 && matches!(self.active_dialog, ActiveDialog::None)
+    }
+
+    fn processing_dialog(&mut self, ctx: &egui::Context) {
+        if !self.processing_busy() {
+            return;
+        }
+        egui::Modal::new(egui::Id::new("processing_document")).show(ctx, |ui| {
+            ui.set_max_width(380.0);
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(&self.filter_status_description);
+            });
+            if self
+                .operation_cancel
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
+                ui.label(crate::t!("processing.cancelling"));
+            } else if ui.button(crate::t!("common.cancel")).clicked() {
+                self.operation_cancel
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                self.filter_cancel
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                self.script_editor
+                    .cancel_flag
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                self.preview_job_token = self.preview_job_token.wrapping_add(1);
+                self.pending_preview = None;
+                crate::services::optional_packs::avif::cancel();
+            }
+        });
+    }
+
     fn document_modal_open(&self) -> bool {
         #[cfg(target_arch = "wasm32")]
         let welcome_open = self.show_welcome_popup;
         #[cfg(not(target_arch = "wasm32"))]
         let welcome_open = false;
-        self.filter_error.is_some()
+        self.processing_busy()
+            || self.filter_error.is_some()
             || self.guide_dialog_open
             || welcome_open
             || self.settings_window.open
@@ -50,6 +98,7 @@ impl eframe::App for PaintFEApp {
         let ctx = ui.ctx().clone();
         self.guide_dialog_open = crate::ui::guides::dialog_open(&ctx);
         crate::ui::guides::set_appearance(&ctx, &self.settings.ruler);
+        crate::io::heic::set_library_path(&self.settings.heic_library_path);
         let _profile = crate::ui::perf::Frame::begin(&ctx, frame.info().cpu_usage);
         ctx.data_mut(|d| {
             d.insert_temp(
@@ -75,6 +124,7 @@ impl eframe::App for PaintFEApp {
         let pack_modal = crate::ui::panels::optional_features::frame(&ctx, &mut self.settings);
         #[cfg(target_arch = "wasm32")]
         let pack_modal = false;
+        self.processing_dialog(&ctx);
         let modal_open = {
             let _scope = crate::ui::perf::Scope::new(4);
             self.update_runtime_input(&ctx) || pack_modal

@@ -23,6 +23,10 @@ def expected_packs(tag):
     # Repairing older releases must still preserve their original signed packs.
     version = tuple(map(int, tag[1:].split('-')[0].split('.')))
     packs = ('cjk', 'jxl', 'avif') if version >= (1, 4, 17) else ('cjk', 'jxl', 'avif', 'heic')
+    if version >= (1, 4, 20):
+        return {f'PaintFE-pack-cjk-universal-{tag}.pfepack': ('cjk', 'universal')} | {
+            f'PaintFE-pack-{pack}-{platform}-{tag}.pfepack': (pack, platform)
+            for platform in PLATFORMS for pack in ('jxl', 'avif')}
     return {f'PaintFE-pack-{pack}-{platform}-{tag}.pfepack': (pack, platform)
             for platform in PLATFORMS for pack in packs}
 

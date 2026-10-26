@@ -31,6 +31,7 @@ pub struct Project {
 
     /// Per-project canvas camera state.
     pub view_zoom: f32,
+    pub needs_initial_fit: bool,
     pub view_pan_offset: Vec2,
 }
 
@@ -51,6 +52,7 @@ impl Project {
             was_animated: false,
             animation_fps: 10.0,
             view_zoom: 1.0,
+            needs_initial_fit: false,
             view_pan_offset: Vec2::ZERO,
         }
     }
@@ -74,6 +76,7 @@ impl Project {
             was_animated: false,
             animation_fps: 10.0,
             view_zoom: 1.0,
+            needs_initial_fit: true,
             view_pan_offset: Vec2::ZERO,
         }
     }

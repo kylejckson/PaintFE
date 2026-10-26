@@ -1661,7 +1661,7 @@ save.changed=The document changed while saving. It has been kept open so you can
 # System HEIC support (English fallback pending native review)
 heic.system_title=HEIC / HEIF (system codecs)
 heic.system_description=Uses codecs installed on your operating system. No HEVC codec is bundled or downloaded by PaintFE. Older HEIC packs are no longer used.
-heic.setup_windows=Uses Windows HEIF Image Extensions and HEVC Video Extensions. Install missing extensions through Microsoft Store, then restart PaintFE. Supported save options depend on the installed codec.
+heic.setup_windows=Выкарыстоўвайце ўсталяваныя пашырэнні Windows HEIF і HEVC або выберыце ўласную бібліятэку DLL libheif у раздзеле «Настройкі» > «Дадатковыя функцыі». Даступныя параметры захавання залежаць ад абранага кодэка.
 heic.setup_macos=Uses macOS ImageIO. HEIC support and save options depend on your macOS version.
 heic.setup_linux=Requires system libheif with an HEVC decoder or encoder. Install the codec through your distribution, then restart PaintFE. PaintFE does not download HEVC codecs.
 heic.setup_unsupported=HEIC requires a supported desktop operating system and an installed system codec.
@@ -1717,3 +1717,17 @@ document.copy_suffix=copy
 ui.language_applies_immediately=Language changes apply immediately.
 packs.ready=Installed and ready to use. No restart is required.
 packs.removed=Optional pack removed.
+
+processing.cancelling=Ідзе адмена... Бягучы этап апрацоўкі можа спатрэбіцца завяршыць.
+
+heic.custom_library=Дадатковая бібліятэка HEIC
+
+heic.custom_hint=Выкарыстоўвайце бібліятэку libheif DLL, якой вы давяраеце, з адпаведнымі залежнасцямі і плагінамі кодэкаў. Нічога не спампоўваецца. Выбар гэтага варыянту замяняе бэкэнд сістэмы HEIC, пакуль вы не выберыце Выкарыстоўваць сістэмны кодэк.
+
+heic.choose_library=Выберыце бібліятэку DLL...
+
+heic.use_system=Выкарыстоўвайце сістэмны кодэк
+
+heic.test_library=Праверце падтрымку HEIC
+
+heic.test_hint=Выберыце Праверыць падтрымку HEIC, каб праверыць, ці можа гэтая бібліятэка адкрываць і захоўваць выявы HEIC.

@@ -172,6 +172,9 @@ impl PaintFEApp {
             if result.description.action == HistoryAction::RemoveBackground {
                 self.background_removal_pending = false;
             }
+            if result.cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                continue;
+            }
             // Discard stale live-preview results (token mismatch = superseded by newer job)
             if result.preview_token != 0 && result.preview_token != self.preview_job_token {
                 continue;
@@ -185,6 +188,12 @@ impl PaintFEApp {
                 .iter_mut()
                 .find(|project| project.id == result.project_id)
             {
+                if result
+                    .revision
+                    .is_some_and(|revision| project.save_revision() != revision)
+                {
+                    continue;
+                }
                 let idx = result.layer_idx;
                 if idx < project.canvas_state.layers.len() {
                     if result.preview_token != 0 {
@@ -215,8 +224,17 @@ impl PaintFEApp {
                 self.filter_ops_start_time = None;
                 self.filter_status_description.clear();
             }
-            if result.project_index < self.projects.len()
-                && let Some(project) = self.projects.get_mut(result.project_index)
+            if result.cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                continue;
+            }
+            if let Some(error) = result.error {
+                self.filter_error = Some(error);
+                continue;
+            }
+            if let Some(project) = self
+                .projects
+                .iter_mut()
+                .find(|p| p.id == result.project_id && p.save_revision() == result.revision)
             {
                 let state = &mut project.canvas_state;
                 // Restore before-state so SnapshotCommand captures it correctly
@@ -225,6 +243,7 @@ impl PaintFEApp {
                 // Apply result layers
                 for (i, tiled) in result.result_layers.into_iter().enumerate() {
                     if i < state.layers.len() {
+                        state.layers[i].content = crate::canvas::LayerContent::Raster;
                         state.layers[i].pixels = tiled;
                         state.layers[i].invalidate_lod();
                         state.layers[i].gpu_generation += 1;
@@ -251,7 +270,7 @@ impl PaintFEApp {
         while let Ok(msg) = self.script_receiver.try_recv() {
             match msg {
                 ScriptMessage::Completed {
-                    project_index,
+                    project_index: _,
                     layer_idx,
                     original_pixels,
                     result_pixels,
@@ -279,9 +298,23 @@ impl PaintFEApp {
                         format!("Completed in {}ms", elapsed_ms),
                         crate::components::script_editor::ConsoleLineKind::Info,
                     );
+                    if self
+                        .script_editor
+                        .cancel_flag
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                    {
+                        self.restore_script_original();
+                    }
                     // Apply result to canvas with undo — route to the project that spawned the script
-                    if project_index < self.projects.len()
-                        && let Some(project) = self.projects.get_mut(project_index)
+                    if let Some((project_id, _, _, revision)) = self.script_original_pixels.as_ref()
+                        && !self
+                            .script_editor
+                            .cancel_flag
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                        && let Some(project) = self
+                            .projects
+                            .iter_mut()
+                            .find(|p| p.id == *project_id && p.edit_revision == *revision)
                         && layer_idx < project.canvas_state.layers.len()
                     {
                         // Restore original pixels so snapshot captures the true before-state
@@ -352,15 +385,7 @@ impl PaintFEApp {
                             crate::components::script_editor::ConsoleLineKind::Error,
                         );
                     }
-                    // Restore original layer pixels if preview had modified them
-                    if let Some((proj_idx, layer_idx, original)) =
-                        self.script_original_pixels.take()
-                        && let Some(project) = self.projects.get_mut(proj_idx)
-                        && layer_idx < project.canvas_state.layers.len()
-                    {
-                        project.canvas_state.layers[layer_idx].pixels = original;
-                        project.canvas_state.mark_dirty(None);
-                    }
+                    self.restore_script_original();
                     // Highlight the error line in the code editor
                     self.script_editor.error_line = error.line;
                     // Auto-expand console so user sees the error
@@ -376,15 +401,24 @@ impl PaintFEApp {
                     self.script_editor.progress = Some(p);
                 }
                 ScriptMessage::Preview {
-                    project_index,
+                    project_index: _,
                     pixels,
                     width,
                     height,
                 } => {
                     if self.script_editor.live_preview
-                        && let Some(project) = self.projects.get_mut(project_index)
+                        && !self
+                            .script_editor
+                            .cancel_flag
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                        && let Some((project_id, layer_idx, _, revision)) =
+                            self.script_original_pixels.as_ref()
+                        && let Some(project) = self
+                            .projects
+                            .iter_mut()
+                            .find(|p| p.id == *project_id && p.edit_revision == *revision)
                     {
-                        let layer_idx = project.canvas_state.active_layer_index;
+                        let layer_idx = *layer_idx;
                         if layer_idx < project.canvas_state.layers.len() {
                             let preview_tiled = TiledImage::from_raw_rgba(width, height, &pixels);
                             project.canvas_state.layers[layer_idx].pixels = preview_tiled;
@@ -566,7 +600,7 @@ impl PaintFEApp {
                     {
                         for (tiled, name) in frames {
                             let layer = Layer {
-            runtime_id: uuid::Uuid::new_v4(),
+                                runtime_id: uuid::Uuid::new_v4(),
                                 name,
                                 visible: true,
                                 folder_id: None,

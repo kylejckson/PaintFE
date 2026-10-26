@@ -15,27 +15,74 @@ pub struct Capabilities {
     pub encode: bool,
     pub detail: String,
 }
-pub fn capabilities() -> &'static Capabilities {
-    static CAPS: std::sync::OnceLock<Capabilities> = std::sync::OnceLock::new();
-    CAPS.get_or_init(|| {
-        #[cfg(not(target_arch = "wasm32"))]
-        let result = worker::native(0, &[], 0, 0, 90);
-        #[cfg(target_arch = "wasm32")]
-        let result: Result<(Vec<u8>, u32, u32, u32), String> =
-            Err("HEIC requires the desktop app and an installed system codec".into());
-        match result {
-            Ok((bits, _, _, _)) => Capabilities {
-                decode: bits.first().is_some_and(|b| b & 1 != 0),
-                encode: bits.first().is_some_and(|b| b & 2 != 0),
-                detail: String::new(),
-            },
-            Err(detail) => Capabilities {
+static LIBRARY_PATH: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+static CAPABILITIES: std::sync::Mutex<Option<(String, Capabilities)>> = std::sync::Mutex::new(None);
+pub fn library_path() -> String {
+    LIBRARY_PATH
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+pub fn set_library_path(path: &str) {
+    let mut current = LIBRARY_PATH.lock().unwrap_or_else(|e| e.into_inner());
+    if *current != path {
+        *current = path.to_owned();
+        *CAPABILITIES.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+}
+pub fn forget_capabilities() {
+    *CAPABILITIES.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+pub fn display_capabilities() -> Capabilities {
+    let path = library_path();
+    if cfg!(windows) && !path.is_empty() {
+        return CAPABILITIES
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .filter(|(key, _)| *key == path)
+            .map(|(_, caps)| caps.clone())
+            .unwrap_or(Capabilities {
                 decode: false,
                 encode: false,
-                detail,
-            },
-        }
-    })
+                detail: crate::t!("heic.test_hint"),
+            });
+    }
+    capabilities()
+}
+pub fn capabilities() -> Capabilities {
+    let path = library_path();
+    if let Some((key, caps)) = &*CAPABILITIES.lock().unwrap_or_else(|e| e.into_inner())
+        && *key == path
+    {
+        return caps.clone();
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let result = {
+        let mut header = [0; 40];
+        header[..8].copy_from_slice(b"PFEHIC02");
+        crate::services::optional_packs::avif::exchange_system_heic(header, &[], false)
+            .map(|bits| (bits, 0, 0, 8))
+    };
+    #[cfg(target_arch = "wasm32")]
+    let result: Result<(Vec<u8>, u32, u32, u32), String> =
+        Err("HEIC requires a desktop system codec".into());
+    let caps = match result {
+        Ok((bits, _, _, _)) => Capabilities {
+            decode: bits.first().is_some_and(|b| b & 1 != 0),
+            encode: bits.first().is_some_and(|b| b & 2 != 0),
+            detail: String::new(),
+        },
+        Err(detail) => Capabilities {
+            decode: false,
+            encode: false,
+            detail,
+        },
+    };
+    if library_path() == path {
+        *CAPABILITIES.lock().unwrap_or_else(|e| e.into_inner()) = Some((path, caps.clone()));
+    }
+    caps
 }
 pub fn setup_message() -> String {
     crate::t!(if cfg!(target_os = "windows") {

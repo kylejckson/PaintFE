@@ -519,6 +519,9 @@ impl SettingsWindow {
                                     #[cfg(not(target_arch = "wasm32"))]
                                     SettingsTab::OptionalFeatures => {
                                         super::optional_features::show_settings(ui);
+                                        super::optional_features::show_heic_library_settings(
+                                            ui, settings,
+                                        );
                                     }
                                     SettingsTab::General => {
                                         self.show_general_tab(ui, settings);
@@ -1398,54 +1401,6 @@ impl SettingsWindow {
             .small()
             .weak(),
         );
-
-        // -- Debug Info ---------------------------------------------------
-        Self::section_header(ui, &t!("settings.general.debug_info"));
-        ui.checkbox(
-            &mut settings.show_debug_panel,
-            t!("settings.general.show_debug"),
-        )
-        .search_target(ui, "settings.general.show_debug");
-        ui.label(
-            egui::RichText::new(t!("settings.general.debug_hint"))
-                .small()
-                .weak(),
-        )
-        .search_target(ui, "settings.general.debug_hint");
-        if settings.show_debug_panel {
-            ui.indent("debug_options", |ui| {
-                ui.checkbox(
-                    &mut settings.debug_show_canvas_size,
-                    t!("settings.general.debug_canvas_size"),
-                )
-                .search_target(ui, "settings.general.debug_canvas_size");
-                ui.checkbox(
-                    &mut settings.debug_show_zoom,
-                    t!("settings.general.debug_zoom"),
-                )
-                .search_target(ui, "settings.general.debug_zoom");
-                ui.checkbox(
-                    &mut settings.debug_show_fps,
-                    t!("settings.general.debug_fps"),
-                )
-                .search_target(ui, "settings.general.debug_fps");
-                ui.checkbox(
-                    &mut settings.debug_show_gpu,
-                    t!("settings.general.debug_gpu"),
-                )
-                .search_target(ui, "settings.general.debug_gpu");
-                ui.checkbox(
-                    &mut settings.debug_show_operations,
-                    t!("settings.general.debug_operations"),
-                )
-                .search_target(ui, "settings.general.debug_operations");
-                ui.checkbox(
-                    &mut settings.show_tool_info,
-                    t!("settings.general.show_tool_info"),
-                )
-                .search_target(ui, "settings.general.show_tool_info");
-            });
-        }
 
         // -- About ------------------------------------------------------
         Self::section_header(ui, &crate::t!("ui.about"));
@@ -2673,6 +2628,77 @@ impl SettingsWindow {
                 settings.save();
             }
         });
+        let debug_before = [
+            settings.show_debug_panel,
+            settings.show_tool_info,
+            settings.debug_show_canvas_size,
+            settings.debug_show_zoom,
+            settings.debug_show_fps,
+            settings.debug_show_gpu,
+            settings.debug_show_operations,
+        ];
+        // -- Debug Info ---------------------------------------------------
+        Self::section_header(ui, &t!("settings.general.debug_info"));
+        ui.checkbox(
+            &mut settings.show_debug_panel,
+            t!("settings.general.show_debug"),
+        )
+        .search_target(ui, "settings.general.show_debug");
+        ui.label(
+            egui::RichText::new(t!("settings.general.debug_hint"))
+                .small()
+                .weak(),
+        )
+        .search_target(ui, "settings.general.debug_hint");
+        if settings.show_debug_panel {
+            ui.indent("debug_options", |ui| {
+                ui.checkbox(
+                    &mut settings.debug_show_canvas_size,
+                    t!("settings.general.debug_canvas_size"),
+                )
+                .search_target(ui, "settings.general.debug_canvas_size");
+                ui.checkbox(
+                    &mut settings.debug_show_zoom,
+                    t!("settings.general.debug_zoom"),
+                )
+                .search_target(ui, "settings.general.debug_zoom");
+                ui.checkbox(
+                    &mut settings.debug_show_fps,
+                    t!("settings.general.debug_fps"),
+                )
+                .search_target(ui, "settings.general.debug_fps");
+                ui.checkbox(
+                    &mut settings.debug_show_gpu,
+                    t!("settings.general.debug_gpu"),
+                )
+                .search_target(ui, "settings.general.debug_gpu");
+                ui.checkbox(
+                    &mut settings.debug_show_operations,
+                    t!("settings.general.debug_operations"),
+                )
+                .search_target(ui, "settings.general.debug_operations");
+                ui.checkbox(
+                    &mut settings.show_tool_info,
+                    t!("settings.general.show_tool_info"),
+                )
+                .search_target(ui, "settings.general.show_tool_info");
+            });
+        }
+
+        if debug_before
+            != [
+                settings.show_debug_panel,
+                settings.show_tool_info,
+                settings.debug_show_canvas_size,
+                settings.debug_show_zoom,
+                settings.debug_show_fps,
+                settings.debug_show_gpu,
+                settings.debug_show_operations,
+            ]
+        {
+            settings.save();
+        }
+
         super::settings_sections::show(ui, "advanced", revision, force, |ui| {
             // -- Advanced Customization -----------------------------------
             Self::section_header(ui, &crate::t!("ui.advanced_customization"));

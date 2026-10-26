@@ -11,6 +11,8 @@ struct PreviewJob {
 }
 
 pub struct FilterResult {
+    pub revision: Option<(u64, u64)>,
+    pub cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub error: Option<String>,
     /// Stable identity, so closing/reordering tabs cannot redirect this result.
     pub project_id: uuid::Uuid,
@@ -29,8 +31,11 @@ pub struct FilterResult {
 /// Result delivered from a background canvas-wide operation (resize image/canvas).
 /// Unlike `FilterResult` which targets a single layer, this carries all layers.
 pub struct CanvasOpResult {
+    pub project_id: uuid::Uuid,
+    pub revision: (u64, u64),
+    pub error: Option<String>,
+    pub cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub guides: crate::canvas::guides::Guides,
-    pub project_index: usize,
     /// Snapshot of the canvas state before the operation (for undo).
     pub before: crate::components::history::CanvasSnapshot,
     /// The processed layers (one `TiledImage` per layer, in order).
@@ -253,6 +258,7 @@ pub struct PaintFEApp {
     preview_job_token: u64,
     /// Cancellation flag for the current preview job; set to true before spawning a new one.
     filter_cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    operation_cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
     preview_job_running: bool,
     pending_preview: Option<PreviewJob>,
 
@@ -280,7 +286,7 @@ pub struct PaintFEApp {
     /// Custom script effects registered in Filter > Custom
     custom_scripts: Vec<script_editor::CustomScriptEffect>,
     /// Backup of layer pixels before script execution (for restore on error)
-    script_original_pixels: Option<(usize, usize, TiledImage)>,
+    script_original_pixels: Option<(uuid::Uuid, usize, TiledImage, u64)>,
 
     /// Project index pending close confirmation (unsaved-changes dialog)
     pending_close_index: Option<usize>,

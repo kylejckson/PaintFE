@@ -475,10 +475,15 @@ pub fn resize_layers_with_options(
     new_h: u32,
     options: ResizeImageOptions,
     protection_mask: Option<GrayImage>,
-) -> Vec<TiledImage> {
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<Vec<TiledImage>, String> {
+    TiledImage::validate_dimensions(new_w, new_h)?;
     flat_layers
         .into_par_iter()
         .map(|flat| {
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err("Cancelled".into());
+            }
             let resized = match options.method {
                 ResizeMethod::Standard => {
                     imageops::resize(&flat, new_w, new_h, options.interpolation.to_filter())
@@ -491,7 +496,10 @@ pub fn resize_layers_with_options(
                     protection_mask.as_ref(),
                 ),
             };
-            TiledImage::from_rgba_image(&resized)
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err("Cancelled".into());
+            }
+            Ok(TiledImage::from_rgba_image(&resized))
         })
         .collect()
 }
@@ -914,7 +922,9 @@ pub fn resize_canvas_layers(
     new_h: u32,
     anchor: (u32, u32),
     fill: Rgba<u8>,
-) -> Vec<TiledImage> {
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<Vec<TiledImage>, String> {
+    TiledImage::validate_dimensions(new_w, new_h)?;
     let offset_x: i32 = match anchor.0 {
         0 => 0,
         1 => ((new_w as i32) - (old_w as i32)) / 2,
@@ -929,8 +939,14 @@ pub fn resize_canvas_layers(
     flat_layers
         .into_par_iter()
         .map(|old_flat| {
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err("Cancelled".into());
+            }
             let mut new_img = RgbaImage::from_pixel(new_w, new_h, fill);
             for y in 0..old_h {
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err("Cancelled".into());
+                }
                 for x in 0..old_w {
                     let nx = x as i32 + offset_x;
                     let ny = y as i32 + offset_y;
@@ -939,7 +955,7 @@ pub fn resize_canvas_layers(
                     }
                 }
             }
-            TiledImage::from_rgba_image(&new_img)
+            Ok(TiledImage::from_rgba_image(&new_img))
         })
         .collect()
 }

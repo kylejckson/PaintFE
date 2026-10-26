@@ -95,6 +95,12 @@ class PackBuilderTests(unittest.TestCase):
                     self.assertEqual(manifest['protocol'], 1)
                     self.assertEqual(archive.read(f'paintfe-jxl-encoder{suffix}'), b'helper')
                 self.assertEqual(int(exported['PAINTFE_JXL_PACK_SIZE']), jxl.stat().st_size)
+                fonts=list(jxl.parent.glob('*cjk-universal-*.pfepack'))
+                self.assertEqual(len(fonts),1)
+                with zipfile.ZipFile(fonts[0]) as archive:
+                    signed=json.loads(archive.read('manifest.json'))
+                    public.verify(bytes.fromhex(signed['signature']),signed['manifest'].encode())
+                    self.assertEqual(json.loads(signed['manifest'])['platform'],'universal')
                 self.assertNotIn(seed, env_file.read_text())
 
     def test_release_without_signing_key_stops_before_compilation(self):

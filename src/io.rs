@@ -593,6 +593,7 @@ const MAX_CANVAS_DIM: u32 = MAX_OPEN_IMAGE_DIM;
 const MAX_LAYERS: usize = 256;
 
 pub fn validate_open_dimensions(width: u32, height: u32) -> Result<(), String> {
+    crate::canvas::TiledImage::validate_dimensions(width, height)?;
     if width == 0 || height == 0 {
         return Err("Image dimensions cannot be zero".to_string());
     }
@@ -1853,6 +1854,9 @@ pub fn encode_and_write(
     tiff_compression: TiffCompression,
     webp_lossless: bool,
 ) -> Result<(), ImageError> {
+    if format == SaveFormat::Webp {
+        validate_webp_dimensions(image.width(), image.height())?;
+    }
     // A missing optional encoder or failed helper must not truncate a previous export.
     if let SaveFormat::Jxl(options) = format {
         let bytes = jxl::encode_rgba8(image, quality, options)?;
@@ -1991,6 +1995,15 @@ pub fn encode_and_write(
     Ok(())
 }
 
+fn validate_webp_dimensions(width: u32, height: u32) -> Result<(), ImageError> {
+    if width == 0 || height == 0 || width > 16383 || height > 16383 {
+        return Err(ImageError::IoError(std::io::Error::other(
+            "WebP supports dimensions up to 16383 pixels. Save as PNG, TIFF, JPEG XL or PFE instead.",
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn encode_static_webp<W: Write>(
     image: &RgbaImage,
@@ -1998,12 +2011,22 @@ fn encode_static_webp<W: Write>(
     quality: u8,
     lossless: bool,
 ) -> Result<(), ImageError> {
+    validate_webp_dimensions(image.width(), image.height())?;
     let encoder = webp::Encoder::from_rgba(image.as_raw(), image.width(), image.height());
-    let bytes = if lossless {
-        encoder.encode_lossless()
-    } else {
-        encoder.encode(quality.clamp(1, 100) as f32)
-    };
+    let bytes = encoder
+        .encode_simple(
+            lossless,
+            if lossless {
+                75.0
+            } else {
+                quality.clamp(1, 100) as f32
+            },
+        )
+        .map_err(|error| {
+            ImageError::IoError(std::io::Error::other(format!(
+                "WebP encoding failed: {error:?}"
+            )))
+        })?;
     writer.write_all(&bytes)?;
     Ok(())
 }
@@ -2918,6 +2941,7 @@ pub fn encode_animated_webp(
     }
     let width = frames[0].width();
     let height = frames[0].height();
+    validate_webp_dimensions(width, height).map_err(|error| error.to_string())?;
     if frames
         .iter()
         .any(|frame| frame.width() != width || frame.height() != height)

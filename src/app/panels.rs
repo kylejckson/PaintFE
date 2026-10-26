@@ -450,7 +450,12 @@ impl PaintFEApp {
             window = window.fixed_size(size);
         }
         let resp = window.show(ctx, |ui| {
-            if ctx.input(|i| i.pointer.primary_pressed() && i.pointer.interact_pos().is_some_and(|p|ui.clip_rect().contains(p))) {
+            if ctx.input(|i| {
+                i.pointer.primary_pressed()
+                    && i.pointer
+                        .interact_pos()
+                        .is_some_and(|p| ui.clip_rect().contains(p))
+            }) {
                 self.finish_pending_line_edit();
             }
 
@@ -1131,10 +1136,15 @@ impl PaintFEApp {
         // Reset cancel flag
         let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         self.script_editor.cancel_flag = cancel_flag.clone();
+        self.operation_cancel = cancel_flag.clone();
 
         // Save backup of layer pixels for restore on error
-        self.script_original_pixels =
-            Some((self.active_project_index, layer_idx, layer.pixels.clone()));
+        self.script_original_pixels = Some((
+            project.id,
+            layer_idx,
+            layer.pixels.clone(),
+            project.edit_revision,
+        ));
 
         self.script_editor.is_running = true;
         self.script_editor.progress = None;
@@ -1144,6 +1154,8 @@ impl PaintFEApp {
             crate::components::script_editor::ConsoleLineKind::Info,
         );
 
+        self.pending_filter_jobs += 1;
+        self.filter_status_description = "Script".to_owned();
         crate::ops::scripting::execute_script(
             self.script_editor.code.clone(),
             self.active_project_index,
@@ -1185,9 +1197,14 @@ impl PaintFEApp {
 
         let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         self.script_editor.cancel_flag = cancel_flag.clone();
+        self.operation_cancel = cancel_flag.clone();
         // Save backup of layer pixels for restore on error
-        self.script_original_pixels =
-            Some((self.active_project_index, layer_idx, layer.pixels.clone()));
+        self.script_original_pixels = Some((
+            project.id,
+            layer_idx,
+            layer.pixels.clone(),
+            project.edit_revision,
+        ));
 
         self.script_editor.is_running = true;
         self.script_editor.progress = None;
@@ -1228,7 +1245,8 @@ impl PaintFEApp {
                     .add_filter(
                         crate::t!("ui.image"),
                         &[
-                            "png", "jpg", "jpeg", "bmp", "gif", "jxl", "webp", "tiff", "tif", "tga", "ico",
+                            "png", "jpg", "jpeg", "bmp", "gif", "jxl", "webp", "tiff", "tif",
+                            "tga", "ico",
                         ],
                     )
                     .pick_file()

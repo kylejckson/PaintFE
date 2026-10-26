@@ -348,3 +348,29 @@ fn heic_pack_requires_signed_corresponding_source_and_rejects_unknown_files() {
     };
     assert!(verify_manifest(&serde_json::to_vec(&envelope).unwrap(), Pack::Heic, &public).is_err());
 }
+
+#[test]
+fn universal_font_pack_is_signed_and_executable_packs_remain_platform_specific() {
+    let fixture = Fixture::new();
+    let root = fixture.0.join("packs");
+    let path = fixture.0.join("universal.pfepack");
+    let font_bytes = fs::read(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/fonts/NotoSansCJK-Regular.otf"),
+    )
+    .unwrap();
+    let mut font = manifest(Pack::Cjk, &font_bytes);
+    font.platform = "universal".into();
+    archive(&path, &font, &font_bytes, false);
+    let public = key().verifying_key().to_bytes();
+    install_at(&path, Pack::Cjk, &root, &public).unwrap();
+    assert_eq!(
+        fs::read(installed_at(&root, Pack::Cjk, &public).unwrap()).unwrap(),
+        font_bytes
+    );
+    let mut executable = manifest(Pack::Jxl, b"helper");
+    executable.platform = "universal".into();
+    archive(&path, &executable, b"helper", false);
+    assert!(install_at(&path, Pack::Jxl, &root, &public).is_err());
+    assert!(Pack::Cjk.asset().contains("cjk-universal"));
+    assert!(Pack::Jxl.asset().contains(&platform()));
+}

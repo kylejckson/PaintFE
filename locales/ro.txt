@@ -1661,7 +1661,7 @@ save.changed=The document changed while saving. It has been kept open so you can
 # System HEIC support (English fallback pending native review)
 heic.system_title=HEIC / HEIF (system codecs)
 heic.system_description=Uses codecs installed on your operating system. No HEVC codec is bundled or downloaded by PaintFE. Older HEIC packs are no longer used.
-heic.setup_windows=Uses Windows HEIF Image Extensions and HEVC Video Extensions. Install missing extensions through Microsoft Store, then restart PaintFE. Supported save options depend on the installed codec.
+heic.setup_windows=Utilizați extensiile Windows HEIF și HEVC instalate sau alegeți propriul DLL libheif în Preferințe > Caracteristici opționale. Opțiunile de salvare disponibile depind de codecul selectat.
 heic.setup_macos=Uses macOS ImageIO. HEIC support and save options depend on your macOS version.
 heic.setup_linux=Requires system libheif with an HEVC decoder or encoder. Install the codec through your distribution, then restart PaintFE. PaintFE does not download HEVC codecs.
 heic.setup_unsupported=HEIC requires a supported desktop operating system and an installed system codec.
@@ -1717,3 +1717,17 @@ document.copy_suffix=copy
 ui.language_applies_immediately=Language changes apply immediately.
 packs.ready=Installed and ready to use. No restart is required.
 packs.removed=Optional pack removed.
+
+processing.cancelling=Se anulează... Este posibil ca pasul curent de procesare să fie finalizat.
+
+heic.custom_library=Bibliotecă HEIC opțională
+
+heic.custom_hint=Utilizați un DLL libheif în care aveți încredere, cu dependențele sale și pluginurile de codec. Nu se descarcă nimic. Alegerea acestui lucru înlocuiește backend-ul HEIC al sistemului până când selectați Utilizați codecul de sistem.
+
+heic.choose_library=Alegeți libheif DLL...
+
+heic.use_system=Utilizați codecul de sistem
+
+heic.test_library=Verificați suportul HEIC
+
+heic.test_hint=Selectați Verificați suportul HEIC pentru a testa dacă această bibliotecă poate deschide și salva imagini HEIC.

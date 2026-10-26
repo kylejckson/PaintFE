@@ -21,6 +21,9 @@ impl PaintFEApp {
                         if self.background_removal_pending {
                             return true;
                         }
+                        self.operation_cancel =
+                            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                        let job_cancel = self.operation_cancel.clone();
                         if let Some(project) = self.active_project() {
                             let layer_idx = project.canvas_state.active_layer_index;
                             let original_pixels =
@@ -36,20 +39,23 @@ impl PaintFEApp {
                             };
                             self.background_removal_pending = true;
                             self.filter_status_description = t!("status.remove_background");
-                            self.spawn_fallible_filter_job(
+                            self.spawn_filter_job_internal(
                                 ctx.input(|i| i.time),
                                 HistoryAction::RemoveBackground
                                     .label("Remove Background".to_string()),
                                 layer_idx,
                                 original_pixels,
                                 original_flat,
+                                0,
+                                Some(job_cancel.clone()),
                                 move |input_img| {
-                                    crate::ops::ai::remove_background_with_options(
+                                    crate::ops::ai::remove_background_cancellable(
                                         &dll_path,
                                         &model_path,
                                         input_img,
                                         &settings,
                                         &options,
+                                        job_cancel,
                                     )
                                     .map_err(|error| error.to_string())
                                 },

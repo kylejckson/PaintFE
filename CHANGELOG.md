@@ -6,6 +6,27 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.20] - 2026-10-27
+
+- Prevent crashes during oversized resizes and WebP saves.
+- Improve large-image fitting, zooming and frame-rate limits.
+- Add optional HEIC library selection and simplify the CJK download.
+
+### Fixes
+
+- Check resize dimensions before allocating memory and reject unsupported sizes with an error. Related to issue 212.
+- Prevent cancelled or outdated processing results from replacing a changed document. Related to issue 212.
+- Handle WebP's 16,383-pixel dimension limit without crashing or replacing existing files. Related to issue 207.
+- Fit large images when opened, allow zooming below 10%, and keep small images at no more than 100% initially. Related to issue 211.
+- Save all seven Debug Info options and move them into Preferences > Interface. Related to issue 209.
+- Stop small timing delays accumulating in the frame-rate limiter. Related to issue 203.
+
+### Features and interface
+
+- Add processing cancellation and block conflicting editor actions. CPU resizing may finish its current step before stopping. Related to issue 212.
+- Add optional libheif DLL selection and a HEIC support check in Preferences > Optional Features. System codecs remain the default. Related to issue 196.
+- Use one universal CJK font pack across supported platforms. Existing font packs remain compatible. Related to issue 210.
+
 ## [1.4.19] - 2026-10-26
 
 - Fix the Linux build failure that blocked release downloads.

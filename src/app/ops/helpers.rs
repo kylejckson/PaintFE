@@ -234,6 +234,20 @@ impl PaintFEApp {
         cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
         filter_fn: impl FnOnce(&image::RgbaImage) -> Result<image::RgbaImage, String> + Send + 'static,
     ) {
+        let revision = (preview_token == 0)
+            .then(|| {
+                self.projects
+                    .iter()
+                    .find(|p| p.id == project_id)
+                    .map(|p| p.save_revision())
+            })
+            .flatten();
+        let cancel = cancel
+            .unwrap_or_else(|| std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)));
+        if preview_token == 0 {
+            self.operation_cancel = cancel.clone();
+        }
+        let result_cancel = cancel.clone();
         let sender = self.filter_sender.clone();
         if self.pending_filter_jobs == 0 {
             self.filter_ops_start_time = Some(current_time);
@@ -243,17 +257,11 @@ impl PaintFEApp {
         crate::par_compat::spawn(move || {
             let result_flat = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 // Check cancellation before starting expensive work
-                if cancel
-                    .as_ref()
-                    .is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed))
-                {
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
                     return Ok(original_pixels.clone());
                 }
                 let processed = filter_fn(&original_flat)?;
-                if cancel
-                    .as_ref()
-                    .is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed))
-                {
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
                     return Ok(original_pixels.clone());
                 }
                 Ok(TiledImage::from_rgba_image(&processed))
@@ -261,6 +269,8 @@ impl PaintFEApp {
             match result_flat {
                 Ok(Ok(processed)) => {
                     let _ = sender.send(FilterResult {
+                        revision,
+                        cancel: result_cancel,
                         project_id,
                         layer_idx,
                         original_pixels,
@@ -273,6 +283,8 @@ impl PaintFEApp {
                 Ok(Err(error)) => {
                     crate::log_err!("Filter '{}': {}", description, error);
                     let _ = sender.send(FilterResult {
+                        revision,
+                        cancel: result_cancel,
                         project_id,
                         layer_idx,
                         original_pixels: original_pixels.clone(),
@@ -293,6 +305,8 @@ impl PaintFEApp {
                     };
                     crate::log_err!("Filter '{}' panicked: {}", description, msg);
                     let _ = sender.send(FilterResult {
+                        revision,
+                        cancel: result_cancel,
                         project_id,
                         layer_idx,
                         original_pixels: original_pixels.clone(),
@@ -445,7 +459,8 @@ impl PaintFEApp {
 
     fn finish_pending_line_edit(&mut self) {
         if let Some(project) = self.projects.get_mut(self.active_project_index) {
-            self.tools_panel.commit_pending_line_edit(&mut project.canvas_state);
+            self.tools_panel
+                .commit_pending_line_edit(&mut project.canvas_state);
         }
         self.commit_pending_tool_history();
     }

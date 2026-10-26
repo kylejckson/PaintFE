@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "bridge.hpp"
+#include "libheif_codec.hpp"
 #include <windows.h>
 #include <wincodec.h>
 #include <shlwapi.h>
@@ -23,6 +24,7 @@ static ComPtr<IWICImagingFactory> factory() {
     return f;
 }
 uint8_t capabilities() {
+    if(_wgetenv(L"PAINTFE_HEIF_LIBRARY")) return runtime_heif::capabilities();
     COM init; auto f = factory(); uint8_t flags = 0;
     // Media Foundation is optional on Windows N/Server. Do not put mfplat.dll
     // in the editor's import table or make non-HEIC editing depend on it.
@@ -48,6 +50,7 @@ uint8_t capabilities() {
     return flags;
 }
 Image decode(const uint8_t* data, size_t size, bool requires_alpha, bool high_depth) {
+    if(_wgetenv(L"PAINTFE_HEIF_LIBRARY")) return runtime_heif::decode(data,size,requires_alpha,high_depth);
     COM init; auto f = factory();
     ComPtr<IWICStream> stream; check(f->CreateStream(&stream));
     check(stream->InitializeFromMemory(const_cast<BYTE*>(data),static_cast<DWORD>(size)));
@@ -90,6 +93,7 @@ Image decode(const uint8_t* data, size_t size, bool requires_alpha, bool high_de
     return image;
 }
 Image encode(const uint8_t* data, uint32_t w, uint32_t h, uint8_t quality) {
+    if(_wgetenv(L"PAINTFE_HEIF_LIBRARY")) return runtime_heif::encode(data,w,h,quality);
     COM init; auto f = factory();
     ComPtr<IStream> stream; stream.Attach(SHCreateMemStream(nullptr,0));
     if (!stream) throw std::bad_alloc();
@@ -119,6 +123,7 @@ Image encode(const uint8_t* data, uint32_t w, uint32_t h, uint8_t quality) {
     return out;
 }
 void limits() {
+    SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOOPENFILEERRORBOX|SEM_NOGPFAULTERRORBOX);
     HANDLE job=CreateJobObjectW(nullptr,nullptr);
     if(!job) throw std::runtime_error("Could not create system codec memory limit");
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION info{};

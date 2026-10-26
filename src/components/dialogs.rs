@@ -1894,6 +1894,13 @@ mod jxl_preview_tests {
 
     #[test]
     fn asynchronous_preview_discards_stale_options_and_encodes_current_settings() {
+        if let Some(path) = std::env::var_os("PAINTFE_TEST_JXL_PACK") {
+            crate::services::optional_packs::install(
+                std::path::Path::new(&path),
+                crate::services::optional_packs::Pack::Jxl,
+            )
+            .unwrap();
+        }
         let ctx = egui::Context::default();
         let image = RgbaImage::from_pixel(12, 9, image::Rgba([83, 142, 217, 128]));
         let format = SaveFormat::Jxl(crate::io::jxl::JxlOptions {

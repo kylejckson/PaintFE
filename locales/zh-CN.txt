@@ -1661,7 +1661,7 @@ save.changed=The document changed while saving. It has been kept open so you can
 # System HEIC support (English fallback pending native review)
 heic.system_title=HEIC / HEIF (system codecs)
 heic.system_description=Uses codecs installed on your operating system. No HEVC codec is bundled or downloaded by PaintFE. Older HEIC packs are no longer used.
-heic.setup_windows=Uses Windows HEIF Image Extensions and HEVC Video Extensions. Install missing extensions through Microsoft Store, then restart PaintFE. Supported save options depend on the installed codec.
+heic.setup_windows=使用已安装的 Windows HEIF 和 HEVC 扩展，或在“首选项”>“可选功能”中选择您自己的 libheif DLL。可用的保存选项取决于所选的编解码器。
 heic.setup_macos=Uses macOS ImageIO. HEIC support and save options depend on your macOS version.
 heic.setup_linux=Requires system libheif with an HEVC decoder or encoder. Install the codec through your distribution, then restart PaintFE. PaintFE does not download HEVC codecs.
 heic.setup_unsupported=HEIC requires a supported desktop operating system and an installed system codec.
@@ -1717,3 +1717,17 @@ document.copy_suffix=copy
 ui.language_applies_immediately=Language changes apply immediately.
 packs.ready=Installed and ready to use. No restart is required.
 packs.removed=Optional pack removed.
+
+processing.cancelling=正在取消...当前处理步骤可能需要完成。
+
+heic.custom_library=可选的 HEIC 库
+
+heic.custom_hint=使用您信任的 libheif DLL 及其匹配的依赖项和编解码器插件。没有下载任何内容。选择此选项将替换系统 HEIC 后端，直到您选择使用系统编解码器。
+
+heic.choose_library=选择 libheif DLL...
+
+heic.use_system=使用系统编解码器
+
+heic.test_library=检查 HEIC 支持
+
+heic.test_hint=选择检查 HEIC 支持来测试该库是否可以打开和保存 HEIC 图像。

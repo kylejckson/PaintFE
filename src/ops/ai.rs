@@ -975,7 +975,7 @@ pub fn remove_background_with_options(
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        remove_background_native(dll_path, model_path, input, settings, options)
+        remove_background_native(dll_path, model_path, input, settings, options, None)
     }
 }
 
@@ -1041,6 +1041,27 @@ impl Drop for OrtValuesGuard<'_> {
     }
 }
 
+pub fn remove_background_cancellable(
+    dll_path: &str,
+    model_path: &str,
+    input: &RgbaImage,
+    settings: &RemoveBgSettings,
+    options: &InferenceOptions,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Result<RgbaImage, OnnxError> {
+    if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err(OnnxError::InferenceFailed("Cancelled".into()));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        remove_background_native(dll_path, model_path, input, settings, options, Some(cancel))
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        remove_background_with_options(dll_path, model_path, input, settings, options)
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn remove_background_native(
     dll_path: &str,
@@ -1048,6 +1069,7 @@ fn remove_background_native(
     input: &RgbaImage,
     settings: &RemoveBgSettings,
     options: &InferenceOptions,
+    cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 ) -> Result<RgbaImage, OnnxError> {
     let started = std::time::Instant::now();
     crate::log_info!(
@@ -1386,16 +1408,51 @@ fn remove_background_native(
             model_input_h,
             model_input_w
         );
-        let run_status = (api.run())(
-            session,
-            std::ptr::null(), // run_options
-            input_names.as_ptr(),
-            input_tensors.as_ptr(),
-            1,
-            output_name_ptrs.as_ptr(),
-            1,
-            output_tensors.values.as_mut_ptr(),
-        );
+        if cancel
+            .as_ref()
+            .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Relaxed))
+        {
+            return Err(OnnxError::InferenceFailed("Cancelled".into()));
+        }
+        let create: unsafe extern "C" fn(*mut *mut OrtRunOptions) -> *mut OrtStatus =
+            api.get_fn(39);
+        let terminate: unsafe extern "C" fn(*mut OrtRunOptions) -> *mut OrtStatus = api.get_fn(46);
+        let release: unsafe extern "C" fn(*mut OrtRunOptions) = api.get_fn(97);
+        let release_status = api.release_status();
+        let mut run_options = std::ptr::null_mut();
+        status_to_result(&api, create(&mut run_options)).map_err(OnnxError::InferenceFailed)?;
+        let run_address = run_options as usize;
+        let done = std::sync::atomic::AtomicBool::new(false);
+        let run_status = std::thread::scope(|scope| {
+            if let Some(cancel) = cancel.as_ref() {
+                let done = &done;
+                scope.spawn(move || {
+                    while !done.load(std::sync::atomic::Ordering::Acquire) {
+                        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                            let status = terminate(run_address as *mut OrtRunOptions);
+                            if !status.is_null() {
+                                release_status(status);
+                            }
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                    }
+                });
+            }
+            let status = (api.run())(
+                session,
+                run_options,
+                input_names.as_ptr(),
+                input_tensors.as_ptr(),
+                1,
+                output_name_ptrs.as_ptr(),
+                1,
+                output_tensors.values.as_mut_ptr(),
+            );
+            done.store(true, std::sync::atomic::Ordering::Release);
+            status
+        });
+        release(run_options);
 
         if let Err(e) = status_to_result(&api, run_status) {
             crate::log_err!("AI phase=inference error={e}");

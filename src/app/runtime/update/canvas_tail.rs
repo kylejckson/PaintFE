@@ -437,6 +437,24 @@ impl PaintFEApp {
                         ui_blocks_canvas_input,
                         live_window_resize,
                     );
+                    if project.needs_initial_fit
+                        && self
+                            .canvas
+                            .last_canvas_rect
+                            .is_some_and(|rect| rect.width() > 1.0 && rect.height() > 1.0)
+                    {
+                        self.canvas.fit_to_window((
+                            project.canvas_state.width,
+                            project.canvas_state.height,
+                        ));
+                        let (zoom, pan) = self.canvas.view_state();
+                        let zoom = zoom.min(1.0);
+                        self.canvas.set_view_state(zoom, pan);
+                        project.view_zoom = zoom;
+                        project.view_pan_offset = pan;
+                        project.needs_initial_fit = false;
+                        ctx.request_repaint();
+                    }
                     drop(render_profile);
                     if let (Some(session), Some(rect)) = (
                         self.straighten_session.as_mut(),

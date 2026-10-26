@@ -270,7 +270,7 @@ pub fn show_settings(ui: &mut Ui) {
     super::settings_window::SettingsWindow::section_header(ui, &crate::t!("heic.system_title"));
     ui.label(crate::t!("heic.system_description"));
     ui.label(crate::io::heic::setup_message());
-    let caps = crate::io::heic::capabilities();
+    let caps = crate::io::heic::display_capabilities();
     ui.label(format!(
         "{}: {}   {}: {}",
         crate::t!("heic.import"),
@@ -291,6 +291,61 @@ pub fn show_settings(ui: &mut Ui) {
     }
     save(&ctx, state);
 }
+pub fn show_heic_library_settings(
+    ui: &mut Ui,
+    settings: &mut crate::config::settings::AppSettings,
+) {
+    #[cfg(target_os = "windows")]
+    {
+        ui.add_space(8.0);
+        ui.strong(crate::t!("heic.custom_library"));
+        ui.label(crate::t!("heic.custom_hint"));
+        if !settings.heic_library_path.is_empty() {
+            ui.label(
+                std::path::Path::new(&settings.heic_library_path)
+                    .display()
+                    .to_string(),
+            );
+        }
+        ui.horizontal_wrapped(|ui| {
+            if ui.button(crate::t!("heic.choose_library")).clicked()
+                && let Some(path) = rfd::FileDialog::new()
+                    .add_filter("libheif", &["dll"])
+                    .pick_file()
+            {
+                settings.heic_library_path = path.to_string_lossy().into_owned();
+                crate::io::heic::set_library_path(&settings.heic_library_path);
+                settings.save();
+            }
+            if ui.button(crate::t!("heic.use_system")).clicked() {
+                settings.heic_library_path.clear();
+                crate::io::heic::set_library_path("");
+                settings.save();
+            }
+            let id = Id::new("heic_library_test_running");
+            let running = ui.ctx().data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+            if ui
+                .add_enabled(!running, egui::Button::new(crate::t!("heic.test_library")))
+                .clicked()
+            {
+                let ctx = ui.ctx().clone();
+                ctx.data_mut(|d| d.insert_temp(id, true));
+                std::thread::spawn(move || {
+                    crate::io::heic::forget_capabilities();
+                    crate::io::heic::capabilities();
+                    ctx.data_mut(|d| d.insert_temp(id, false));
+                    ctx.request_repaint();
+                });
+            }
+            if running {
+                ui.spinner();
+            }
+        });
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = (ui, settings);
+}
+
 pub fn frame(ctx: &Context, settings: &mut crate::config::settings::AppSettings) -> bool {
     let mut state = state(ctx);
     let result = state
@@ -464,6 +519,10 @@ mod tests {
                 let output = ctx.run_ui(input, |ui| {
                     ui.set_width(440.0);
                     show_settings(ui);
+                    show_heic_library_settings(
+                        ui,
+                        &mut crate::config::settings::AppSettings::default(),
+                    );
                     assert!(ui.min_rect().width() <= 442.0, "{:?}", ui.min_rect());
                 });
                 text_center(

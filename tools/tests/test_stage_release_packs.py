@@ -20,6 +20,19 @@ spec.loader.exec_module(staging)
 
 
 class ReleasePackTests(unittest.TestCase):
+    def test_universal_font_releases_have_nine_signed_packs(self):
+        expected=staging.expected_packs('v1.4.20')
+        self.assertEqual(len(expected),9)
+        self.assertEqual(sum(pack=='cjk' for pack,platform in expected.values()),1)
+        self.assertEqual(expected['PaintFE-pack-cjk-universal-v1.4.20.pfepack'],('cjk','universal'))
+        source=self.root/'universal-input'
+        for name,(pack,platform) in expected.items():
+            path=source/platform/name
+            path.parent.mkdir(parents=True,exist_ok=True)
+            self.write_pack(path,pack,platform,version='1.4.20')
+        result=staging.stage(source,self.root/'universal-output','v1.4.20',self.core)
+        self.assertEqual(len(result),9)
+
     def test_system_codec_releases_have_twelve_packs_without_heic(self):
         expected=staging.expected_packs('v1.4.17')
         self.assertEqual(len(expected),12)

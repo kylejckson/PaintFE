@@ -1661,7 +1661,7 @@ save.changed=The document changed while saving. It has been kept open so you can
 # System HEIC support (English fallback pending native review)
 heic.system_title=HEIC / HEIF (system codecs)
 heic.system_description=Uses codecs installed on your operating system. No HEVC codec is bundled or downloaded by PaintFE. Older HEIC packs are no longer used.
-heic.setup_windows=Uses Windows HEIF Image Extensions and HEVC Video Extensions. Install missing extensions through Microsoft Store, then restart PaintFE. Supported save options depend on the installed codec.
+heic.setup_windows=Gebruik de geïnstalleerde Windows HEIF- en HEVC-extensies, of kies uw eigen libheif DLL in Voorkeuren > Optionele functies. Beschikbare opslagopties zijn afhankelijk van de geselecteerde codec.
 heic.setup_macos=Uses macOS ImageIO. HEIC support and save options depend on your macOS version.
 heic.setup_linux=Requires system libheif with an HEVC decoder or encoder. Install the codec through your distribution, then restart PaintFE. PaintFE does not download HEVC codecs.
 heic.setup_unsupported=HEIC requires a supported desktop operating system and an installed system codec.
@@ -1717,3 +1717,17 @@ document.copy_suffix=copy
 ui.language_applies_immediately=Language changes apply immediately.
 packs.ready=Installed and ready to use. No restart is required.
 packs.removed=Optional pack removed.
+
+processing.cancelling=Annuleren... De huidige verwerkingsstap moet mogelijk worden voltooid.
+
+heic.custom_library=Optionele HEIC-bibliotheek
+
+heic.custom_hint=Gebruik een libheif DLL die u vertrouwt, met de bijbehorende afhankelijkheden en codec-plug-ins. Er wordt niets gedownload. Als u dit kiest, wordt de HEIC-backend van het systeem vervangen totdat u Systeemcodec gebruiken selecteert.
+
+heic.choose_library=Kies libheif DLL...
+
+heic.use_system=Gebruik systeemcodec
+
+heic.test_library=Controleer HEIC-ondersteuning
+
+heic.test_hint=Selecteer HEIC-ondersteuning controleren om te testen of deze bibliotheek HEIC-afbeeldingen kan openen en opslaan.

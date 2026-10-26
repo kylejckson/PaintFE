@@ -59,7 +59,9 @@ impl Project {
             return Vec::new();
         }
         let mut losses = Vec::new();
-        if !self.canvas_state.guides.items.is_empty() { losses.push(crate::t!("guides.save_loss")); }
+        if !self.canvas_state.guides.items.is_empty() {
+            losses.push(crate::t!("guides.save_loss"));
+        }
         if self.has_editable_structure() {
             losses.push(crate::t!("save.loss_structure"));
         }
@@ -189,7 +191,8 @@ impl PaintFEApp {
         self.pending_io_ops += 1;
         let sender = self.io_sender.clone();
         crate::par_compat::spawn(move || {
-            let result = write_save_atomically(&action, payload);
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| write_save_atomically(&action, payload)))
+                .unwrap_or_else(|_| Err("The image encoder failed unexpectedly. Your original file has not been replaced.".into()));
             let _ = sender.send(IoResult::SaveFinished { project_id, result });
         });
     }
@@ -456,7 +459,7 @@ fn write_save_atomically(
         .create_new(true)
         .open(&temporary)
         .map_err(|e| e.to_string())?;
-    let result = (|| {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         match payload {
             SavePayload::Project(data) => {
                 crate::io::write_pfe(&data, &temporary).map_err(|e| e.to_string())?
@@ -497,7 +500,13 @@ fn write_save_atomically(
             .and_then(|file| file.sync_all())
             .map_err(|e| e.to_string())?;
         std::fs::rename(&temporary, &action.path).map_err(|e| e.to_string())
-    })();
+    }))
+    .unwrap_or_else(|_| {
+        Err(
+            "The image encoder failed unexpectedly. Your original file has not been replaced."
+                .into(),
+        )
+    });
     if result.is_err() {
         let _ = std::fs::remove_file(&temporary);
     }

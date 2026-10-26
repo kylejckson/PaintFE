@@ -196,6 +196,7 @@ fn main_inner() -> Result<(), eframe::Error> {
         use clap::Parser;
         // Initialize i18n so any deeply-nested t!() calls resolve cleanly
         i18n::init();
+        paintfe::io::heic::set_library_path(&AppSettings::load().heic_library_path);
         let args = cli::CliArgs::parse();
         let code = cli::run(args);
         let _ = AppSettings::flush_pending_saves();

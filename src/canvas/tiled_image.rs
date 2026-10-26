@@ -7,23 +7,22 @@ pub struct TiledImage {
 }
 
 impl TiledImage {
+    pub const MAX_PIXELS: u64 = 256_000_000;
+
+    pub fn validate_dimensions(width: u32, height: u32) -> Result<(), String> {
+        if width == 0 || height == 0 || u64::from(width) * u64::from(height) > Self::MAX_PIXELS {
+            return Err(format!(
+                "Image size {width}x{height} exceeds the supported limit of 256 million pixels, or has a zero dimension."
+            ));
+        }
+        Ok(())
+    }
+
     // ---- construction -------------------------------------------------------
 
     /// Create an empty (fully transparent) tiled image.
     pub fn new(width: u32, height: u32) -> Self {
-        // Sanity: clamp dimensions to prevent overflow (max ~256 megapixels)
-        let (width, height) = {
-            let total = (width as u64) * (height as u64);
-            if total > 256_000_000 || width == 0 || height == 0 {
-                eprintln!(
-                    "TiledImage::new: dimensions {}×{} exceed 256M pixels, clamped to 1×1",
-                    width, height
-                );
-                (1, 1)
-            } else {
-                (width, height)
-            }
-        };
+        Self::validate_dimensions(width, height).expect("Invalid tiled image dimensions");
         let chunks_per_row = width.div_ceil(CHUNK_SIZE);
         let chunks_per_col = height.div_ceil(CHUNK_SIZE);
         let total = (chunks_per_row * chunks_per_col) as usize;
@@ -107,7 +106,8 @@ impl TiledImage {
     /// `data` must be exactly `width * height * 4` bytes (row-major, RGBA).
     /// Only non-transparent chunks are stored.  Parallelised with rayon.
     pub fn from_raw_rgba(width: u32, height: u32, data: &[u8]) -> Self {
-        debug_assert_eq!(data.len(), (width as usize) * (height as usize) * 4);
+        Self::validate_dimensions(width, height).expect("Invalid tiled image dimensions");
+        assert_eq!(data.len(), (width as usize) * (height as usize) * 4);
         let mut img = Self::new(width, height);
 
         let chunks_x = img.chunks_per_row as usize;

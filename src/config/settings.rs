@@ -270,6 +270,7 @@ pub struct AppSettings {
     // AI / ONNX Runtime settings
     /// Path to onnxruntime.dll / libonnxruntime.so
     pub onnx_runtime_path: String,
+    pub heic_library_path: String,
     /// Path to BiRefNet .onnx model file
     pub birefnet_model_path: String,
     pub onnx_graph_optimization: crate::ops::ai::GraphOptimization,
@@ -518,6 +519,7 @@ impl Default for AppSettings {
             last_export_directory: String::new(),
             recent_files: Vec::new(),
             onnx_runtime_path: String::new(),
+            heic_library_path: String::new(),
             birefnet_model_path: String::new(),
             onnx_graph_optimization: Default::default(),
             onnx_cpu_memory_arena: false,
@@ -1248,9 +1250,29 @@ impl AppSettings {
         // Append keybinding lines
         let mut content = content;
         content.push_str(&format!(
+            "heic_library_path={}\n",
+            serde_json::to_string(&crate::services::storage::encode_resource_path(
+                &self.heic_library_path
+            ))
+            .unwrap()
+        ));
+        content.push_str(&format!(
             "frame_rate_detect_screen={}\nframe_rate_limit={}\n",
             self.frame_rate_detect_screen,
             self.frame_rate_limit.clamp(15, 360)
+        ));
+        content.push_str(&format!("show_debug_panel={}\n", self.show_debug_panel));
+        content.push_str(&format!("show_tool_info={}\n", self.show_tool_info));
+        content.push_str(&format!(
+            "debug_show_canvas_size={}\n",
+            self.debug_show_canvas_size
+        ));
+        content.push_str(&format!("debug_show_zoom={}\n", self.debug_show_zoom));
+        content.push_str(&format!("debug_show_fps={}\n", self.debug_show_fps));
+        content.push_str(&format!("debug_show_gpu={}\n", self.debug_show_gpu));
+        content.push_str(&format!(
+            "debug_show_operations={}\n",
+            self.debug_show_operations
         ));
         content.push_str(&format!("info_font_size={}\n", self.info_font_size));
         content.push_str(&format!("info_opacity={}\n", self.info_opacity));
@@ -1721,6 +1743,22 @@ impl AppSettings {
             let key = key.trim();
             let val = val.trim();
             match key {
+                "heic_library_path" => {
+                    s.heic_library_path = serde_json::from_str(val).unwrap_or_default()
+                }
+                "show_debug_panel" => {
+                    s.show_debug_panel = val.parse().unwrap_or(s.show_debug_panel)
+                }
+                "show_tool_info" => s.show_tool_info = val.parse().unwrap_or(s.show_tool_info),
+                "debug_show_canvas_size" => {
+                    s.debug_show_canvas_size = val.parse().unwrap_or(s.debug_show_canvas_size)
+                }
+                "debug_show_zoom" => s.debug_show_zoom = val.parse().unwrap_or(s.debug_show_zoom),
+                "debug_show_fps" => s.debug_show_fps = val.parse().unwrap_or(s.debug_show_fps),
+                "debug_show_gpu" => s.debug_show_gpu = val.parse().unwrap_or(s.debug_show_gpu),
+                "debug_show_operations" => {
+                    s.debug_show_operations = val.parse().unwrap_or(s.debug_show_operations)
+                }
                 "ui_polish" => {
                     if let Ok(mut value) =
                         serde_json::from_str::<crate::ui::polish::PolishSettings>(val)
@@ -1968,6 +2006,8 @@ impl AppSettings {
                     s.onnx_graph_optimization = serde_json::from_str(val).unwrap_or_default();
                 }
                 "birefnet_model_path" => {
+                    s.heic_library_path =
+                        crate::services::storage::decode_resource_path(&s.heic_library_path);
                     s.birefnet_model_path = val.to_string();
                 }
                 "paintdotnet_plugins_enabled" => {
@@ -2470,6 +2510,14 @@ mod refinement_tests {
                 background_opacity: 0.6,
                 ..Default::default()
             },
+            show_debug_panel: false,
+            show_tool_info: false,
+            debug_show_canvas_size: false,
+            debug_show_zoom: false,
+            debug_show_fps: true,
+            debug_show_gpu: true,
+            debug_show_operations: false,
+            heic_library_path: "D:/codec test/libheif.dll".into(),
             info_font_size: 18.0,
             info_opacity: 0.65,
             info_text_color: Some([12, 34, 56]),
@@ -2508,6 +2556,14 @@ mod refinement_tests {
         crate::config::persistence::drain().unwrap();
         let restored = AppSettings::load();
         assert_eq!(restored.ruler, settings.ruler);
+        assert!(!restored.show_debug_panel);
+        assert!(!restored.show_tool_info);
+        assert!(!restored.debug_show_canvas_size);
+        assert!(!restored.debug_show_zoom);
+        assert!(restored.debug_show_fps);
+        assert!(restored.debug_show_gpu);
+        assert!(!restored.debug_show_operations);
+        assert_eq!(restored.heic_library_path, settings.heic_library_path);
         assert_eq!(restored.info_font_size, 18.0);
         assert_eq!(restored.info_opacity, 0.65);
         assert_eq!(restored.info_text_color, Some([12, 34, 56]));

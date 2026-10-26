@@ -661,3 +661,23 @@ fn issue_206_quick_save_and_save_as_include_pending_line_pixels() {
     assert_eq!(app.projects[0].history.undo_count(), 1);
     assert!(app.save_file_dialog.open);
 }
+
+#[test]
+fn oversized_webp_is_recoverable_and_does_not_replace_or_leave_temporary_files() {
+    let directory = directory();
+    let path = directory.join("original.webp");
+    std::fs::write(&path, b"original").unwrap();
+    let image = image::RgbaImage::new(16384, 1);
+    for lossless in [true, false] {
+        let mut request = action(path.clone(), SaveFormat::Webp);
+        request.webp_lossless = lossless;
+        let result = write_save_atomically(
+            &request,
+            SavePayload::Image(crate::io::PreparedExportImage::Rgba8(image.clone())),
+        );
+        assert!(result.unwrap_err().contains("16383"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"original");
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
+    }
+    std::fs::remove_dir_all(directory).unwrap();
+}

@@ -74,7 +74,15 @@ impl Budget {
             true
         } else {
             self.pending = None;
-            self.last = Some(now);
+            // Keep the original cadence when a wake-up is slightly late. Starting
+            // a new interval at each wake-up would accumulate timer/render jitter.
+            self.last = Some(match self.last {
+                Some(last) => {
+                    let steps = (now.duration_since(last).as_nanos() / interval.as_nanos()).max(1);
+                    last + interval.mul_f64(steps as f64)
+                }
+                None => now,
+            });
             false
         }
     }
@@ -222,6 +230,23 @@ mod tests {
         assert!(!b.defer(now + step, step));
         assert!(b.pending.is_none());
         assert!(!b.defer(now + Duration::from_secs(1), step));
+    }
+    #[test]
+    fn late_wakeups_do_not_accumulate_frame_rate_drift_or_catch_up_bursts() {
+        let start = Instant::now();
+        let interval = Duration::from_nanos(16_666_667);
+        let mut budget = Budget::default();
+        assert!(!budget.defer(start, interval));
+        for frame in 1..=1000 {
+            let late = start + interval * frame + Duration::from_micros(550);
+            assert!(!budget.defer(late, interval));
+            assert_eq!(budget.last, Some(start + interval * frame));
+            assert!(budget.defer(late + Duration::from_micros(100), interval));
+            assert_eq!(budget.pending, Some(start + interval * (frame + 1)));
+        }
+        let late = start + interval * 1100 + Duration::from_micros(500);
+        assert!(!budget.defer(late, interval));
+        assert!(budget.defer(late, interval));
     }
     #[test]
     fn monitor_detection_manual_caps_and_missing_monitor_are_bounded() {

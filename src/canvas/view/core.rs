@@ -2293,7 +2293,7 @@ impl Canvas {
                         // Desired zoom: fit the selected region into the viewport
                         let desired_zoom = (viewport_w / rect_w)
                             .min(viewport_h / rect_h)
-                            .clamp(0.1, 100.0);
+                            .clamp(Self::MIN_ZOOM, 100.0);
                         self.zoom = desired_zoom;
                         // Pan so that the rect center is at the viewport center
                         // Image center is at canvas_rect.center() + pan_offset
@@ -3315,9 +3315,34 @@ impl Canvas {
 
     /// Discrete zoom ladder. Wheel and keyboard zoom step through these so
     /// pixel-art zoom levels stay crisp (whole-pixel 1x, 2x, 3x, ...).
-    pub const ZOOM_LADDER: [f32; 19] = [
-        0.1, 0.125, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0, 24.0, 32.0,
-        48.0, 64.0, 100.0,
+    pub const MIN_ZOOM: f32 = 0.0001;
+    pub const ZOOM_LADDER: [f32; 26] = [
+        Self::MIN_ZOOM,
+        0.001,
+        0.005,
+        0.01,
+        0.025,
+        0.05,
+        0.075,
+        0.1,
+        0.125,
+        0.25,
+        0.5,
+        0.75,
+        1.0,
+        1.5,
+        2.0,
+        3.0,
+        4.0,
+        6.0,
+        8.0,
+        12.0,
+        16.0,
+        24.0,
+        32.0,
+        48.0,
+        64.0,
+        100.0,
     ];
 
     /// Step zoom to the next ladder level up (`direction > 0`) or down,
@@ -3336,7 +3361,7 @@ impl Canvas {
                 .copied()
                 .rev()
                 .find(|&z| z < current * 0.999)
-                .unwrap_or(0.1)
+                .unwrap_or(Self::MIN_ZOOM)
         };
         let anchor = anchor.unwrap_or_else(|| canvas_rect.center());
         self.zoom_around_screen_point(target / current, anchor, canvas_rect);
@@ -3360,7 +3385,7 @@ impl Canvas {
             return;
         };
         let (w, h) = (canvas_size.0.max(1) as f32, canvas_size.1.max(1) as f32);
-        self.zoom = ((rect.width() / w).min(rect.height() / h)).clamp(0.1, 100.0);
+        self.zoom = ((rect.width() / w).min(rect.height() / h)).clamp(Self::MIN_ZOOM, 100.0);
         self.pan_offset = Vec2::ZERO;
     }
 
@@ -3425,19 +3450,19 @@ impl Canvas {
     }
 
     pub fn set_view_state(&mut self, zoom: f32, pan_offset: Vec2) {
-        self.zoom = zoom.clamp(0.1, 100.0);
+        self.zoom = zoom.clamp(Self::MIN_ZOOM, 100.0);
         self.pan_offset = pan_offset;
     }
 
     pub fn apply_zoom(&mut self, zoom_factor: f32) {
-        self.zoom = (self.zoom * zoom_factor).clamp(0.1, 100.0);
+        self.zoom = (self.zoom * zoom_factor).clamp(Self::MIN_ZOOM, 100.0);
     }
 
     /// Zoom while keeping a screen-space point fixed (e.g. under the mouse cursor).
     /// `anchor` is in screen coordinates, `canvas_rect` is the viewport rect.
     pub fn zoom_around_screen_point(&mut self, zoom_factor: f32, anchor: Pos2, canvas_rect: Rect) {
         let old_zoom = self.zoom;
-        self.zoom = (self.zoom * zoom_factor).clamp(0.1, 100.0);
+        self.zoom = (self.zoom * zoom_factor).clamp(Self::MIN_ZOOM, 100.0);
         let actual_factor = self.zoom / old_zoom;
         // The image center in screen space is canvas_rect.center() + pan_offset.
         // After scaling, the anchor point would shift unless we compensate pan_offset.

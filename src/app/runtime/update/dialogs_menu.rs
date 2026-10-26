@@ -4,7 +4,7 @@ impl PaintFEApp {
     fn show_runtime_dialogs_menu(&mut self, ctx: &egui::Context, root_ui: &mut egui::Ui) {
         let popup_was_open = egui::Popup::is_any_open(ctx);
         self.reset_ui_cursor_blocking_rects();
-        let modal_open = self.handle_runtime_modal_flow(ctx);
+        let modal_open = self.handle_runtime_modal_flow(ctx) || self.processing_busy();
 
         // --- Top Menu Bar ---
         let menu_kb = self.settings.keybindings.clone();

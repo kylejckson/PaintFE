@@ -1661,7 +1661,7 @@ save.changed=The document changed while saving. It has been kept open so you can
 # System HEIC support (English fallback pending native review)
 heic.system_title=HEIC / HEIF (system codecs)
 heic.system_description=Uses codecs installed on your operating system. No HEVC codec is bundled or downloaded by PaintFE. Older HEIC packs are no longer used.
-heic.setup_windows=Uses Windows HEIF Image Extensions and HEVC Video Extensions. Install missing extensions through Microsoft Store, then restart PaintFE. Supported save options depend on the installed codec.
+heic.setup_windows=Használja a telepített Windows HEIF és HEVC bővítményeket, vagy válassza ki a saját libheif DLL-jét a Beállítások > Választható szolgáltatások menüpontban. Az elérhető mentési lehetőségek a kiválasztott kodektől függenek.
 heic.setup_macos=Uses macOS ImageIO. HEIC support and save options depend on your macOS version.
 heic.setup_linux=Requires system libheif with an HEVC decoder or encoder. Install the codec through your distribution, then restart PaintFE. PaintFE does not download HEVC codecs.
 heic.setup_unsupported=HEIC requires a supported desktop operating system and an installed system codec.
@@ -1717,3 +1717,17 @@ document.copy_suffix=copy
 ui.language_applies_immediately=Language changes apply immediately.
 packs.ready=Installed and ready to use. No restart is required.
 packs.removed=Optional pack removed.
+
+processing.cancelling=Megszakítás... Lehetséges, hogy az aktuális feldolgozási lépést be kell fejezni.
+
+heic.custom_library=Opcionális HEIC könyvtár
+
+heic.custom_hint=Használjon egy megbízható libheif DLL-t a hozzáillő függőségekkel és kodek-bővítményekkel. Semmi sincs letöltve. Ennek kiválasztása lecseréli a rendszer HEIC-háttérrendszerét, amíg ki nem választja a Rendszerkodek használata lehetőséget.
+
+heic.choose_library=Válassza ki a libheif DLL-t...
+
+heic.use_system=Rendszerkodek használata
+
+heic.test_library=Ellenőrizze a HEIC támogatást
+
+heic.test_hint=Válassza a HEIC-támogatás ellenőrzése lehetőséget annak teszteléséhez, hogy ez a könyvtár képes-e megnyitni és menteni a HEIC-képeket.

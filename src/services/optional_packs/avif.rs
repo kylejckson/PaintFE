@@ -66,6 +66,22 @@ pub(crate) fn exchange_system_heic(
     }
     let mut command = process::hidden_command(&path);
     command.arg("--paintfe-system-heic");
+    command.env_remove("PAINTFE_HEIF_LIBRARY");
+    if cfg!(windows) {
+        let path = crate::io::heic::library_path();
+        if !path.is_empty() {
+            let library = std::path::Path::new(&path);
+            if !library.is_absolute() || !library.is_file() {
+                return Err("Choose an existing libheif DLL using its full path".into());
+            }
+            command.env("PAINTFE_HEIF_LIBRARY", library);
+            if let Some(parent) = library.parent() {
+                let paths = std::env::join_paths([parent.to_path_buf(), parent.join("plugins")])
+                    .map_err(|e| e.to_string())?;
+                command.env("LIBHEIF_PLUGIN_PATH", paths);
+            }
+        }
+    }
     exchange_command(command, header, data, tracked)
 }
 
@@ -133,7 +149,7 @@ fn exchange_command(
         let result = loop {
             if generation != GENERATION.load(Ordering::Relaxed)
                 || overflow.load(Ordering::Relaxed)
-                || start.elapsed() > Duration::from_secs(120)
+                || start.elapsed() > Duration::from_secs(if header[8] == 0 { 10 } else { 120 })
             {
                 let _ = child.kill();
                 let _ = child.wait();
