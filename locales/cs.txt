@@ -1640,7 +1640,7 @@ packs.heic_description=Save HEIC still images using an offline libheif and Kvaza
 packs.heic_missing=Install the optional HEIC export pack to save HEIC images.
 packs.install_heic=Install HEIC export...
 packs.heic_size=This download adds an offline HEIC encoder and its corresponding source.
-format.heic=HEIC
+format.heic=HEIC / HEIF
 heic.export_note=Uses the installed system encoder. Export is 8-bit and usually lossy. Quality 100 does not guarantee lossless output. Transparency support depends on the codec; use PNG or PFE to preserve it.
 codec.processing=Processing image...
 codec.cancelled=Image processing cancelled.
@@ -1731,3 +1731,6 @@ heic.use_system=Použijte systémový kodek
 heic.test_library=Zkontrolujte podporu HEIC
 
 heic.test_hint=Vyberte Zkontrolovat podporu HEIC a otestujte, zda tato knihovna dokáže otevřít a uložit obrázky HEIC.
+heic.size_limit=Limit PaintFE HEIC: {limit} milionů pixelů. Tento obrázek: {width} x {height} ({pixels} milionů pixelů). Pro větší obrázky zvolte PNG, TIFF, JPEG XL nebo PFE.
+heic.setup_instructions=Pokyny pro nastavení knihovny HEIC
+heic.manual_setup=Vyberte si udržované sestavení libheif s odpovídajícími závislostmi a pluginy. Rozbalte jej do složky a zde vyberte jeho DLL. Starý balíček NuGet 1.15.1 se nedoporučuje pro automatickou instalaci. PaintFE nestahuje kodeky HEVC.

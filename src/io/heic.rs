@@ -5,9 +5,35 @@ mod container;
 #[cfg(not(target_arch = "wasm32"))]
 mod worker;
 #[cfg(not(target_arch = "wasm32"))]
+pub(crate) use worker::apply_worker_limits;
+#[cfg(not(target_arch = "wasm32"))]
 pub use worker::run_worker;
 fn error(message: impl Into<String>) -> ImageError {
     ImageError::IoError(std::io::Error::other(message.into()))
+}
+pub fn max_pixels() -> u64 {
+    env!("PAINTFE_HEIC_MAX_PIXELS")
+        .parse()
+        .expect("Invalid built-in HEIC limit")
+}
+pub fn size_limit_message(width: u32, height: u32) -> String {
+    crate::t!(
+        "heic.size_limit",
+        width = width,
+        height = height,
+        pixels = format!(
+            "{:.1}",
+            (u64::from(width) * u64::from(height)) as f64 / 1_000_000.0
+        ),
+        limit = max_pixels() / 1_000_000
+    )
+}
+pub fn validate_dimensions(width: u32, height: u32) -> Result<(), String> {
+    if width == 0 || height == 0 || u64::from(width) * u64::from(height) > max_pixels() {
+        Err(size_limit_message(width, height))
+    } else {
+        Ok(())
+    }
 }
 #[derive(Clone, Debug)]
 pub struct Capabilities {
@@ -143,10 +169,7 @@ fn request(
     }
 }
 fn encode(image: &RgbaImage, quality: u8, tracked: bool) -> ImageResult<Vec<u8>> {
-    let pixels = u64::from(image.width()) * u64::from(image.height());
-    if pixels == 0 || pixels > 64_000_000 {
-        return Err(error("HEIC image exceeds supported dimensions"));
-    }
+    validate_dimensions(image.width(), image.height()).map_err(error)?;
     let output = request(
         1,
         image.as_raw(),
@@ -181,9 +204,7 @@ fn decode_tracked(bytes: &[u8], tracked: bool) -> ImageResult<DynamicImage> {
     let h = u32::from_le_bytes(output[12..16].try_into().unwrap());
     let bits = u32::from_le_bytes(output[16..20].try_into().unwrap());
     super::validate_open_dimensions(w, h).map_err(error)?;
-    if u64::from(w) * u64::from(h) > 64_000_000 {
-        return Err(error("HEIC image exceeds supported dimensions"));
-    }
+    validate_dimensions(w, h).map_err(error)?;
     if !matches!(bits, 8 | 16)
         || (output.len() - 20) as u64 != u64::from(w) * u64::from(h) * 4 * u64::from(bits / 8)
     {

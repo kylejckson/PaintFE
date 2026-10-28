@@ -72,7 +72,7 @@ fn fit_and_every_zoom_entry_can_go_below_ten_percent() {
     canvas.last_canvas_rect = Some(viewport);
     canvas.fit_to_window((20000, 20000));
     let (zoom, pan) = canvas.view_state();
-    assert!((zoom - 0.03).abs() < 0.00001);
+    assert!((zoom - 0.0288).abs() < 0.00001);
     assert_eq!(pan, egui::Vec2::ZERO);
     canvas.zoom_out();
     let (smaller, _) = canvas.view_state();
@@ -82,7 +82,51 @@ fn fit_and_every_zoom_entry_can_go_below_ten_percent() {
     canvas.set_view_state(0.001, egui::vec2(2.0, 3.0));
     assert_eq!(canvas.view_state().0, 0.001);
     canvas.apply_zoom(0.5);
-    assert_eq!(canvas.view_state().0, 0.0005);
+    assert_eq!(canvas.view_state().0, canvas.minimum_zoom());
+    for _ in 0..30 {
+        canvas.zoom_out();
+    }
+    assert_eq!(canvas.view_state().0, canvas.minimum_zoom());
+}
+
+#[test]
+fn zoom_floor_tracks_viewport_and_document_without_enlarging_small_images() {
+    let mut canvas = Canvas::new("");
+    for size in [(20000, 1000), (1000, 20000), (8000, 8000), (32, 24)] {
+        for viewport in [egui::vec2(1000., 600.), egui::vec2(600., 1000.)] {
+            canvas.last_canvas_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, viewport));
+            canvas.fit_to_window(size);
+            let fitted = canvas.view_state().0;
+            let expected = (fitted * 0.1).clamp(paintfe::canvas::Canvas::MIN_ZOOM, 1.);
+            for _ in 0..30 {
+                canvas.zoom_out();
+            }
+            assert!((canvas.view_state().0 - expected).abs() < 0.000001);
+            assert!(canvas.view_state().0 <= 1.);
+        }
+    }
+}
+
+#[test]
+fn heic_size_budget_reports_actual_dimensions_and_accepts_both_extensions() {
+    paintfe::i18n::init();
+    assert_eq!(io::heic::max_pixels(), 64_000_000);
+    assert!(io::heic::validate_dimensions(8000, 8000).is_ok());
+    for (w, h) in [(0, 1), (1, 0), (8001, 8000), (17472, 11712)] {
+        let message = io::heic::validate_dimensions(w, h).unwrap_err();
+        assert!(
+            message.contains(&w.to_string())
+                && message.contains(&h.to_string())
+                && message.contains("64"),
+            "{message}"
+        );
+    }
+    assert!(io::heic::size_limit_message(17472, 11712).contains("204.6"));
+    for extension in ["heic", "HEIF"] {
+        assert!(io::is_heif_path(std::path::Path::new(&format!(
+            "photo.{extension}"
+        ))));
+    }
 }
 
 #[test]

@@ -1662,6 +1662,7 @@ impl SaveFileDialog {
                             #[cfg(not(target_arch = "wasm32"))]
                             if self.format == SaveFormat::Heic {
                                 ui.weak(crate::t!("heic.export_note"));
+                                ui.label(crate::io::heic::size_limit_message(self.source_dimensions.0,self.source_dimensions.1));
                                 ui.label(crate::io::heic::setup_message());
                             }
                             #[cfg(not(target_arch = "wasm32"))]
@@ -1814,7 +1815,8 @@ impl SaveFileDialog {
                                     .color(contrast_text_color(colors.accent))
                                     .strong()
                             ).fill(colors.accent);
-                            let save_clicked = ui.add(save_btn).clicked() || enter;
+                            let heic_size_ok = self.format != SaveFormat::Heic || crate::io::heic::validate_dimensions(self.source_dimensions.0,self.source_dimensions.1).is_ok();
+                            let save_clicked = (ui.add_enabled(heic_size_ok,save_btn).clicked() || enter) && heic_size_ok;
                             #[cfg(not(target_arch = "wasm32"))]
                             let needs_jxl = matches!(self.format,SaveFormat::Jxl(_)) && !crate::services::optional_packs::is_present(crate::services::optional_packs::Pack::Jxl);
                             #[cfg(target_arch = "wasm32")]
@@ -1841,9 +1843,10 @@ impl SaveFileDialog {
                                 let picked_path = Some(std::path::PathBuf::from(&full_filename));
                                 #[cfg(not(target_arch = "wasm32"))]
                                 let picked_path = {
+                                    let extensions = if self.format == SaveFormat::Heic { vec!["heic","heif"] } else { vec![self.format.extension()] };
                                     let mut dialog = rfd::FileDialog::new()
                                         .set_file_name(&full_filename)
-                                        .add_filter(crate::i18n::translate_english(&self.format.label()), &[self.format.extension()]);
+                                        .add_filter(crate::i18n::translate_english(&self.format.label()), &extensions);
                                     if let Some(dir) = &self.target_directory {
                                         dialog = dialog.set_directory(dir);
                                     }

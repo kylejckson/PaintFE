@@ -14,6 +14,7 @@ pub struct Canvas {
     pan_offset: Vec2,
     last_filter_was_linear: Option<bool>, // Track last filter state to detect changes
     pub last_canvas_rect: Option<Rect>,
+    navigation_size: Option<(u32, u32)>,
     pub last_image_rect: Option<Rect>,
     /// Accent color for selection outlines (set from theme).
     pub selection_stroke: Color32,

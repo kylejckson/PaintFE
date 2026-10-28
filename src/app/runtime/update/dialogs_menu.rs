@@ -1688,7 +1688,7 @@ impl PaintFEApp {
                         }
                     }));
 
-                    ui.menu_button(t!("menu.view"), |ui| {
+                    let view_menu = ui.menu_button(t!("menu.view"), |ui| {
                         // Panel toggles
                         ui.label(egui::RichText::new(crate::t!("menu.view.panels_heading")).strong().size(11.0));
                         ui.checkbox(
@@ -1787,7 +1787,7 @@ impl PaintFEApp {
                             self.canvas.zoom_out();
                             ui.close();
                         }
-                        if self
+                        let fit_menu = self
                             .assets
                             .menu_item_shortcut_below(
                                 ui,
@@ -1795,14 +1795,11 @@ impl PaintFEApp {
                                 &t!("menu.view.fit_to_window"),
                                 &menu_kb,
                                 BindableAction::ViewFitToWindow,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                let size =
-                                    (project.canvas_state.width, project.canvas_state.height);
-                                self.canvas.fit_to_window(size);
-                            }
+                            );
+                        #[cfg(test)]
+                        ctx.data_mut(|d|d.insert_temp(egui::Id::new("menu_fit_test_rect"),fit_menu.rect));
+                        if fit_menu.clicked() {
+                            self.fit_active_document();
                             ui.close();
                         }
                         if self
@@ -1849,6 +1846,9 @@ impl PaintFEApp {
                             }
                         });
                     });
+                    #[cfg(test)]
+                    ctx.data_mut(|d|d.insert_temp(egui::Id::new("view_menu_test_rect"),view_menu.response.rect));
+                    let _=view_menu;
                 });
             });
 
@@ -1952,12 +1952,13 @@ impl PaintFEApp {
                     {
                         self.canvas.zoom_out();
                     }
-                    if self
+                    let fit_button = self
                         .assets
-                        .icon_button_enabled(ui, Icon::ResetZoom, has_project)
-                        .clicked()
-                    {
-                        self.canvas.reset_zoom();
+                        .icon_button_enabled(ui, Icon::ResetZoom, has_project);
+                    #[cfg(test)]
+                    ctx.data_mut(|d| d.insert_temp(egui::Id::new("toolbar_fit_test_rect"), fit_button.rect));
+                    if fit_button.clicked() {
+                        self.fit_active_document();
                     }
 
                     ui.separator();

@@ -300,6 +300,14 @@ pub fn show_heic_library_settings(
         ui.add_space(8.0);
         ui.strong(crate::t!("heic.custom_library"));
         ui.label(crate::t!("heic.custom_hint"));
+        ui.collapsing(crate::t!("heic.setup_instructions"), |ui| {
+            ui.label(crate::t!("heic.manual_setup"));
+            ui.hyperlink_to(
+                crate::t!("heic.setup_instructions"),
+                "https://github.com/kylejckson/PaintFE/blob/main/docs/heic-libraries.md",
+            );
+            ui.hyperlink_to("libheif", "https://github.com/strukturag/libheif");
+        });
         if !settings.heic_library_path.is_empty() {
             ui.label(
                 std::path::Path::new(&settings.heic_library_path)

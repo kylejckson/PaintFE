@@ -431,6 +431,13 @@ fn main() -> Result<(), eframe::Error> {
     #[cfg(not(target_arch = "wasm32"))]
     if std::env::args_os()
         .nth(1)
+        .is_some_and(|arg| arg == "--paintfe-resize-worker")
+    {
+        std::process::exit(paintfe::services::resize_worker::run_worker());
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if std::env::args_os()
+        .nth(1)
         .is_some_and(|arg| arg == "--paintfe-system-heic")
     {
         std::process::exit(paintfe::io::heic::run_worker());

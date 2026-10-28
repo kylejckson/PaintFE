@@ -326,11 +326,8 @@ impl PaintFEApp {
             }
 
             // Ctrl+0 — Fit to Window (fits the canvas into the viewport)
-            if kb.is_pressed(ctx, BindableAction::ViewFitToWindow)
-                && let Some(project) = self.active_project()
-            {
-                let size = (project.canvas_state.width, project.canvas_state.height);
-                self.canvas.fit_to_window(size);
+            if kb.is_pressed(ctx, BindableAction::ViewFitToWindow) {
+                self.fit_active_document();
             }
 
             // Ctrl+1 — Zoom to 100%

@@ -1,4 +1,10 @@
 impl PaintFEApp {
+    fn fit_active_document(&mut self) {
+        if let Some(project) = self.active_project() {
+            let size = (project.canvas_state.width, project.canvas_state.height);
+            self.canvas.fit_to_window(size);
+        }
+    }
     fn restore_script_original(&mut self) {
         if let Some((id, layer, original, revision)) = self.script_original_pixels.take()
             && let Some(project) = self
@@ -152,6 +158,9 @@ include!("runtime/update/canvas_tail.rs");
 
 impl Drop for PaintFEApp {
     fn drop(&mut self) {
+        self.operation_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        #[cfg(not(target_arch = "wasm32"))]
+        crate::services::resize_worker::drain_cancelled();
         if let Err(error) = crate::config::persistence::drain() {
             crate::logger::write("WARN", &format!("Settings shutdown save failed: {error}"));
         }

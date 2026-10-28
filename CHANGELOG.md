@@ -6,6 +6,25 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.21] - 2026-10-28
+
+- Stop large image resizes promptly when Cancel is pressed.
+- Make Fit consistent across the toolbar, menu and keyboard shortcut.
+- Explain HEIC limits and library setup more clearly.
+
+### Fixes
+
+- Run native image resizing in a separate process using the same executable, so Cancel can stop a running resize without applying a partial result. Related to issue 207.
+- Make toolbar Fit use the same action as the View menu and Ctrl+0, rather than resetting to 100%. Keep a small margin around the fitted image and base the zoom-out limit on the canvas and window size. Related to issue 211.
+- Show the image dimensions and PaintFE's 64-million-pixel HEIC processing limit before saving. Disable HEIC saving when the image exceeds that limit. Related to issue 196.
+- Accept both .heic and .heif filenames from one HEIC / HEIF save entry. Related to issue 196.
+- Add a lowercase paintfe command to Linux packages while keeping PaintFE available, and use it in the desktop entry. Improve package building from Windows checkouts and isolate the RPM build database. Related to issue 187.
+
+### Interface and documentation
+
+- Add HEIC library setup instructions and upstream links in Preferences > Optional features, alongside the existing library picker and support check. Related to issue 196.
+- Explain Linux runtime and plugin dependencies, including why some managed DLLs are needed on Linux. Related to issue 187.
+
 ## [1.4.20] - 2026-10-27
 
 - Prevent crashes during oversized resizes and WebP saves.

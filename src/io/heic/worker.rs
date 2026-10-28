@@ -80,7 +80,7 @@ pub(super) fn native(
         Err("No system HEIC backend for this platform".into())
     }
 }
-fn process() -> Result<(), String> {
+pub(crate) fn apply_worker_limits() -> Result<(), String> {
     #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     {
         let mut message = [0 as std::ffi::c_char; 1024];
@@ -90,6 +90,10 @@ fn process() -> Result<(), String> {
                 .into_owned());
         }
     }
+    Ok(())
+}
+fn process() -> Result<(), String> {
+    apply_worker_limits()?;
     let mut stdin = std::io::stdin().lock();
     let mut header = [0; 40];
     stdin.read_exact(&mut header).map_err(|e| e.to_string())?;
@@ -102,9 +106,7 @@ fn process() -> Result<(), String> {
     let limit = if header[8] == 0 {
         0
     } else if header[8] == 1 {
-        if w == 0 || h == 0 || u64::from(w) * u64::from(h) > 64_000_000 {
-            return Err("Invalid HEIC dimensions".into());
-        }
+        super::validate_dimensions(w, h)?;
         u64::from(w) * u64::from(h) * 4
     } else {
         256 * 1024 * 1024

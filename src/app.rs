@@ -35,6 +35,8 @@ include!("app/panels.rs");
 #[cfg(test)]
 mod bug_review_tests;
 #[cfg(test)]
+mod followup_tests;
+#[cfg(test)]
 mod history_tests;
 #[cfg(test)]
 mod issue_tests;

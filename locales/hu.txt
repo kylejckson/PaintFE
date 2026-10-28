@@ -1640,7 +1640,7 @@ packs.heic_description=Save HEIC still images using an offline libheif and Kvaza
 packs.heic_missing=Install the optional HEIC export pack to save HEIC images.
 packs.install_heic=Install HEIC export...
 packs.heic_size=This download adds an offline HEIC encoder and its corresponding source.
-format.heic=HEIC
+format.heic=HEIC / HEIF
 heic.export_note=Uses the installed system encoder. Export is 8-bit and usually lossy. Quality 100 does not guarantee lossless output. Transparency support depends on the codec; use PNG or PFE to preserve it.
 codec.processing=Processing image...
 codec.cancelled=Image processing cancelled.
@@ -1731,3 +1731,6 @@ heic.use_system=Rendszerkodek használata
 heic.test_library=Ellenőrizze a HEIC támogatást
 
 heic.test_hint=Válassza a HEIC-támogatás ellenőrzése lehetőséget annak teszteléséhez, hogy ez a könyvtár képes-e megnyitni és menteni a HEIC-képeket.
+heic.size_limit=PaintFE HEIC korlát: {limit} millió pixel. Ez a kép: {width} x {height} ({pixels} millió képpont). A nagyobb képekhez válassza a PNG, TIFF, JPEG XL vagy PFE formátumot.
+heic.setup_instructions=HEIC könyvtár beállítási utasítások
+heic.manual_setup=Válasszon egy karbantartott libheif buildet a hozzáillő függőségekkel és bővítményekkel. Bontsa ki egy mappába, majd válassza ki a DLL-t itt. A régi NuGet 1.15.1 csomag nem ajánlott automatikus telepítéshez. A PaintFE nem tölti le a HEVC kodekeket.

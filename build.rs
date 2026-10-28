@@ -28,10 +28,17 @@ fn title_case(s: &str) -> String {
 
 fn main() {
     let target = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let heic_pixels = include_str!("src/io/heic/max_pixels.txt").trim();
+    heic_pixels
+        .parse::<u64>()
+        .expect("Invalid HEIC pixel limit");
+    println!("cargo:rerun-if-changed=src/io/heic/max_pixels.txt");
+    println!("cargo:rustc-env=PAINTFE_HEIC_MAX_PIXELS={heic_pixels}");
     println!("cargo:rerun-if-changed=src/io/system_heic");
     if matches!(target.as_str(), "windows" | "linux" | "macos") {
         let mut bridge = cc::Build::new();
         bridge.cpp(true).std("c++17").include("src/io/system_heic");
+        bridge.define("PAINTFE_HEIC_MAX_PIXELS", heic_pixels);
         bridge.file("src/io/system_heic/common.cpp");
         bridge.file(format!(
             "src/io/system_heic/{target}.{}",

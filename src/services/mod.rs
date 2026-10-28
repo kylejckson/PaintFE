@@ -6,6 +6,8 @@ pub mod project;
 pub mod scripting;
 
 pub mod graphics;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod resize_worker;
 pub mod storage;
 
 #[cfg(not(target_arch = "wasm32"))]

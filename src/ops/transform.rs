@@ -118,7 +118,7 @@ impl Default for PixelRetargetSettings {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ResizeImageOptions {
     pub method: ResizeMethod,
     pub interpolation: Interpolation,
@@ -502,6 +502,32 @@ pub fn resize_layers_with_options(
             Ok(TiledImage::from_rgba_image(&resized))
         })
         .collect()
+}
+
+/// Native jobs are disposable processes; browser builds retain the CPU path.
+pub fn resize_tiled_layers(
+    layers: Vec<TiledImage>,
+    width: u32,
+    height: u32,
+    options: ResizeImageOptions,
+    mask: Option<GrayImage>,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<Vec<TiledImage>, String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        crate::services::resize_worker::resize_layers(layers, width, height, options, mask, cancel)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        resize_layers_with_options(
+            layers.iter().map(TiledImage::to_rgba_image).collect(),
+            width,
+            height,
+            options,
+            mask,
+            cancel,
+        )
+    }
 }
 
 pub fn pixel_art_retarget(

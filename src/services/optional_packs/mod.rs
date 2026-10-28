@@ -14,6 +14,7 @@ use std::{
 pub mod avif;
 mod process;
 pub use process::encode_jxl;
+pub(crate) use process::hidden_command;
 #[cfg(test)]
 mod tests;
 

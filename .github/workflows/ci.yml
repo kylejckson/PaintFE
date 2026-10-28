@@ -64,6 +64,10 @@ jobs:
           cargo test -j1 --test heif -- --test-threads=1
           cargo test -j1 --test avif -- --test-threads=1
           cargo test -j1 --test heic_export -- --test-threads=1
+          cargo test -j1 --test processing_limits -- --test-threads=1
+          cargo test -j1 --test resize_worker -- --test-threads=1
+          cargo test -j1 --lib services::resize_worker -- --test-threads=1
+          cargo test -j1 --lib app::followup_tests -- --test-threads=1
           cargo test -j1 --lib toolbar_save_overwrites_opened_heif_without_any_save_dialog -- --test-threads=1
           cargo test -j1 --test label_overrides -- --test-threads=1
           cargo test -j1 --lib ui::panels::label_editor -- --test-threads=1
@@ -180,6 +184,10 @@ jobs:
           cargo test -j1 --test heif -- --test-threads=1
           cargo test -j1 --test avif -- --test-threads=1
           cargo test -j1 --test heic_export -- --test-threads=1
+          cargo test -j1 --test processing_limits -- --test-threads=1
+          cargo test -j1 --test resize_worker -- --test-threads=1
+          cargo test -j1 --lib services::resize_worker -- --test-threads=1
+          cargo test -j1 --lib app::followup_tests -- --test-threads=1
           cargo test -j1 --lib toolbar_save_overwrites_opened_heif_without_any_save_dialog -- --test-threads=1
           cargo test -j1 --test label_overrides -- --test-threads=1
           cargo test -j1 --lib ui::panels::label_editor -- --test-threads=1

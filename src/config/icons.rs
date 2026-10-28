@@ -419,7 +419,7 @@ impl Icon {
             Icon::Redo => "->",
             Icon::ZoomIn => "[+]",
             Icon::ZoomOut => "[-]",
-            Icon::ResetZoom => "1:1",
+            Icon::ResetZoom => "Fit",
             Icon::Grid => "[#]",
             Icon::GridOn => "[#]",
             Icon::GridOff => "[ ]",

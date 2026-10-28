@@ -10,6 +10,24 @@ PaintFE's DEB and RPM files wrap the existing x86-64 Linux release binary and
 Paint.NET compatibility host. There is no separate application edition and no
 application update checker. APT or DNF handles downloads and updates.
 
+## Commands and private runtime files
+
+Use `paintfe` to launch from a terminal. `PaintFE` remains as a compatibility
+alias, and the desktop entry uses the lowercase command. Both launchers point
+to the same executable in `/usr/lib/paintfe`; relative symlinks within `/usr`
+are intentional and follow Debian's symbolic-link policy.
+
+The `paintdotnet-host` directory contains a self-contained .NET runtime, managed
+`.dll` assemblies and native `.so` dependencies. A managed DLL is not inherently
+Windows-only. This host supports read-only PDN import and a limited set of
+legacy CPU effects. Plugins requiring Windows UI or unsupported APIs cannot run
+on Linux. The core editor does not load that runtime until a host feature is
+used. Removing the host would also remove PDN import, so its files are retained.
+
+No graphical desktop on a server means the GUI cannot start. Headless CLI work
+is a separate path; that startup error alone does not indicate a package defect.
+Installation, upgrade and removal are separate checks from actual desktop use.
+
 ## Availability and compatibility
 
 The workflow produces `PaintFE-linux-x64.deb` and `PaintFE-linux-x64.rpm` on the

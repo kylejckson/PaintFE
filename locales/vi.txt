@@ -1640,7 +1640,7 @@ packs.heic_description=Save HEIC still images using an offline libheif and Kvaza
 packs.heic_missing=Install the optional HEIC export pack to save HEIC images.
 packs.install_heic=Install HEIC export...
 packs.heic_size=This download adds an offline HEIC encoder and its corresponding source.
-format.heic=HEIC
+format.heic=HEIC / HEIF
 heic.export_note=Uses the installed system encoder. Export is 8-bit and usually lossy. Quality 100 does not guarantee lossless output. Transparency support depends on the codec; use PNG or PFE to preserve it.
 codec.processing=Processing image...
 codec.cancelled=Image processing cancelled.
@@ -1731,3 +1731,6 @@ heic.use_system=Sử dụng codec hệ thống
 heic.test_library=Kiểm tra hỗ trợ HEIC
 
 heic.test_hint=Chọn Kiểm tra hỗ trợ HEIC để kiểm tra xem thư viện này có thể mở và lưu hình ảnh HEIC hay không.
+heic.size_limit=Giới hạn PaintFE HEIC: {limit} triệu pixel. Hình ảnh này: {width} x {height} ({pixels} triệu pixel). Chọn PNG, TIFF, JPEG XL hoặc PFE để có hình ảnh lớn hơn.
+heic.setup_instructions=Hướng dẫn thiết lập thư viện HEIC
+heic.manual_setup=Chọn bản dựng libheif được duy trì với các phần phụ thuộc và plugin phù hợp. Giải nén nó vào một thư mục, sau đó chọn DLL của nó ở đây. Gói NuGet 1.15.1 cũ không được khuyến nghị để cài đặt tự động. PaintFE không tải xuống codec HEVC.

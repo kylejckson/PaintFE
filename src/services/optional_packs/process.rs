@@ -1,7 +1,7 @@
 use super::*;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
-pub(super) fn hidden_command(path: &Path) -> Command {
+pub(crate) fn hidden_command(path: &Path) -> Command {
     let command = Command::new(path);
     #[cfg(windows)]
     {

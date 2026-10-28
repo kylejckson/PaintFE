@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 INPUT="$(realpath "${1:?usage: build-packages.sh <linux-artifact-dir> <output-dir>}")"
 mkdir -p "${2:?output directory required}"
 OUT="$(realpath "$2")"
-VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$ROOT/Cargo.toml" | head -1)"
+VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$ROOT/Cargo.toml" | head -1 | tr -d '\r')"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[[:alnum:].-]+)?$ ]] || {
   echo 'Unsupported native package version' >&2
   exit 1
@@ -24,7 +24,9 @@ mkdir -p "$STAGE/usr/lib/paintfe/paintdotnet-host" "$STAGE/usr/bin"
 cp -a "$INPUT/paintdotnet-host/." "$STAGE/usr/lib/paintfe/paintdotnet-host/"
 chmod 755 "$STAGE/usr/lib/paintfe/paintdotnet-host/PaintFE.PaintDotNetHost"
 ln -s ../lib/paintfe/PaintFE "$STAGE/usr/bin/PaintFE"
+ln -s ../lib/paintfe/PaintFE "$STAGE/usr/bin/paintfe"
 install -Dm644 "$ROOT/packaging/appimage/PaintFE.AppDir/PaintFE.desktop" "$STAGE/usr/share/applications/PaintFE.desktop"
+sed -i 's/^Exec=PaintFE /Exec=paintfe /' "$STAGE/usr/share/applications/PaintFE.desktop"
 install -Dm644 "$ROOT/assets/icons/app_icon.png" "$STAGE/usr/share/icons/hicolor/256x256/apps/PaintFE.png"
 install -Dm644 "$ROOT/LICENSE.md" "$STAGE/usr/share/licenses/paintfe/LICENSE"
 mkdir -p "$STAGE/usr/share/licenses/paintfe/fonts"
@@ -70,12 +72,15 @@ mkdir -p %{buildroot}
 cp -a "$STAGE/." %{buildroot}/
 %files
 /usr/bin/PaintFE
+/usr/bin/paintfe
 /usr/lib/paintfe
 /usr/share/applications/PaintFE.desktop
 /usr/share/icons/hicolor/256x256/apps/PaintFE.png
 %license /usr/share/licenses/paintfe
 EOF
-rpmbuild --define "_topdir $WORK/rpm" --define '_build_id_links none' -bb "$WORK/rpm/SPECS/paintfe.spec"
+mkdir -p "$WORK/rpmdb"
+rpm --dbpath "$WORK/rpmdb" --initdb
+rpmbuild --dbpath "$WORK/rpmdb" --define "_topdir $WORK/rpm" --define '_build_id_links none' -bb "$WORK/rpm/SPECS/paintfe.spec"
 cp "$WORK/rpm/RPMS/x86_64/paintfe-$VERSION-1.x86_64.rpm" "$OUT/PaintFE-linux-x64.rpm"
 dpkg-deb --info "$OUT/PaintFE-linux-x64.deb"
-rpm -qp --requires "$OUT/PaintFE-linux-x64.rpm"
+rpm --dbpath "$WORK/rpmdb" -qp --requires "$OUT/PaintFE-linux-x64.rpm"

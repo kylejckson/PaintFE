@@ -98,6 +98,7 @@ impl Canvas {
             pan_offset: Vec2::ZERO,
             last_filter_was_linear: None,
             last_canvas_rect: None,
+            navigation_size: None,
             last_image_rect: None,
             selection_stroke: Color32::from_rgb(66, 133, 244),
             selection_outline_opacity: 1.0,
@@ -556,6 +557,8 @@ impl Canvas {
         }
         let canvas_rect = response.rect;
         self.last_canvas_rect = Some(canvas_rect);
+        self.navigation_size = Some((state.width, state.height));
+        self.zoom = self.zoom.max(self.minimum_zoom());
 
         // Handle panning with middle mouse button
         if response.dragged() && ui.input(|i| i.pointer.middle_down()) {
@@ -2293,7 +2296,7 @@ impl Canvas {
                         // Desired zoom: fit the selected region into the viewport
                         let desired_zoom = (viewport_w / rect_w)
                             .min(viewport_h / rect_h)
-                            .clamp(Self::MIN_ZOOM, 100.0);
+                            .clamp(self.minimum_zoom(), 100.0);
                         self.zoom = desired_zoom;
                         // Pan so that the rect center is at the viewport center
                         // Image center is at canvas_rect.center() + pan_offset
@@ -3385,8 +3388,22 @@ impl Canvas {
             return;
         };
         let (w, h) = (canvas_size.0.max(1) as f32, canvas_size.1.max(1) as f32);
-        self.zoom = ((rect.width() / w).min(rect.height() / h)).clamp(Self::MIN_ZOOM, 100.0);
+        self.navigation_size = Some(canvas_size);
+        let size = rect.size() - Vec2::splat(24.0);
+        self.zoom = ((size.x.max(1.0) / w).min(size.y.max(1.0) / h))
+            .clamp(Self::MIN_ZOOM, 100.0);
         self.pan_offset = Vec2::ZERO;
+    }
+
+    /// Keep at least a tenth of the fitted size visible without enlarging small images.
+    pub fn minimum_zoom(&self) -> f32 {
+        let (Some(rect), Some((w, h))) = (self.last_canvas_rect, self.navigation_size) else {
+            return Self::MIN_ZOOM;
+        };
+        let size = rect.size() - Vec2::splat(24.0);
+        (0.1 * (size.x.max(1.0) / w.max(1) as f32)
+            .min(size.y.max(1.0) / h.max(1) as f32))
+            .clamp(Self::MIN_ZOOM, 1.0)
     }
 
     /// Reset to 100% zoom and centered.
@@ -3455,14 +3472,14 @@ impl Canvas {
     }
 
     pub fn apply_zoom(&mut self, zoom_factor: f32) {
-        self.zoom = (self.zoom * zoom_factor).clamp(Self::MIN_ZOOM, 100.0);
+        self.zoom = (self.zoom * zoom_factor).clamp(self.minimum_zoom(), 100.0);
     }
 
     /// Zoom while keeping a screen-space point fixed (e.g. under the mouse cursor).
     /// `anchor` is in screen coordinates, `canvas_rect` is the viewport rect.
     pub fn zoom_around_screen_point(&mut self, zoom_factor: f32, anchor: Pos2, canvas_rect: Rect) {
         let old_zoom = self.zoom;
-        self.zoom = (self.zoom * zoom_factor).clamp(Self::MIN_ZOOM, 100.0);
+        self.zoom = (self.zoom * zoom_factor).clamp(self.minimum_zoom(), 100.0);
         let actual_factor = self.zoom / old_zoom;
         // The image center in screen space is canvas_rect.center() + pan_offset.
         // After scaling, the anchor point would shift unless we compensate pan_offset.

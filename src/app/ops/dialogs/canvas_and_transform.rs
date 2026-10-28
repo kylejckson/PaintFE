@@ -40,11 +40,11 @@ impl PaintFEApp {
                             // Prepare raster caches without changing editable layer content.
                             project.canvas_state.ensure_all_text_layers_rasterized();
 
-                            let flat_layers: Vec<RgbaImage> = project
+                            let layers: Vec<TiledImage> = project
                                 .canvas_state
                                 .layers
                                 .iter()
-                                .map(|l| l.pixels.to_rgba_image())
+                                .map(|l| l.pixels.clone())
                                 .collect();
                             let protection_mask = if options.method
                                 == crate::ops::transform::ResizeMethod::PixelArtRetarget
@@ -67,8 +67,8 @@ impl PaintFEApp {
                                         if cancel.load(std::sync::atomic::Ordering::Relaxed) {
                                             return Err("Cancelled".into());
                                         }
-                                        crate::ops::transform::resize_layers_with_options(
-                                            flat_layers,
+                                        crate::ops::transform::resize_tiled_layers(
+                                            layers,
                                             w,
                                             h,
                                             options,
