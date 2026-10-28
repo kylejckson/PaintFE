@@ -57,7 +57,7 @@ jobs:
           PACKAGES_GPG_PRIVATE_KEY: ${{ secrets.PACKAGES_GPG_PRIVATE_KEY }}
           PACKAGES_GPG_PASSPHRASE: ${{ secrets.PACKAGES_GPG_PASSPHRASE }}
         run: bash packaging/linux/build-repository.sh release-packages package-site
-      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
         with:
           path: package-site
 
