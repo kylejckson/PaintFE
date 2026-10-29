@@ -1,15 +1,14 @@
 # Codec experiment harness
 
 This separate Cargo package measures candidate codecs independently of PaintFE.
-The HEIF feature now uses PaintFE's vendored patch; the original unpatched results
-remain in `results/windows-x86_64.json`, with the follow-up corpus results in
-`results/windows-heifer-patched.json`. Its lockfile pins the experiment.
+The obsolete Heifer decoder and encoder experiment has been removed. Historical
+measurements remain in `results/windows-x86_64.json` and
+`results/windows-heifer-patched.json`; they do not describe current production.
 Build output, reference libraries and downloaded samples belong in
 the repository's ignored `target/codec-*` directories.
 
 Features:
 
-- `heif`: Heifer 0.2.0 decoding and its unfinished CABAC encoder primitive.
 - `avif-encode`: image 0.25.9 / ravif 0.12.0 / rav1e 0.8.1 encoding.
 - `avif-fast`: the same encoder with assembly optimizations and threading.
 - `avif-decode`: image 0.25.9 / dav1d decoding; requires native libdav1d.
@@ -18,8 +17,8 @@ Features:
 Build each variant sequentially, copying the executable before the next build:
 
 ```powershell
-cargo build --release --locked --manifest-path tools/codec_probe/Cargo.toml --target-dir target/codec-probe --features heif -j 2
-Copy-Item target/codec-probe/release/paintfe-codec-probe.exe target/codec-fixtures/heifer.exe
+cargo build --release --locked --manifest-path tools/codec_probe/Cargo.toml --target-dir target/codec-probe --features avif-encode -j1
+Copy-Item target/codec-probe/release/paintfe-codec-probe.exe target/codec-fixtures/avif-encode.exe
 ```
 
 The baseline is built without `--features`; the encoder variant uses

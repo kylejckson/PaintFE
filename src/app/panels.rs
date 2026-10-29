@@ -282,7 +282,7 @@ impl PaintFEApp {
                 ui.set_width(animated_plan.size.x);
                 let (closed, header) = palette::header(ui, &self.theme);
                 close = closed;
-                header.context_menu(|ui| {
+                crate::ui::menus::context_menu(&header, |ui| {
                     if ui.button(crate::t!("settings.tools.configure")).clicked() {
                         next_mode = Some("configure");
                         ui.close();
@@ -941,7 +941,7 @@ impl PaintFEApp {
         });
 
         if let Some(inner_resp) = resp {
-            inner_resp.response.context_menu(|ui| {
+            crate::ui::menus::context_menu(&inner_resp.response, |ui| {
                 if ui.button(crate::t!("ui.save_palette")).clicked() {
                     self.palette_panel.save_palette_dialog();
                     ui.close();
@@ -1241,15 +1241,18 @@ impl PaintFEApp {
             // canvas to import it as a new layer instead.
             crate::components::layers::LayerAppAction::ImportFromFile => {
                 #[cfg(not(target_arch = "wasm32"))]
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter(
-                        crate::t!("ui.image"),
-                        &[
-                            "png", "jpg", "jpeg", "bmp", "gif", "jxl", "webp", "tiff", "tif",
-                            "tga", "ico",
-                        ],
-                    )
-                    .pick_file()
+                if let Some(path) = crate::services::file_dialogs::dialog(
+                    crate::services::file_dialogs::Purpose::Documents,
+                    None,
+                )
+                .add_filter(
+                    crate::t!("ui.image"),
+                    &[
+                        "png", "jpg", "jpeg", "bmp", "gif", "jxl", "webp", "tiff", "tif", "tga",
+                        "ico",
+                    ],
+                )
+                .pick_file()
                     && let Ok(img) = crate::io::decode_image_path(&path)
                 {
                     let rgba = img.to_rgba8();

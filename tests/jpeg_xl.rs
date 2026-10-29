@@ -197,7 +197,7 @@ fn prepared_file_and_quick_save_use_the_same_codec_options() {
     handler
         .save_image(&source, &path, format, 80, TiffCompression::None, true)
         .unwrap();
-    assert_eq!(handler.last_format, format);
+    assert_eq!(handler.last_export_options.format, format);
     handler.quick_save(&source).unwrap();
     assert_eq!(image::open(&path).unwrap().to_rgba8(), source);
     assert_eq!(image::image_dimensions(&path).unwrap(), source.dimensions());

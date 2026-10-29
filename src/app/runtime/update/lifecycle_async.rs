@@ -495,14 +495,10 @@ impl PaintFEApp {
                         current_path: (!(cfg!(target_arch = "wasm32")
                             && crate::io::is_heif_path(&path)))
                         .then(|| path.clone()),
-                        last_format: format,
-                        last_quality: 90,
-                        last_tiff_compression: TiffCompression::None,
-                        last_webp_lossless: true,
-                        last_animated: false,
-                        last_animation_fps: 10.0,
-                        last_gif_colors: 256,
-                        last_gif_dither: true,
+                        last_export_options: crate::io::export::ExportOptions {
+                            format,
+                            ..Default::default()
+                        },
                     };
                     let project = Project::from_file(path, canvas_state, file_handler);
                     self.projects.push(project);
@@ -573,14 +569,17 @@ impl PaintFEApp {
 
                     let file_handler = FileHandler {
                         current_path: Some(path.clone()),
-                        last_format: format,
-                        last_quality: 90,
-                        last_tiff_compression: TiffCompression::None,
-                        last_webp_lossless: true,
-                        last_animated: true,
-                        last_animation_fps: fps,
-                        last_gif_colors: 256,
-                        last_gif_dither: true,
+                        last_export_options: crate::io::export::ExportOptions {
+                            format,
+                            quality: 90,
+                            tiff_compression: TiffCompression::None,
+                            webp_lossless: true,
+                            animated: true,
+                            animation_fps: fps,
+                            gif_colors: 256,
+                            gif_dither: true,
+                            ..Default::default()
+                        },
                     };
                     let mut project = Project::from_file(path, canvas_state, file_handler);
                     project.was_animated = true;
@@ -638,14 +637,17 @@ impl PaintFEApp {
 
                     let file_handler = FileHandler {
                         current_path: Some(path.clone()),
-                        last_format: SaveFormat::Pfe,
-                        last_quality: 90,
-                        last_tiff_compression: TiffCompression::None,
-                        last_webp_lossless: true,
-                        last_animated: false,
-                        last_animation_fps: 10.0,
-                        last_gif_colors: 256,
-                        last_gif_dither: true,
+                        last_export_options: crate::io::export::ExportOptions {
+                            format: SaveFormat::Pfe,
+                            quality: 90,
+                            tiff_compression: TiffCompression::None,
+                            webp_lossless: true,
+                            animated: false,
+                            animation_fps: 10.0,
+                            gif_colors: 256,
+                            gif_dither: true,
+                            ..Default::default()
+                        },
                     };
                     let project = Project::from_file(path, canvas_state, file_handler);
                     self.projects.push(project);

@@ -35,6 +35,16 @@ fn main() {
     println!("cargo:rerun-if-changed=src/io/heic/max_pixels.txt");
     println!("cargo:rustc-env=PAINTFE_HEIC_MAX_PIXELS={heic_pixels}");
     println!("cargo:rerun-if-changed=src/io/system_heic");
+    if target == "windows" {
+        println!("cargo:rerun-if-changed=src/services/windows_recent.cpp");
+        cc::Build::new()
+            .cpp(true)
+            .std("c++17")
+            .file("src/services/windows_recent.cpp")
+            .compile("paintfe_windows_recent");
+        println!("cargo:rustc-link-lib=shell32");
+        println!("cargo:rustc-link-lib=uuid");
+    }
     if matches!(target.as_str(), "windows" | "linux" | "macos") {
         let mut bridge = cc::Build::new();
         bridge.cpp(true).std("c++17").include("src/io/system_heic");

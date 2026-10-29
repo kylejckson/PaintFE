@@ -7,3 +7,4 @@ pub mod polish;
 pub mod workspace;
 
 pub mod guides;
+pub mod menus;

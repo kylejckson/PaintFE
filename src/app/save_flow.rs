@@ -79,6 +79,25 @@ impl Project {
         {
             losses.push(crate::t!("save.loss_alpha"));
         }
+        if action.format == SaveFormat::Png && !action.animated {
+            use crate::io::export::png::Mode;
+            let png = action.png;
+            let removes_alpha = matches!(png.mode, Mode::Rgb | Mode::Gray)
+                || (png.mode == Mode::Indexed && !png.preserve_palette_alpha);
+            let removes_color = matches!(png.mode, Mode::Gray | Mode::GrayAlpha);
+            if removes_alpha || removes_color {
+                let prepared = crate::io::prepare_export_image(&self.canvas_state);
+                if removes_alpha && prepared.has_alpha() {
+                    losses.push(crate::t!("save.loss_alpha"));
+                }
+                if removes_color && prepared.has_color() {
+                    losses.push(crate::t!("export.loss_color"));
+                }
+            }
+            if png.mode == Mode::Indexed {
+                losses.push(crate::t!("export.loss_palette"));
+            }
+        }
         let deep = self.canvas_state.layers.iter().any(|layer| {
             layer
                 .deep_pixels
@@ -98,6 +117,10 @@ impl Project {
                         SaveFormat::Tiff
                     )
                 );
+            let preserves_depth = preserves_depth
+                && !(action.format == SaveFormat::Png
+                    && (action.png.depth == crate::io::export::png::Depth::Eight
+                        || action.png.mode == crate::io::export::png::Mode::Indexed));
             if !preserves_depth {
                 losses.push(crate::t!("save.loss_depth"));
             }
@@ -111,14 +134,7 @@ impl PaintFEApp {
         let handler = &self.projects.get(idx)?.file_handler;
         Some(crate::components::dialogs::SaveAction {
             path: handler.current_path.clone()?,
-            format: handler.last_format,
-            quality: handler.last_quality,
-            webp_lossless: handler.last_webp_lossless,
-            tiff_compression: handler.last_tiff_compression,
-            animated: handler.last_animated,
-            animation_fps: handler.last_animation_fps,
-            gif_colors: handler.last_gif_colors,
-            gif_dither: handler.last_gif_dither,
+            options: handler.last_export_options,
         })
     }
 
@@ -220,18 +236,11 @@ impl PaintFEApp {
             .is_some_and(|project| project.save_revision() == job.revision);
         if let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) {
             // An export must not replace an existing editable project's save target.
-            let retain_project =
-                job.editable_loss && project.file_handler.last_format == SaveFormat::Pfe;
+            let retain_project = job.editable_loss
+                && project.file_handler.last_export_options.format == SaveFormat::Pfe;
             if !retain_project {
                 project.file_handler.current_path = Some(action.path.clone());
-                project.file_handler.last_format = action.format;
-                project.file_handler.last_quality = action.quality;
-                project.file_handler.last_webp_lossless = action.webp_lossless;
-                project.file_handler.last_tiff_compression = action.tiff_compression;
-                project.file_handler.last_animated = action.animated;
-                project.file_handler.last_animation_fps = action.animation_fps;
-                project.file_handler.last_gif_colors = action.gif_colors;
-                project.file_handler.last_gif_dither = action.gif_dither;
+                project.file_handler.last_export_options = action.options;
                 if action.animated {
                     project.was_animated = true;
                     project.animation_fps = action.animation_fps;
@@ -245,6 +254,9 @@ impl PaintFEApp {
                 project.mark_clean();
             }
         }
+        self.settings
+            .export_options
+            .insert(action.format.extension().into(), action.options);
         self.settings.last_export_format = action.format.extension().into();
         self.settings.last_export_directory = action
             .path
@@ -309,7 +321,7 @@ impl PaintFEApp {
                 ctx.request_repaint();
                 return;
             };
-            if !self.projects[idx].is_dirty && !sequence.close {
+            if !self.projects[idx].needs_save() && !sequence.close {
                 ctx.request_repaint();
                 return;
             }
@@ -464,15 +476,9 @@ fn write_save_atomically(
             SavePayload::Project(data) => {
                 crate::io::write_pfe(&data, &temporary).map_err(|e| e.to_string())?
             }
-            SavePayload::Image(image) => crate::io::encode_prepared_and_write(
-                image,
-                &temporary,
-                action.format,
-                action.quality,
-                action.tiff_compression,
-                action.webp_lossless,
-            )
-            .map_err(|e| e.to_string())?,
+            SavePayload::Image(image) => {
+                crate::io::export::write(image, &temporary, action.options)?
+            }
             SavePayload::Frames(frames, modes) => match action.format {
                 SaveFormat::Gif => crate::io::encode_animated_gif(
                     &frames,

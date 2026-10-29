@@ -642,8 +642,11 @@ impl ResizeCanvasDialog {
         let mut ok_pressed = false;
 
         crate::ui::polish::window(ctx, "dialog_resize_canvas")
-            .heading_drag(ctx, egui::Id::new("resize_canvas_heading_position"),
-                ctx.content_rect().center() - egui::vec2(170.0, 180.0))
+            .heading_drag(
+                ctx,
+                egui::Id::new("resize_canvas_heading_position"),
+                ctx.content_rect().center() - egui::vec2(170.0, 180.0),
+            )
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
@@ -670,10 +673,20 @@ impl ResizeCanvasDialog {
                         ui.horizontal(|ui| {
                             let mut value = self.width;
                             let response = ui.add(
-                                crate::ui::controls::Numeric::dimension(&mut value).focus_on_open(self.focus_width_on_open),
+                                crate::ui::controls::Numeric::dimension(&mut value)
+                                    .focus_on_open(self.focus_width_on_open),
                             );
                             #[cfg(test)]
-                            ctx.data_mut(|d| d.insert_temp(egui::Id::new(("resize_dimension_rect", "resize_canvas_dims", "width")), response.rect));
+                            ctx.data_mut(|d| {
+                                d.insert_temp(
+                                    egui::Id::new((
+                                        "resize_dimension_rect",
+                                        "resize_canvas_dims",
+                                        "width",
+                                    )),
+                                    response.rect,
+                                )
+                            });
                             self.focus_width_on_open = false;
                             if response.changed() {
                                 self.width_input = format_dimension_value(value);
@@ -686,10 +699,20 @@ impl ResizeCanvasDialog {
                         ui.horizontal(|ui| {
                             let mut value = self.height;
                             let response = ui.add(
-                                crate::ui::controls::Numeric::dimension(&mut value).focus_on_open(self.focus_width_on_open),
+                                crate::ui::controls::Numeric::dimension(&mut value)
+                                    .focus_on_open(self.focus_width_on_open),
                             );
                             #[cfg(test)]
-                            ctx.data_mut(|d| d.insert_temp(egui::Id::new(("resize_dimension_rect", "resize_canvas_dims", "height")), response.rect));
+                            ctx.data_mut(|d| {
+                                d.insert_temp(
+                                    egui::Id::new((
+                                        "resize_dimension_rect",
+                                        "resize_canvas_dims",
+                                        "height",
+                                    )),
+                                    response.rect,
+                                )
+                            });
                             if response.changed() {
                                 self.height_input = format_dimension_value(value);
                                 self.commit_height_input();
@@ -847,17 +870,30 @@ impl ResizeCanvasDialog {
             );
 
             // Compute canvas preview rect (showing where the original sits in the new canvas)
-            let max_dim = (new_w as f32).max(new_h as f32).max(self.original_w as f32).max(self.original_h as f32).max(1.0);
+            let max_dim = (new_w as f32)
+                .max(new_h as f32)
+                .max(self.original_w as f32)
+                .max(self.original_h as f32)
+                .max(1.0);
             let preview_w = (new_w as f32 / max_dim) * (grid_size - 8.0);
             let preview_h = (new_h as f32 / max_dim) * (grid_size - 8.0);
             let canvas_w = (self.original_w as f32 / max_dim) * (grid_size - 8.0);
             let canvas_h = (self.original_h as f32 / max_dim) * (grid_size - 8.0);
             let union_w = canvas_w.max(preview_w);
             let union_h = canvas_h.max(preview_h);
-            let origin = grid_rect.min + Vec2::new((grid_size - union_w) / 2.0, (grid_size - union_h) / 2.0);
+            let origin =
+                grid_rect.min + Vec2::new((grid_size - union_w) / 2.0, (grid_size - union_h) / 2.0);
             let anchor = Vec2::new(self.anchor.0 as f32 / 2.0, self.anchor.1 as f32 / 2.0);
-            let old_min = origin + Vec2::new((union_w - canvas_w) * anchor.x, (union_h - canvas_h) * anchor.y);
-            let new_min = origin + Vec2::new((union_w - preview_w) * anchor.x, (union_h - preview_h) * anchor.y);
+            let old_min = origin
+                + Vec2::new(
+                    (union_w - canvas_w) * anchor.x,
+                    (union_h - canvas_h) * anchor.y,
+                );
+            let new_min = origin
+                + Vec2::new(
+                    (union_w - preview_w) * anchor.x,
+                    (union_h - preview_h) * anchor.y,
+                );
             let cx = old_min.x;
             let cy = old_min.y;
             let new_canvas_rect = Rect::from_min_size(new_min, Vec2::new(preview_w, preview_h));
@@ -1012,8 +1048,15 @@ impl GaussianBlurDialog {
                                 }
                             } else {
                                 // Normal: slider capped at 10
-                                if dialog_slider(ui, &mut self.sigma, 0.1..=slider_max, 0.1, "", 1, 0.0)
-                                {
+                                if dialog_slider(
+                                    ui,
+                                    &mut self.sigma,
+                                    0.1..=slider_max,
+                                    0.1,
+                                    "",
+                                    1,
+                                    0.0,
+                                ) {
                                     sigma_changed = true;
                                 }
                             }
@@ -1045,11 +1088,20 @@ impl GaussianBlurDialog {
                                 let is_close = (self.sigma - val).abs() < 0.3;
                                 let btn = if is_close {
                                     egui::Button::new(
-                                        egui::RichText::new(crate::i18n::translate_strength_preset(label)).strong().size(11.0),
+                                        egui::RichText::new(
+                                            crate::i18n::translate_strength_preset(label),
+                                        )
+                                        .strong()
+                                        .size(11.0),
                                     )
                                     .fill(colors.accent_faint)
                                 } else {
-                                    egui::Button::new(egui::RichText::new(crate::i18n::translate_strength_preset(label)).size(11.0))
+                                    egui::Button::new(
+                                        egui::RichText::new(
+                                            crate::i18n::translate_strength_preset(label),
+                                        )
+                                        .size(11.0),
+                                    )
                                 };
                                 if ui.add(btn).clicked() {
                                     self.sigma = val;
@@ -1063,7 +1115,10 @@ impl GaussianBlurDialog {
                         ui.label("");
                         ui.horizontal(|ui| {
                             if ui
-                                .checkbox(&mut self.advanced_blur, crate::t!("ui.advanced_up_to_100"))
+                                .checkbox(
+                                    &mut self.advanced_blur,
+                                    crate::t!("ui.advanced_up_to_100"),
+                                )
                                 .changed()
                             {
                                 // Clamp sigma when switching back to normal mode
@@ -1279,9 +1334,9 @@ impl AddBrushTipDialog {
                 super::section_label(ui, &colors, &crate::t!("ui.information"));
                 ui.add_space(2.0);
                 ui.label(
-                    egui::RichText::new(
-                        crate::t!("ui.recommended_file_size_128_128_px_black_pixels_are_treated_as_transpare"),
-                    )
+                    egui::RichText::new(crate::t!(
+                        "ui.recommended_file_size_128_128_px_black_pixels_are_treated_as_transpare"
+                    ))
                     .size(12.0)
                     .color(colors.text_muted),
                 );
@@ -1308,7 +1363,8 @@ impl AddBrushTipDialog {
                         .as_ref()
                         .and_then(|p| p.file_name())
                         .and_then(|n| n.to_str())
-                        .map(str::to_owned).unwrap_or_else(|| crate::t!("ui.no_file_selected"));
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| crate::t!("ui.no_file_selected"));
                     ui.add_sized(
                         [250.0, 22.0],
                         egui::Label::new(
@@ -1319,7 +1375,7 @@ impl AddBrushTipDialog {
                     );
                     #[cfg(not(target_arch = "wasm32"))]
                     if ui.button(crate::t!("ui.browse")).clicked()
-                        && let Some(path) = rfd::FileDialog::new()
+                        && let Some(path) = crate::services::file_dialogs::resource_dialog()
                             .add_filter(crate::t!("ui.png_image"), &["png"])
                             .pick_file()
                     {
@@ -1400,7 +1456,13 @@ impl AddBrushTipDialog {
                                     egui::RichText::new(crate::t!("ui.valid"))
                                         .color(egui::Color32::from_rgb(80, 200, 80)),
                                 );
-                                ui.label(crate::i18n::format_translation("ui.0_x_1_px", &[("0", format!("{}", self.image_width)), ("1", format!("{}", self.image_height))]));
+                                ui.label(crate::i18n::format_translation(
+                                    "ui.0_x_1_px",
+                                    &[
+                                        ("0", format!("{}", self.image_width)),
+                                        ("1", format!("{}", self.image_height)),
+                                    ],
+                                ));
                                 if !self.error_message.is_empty() {
                                     ui.label(
                                         egui::RichText::new(&self.error_message)
@@ -1607,7 +1669,7 @@ impl AddShapeDialog {
                     ui.add_sized([250.0, 22.0], egui::Label::new(egui::RichText::new(path_text).size(12.0).color(colors.text_muted)));
                     #[cfg(not(target_arch = "wasm32"))]
                     if ui.button(crate::t!("ui.browse")).clicked()
-                        && let Some(path) = rfd::FileDialog::new().add_filter(crate::t!("ui.svg_shape"), &["svg"]).pick_file()
+                        && let Some(path) = crate::services::file_dialogs::resource_dialog().add_filter(crate::t!("ui.svg_shape"), &["svg"]).pick_file()
                     {
                         self.selected_path = Some(path.clone());
                         self.validate_file(ctx, &path);
@@ -1634,7 +1696,7 @@ impl AddShapeDialog {
                     }
                     #[cfg(not(target_arch = "wasm32"))]
                     if ui.button(crate::t!("ui.export_example")).clicked()
-                        && let Some(path) = rfd::FileDialog::new()
+                        && let Some(path) = crate::services::file_dialogs::resource_dialog()
                             .set_file_name("paintfe_pentagon_shape.svg")
                             .add_filter(crate::t!("ui.svg_shape"), &["svg"])
                             .save_file()
@@ -1692,45 +1754,210 @@ mod issue_185_dimension_controls_tests {
         for image in [true, false] {
             let ctx = egui::Context::default();
             let mut fonts = egui::FontDefinitions::default();
-            fonts.families.insert(egui::FontFamily::Name("WidgetTitle".into()), fonts.families[&egui::FontFamily::Proportional].clone());
+            fonts.families.insert(
+                egui::FontFamily::Name("WidgetTitle".into()),
+                fonts.families[&egui::FontFamily::Proportional].clone(),
+            );
             ctx.set_fonts(fonts);
             let state = CanvasState::new(800, 400);
             let mut resize_image = ResizeImageDialog::new(&state);
             let mut resize_canvas = ResizeCanvasDialog::new(&state);
-            let frame = |events, resize_image: &mut ResizeImageDialog, resize_canvas: &mut ResizeCanvasDialog| {
-                ctx.run_ui(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 800.0))), events, ..Default::default() }, |_| {
-                    if image { resize_image.show(&ctx); } else { resize_canvas.show(&ctx, [1.0; 4]); }
-                })
+            let frame = |events,
+                         resize_image: &mut ResizeImageDialog,
+                         resize_canvas: &mut ResizeCanvasDialog| {
+                ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(1000.0, 800.0),
+                        )),
+                        events,
+                        ..Default::default()
+                    },
+                    |_| {
+                        if image {
+                            resize_image.show(&ctx);
+                        } else {
+                            resize_canvas.show(&ctx, [1.0; 4]);
+                        }
+                    },
+                )
             };
-            for _ in 0..3 { frame(vec![], &mut resize_image, &mut resize_canvas); }
-            ctx.memory_mut(|m| { if let Some(id) = m.focused() { m.surrender_focus(id); } });
-            let dialog = if image { "resize_img_dims" } else { "resize_canvas_dims" };
-            let rect = ctx.data(|d| d.get_temp::<egui::Rect>(egui::Id::new(("resize_dimension_rect", dialog, "width")))).unwrap();
-            let height_rect = ctx.data(|d| d.get_temp::<egui::Rect>(egui::Id::new(("resize_dimension_rect", dialog, "height")))).unwrap();
-            frame(vec![egui::Event::PointerMoved(height_rect.center()), egui::Event::PointerButton { pos: height_rect.center(), button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE }, egui::Event::PointerButton { pos: height_rect.center(), button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE }], &mut resize_image, &mut resize_canvas);
+            for _ in 0..3 {
+                frame(vec![], &mut resize_image, &mut resize_canvas);
+            }
+            ctx.memory_mut(|m| {
+                if let Some(id) = m.focused() {
+                    m.surrender_focus(id);
+                }
+            });
+            let dialog = if image {
+                "resize_img_dims"
+            } else {
+                "resize_canvas_dims"
+            };
+            let rect = ctx
+                .data(|d| {
+                    d.get_temp::<egui::Rect>(egui::Id::new((
+                        "resize_dimension_rect",
+                        dialog,
+                        "width",
+                    )))
+                })
+                .unwrap();
+            let height_rect = ctx
+                .data(|d| {
+                    d.get_temp::<egui::Rect>(egui::Id::new((
+                        "resize_dimension_rect",
+                        dialog,
+                        "height",
+                    )))
+                })
+                .unwrap();
+            frame(
+                vec![
+                    egui::Event::PointerMoved(height_rect.center()),
+                    egui::Event::PointerButton {
+                        pos: height_rect.center(),
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                    egui::Event::PointerButton {
+                        pos: height_rect.center(),
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+                &mut resize_image,
+                &mut resize_canvas,
+            );
             frame(vec![], &mut resize_image, &mut resize_canvas);
             let point = rect.center();
-            frame(vec![egui::Event::PointerMoved(point)], &mut resize_image, &mut resize_canvas);
-            frame(vec![egui::Event::PointerButton { pos: point, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE }], &mut resize_image, &mut resize_canvas);
-            frame(vec![egui::Event::PointerMoved(point + egui::vec2(32.0, 0.0))], &mut resize_image, &mut resize_canvas);
-            frame(vec![egui::Event::PointerMoved(point + egui::vec2(48.0, 0.0))], &mut resize_image, &mut resize_canvas);
-            frame(vec![egui::Event::PointerButton { pos: point + egui::vec2(48.0, 0.0), button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE }], &mut resize_image, &mut resize_canvas);
+            frame(
+                vec![egui::Event::PointerMoved(point)],
+                &mut resize_image,
+                &mut resize_canvas,
+            );
+            frame(
+                vec![egui::Event::PointerButton {
+                    pos: point,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                &mut resize_image,
+                &mut resize_canvas,
+            );
+            frame(
+                vec![egui::Event::PointerMoved(point + egui::vec2(32.0, 0.0))],
+                &mut resize_image,
+                &mut resize_canvas,
+            );
+            frame(
+                vec![egui::Event::PointerMoved(point + egui::vec2(48.0, 0.0))],
+                &mut resize_image,
+                &mut resize_canvas,
+            );
+            frame(
+                vec![egui::Event::PointerButton {
+                    pos: point + egui::vec2(48.0, 0.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                &mut resize_image,
+                &mut resize_canvas,
+            );
             let outside = point - egui::vec2(55.0, 15.0);
-            frame(vec![egui::Event::PointerMoved(outside), egui::Event::PointerButton { pos: outside, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE }, egui::Event::PointerButton { pos: outside, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE }], &mut resize_image, &mut resize_canvas);
-            let (width, height) = if image { (resize_image.width, resize_image.height) } else { (resize_canvas.width, resize_canvas.height) };
-            let after = ctx.data(|d| d.get_temp::<egui::Rect>(egui::Id::new(("resize_dimension_rect", dialog, "width")))).unwrap();
-            assert!((after.min - rect.min).length() < 1.0, "{dialog} moved while dragging width");
+            frame(
+                vec![
+                    egui::Event::PointerMoved(outside),
+                    egui::Event::PointerButton {
+                        pos: outside,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                    egui::Event::PointerButton {
+                        pos: outside,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+                &mut resize_image,
+                &mut resize_canvas,
+            );
+            let (width, height) = if image {
+                (resize_image.width, resize_image.height)
+            } else {
+                (resize_canvas.width, resize_canvas.height)
+            };
+            let after = ctx
+                .data(|d| {
+                    d.get_temp::<egui::Rect>(egui::Id::new((
+                        "resize_dimension_rect",
+                        dialog,
+                        "width",
+                    )))
+                })
+                .unwrap();
+            assert!(
+                (after.min - rect.min).length() < 1.0,
+                "{dialog} moved while dragging width"
+            );
             assert!(width > 800.0, "{dialog} width did not drag");
-            assert!((width / height - 2.0).abs() < 0.01, "{dialog} lost aspect ratio");
-            let position_id = egui::Id::new(if image { "resize_image_heading_position" } else { "resize_canvas_heading_position" });
+            assert!(
+                (width / height - 2.0).abs() < 0.01,
+                "{dialog} lost aspect ratio"
+            );
+            let position_id = egui::Id::new(if image {
+                "resize_image_heading_position"
+            } else {
+                "resize_canvas_heading_position"
+            });
             let before = ctx.data(|d| d.get_temp::<egui::Pos2>(position_id)).unwrap();
-            for (origin, expected_move) in [(before + egui::vec2(20.0, 85.0), false), (before + egui::vec2(65.0, 20.0), true)] {
-                frame(vec![egui::Event::PointerMoved(origin)], &mut resize_image, &mut resize_canvas);
-                frame(vec![egui::Event::PointerButton { pos: origin, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE }], &mut resize_image, &mut resize_canvas);
-                frame(vec![egui::Event::PointerMoved(origin + egui::vec2(30.0, 0.0))], &mut resize_image, &mut resize_canvas);
-                frame(vec![egui::Event::PointerButton { pos: origin + egui::vec2(30.0, 0.0), button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE }], &mut resize_image, &mut resize_canvas);
+            for (origin, expected_move) in [
+                (before + egui::vec2(20.0, 85.0), false),
+                (before + egui::vec2(65.0, 20.0), true),
+            ] {
+                frame(
+                    vec![egui::Event::PointerMoved(origin)],
+                    &mut resize_image,
+                    &mut resize_canvas,
+                );
+                frame(
+                    vec![egui::Event::PointerButton {
+                        pos: origin,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::NONE,
+                    }],
+                    &mut resize_image,
+                    &mut resize_canvas,
+                );
+                frame(
+                    vec![egui::Event::PointerMoved(origin + egui::vec2(30.0, 0.0))],
+                    &mut resize_image,
+                    &mut resize_canvas,
+                );
+                frame(
+                    vec![egui::Event::PointerButton {
+                        pos: origin + egui::vec2(30.0, 0.0),
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: egui::Modifiers::NONE,
+                    }],
+                    &mut resize_image,
+                    &mut resize_canvas,
+                );
                 let after = ctx.data(|d| d.get_temp::<egui::Pos2>(position_id)).unwrap();
-                assert!((after.x - before.x - if expected_move { 30.0 } else { 0.0 }).abs() < 1.0, "{dialog} unexpected body/heading movement");
+                assert!(
+                    (after.x - before.x - if expected_move { 30.0 } else { 0.0 }).abs() < 1.0,
+                    "{dialog} unexpected body/heading movement"
+                );
             }
         }
     }

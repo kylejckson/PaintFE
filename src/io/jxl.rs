@@ -1,7 +1,7 @@
 //! JPEG XL still images. Built-in Rust decoding and an optional offline export helper.
 use image::{ImageError, ImageResult};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct JxlOptions {
     pub lossless: bool,
     pub effort: u8,

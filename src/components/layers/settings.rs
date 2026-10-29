@@ -12,7 +12,8 @@ impl LayersPanel {
             if self.settings_state.editing_layer != Some(index)
                 || self.settings_state.source_canvas != canvas_state as *const CanvasState as usize
                 || self.settings_state.source_layer_count != canvas_state.layers.len()
-                || (self.settings_state.editing_name != layer.name && !self.settings_state.editing_name.is_empty())
+                || (self.settings_state.editing_name != layer.name
+                    && !self.settings_state.editing_name.is_empty())
                 || self.settings_state.editing_opacity != layer.opacity
                 || self.settings_state.editing_blend_mode != layer.blend_mode
                 || canvas_state.gpu_layers_invalid
@@ -229,9 +230,13 @@ impl LayersPanel {
             ui.label(t!("layer.opacity"));
             if ui
                 .add(
-                    crate::ui::controls::Slider::new(&mut self.settings_state.editing_opacity, 0.0..=1.0).double_click_reset_to(1.0)
-                        .fixed_decimals(2)
-                        .show_value(true),
+                    crate::ui::controls::Slider::new(
+                        &mut self.settings_state.editing_opacity,
+                        0.0..=1.0,
+                    )
+                    .double_click_reset_to(1.0)
+                    .fixed_decimals(2)
+                    .show_value(true),
                 )
                 .changed()
             {
@@ -274,7 +279,11 @@ impl LayersPanel {
         ui.add_space(8.0);
         ui.separator();
         ui.add_space(4.0);
-        ui.label(egui::RichText::new(crate::t!("ui.image_data")).strong().size(12.0));
+        ui.label(
+            egui::RichText::new(crate::t!("ui.image_data"))
+                .strong()
+                .size(12.0),
+        );
         ui.horizontal(|ui| {
             ui.label(crate::t!("ui.pixel_format"));
             let mut fmt = canvas_state.layers[layer_idx].pixel_format;
@@ -326,7 +335,10 @@ impl LayersPanel {
                 .color(ui.visuals().weak_text_color()),
         );
         let mut hdr_enabled = canvas_state.layers[layer_idx].hdr_metadata.enabled;
-        if ui.checkbox(&mut hdr_enabled, crate::t!("ui.hdr_metadata")).changed() {
+        if ui
+            .checkbox(&mut hdr_enabled, crate::t!("ui.hdr_metadata"))
+            .changed()
+        {
             canvas_state.layers[layer_idx].hdr_metadata.enabled = hdr_enabled;
         }
         if hdr_enabled {
@@ -356,7 +368,13 @@ impl LayersPanel {
             || !meta.raw_png_chunks.is_empty()
         {
             ui.label(
-                egui::RichText::new(crate::i18n::format_translation("ui.metadata_0_text_1_raw_chunks", &[("0", format!("{}", meta.png_text_chunks.len())), ("1", format!("{}", meta.raw_png_chunks.len()))]))
+                egui::RichText::new(crate::i18n::format_translation(
+                    "ui.metadata_0_text_1_raw_chunks",
+                    &[
+                        ("0", format!("{}", meta.png_text_chunks.len())),
+                        ("1", format!("{}", meta.raw_png_chunks.len())),
+                    ],
+                ))
                 .size(11.0),
             );
         }
@@ -371,7 +389,11 @@ impl LayersPanel {
         ui.add_space(8.0);
         ui.separator();
         ui.add_space(4.0);
-        ui.label(egui::RichText::new(crate::t!("ui.adjustment")).strong().size(12.0));
+        ui.label(
+            egui::RichText::new(crate::t!("ui.adjustment"))
+                .strong()
+                .size(12.0),
+        );
 
         let mut changed = false;
         let layer = &mut canvas_state.layers[layer_idx];
@@ -397,7 +419,10 @@ impl LayersPanel {
                     changed = true;
                 }
                 if ui
-                    .selectable_label(selected == "Brightness / Contrast", crate::t!("dialog.brightness_contrast"))
+                    .selectable_label(
+                        selected == "Brightness / Contrast",
+                        crate::t!("dialog.brightness_contrast"),
+                    )
                     .clicked()
                 {
                     adj.kind = crate::canvas::AdjustmentKind::BrightnessContrast {
@@ -431,7 +456,8 @@ impl LayersPanel {
             crate::canvas::AdjustmentKind::Exposure { ev } => {
                 changed |= ui
                     .add(
-                        crate::ui::controls::Slider::new(ev, -4.0..=4.0).double_click_reset_to(0.0)
+                        crate::ui::controls::Slider::new(ev, -4.0..=4.0)
+                            .double_click_reset_to(0.0)
                             .text(crate::t!("ui.ev"))
                             .fixed_decimals(2),
                     )
@@ -442,10 +468,18 @@ impl LayersPanel {
                 contrast,
             } => {
                 changed |= ui
-                    .add(crate::ui::controls::Slider::new(brightness, -255.0..=255.0).double_click_reset_to(0.0).text(crate::t!("ui.brightness")))
+                    .add(
+                        crate::ui::controls::Slider::new(brightness, -255.0..=255.0)
+                            .double_click_reset_to(0.0)
+                            .text(crate::t!("ui.brightness")),
+                    )
                     .changed();
                 changed |= ui
-                    .add(crate::ui::controls::Slider::new(contrast, -255.0..=255.0).double_click_reset_to(0.0).text(crate::t!("ui.contrast")))
+                    .add(
+                        crate::ui::controls::Slider::new(contrast, -255.0..=255.0)
+                            .double_click_reset_to(0.0)
+                            .text(crate::t!("ui.contrast")),
+                    )
                     .changed();
             }
             crate::canvas::AdjustmentKind::Invert => {
@@ -469,7 +503,8 @@ impl LayersPanel {
                             let name = ["R", "G", "B", "A"][i];
                             changed |= ui
                                 .add(
-                                    crate::ui::controls::Numeric::new(coeff).id_salt((label, i))
+                                    crate::ui::controls::Numeric::new(coeff)
+                                        .id_salt((label, i))
                                         .range(-2.0..=2.0)
                                         .speed(0.05)
                                         .prefix(name),
@@ -523,7 +558,13 @@ impl LayersPanel {
                             outline.color[2],
                             outline.color[3],
                         );
-                        if crate::ui::controls::color_edit_button_srgba(ui, &mut c, egui::color_picker::Alpha::BlendOrAdditive).changed() {
+                        if crate::ui::controls::color_edit_button_srgba(
+                            ui,
+                            &mut c,
+                            egui::color_picker::Alpha::BlendOrAdditive,
+                        )
+                        .changed()
+                        {
                             outline.color = [c.r(), c.g(), c.b(), c.a()];
                             changed = true;
                         }
@@ -601,7 +642,13 @@ impl LayersPanel {
                             shadow.color[2],
                             shadow.color[3],
                         );
-                        if crate::ui::controls::color_edit_button_srgba(ui, &mut c, egui::color_picker::Alpha::BlendOrAdditive).changed() {
+                        if crate::ui::controls::color_edit_button_srgba(
+                            ui,
+                            &mut c,
+                            egui::color_picker::Alpha::BlendOrAdditive,
+                        )
+                        .changed()
+                        {
                             shadow.color = [c.r(), c.g(), c.b(), c.a()];
                             changed = true;
                         }
@@ -635,7 +682,8 @@ impl LayersPanel {
                     ui.horizontal(|ui| {
                         ui.label(t!("ctx.text.effects.shadow.blur"));
                         let r = ui.add(
-                            crate::ui::controls::Slider::new(&mut shadow.blur_radius, 0.0..=50.0).double_click_reset_to(ShadowEffect::default().blur_radius)
+                            crate::ui::controls::Slider::new(&mut shadow.blur_radius, 0.0..=50.0)
+                                .double_click_reset_to(ShadowEffect::default().blur_radius)
                                 .suffix(" px")
                                 .max_decimals(1),
                         );
@@ -688,7 +736,13 @@ impl LayersPanel {
                             inner.color[2],
                             inner.color[3],
                         );
-                        if crate::ui::controls::color_edit_button_srgba(ui, &mut c, egui::color_picker::Alpha::BlendOrAdditive).changed() {
+                        if crate::ui::controls::color_edit_button_srgba(
+                            ui,
+                            &mut c,
+                            egui::color_picker::Alpha::BlendOrAdditive,
+                        )
+                        .changed()
+                        {
                             inner.color = [c.r(), c.g(), c.b(), c.a()];
                             changed = true;
                         }
@@ -769,7 +823,13 @@ impl LayersPanel {
                             gradient.start_color[2],
                             gradient.start_color[3],
                         );
-                        if crate::ui::controls::color_edit_button_srgba(ui, &mut c, egui::color_picker::Alpha::BlendOrAdditive).changed() {
+                        if crate::ui::controls::color_edit_button_srgba(
+                            ui,
+                            &mut c,
+                            egui::color_picker::Alpha::BlendOrAdditive,
+                        )
+                        .changed()
+                        {
                             gradient.start_color = [c.r(), c.g(), c.b(), c.a()];
                             changed = true;
                         }
@@ -782,7 +842,13 @@ impl LayersPanel {
                             gradient.end_color[2],
                             gradient.end_color[3],
                         );
-                        if crate::ui::controls::color_edit_button_srgba(ui, &mut c, egui::color_picker::Alpha::BlendOrAdditive).changed() {
+                        if crate::ui::controls::color_edit_button_srgba(
+                            ui,
+                            &mut c,
+                            egui::color_picker::Alpha::BlendOrAdditive,
+                        )
+                        .changed()
+                        {
                             gradient.end_color = [c.r(), c.g(), c.b(), c.a()];
                             changed = true;
                         }
@@ -964,8 +1030,11 @@ impl LayersPanel {
                 let (tx, rx) = std::sync::mpsc::channel();
                 self.settings_state.texture_load_rx = Some(rx);
                 std::thread::spawn(move || {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter(crate::t!("ui.images"), &["png", "jpg", "jpeg", "bmp", "webp"])
+                    if let Some(path) = crate::services::file_dialogs::resource_dialog()
+                        .add_filter(
+                            crate::t!("ui.images"),
+                            &["png", "jpg", "jpeg", "bmp", "webp"],
+                        )
                         .pick_file()
                         && let Ok(data) = std::fs::read(&path)
                     {
@@ -1117,7 +1186,8 @@ impl LayersPanel {
                         ui.label(format!("T{i}:"));
                         if ui
                             .add(
-                                crate::ui::controls::Numeric::new(&mut pt[0]).id_salt(("envelope", i, 0))
+                                crate::ui::controls::Numeric::new(&mut pt[0])
+                                    .id_salt(("envelope", i, 0))
                                     .speed(1.0)
                                     .prefix("x: "),
                             )
@@ -1127,7 +1197,8 @@ impl LayersPanel {
                         }
                         if ui
                             .add(
-                                crate::ui::controls::Numeric::new(&mut pt[1]).id_salt(("envelope", i, 1))
+                                crate::ui::controls::Numeric::new(&mut pt[1])
+                                    .id_salt(("envelope", i, 1))
                                     .speed(1.0)
                                     .prefix("y: "),
                             )
@@ -1144,7 +1215,8 @@ impl LayersPanel {
                         ui.label(format!("B{i}:"));
                         if ui
                             .add(
-                                crate::ui::controls::Numeric::new(&mut pt[0]).id_salt(("envelope_bottom", i, 0))
+                                crate::ui::controls::Numeric::new(&mut pt[0])
+                                    .id_salt(("envelope_bottom", i, 0))
                                     .speed(1.0)
                                     .prefix("x: "),
                             )
@@ -1154,7 +1226,8 @@ impl LayersPanel {
                         }
                         if ui
                             .add(
-                                crate::ui::controls::Numeric::new(&mut pt[1]).id_salt(("envelope_bottom", i, 1))
+                                crate::ui::controls::Numeric::new(&mut pt[1])
+                                    .id_salt(("envelope_bottom", i, 1))
                                     .speed(1.0)
                                     .prefix("y: "),
                             )

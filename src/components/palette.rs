@@ -174,7 +174,7 @@ impl PalettePanel {
                             if response.secondary_clicked() {
                                 action = Some((*color, true));
                             }
-                            response.context_menu(|ui| {
+                            crate::ui::menus::context_menu(&response, |ui| {
                                 if self.tab != 1 {
                                     if ui.button(crate::t!("ui.replace_with_primary")).clicked() {
                                         *color = primary;
@@ -226,7 +226,7 @@ impl PalettePanel {
         #[cfg(target_arch = "wasm32")]
         crate::web_fs::trigger_download("paintfe.pfepalette", text.as_bytes());
         #[cfg(not(target_arch = "wasm32"))]
-        if let Some(path) = rfd::FileDialog::new()
+        if let Some(path) = crate::services::file_dialogs::resource_dialog()
             .add_filter(crate::t!("ui.palette"), &["pfepalette"])
             .set_file_name("paintfe.pfepalette")
             .save_file()
@@ -237,7 +237,7 @@ impl PalettePanel {
     pub fn load_palette_dialog(&mut self) {
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let Some(path) = rfd::FileDialog::new()
+            let Some(path) = crate::services::file_dialogs::resource_dialog()
                 .add_filter(crate::t!("ui.palette"), &["pfepalette"])
                 .pick_file()
             else {

@@ -4,7 +4,6 @@ use crate::web_fs::File;
 use image::ImageEncoder;
 use image::codecs::bmp::BmpEncoder;
 use image::codecs::jpeg::JpegEncoder;
-use image::codecs::png::PngEncoder;
 use image::codecs::tga::TgaEncoder;
 use image::{DynamicImage, ImageError, Rgba, RgbaImage};
 #[cfg(not(target_arch = "wasm32"))]
@@ -21,6 +20,7 @@ use crate::canvas::{
 use crate::components::dialogs::SaveFormat;
 use crate::experimental::{DeepRgbaBuffer, f16_bits_to_f32, reinhard_tone_map_rgba};
 pub mod avif;
+pub mod export;
 pub mod heic;
 pub mod jxl;
 mod pfe_masks;
@@ -1481,6 +1481,26 @@ pub enum PreparedExportImage {
 }
 
 impl PreparedExportImage {
+    pub(crate) fn has_alpha(&self) -> bool {
+        match self {
+            Self::Rgba8(image) => image.pixels().any(|p| p[3] != 255),
+            Self::Rgba16 { pixels, .. } => pixels.chunks_exact(4).any(|p| p[3] != 65535),
+            Self::RgbaF32 { pixels, .. } => pixels
+                .chunks_exact(4)
+                .any(|p| !p[3].is_finite() || p[3] < 1.0),
+        }
+    }
+    pub(crate) fn has_color(&self) -> bool {
+        match self {
+            Self::Rgba8(image) => image.pixels().any(|p| p[0] != p[1] || p[1] != p[2]),
+            Self::Rgba16 { pixels, .. } => {
+                pixels.chunks_exact(4).any(|p| p[0] != p[1] || p[1] != p[2])
+            }
+            Self::RgbaF32 { pixels, .. } => {
+                pixels.chunks_exact(4).any(|p| p[0] != p[1] || p[1] != p[2])
+            }
+        }
+    }
     fn rgba8(&self) -> RgbaImage {
         match self {
             PreparedExportImage::Rgba8(image) => image.clone(),
@@ -1703,6 +1723,13 @@ pub fn encode_prepared_and_write(
     tiff_compression: TiffCompression,
     webp_lossless: bool,
 ) -> Result<(), ImageError> {
+    if format == SaveFormat::Png {
+        let mut writer = BufWriter::new(File::create(path)?);
+        export::png::write(&image, Default::default(), &mut writer)
+            .map_err(|e| ImageError::IoError(std::io::Error::other(e)))?;
+        writer.flush()?;
+        return Ok(());
+    }
     match (&image, format) {
         (
             PreparedExportImage::Rgba16 {
@@ -1724,14 +1751,6 @@ pub fn encode_prepared_and_write(
                 height,
                 pixels,
             },
-            SaveFormat::Png,
-        ) => return write_png16(*width, *height, pixels, path),
-        (
-            PreparedExportImage::Rgba16 {
-                width,
-                height,
-                pixels,
-            },
             SaveFormat::Tiff,
         ) => return write_tiff16(*width, *height, pixels, path, tiff_compression),
         (
@@ -1741,7 +1760,7 @@ pub fn encode_prepared_and_write(
                 pixels,
             },
             SaveFormat::Tiff,
-        ) => return write_tiff_f32(*width, *height, pixels, path),
+        ) => return write_tiff_f32(*width, *height, pixels, path, tiff_compression),
         _ => {}
     }
 
@@ -1772,25 +1791,6 @@ pub fn encode_canvas_state_and_write(
         tiff_compression,
         webp_lossless,
     )
-}
-
-fn write_png16(width: u32, height: u32, pixels: &[u16], path: &Path) -> Result<(), ImageError> {
-    let file = File::create(path)?;
-    let writer = BufWriter::new(file);
-    let mut encoder = png::Encoder::new(writer, width, height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Sixteen);
-    let mut png_writer = encoder
-        .write_header()
-        .map_err(|e| ImageError::IoError(std::io::Error::other(e.to_string())))?;
-    let mut bytes = Vec::with_capacity(pixels.len() * 2);
-    for value in pixels {
-        bytes.extend_from_slice(&value.to_be_bytes());
-    }
-    png_writer
-        .write_image_data(&bytes)
-        .map_err(|e| ImageError::IoError(std::io::Error::other(e.to_string())))?;
-    Ok(())
 }
 
 fn write_tiff16(
@@ -1830,16 +1830,40 @@ fn write_tiff16(
     Ok(())
 }
 
-fn write_tiff_f32(width: u32, height: u32, pixels: &[f32], path: &Path) -> Result<(), ImageError> {
+fn write_tiff_f32(
+    width: u32,
+    height: u32,
+    pixels: &[f32],
+    path: &Path,
+    tiff_compression: TiffCompression,
+) -> Result<(), ImageError> {
     let file = File::create(path)?;
     let mut writer = BufWriter::new(file);
     let err_map = |e: tiff::TiffError| {
         ImageError::IoError(std::io::Error::other(format!("TIFF encode error: {}", e)))
     };
     let mut tiff_enc = tiff::encoder::TiffEncoder::new(&mut writer).map_err(err_map)?;
-    tiff_enc
-        .write_image::<tiff::encoder::colortype::RGBA32Float>(width, height, pixels)
-        .map_err(err_map)?;
+    match tiff_compression {
+        TiffCompression::None => tiff_enc
+            .write_image::<tiff::encoder::colortype::RGBA32Float>(width, height, pixels)
+            .map_err(err_map)?,
+        TiffCompression::Lzw => tiff_enc
+            .write_image_with_compression::<tiff::encoder::colortype::RGBA32Float, _>(
+                width,
+                height,
+                tiff::encoder::compression::Lzw,
+                pixels,
+            )
+            .map_err(err_map)?,
+        TiffCompression::Deflate => tiff_enc
+            .write_image_with_compression::<tiff::encoder::colortype::RGBA32Float, _>(
+                width,
+                height,
+                tiff::encoder::compression::Deflate::default(),
+                pixels,
+            )
+            .map_err(err_map)?,
+    }
     Ok(())
 }
 
@@ -1878,13 +1902,12 @@ pub fn encode_and_write(
 
     match format {
         SaveFormat::Png => {
-            let encoder = PngEncoder::new(&mut writer);
-            encoder.write_image(
-                image.as_raw(),
-                image.width(),
-                image.height(),
-                image::ExtendedColorType::Rgba8,
-            )?;
+            export::png::write(
+                &PreparedExportImage::Rgba8(image.clone()),
+                Default::default(),
+                &mut writer,
+            )
+            .map_err(|e| ImageError::IoError(std::io::Error::other(e)))?;
         }
         SaveFormat::Jpeg => {
             let rgb_image = DynamicImage::ImageRgba8(image.clone()).to_rgb8();
@@ -2055,24 +2078,8 @@ fn encode_static_webp<W: Write>(
 // ============================================================================
 
 pub struct FileHandler {
-    /// Current file path (None if new/unsaved file)
     pub current_path: Option<PathBuf>,
-    /// Last used save format
-    pub last_format: SaveFormat,
-    /// Last used quality setting
-    pub last_quality: u8,
-    /// Last used TIFF compression setting
-    pub last_tiff_compression: TiffCompression,
-    /// Last used WebP compression mode for static exports
-    pub last_webp_lossless: bool,
-    /// Whether last save was animated
-    pub last_animated: bool,
-    /// Last used animation FPS
-    pub last_animation_fps: f32,
-    /// Last used GIF color depth (bits: 1-8, 8 = 256 colors)
-    pub last_gif_colors: u16,
-    /// Last used GIF dithering setting
-    pub last_gif_dither: bool,
+    pub last_export_options: export::ExportOptions,
 }
 
 impl Default for FileHandler {
@@ -2086,14 +2093,7 @@ impl FileHandler {
         register_codecs();
         Self {
             current_path: None,
-            last_format: SaveFormat::Png,
-            last_quality: 90,
-            last_tiff_compression: TiffCompression::None,
-            last_webp_lossless: true,
-            last_animated: false,
-            last_animation_fps: 10.0,
-            last_gif_colors: 256,
-            last_gif_dither: true,
+            last_export_options: Default::default(),
         }
     }
 
@@ -2167,24 +2167,25 @@ impl FileHandler {
 
                 // Detect format from extension
                 if let Some(ext) = path.extension() {
-                    self.last_format = match ext.to_string_lossy().to_lowercase().as_str() {
-                        "png" => SaveFormat::Png,
-                        "jpg" | "jpeg" => SaveFormat::Jpeg,
-                        "jxl" if cfg!(not(target_arch = "wasm32")) => {
-                            SaveFormat::Jxl(Default::default())
-                        }
-                        "avif" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Avif,
-                        "heic" | "heif" | "hif" if cfg!(not(target_arch = "wasm32")) => {
-                            SaveFormat::Heic
-                        }
-                        "webp" => SaveFormat::Webp,
-                        "bmp" => SaveFormat::Bmp,
-                        "tga" => SaveFormat::Tga,
-                        "ico" => SaveFormat::Ico,
-                        "tiff" | "tif" => SaveFormat::Tiff,
-                        "gif" => SaveFormat::Gif,
-                        _ => SaveFormat::Png,
-                    };
+                    self.last_export_options.format =
+                        match ext.to_string_lossy().to_lowercase().as_str() {
+                            "png" => SaveFormat::Png,
+                            "jpg" | "jpeg" => SaveFormat::Jpeg,
+                            "jxl" if cfg!(not(target_arch = "wasm32")) => {
+                                SaveFormat::Jxl(Default::default())
+                            }
+                            "avif" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Avif,
+                            "heic" | "heif" | "hif" if cfg!(not(target_arch = "wasm32")) => {
+                                SaveFormat::Heic
+                            }
+                            "webp" => SaveFormat::Webp,
+                            "bmp" => SaveFormat::Bmp,
+                            "tga" => SaveFormat::Tga,
+                            "ico" => SaveFormat::Ico,
+                            "tiff" | "tif" => SaveFormat::Tiff,
+                            "gif" => SaveFormat::Gif,
+                            _ => SaveFormat::Png,
+                        };
                 }
 
                 Some((rgba, path))
@@ -2217,10 +2218,10 @@ impl FileHandler {
 
         // Update state
         self.current_path = Some(path.to_path_buf());
-        self.last_format = format;
-        self.last_quality = quality;
-        self.last_tiff_compression = tiff_compression;
-        self.last_webp_lossless = webp_lossless;
+        self.last_export_options.format = format;
+        self.last_export_options.quality = quality;
+        self.last_export_options.tiff_compression = tiff_compression;
+        self.last_export_options.webp_lossless = webp_lossless;
 
         Ok(())
     }
@@ -2229,14 +2230,12 @@ impl FileHandler {
     /// Returns Err if no current path is set
     pub fn quick_save(&mut self, image: &RgbaImage) -> Result<(), ImageError> {
         if let Some(path) = &self.current_path.clone() {
-            self.save_image(
-                image,
+            export::write(
+                PreparedExportImage::Rgba8(image.clone()),
                 path,
-                self.last_format,
-                self.last_quality,
-                self.last_tiff_compression,
-                self.last_webp_lossless,
+                self.last_export_options,
             )
+            .map_err(|e| ImageError::IoError(std::io::Error::other(e)))
         } else {
             Err(ImageError::IoError(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -2253,14 +2252,7 @@ impl FileHandler {
         // Clone the file handler state for the project
         let project_handler = FileHandler {
             current_path: Some(path.clone()),
-            last_format: self.last_format,
-            last_quality: self.last_quality,
-            last_tiff_compression: self.last_tiff_compression,
-            last_webp_lossless: self.last_webp_lossless,
-            last_animated: self.last_animated,
-            last_animation_fps: self.last_animation_fps,
-            last_gif_colors: self.last_gif_colors,
-            last_gif_dither: self.last_gif_dither,
+            last_export_options: self.last_export_options,
         };
 
         Some((image, path, project_handler))
@@ -2788,6 +2780,14 @@ fn detect_png_animation(path: &Path) -> AnimationInfo {
 
 /// Encode a single static GIF from an RGBA image.
 fn encode_static_gif(image: &RgbaImage, path: &Path) -> Result<(), String> {
+    encode_static_gif_with_options(image, path, 256, true)
+}
+fn encode_static_gif_with_options(
+    image: &RgbaImage,
+    path: &Path,
+    colors: u16,
+    dither: bool,
+) -> Result<(), String> {
     if image.width() > u16::MAX as u32 || image.height() > u16::MAX as u32 {
         return Err("Image dimensions exceed GIF maximum (65535×65535)".to_string());
     }
@@ -2795,7 +2795,7 @@ fn encode_static_gif(image: &RgbaImage, path: &Path) -> Result<(), String> {
     let file = File::create(path).map_err(|e| format!("Failed to create GIF file: {}", e))?;
 
     // Quantize to 256 colors
-    let (palette, indexed) = quantize_rgba(image, 256);
+    let (palette, indexed, transparent) = export::palette::gif(image, usize::from(colors), dither);
 
     let mut encoder = gif::Encoder::new(BufWriter::new(file), w, h, &palette)
         .map_err(|e| format!("GIF encoder init error: {}", e))?;
@@ -2804,6 +2804,7 @@ fn encode_static_gif(image: &RgbaImage, path: &Path) -> Result<(), String> {
         width: w,
         height: h,
         buffer: std::borrow::Cow::Borrowed(&indexed),
+        transparent,
         ..Default::default()
     };
     encoder
@@ -2822,7 +2823,7 @@ pub fn encode_animated_gif(
     frames: &[RgbaImage],
     fps: f32,
     max_colors: u16,
-    _dither: bool,
+    dither: bool,
     path: &Path,
 ) -> Result<(), String> {
     if frames.is_empty() {
@@ -2839,7 +2840,7 @@ pub fn encode_animated_gif(
 
     // Build a global palette from the first frame (or could use per-frame palettes)
     let colors = (max_colors as usize).clamp(2, 256);
-    let (global_palette, _) = quantize_rgba(&frames[0], colors);
+    let (global_palette, _, _) = export::palette::gif(&frames[0], colors, dither);
 
     let mut encoder = gif::Encoder::new(BufWriter::new(file), w, h, &global_palette)
         .map_err(|e| format!("GIF encoder init error: {}", e))?;
@@ -2850,12 +2851,14 @@ pub fn encode_animated_gif(
 
     for frame_img in frames {
         // Use per-frame local palette for better color accuracy
-        let (local_palette, local_indexed) = quantize_rgba(frame_img, colors);
+        let (local_palette, local_indexed, transparent) =
+            export::palette::gif(frame_img, colors, dither);
         let frame = gif::Frame {
             width: w,
             height: h,
             delay: delay_cs,
             palette: Some(local_palette),
+            transparent,
             buffer: std::borrow::Cow::Owned(local_indexed),
             ..Default::default()
         };
@@ -3005,35 +3008,4 @@ fn webp_frame_config(mode: WebpFrameCompression, quality: u8) -> Result<webp::We
 /// Quantize an RGBA image to indexed color (palette + indices).
 /// Returns (flat_palette_rgb: Vec<u8>, indices: Vec<u8>).
 /// The palette is in [R,G,B, R,G,B, ...] format as required by the gif crate.
-fn quantize_rgba(image: &RgbaImage, max_colors: usize) -> (Vec<u8>, Vec<u8>) {
-    let pixels: Vec<u8> = image
-        .pixels()
-        .flat_map(|p| [p[0], p[1], p[2], p[3]])
-        .collect();
-
-    let nq = color_quant::NeuQuant::new(10, max_colors, &pixels);
-
-    let mut palette = Vec::with_capacity(max_colors * 3);
-    for i in 0..max_colors {
-        if let Some(color) = nq.lookup(i) {
-            palette.push(color[0]); // R
-            palette.push(color[1]); // G
-            palette.push(color[2]); // B
-        } else {
-            palette.push(0);
-            palette.push(0);
-            palette.push(0);
-        }
-    }
-
-    let npixels = (image.width() * image.height()) as usize;
-    let mut indices = Vec::with_capacity(npixels);
-    for p in image.pixels() {
-        let idx = nq.index_of(&[p[0], p[1], p[2], p[3]]) as u8;
-        indices.push(idx);
-    }
-
-    (palette, indices)
-}
-
 mod pfe_guides;

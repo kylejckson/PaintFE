@@ -437,7 +437,7 @@ pub fn preferences(
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 if ui.button(crate::t!("ui.export")).clicked()
-                    && let Some(path) = rfd::FileDialog::new()
+                    && let Some(path) = crate::services::file_dialogs::resource_dialog()
                         .add_filter("PaintFE Workspace", &["json"])
                         .set_file_name("workspace.json")
                         .save_file()
@@ -463,7 +463,7 @@ pub fn preferences(
         }
         #[cfg(not(target_arch = "wasm32"))]
         if ui.button(crate::t!("ui.import_layout")).clicked()
-            && let Some(path) = rfd::FileDialog::new()
+            && let Some(path) = crate::services::file_dialogs::resource_dialog()
                 .add_filter("PaintFE Workspace", &["json"])
                 .pick_file()
         {

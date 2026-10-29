@@ -66,6 +66,13 @@ const SEARCH_ENTRIES: &[SearchEntry] = &[
         english: "Ruler Background opacity",
         section: "ruler.appearance",
     },
+    #[cfg(target_os = "windows")]
+    SearchEntry {
+        tab: SettingsTab::AI,
+        key: "settings.ai.clean_recent",
+        english: "Remove configured model runtime DLL resources from Windows recent files taskbar Jump List",
+        section: "settings.ai.onnx_runtime",
+    },
     SearchEntry {
         tab: SettingsTab::Hardware,
         key: "graphics.rendering",

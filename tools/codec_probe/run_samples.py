@@ -57,29 +57,6 @@ def reference_heif(path):
     return pillow_heif.open_heif(path, convert_hdr_to_8bit=True).to_pillow().convert("RGBA")
 
 
-def heif_samples(root, results):
-    executable = (root / ("heifer.exe" if os.name == "nt" else "heifer")).resolve()
-    for path in sorted((root / "samples").glob("*")):
-        raw = root / "decoded.rgba"
-        row = {"file": path.name, "input_bytes": path.stat().st_size}
-        row.update(invoke(executable, "heif-decode", path, raw, 5, 0, 64_000_000))
-        try:
-            times = []
-            for _ in range(3):
-                start = time.perf_counter()
-                ref = reference_heif(path)
-                reference = ref.tobytes()
-                times.append((time.perf_counter() - start) * 1000)
-            row["reference_size"] = list(ref.size)
-            row["reference_median_ms"] = round(statistics.median(times), 3)
-            if row["status"] == "ok":
-                row.update(differences(raw.read_bytes(), reference))
-        except Exception as error:
-            row["reference_error"] = str(error)
-        results["heif"].append(row)
-        print(json.dumps(row), flush=True)
-    results["encoder_primitive"] = invoke(executable, "heif-encoder-primitive")
-
 
 def make_artwork():
     gradient = Image.linear_gradient("L").resize((512, 512))
@@ -126,15 +103,12 @@ def avif_samples(root, results):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("scratch", type=Path)
-    parser.add_argument("--phase", choices=("heif", "avif", "all"), default="all")
+    parser.add_argument("--phase", choices=("avif",), default="avif")
     args = parser.parse_args()
     root = args.scratch.resolve()
     report = root / f"results-{args.phase}.json"
-    results = {"heif": [], "avif": [], "reference": pillow_heif.libheif_info()}
-    if args.phase in ("heif", "all"):
-        heif_samples(root, results)
-    if args.phase in ("avif", "all"):
-        avif_samples(root, results)
+    results = {"avif": [], "reference": pillow_heif.libheif_info()}
+    avif_samples(root, results)
     report.write_text(json.dumps(results, indent=2), encoding="utf-8")
     print(f"Report: {report}", flush=True)
 

@@ -201,7 +201,7 @@ fn start(
 }
 fn import(ctx: &Context, state: &mut State, pack: Pack) {
     // The native picker is invoked only by the user's Import button.
-    if let Some(path) = rfd::FileDialog::new()
+    if let Some(path) = crate::services::file_dialogs::resource_dialog()
         .add_filter("PaintFE feature pack", &["pfepack"])
         .pick_file()
     {
@@ -317,7 +317,7 @@ pub fn show_heic_library_settings(
         }
         ui.horizontal_wrapped(|ui| {
             if ui.button(crate::t!("heic.choose_library")).clicked()
-                && let Some(path) = rfd::FileDialog::new()
+                && let Some(path) = crate::services::file_dialogs::resource_dialog()
                     .add_filter("libheif", &["dll"])
                     .pick_file()
             {

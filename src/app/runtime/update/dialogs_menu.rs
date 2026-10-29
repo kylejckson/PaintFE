@@ -15,7 +15,7 @@ impl PaintFEApp {
             .exact_size(28.0)
             .show(root_ui, |ui| {
                 if modal_open { ui.disable(); }
-                egui::MenuBar::new().ui(ui, |ui| {
+                egui::MenuBar::new().config(crate::ui::menus::config()).ui(ui, |ui| {
                     ui.menu_button(t!("menu.file"), |ui| {
                         if self
                             .assets
@@ -108,7 +108,7 @@ impl PaintFEApp {
                         }
                         {
                             let any_dirty =
-                                self.projects.iter().any(|p| p.is_dirty);
+                                self.projects.iter().any(Project::needs_save);
                             if self
                                 .assets
                                 .menu_item_shortcut_enabled(
@@ -1952,11 +1952,13 @@ impl PaintFEApp {
                     {
                         self.canvas.zoom_out();
                     }
-                    let fit_button = self
-                        .assets
-                        .icon_button_enabled(ui, Icon::ResetZoom, has_project);
+                    let fit_button =
+                        self.assets
+                            .icon_button_enabled(ui, Icon::ResetZoom, has_project);
                     #[cfg(test)]
-                    ctx.data_mut(|d| d.insert_temp(egui::Id::new("toolbar_fit_test_rect"), fit_button.rect));
+                    ctx.data_mut(|d| {
+                        d.insert_temp(egui::Id::new("toolbar_fit_test_rect"), fit_button.rect)
+                    });
                     if fit_button.clicked() {
                         self.fit_active_document();
                     }
@@ -2325,7 +2327,7 @@ impl PaintFEApp {
                                         ui.id().with(("project_tab_full", idx)),
                                         egui::Sense::click_and_drag(),
                                     );
-                                    full_tab_resp.context_menu(|ui| {
+                                    crate::ui::menus::context_menu(&full_tab_resp, |ui| {
                                         ui.label(name);
                                         for action in [
                                             "Save",

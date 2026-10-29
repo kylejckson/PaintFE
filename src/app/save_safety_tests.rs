@@ -13,15 +13,32 @@ fn app() -> PaintFEApp {
 fn action(path: PathBuf, format: SaveFormat) -> SaveAction {
     SaveAction {
         path,
-        format,
-        quality: 90,
-        webp_lossless: true,
-        tiff_compression: TiffCompression::None,
-        animated: false,
-        animation_fps: 10.0,
-        gif_colors: 256,
-        gif_dither: true,
+        options: crate::io::export::ExportOptions {
+            format,
+            ..Default::default()
+        },
     }
+}
+
+#[test]
+fn png_colour_alpha_and_palette_losses_use_the_same_options_as_the_save_job() {
+    let mut app = app();
+    app.projects[0].canvas_state.layers[0]
+        .pixels
+        .put_pixel(0, 0, image::Rgba([40, 120, 220, 127]));
+    app.projects[0].canvas_state.mark_dirty(None);
+    let mut png = action(directory().join("output.png"), SaveFormat::Png);
+    assert!(app.projects[0].save_losses(&png).is_empty());
+    png.png.mode = crate::io::export::png::Mode::Gray;
+    let losses = app.projects[0].save_losses(&png);
+    assert!(losses.contains(&crate::t!("export.loss_color")));
+    assert!(losses.contains(&crate::t!("save.loss_alpha")));
+    png.png.mode = crate::io::export::png::Mode::Indexed;
+    assert!(
+        app.projects[0]
+            .save_losses(&png)
+            .contains(&crate::t!("export.loss_palette"))
+    );
 }
 
 fn layered(app: &mut PaintFEApp) {
@@ -175,7 +192,7 @@ fn image_export_does_not_replace_existing_pfe_save_target() {
     let directory = directory();
     let project = directory.join("project.pfe");
     app.projects[0].file_handler.current_path = Some(project.clone());
-    app.projects[0].file_handler.last_format = SaveFormat::Pfe;
+    app.projects[0].file_handler.last_export_options.format = SaveFormat::Pfe;
     app.projects[0].path = Some(project.clone());
     app.request_save(
         PendingSave {
@@ -191,7 +208,10 @@ fn image_export_does_not_replace_existing_pfe_save_target() {
         app.projects[0].file_handler.current_path.as_ref(),
         Some(&project)
     );
-    assert_eq!(app.projects[0].file_handler.last_format, SaveFormat::Pfe);
+    assert_eq!(
+        app.projects[0].file_handler.last_export_options.format,
+        SaveFormat::Pfe
+    );
     assert!(app.projects[0].is_dirty);
 }
 
@@ -245,7 +265,7 @@ fn failed_save_keeps_document_open_dirty_and_exit_cancelled() {
     app.projects[0].mark_dirty();
     let ctx = egui::Context::default();
     app.projects[0].file_handler.current_path = Some(directory().join("missing/target.pfe"));
-    app.projects[0].file_handler.last_format = SaveFormat::Pfe;
+    app.projects[0].file_handler.last_export_options.format = SaveFormat::Pfe;
     app.begin_save_sequence(vec![app.projects[0].id], true, false);
     app.advance_save_sequence(&ctx);
     wait(&mut app, &ctx);
@@ -261,7 +281,7 @@ fn close_waits_for_save_then_removes_only_the_saved_document() {
     app.projects[0].mark_dirty();
     let ctx = egui::Context::default();
     app.projects[0].file_handler.current_path = Some(directory().join("close.pfe"));
-    app.projects[0].file_handler.last_format = SaveFormat::Pfe;
+    app.projects[0].file_handler.last_export_options.format = SaveFormat::Pfe;
     app.begin_save_sequence(vec![app.projects[0].id], false, true);
     app.advance_save_sequence(&ctx);
     assert_eq!(app.projects.len(), 1);
@@ -279,7 +299,7 @@ fn exit_waits_for_every_write_and_checks_all_documents() {
     for (i, p) in app.projects.iter_mut().enumerate() {
         p.mark_dirty();
         p.file_handler.current_path = Some(root.join(format!("{i}.pfe")));
-        p.file_handler.last_format = SaveFormat::Pfe;
+        p.file_handler.last_export_options.format = SaveFormat::Pfe;
     }
     app.begin_save_sequence(app.projects.iter().map(|p| p.id).collect(), true, false);
     for _ in 0..2 {
@@ -329,6 +349,24 @@ fn save_all_cancellation_does_not_save_later_documents() {
     app.advance_save_sequence(&ctx);
     assert!(app.save_sequence.is_none());
     assert!(!app.save_file_dialog.open);
+}
+
+#[test]
+fn save_all_includes_clean_untitled_but_skips_clean_saved_documents() {
+    let mut app = app();
+    let ctx = egui::Context::default();
+    assert!(!app.projects[0].is_dirty);
+    let id = app.projects[0].id;
+    let mut saved = Project::new_untitled(2, 4, 4);
+    saved.path = Some(directory().join("unchanged.png"));
+    assert!(!saved.needs_save());
+    app.projects.push(saved);
+    app.handle_save_all(0.0);
+    assert_eq!(app.save_sequence.as_ref().unwrap().remaining.len(), 1);
+    app.advance_save_sequence(&ctx);
+    assert_eq!(app.save_sequence.as_ref().unwrap().waiting, Some(id));
+    assert!(app.save_file_dialog.open);
+    assert!(!app.projects[0].is_dirty);
 }
 
 #[test]
@@ -443,6 +481,39 @@ fn high_depth_warns_for_eight_bit_export_but_not_sixteen_bit_png() {
 }
 
 #[test]
+fn png_loss_warnings_detect_sub_eight_bit_colour_and_alpha_changes() {
+    let mut app = app();
+    let layer = &mut app.projects[0].canvas_state.layers[0];
+    layer.deep_pixels = Some(crate::experimental::DeepRgbaBuffer::U16(
+        [32000, 32001, 32000, 65534].repeat(16),
+    ));
+    layer.pixel_format = crate::canvas::PixelFormat::RgbaU16;
+    layer.pixels = crate::canvas::TiledImage::from_rgba_image(
+        &layer.deep_pixels.as_ref().unwrap().to_rgba8(4, 4).unwrap(),
+    );
+    let mut png = action(PathBuf::from("deep.png"), SaveFormat::Png);
+    png.png.mode = crate::io::export::png::Mode::Rgb;
+    assert!(
+        app.projects[0]
+            .save_losses(&png)
+            .contains(&crate::t!("save.loss_alpha"))
+    );
+    png.png.mode = crate::io::export::png::Mode::GrayAlpha;
+    assert!(
+        app.projects[0]
+            .save_losses(&png)
+            .contains(&crate::t!("export.loss_color"))
+    );
+    png.png.mode = crate::io::export::png::Mode::Automatic;
+    png.png.depth = crate::io::export::png::Depth::Eight;
+    assert!(
+        app.projects[0]
+            .save_losses(&png)
+            .contains(&crate::t!("save.loss_depth"))
+    );
+}
+
+#[test]
 fn warning_escape_cancels_and_enter_defaults_to_project_in_both_themes() {
     for mode in [
         crate::theme::ThemeMode::Light,
@@ -512,7 +583,7 @@ fn close_and_exit_are_cancelled_if_document_changes_during_the_write() {
         app.projects[0].mark_dirty();
         let ctx = egui::Context::default();
         app.projects[0].file_handler.current_path = Some(directory().join("before-edit.pfe"));
-        app.projects[0].file_handler.last_format = SaveFormat::Pfe;
+        app.projects[0].file_handler.last_export_options.format = SaveFormat::Pfe;
         app.begin_save_sequence(vec![app.projects[0].id], exit, !exit);
         app.advance_save_sequence(&ctx);
         app.projects[0].mark_dirty();

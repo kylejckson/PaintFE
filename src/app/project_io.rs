@@ -6,16 +6,32 @@ impl PaintFEApp {
         let snapshot = crate::components::history::CanvasSnapshot::capture(&source.canvas_state);
         let mut copy = Project::new_untitled(0, snapshot.width, snapshot.height);
         snapshot.restore_into(&mut copy.canvas_state);
-        let source_name = source.path.as_ref().or(source.suggested_save_name.as_ref())
-            .and_then(|path| path.file_name()).map(std::path::Path::new)
+        let source_name = source
+            .path
+            .as_ref()
+            .or(source.suggested_save_name.as_ref())
+            .and_then(|path| path.file_name())
+            .map(std::path::Path::new)
             .unwrap_or_else(|| std::path::Path::new(&source.name));
-        let stem = source_name.file_stem().unwrap_or(source_name.as_os_str()).to_string_lossy();
+        let stem = source_name
+            .file_stem()
+            .unwrap_or(source_name.as_os_str())
+            .to_string_lossy();
         let extension = source_name.extension().map(|ext| ext.to_string_lossy());
         let mut index = 1;
         loop {
-            let suffix = if index == 1 { crate::t!("document.copy_suffix") }
-                else { format!("{} {}", crate::t!("document.copy_suffix"), index) };
-            let name = format!("{stem} ({suffix}){}", extension.as_ref().map(|e| format!(".{e}")).unwrap_or_default());
+            let suffix = if index == 1 {
+                crate::t!("document.copy_suffix")
+            } else {
+                format!("{} {}", crate::t!("document.copy_suffix"), index)
+            };
+            let name = format!(
+                "{stem} ({suffix}){}",
+                extension
+                    .as_ref()
+                    .map(|e| format!(".{e}"))
+                    .unwrap_or_default()
+            );
             if !self.projects.iter().any(|p| p.name == name) {
                 copy.name = name;
                 break;
@@ -781,9 +797,9 @@ impl PaintFEApp {
                 .or(project.path.as_ref());
             if let Some(path) = source.filter(|path| crate::io::is_heif_path(path)).cloned() {
                 project.file_handler.current_path = Some(path);
-                project.file_handler.last_format = SaveFormat::Heic;
+                project.file_handler.last_export_options.format = SaveFormat::Heic;
             }
-            if project.file_handler.last_format == SaveFormat::Heic
+            if project.file_handler.last_export_options.format == SaveFormat::Heic
                 && !crate::io::heic::capabilities().encode
             {
                 self.filter_error = Some(crate::io::heic::setup_message());
@@ -851,9 +867,13 @@ impl PaintFEApp {
         self.save_file_dialog.reset();
         // A document's directory wins over the last successful export. Model
         // pickers and other native dialogs never influence this choice.
-        let suggested_name = project.suggested_save_name.as_ref()
+        let suggested_name = project
+            .suggested_save_name
+            .as_ref()
             .map(|name| name.with_extension(&self.settings.last_export_format))
-            .unwrap_or_else(|| PathBuf::from(format!("Untitled.{}", self.settings.last_export_format)));
+            .unwrap_or_else(|| {
+                PathBuf::from(format!("Untitled.{}", self.settings.last_export_format))
+            });
         self.save_file_dialog.set_from_path(&suggested_name);
         self.save_file_dialog.target_directory = if self.settings.last_export_directory.is_empty() {
             std::env::var_os("USERPROFILE")
@@ -878,10 +898,19 @@ impl PaintFEApp {
                 .path
                 .as_ref()
                 .map(|p| p.with_extension("pfe"))
-                .or_else(|| project.suggested_save_name.as_ref().map(|name| name.with_extension("pfe")))
+                .or_else(|| {
+                    project
+                        .suggested_save_name
+                        .as_ref()
+                        .map(|name| name.with_extension("pfe"))
+                })
                 .unwrap_or_else(|| PathBuf::from("Untitled.pfe"));
             self.save_file_dialog.set_from_path(&name);
         }
+        self.save_file_dialog
+            .set_prepared_source(&crate::io::prepare_export_image(&project.canvas_state));
+        self.save_file_dialog
+            .restore_options(&self.settings.export_options);
         self.save_file_dialog.open = true;
     }
 
@@ -891,7 +920,7 @@ impl PaintFEApp {
         self.begin_save_sequence(
             self.projects
                 .iter()
-                .filter(|p| p.is_dirty)
+                .filter(|p| p.needs_save())
                 .map(|p| p.id)
                 .collect(),
             false,

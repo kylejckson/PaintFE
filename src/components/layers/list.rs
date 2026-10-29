@@ -532,7 +532,7 @@ impl LayersPanel {
                 let mut new_active: Option<usize> = None;
                 let mut swap_layers: Option<(usize, usize)> = None;
 
-                total_response.context_menu(|ui| {
+                crate::ui::menus::context_menu(&total_response, |ui| {
                     if assets.menu_item(ui, Icon::LayerAdd, "Add Layer").clicked() {
                         layer_to_add_top = true;
                         ui.close();
@@ -1205,7 +1205,7 @@ impl LayersPanel {
         if response.double_clicked() {
             action = Some(FolderAction::StartRename(folder_id));
         }
-        response.context_menu(|ui| {
+        crate::ui::menus::context_menu(&response, |ui| {
             if assets.menu_item(ui, Icon::LayerAdd, "Add Layer").clicked() {
                 action = Some(FolderAction::AddLayer(folder_id));
                 ui.close();
@@ -1625,7 +1625,7 @@ impl LayersPanel {
         }
 
         // Right-click context menu
-        row_response.context_menu(|ui| {
+        crate::ui::menus::context_menu(&row_response, |ui| {
             if assets
                 .menu_item(ui, Icon::LayerAdd, &t!("layer.add_layer"))
                 .clicked()

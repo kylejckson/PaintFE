@@ -22,4 +22,6 @@ web-sys = { version = "0.3", features = ["HtmlCanvasElement"] }
 opt-level = 2
 
 [patch.crates-io]
-heifer = { path = "../vendor/heifer" }
+egui = { path = "../vendor/egui" }
+epaint = { path = "../vendor/epaint" }
+rfd = { path = "../vendor/rfd" }

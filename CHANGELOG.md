@@ -6,6 +6,29 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.22] - 2026-10-29
+
+- Improve menu interactions and Save All handling.
+- Expand Save As with clearer previews and more PNG export options.
+- Improve how configuration files are handled in Windows recent documents.
+
+### Interface and saving
+
+- Make menu click areas more consistent and reduce unwanted dismissal around spacing and unavailable actions. Include untitled documents without edits in Save All. Related to issue 219.
+- Make Save As resizable in both directions, with a stacked layout in narrower windows and accessible Save and Cancel buttons. Related to issue 221.
+- Update previews in the background, move their status below the image, and show output precision and thumbnail size estimates more clearly. Related to issue 221.
+- Remember export settings by format after saving, with a Reset this format button. Related to issue 221.
+
+### Export options
+
+- Add PNG colour modes, 8-bit and 16-bit output, compression presets, and indexed palettes with dithering and partial transparency. Keep warnings for choices that reduce colours or precision. Related to issue 221.
+- Improve consistency between preview and saved output, including GIF dithering and TIFF compression settings.
+
+### Windows and codecs
+
+- Keep model, runtime and other configuration-resource selections out of Windows recent documents. Add cleanup for currently configured model, runtime and HEIC library entries under Preferences > AI. Related to issue 220.
+- Remove the retired Heifer decoder and encoder experiment. Related to issue 196.
+
 ## [1.4.21] - 2026-10-28
 
 - Stop large image resizes promptly when Cancel is pressed.

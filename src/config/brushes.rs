@@ -2093,7 +2093,10 @@ impl Assets {
         } else {
             egui::Sense::hover()
         };
-        let (rect, response) = ui.allocate_exact_size(egui::vec2(desired_width, row_height), sense);
+        let (rect, response) = ui.allocate_exact_size(
+            crate::ui::menus::row_size(ui, desired_width, row_height),
+            sense,
+        );
 
         if ui.is_rect_visible(rect) {
             let visuals = ui.style().interact(&response);
@@ -2143,7 +2146,7 @@ impl Assets {
         }
 
         response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), text)
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled() && enabled, text)
         });
         crate::ui::polish::focus(ui, &response, ui.visuals().widgets.inactive.corner_radius);
         response
@@ -2236,7 +2239,10 @@ impl Assets {
         } else {
             egui::Sense::hover()
         };
-        let (rect, response) = ui.allocate_exact_size(egui::vec2(desired_width, row_height), sense);
+        let (rect, response) = ui.allocate_exact_size(
+            crate::ui::menus::row_size(ui, desired_width, row_height),
+            sense,
+        );
 
         if ui.is_rect_visible(rect) {
             // Hover/active background (only for enabled items)
@@ -2295,7 +2301,7 @@ impl Assets {
         }
 
         response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), text)
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled() && enabled, text)
         });
         crate::ui::polish::focus(ui, &response, ui.visuals().widgets.inactive.corner_radius);
         response
@@ -2378,7 +2384,10 @@ impl Assets {
         } else {
             egui::Sense::hover()
         };
-        let (rect, response) = ui.allocate_exact_size(egui::vec2(desired_width, row_height), sense);
+        let (rect, response) = ui.allocate_exact_size(
+            crate::ui::menus::row_size(ui, desired_width, row_height),
+            sense,
+        );
 
         if ui.is_rect_visible(rect) {
             let visuals = ui.style().interact(&response);
@@ -2438,7 +2447,7 @@ impl Assets {
         }
 
         response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), text)
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled() && enabled, text)
         });
         crate::ui::polish::focus(ui, &response, ui.visuals().widgets.inactive.corner_radius);
         response

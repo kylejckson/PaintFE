@@ -91,8 +91,9 @@ decoding the result) or rejected. Unsupported transparency is never flattened
 silently. These measures avoid distributing an HEVC implementation; they do not
 constitute a patent licence or legal clearance for every use or jurisdiction.
 
-The former local Heifer grid-alpha patch and its provenance remain available
-for an upstream report. Nothing has been posted upstream on the user's behalf.
+The former [Heifer grid-alpha patch](https://github.com/kylejckson/PaintFE/blob/feda9d2411ebcd9d578cf9879fff2e1cdcd8137a/vendor/heifer/PAINTFE-PATCHES.md) remains in Git history
+for an upstream report. Its decoder and encoder experiment have been removed;
+only the bounded `heifer-isobmff` container parser remains in production. Nothing has been posted upstream on the user's behalf.
 
 ## AVIF optional pack
 

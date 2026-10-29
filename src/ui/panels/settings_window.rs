@@ -882,7 +882,7 @@ impl SettingsWindow {
                     egui::Button::new(t!("settings.plugins.import")),
                 )
                 .clicked()
-                && let Some(paths) = rfd::FileDialog::new()
+                && let Some(paths) = crate::services::file_dialogs::resource_dialog()
                     .add_filter(crate::t!("ui.paint_net_effect"), &["dll"])
                     .pick_files()
             {
@@ -2286,7 +2286,9 @@ impl SettingsWindow {
                         .clicked()
                     {
                         ui.close();
-                        if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                        if let Some(dir) =
+                            crate::services::file_dialogs::resource_dialog().pick_folder()
+                        {
                             self.pending_icon_pack_load = Some(dir);
                         }
                     }
@@ -2296,7 +2298,7 @@ impl SettingsWindow {
                         .clicked()
                     {
                         ui.close();
-                        if let Some(file) = rfd::FileDialog::new()
+                        if let Some(file) = crate::services::file_dialogs::resource_dialog()
                             .add_filter(crate::t!("settings.interface.icon_pack_current"), &["zip"])
                             .pick_file()
                         {
@@ -2321,7 +2323,8 @@ impl SettingsWindow {
                     .search_target(ui, "settings.interface.icon_pack_export")
                     .on_hover_text(t!("settings.interface.icon_pack_export_hint"))
                     .clicked()
-                    && let Some(dir) = rfd::FileDialog::new().pick_folder()
+                    && let Some(dir) =
+                        crate::services::file_dialogs::resource_dialog().pick_folder()
                     && let Err(e) = assets.export_icon_template(&dir)
                 {
                     crate::log_info!("Icon pack export failed: {e}");
@@ -3847,6 +3850,21 @@ impl SettingsWindow {
 
     // -- AI Tab -------------------------------------------------------
     fn show_ai_tab(&mut self, ui: &mut egui::Ui, settings: &mut AppSettings) {
+        #[cfg(target_os = "windows")]
+        if ui
+            .add(egui::Button::new(t!("settings.ai.clean_recent")).wrap())
+            .search_target(ui, "settings.ai.clean_recent")
+            .on_hover_text(t!("settings.ai.clean_recent_hint"))
+            .clicked()
+        {
+            let result = crate::services::file_dialogs::remove_recent_resources(&[
+                &settings.onnx_runtime_path,
+                &settings.birefnet_model_path,
+                &settings.heic_library_path,
+            ]);
+            self.onnx_probe_result =
+                Some(result.map(|()| t!("settings.ai.clean_recent_done").to_string()));
+        }
         // -- ONNX Runtime ----------------------------------------------
         Self::section_header(ui, &t!("settings.ai.onnx_runtime"));
 

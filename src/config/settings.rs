@@ -238,6 +238,7 @@ pub struct AppSettings {
     pub resize_grip_opacity: f32,
     pub ruler: RulerSettings,
     pub last_export_format: String,
+    pub export_options: std::collections::BTreeMap<String, crate::io::export::ExportOptions>,
     pub last_export_directory: String,
     pub recent_files: Vec<String>,
     /// Auto-save interval in minutes (0 = disabled)
@@ -516,6 +517,7 @@ impl Default for AppSettings {
             resize_grip_opacity: 0.5,
             ruler: RulerSettings::default(),
             last_export_format: "png".into(),
+            export_options: Default::default(),
             last_export_directory: String::new(),
             recent_files: Vec::new(),
             onnx_runtime_path: String::new(),
@@ -1316,6 +1318,10 @@ impl AppSettings {
                 "last_export_directory",
                 serde_json::to_string(&self.last_export_directory),
             ),
+            (
+                "export_options",
+                serde_json::to_string(&self.export_options),
+            ),
             ("recent_files", serde_json::to_string(&self.recent_files)),
             (
                 "dialog_preferences",
@@ -1956,6 +1962,17 @@ impl AppSettings {
                         s.last_export_format = value;
                     }
                 }
+                "export_options" => {
+                    if let Ok(mut options) = serde_json::from_str::<
+                        std::collections::BTreeMap<String, crate::io::export::ExportOptions>,
+                    >(val)
+                    {
+                        options.retain(|key, value| {
+                            key == value.format.extension() && value.validate().is_ok()
+                        });
+                        s.export_options = options;
+                    }
+                }
                 "last_export_directory" => {
                     if let Ok(value) = serde_json::from_str(val) {
                         s.last_export_directory = value;
@@ -2526,6 +2543,17 @@ mod refinement_tests {
             tooltip_delay: 0.0,
             last_export_format: "webp".into(),
             last_export_directory: "saved exports".into(),
+            export_options: std::collections::BTreeMap::from([(
+                "png".into(),
+                crate::io::export::ExportOptions {
+                    png: crate::io::export::png::PngOptions {
+                        mode: crate::io::export::png::Mode::GrayAlpha,
+                        compression: crate::io::export::png::Compression::Smaller,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            )]),
             recent_files: vec!["first.png".into(), "second.pfe".into()],
             persist_colors_panel_size: Some((150.0, 210.0)),
             persist_tools_panel_size: Some((420.0, 170.0)),
@@ -2572,6 +2600,7 @@ mod refinement_tests {
         assert_eq!(restored.tooltip_delay, 0.0);
         assert_eq!(restored.last_export_format, "webp");
         assert_eq!(restored.last_export_directory, "saved exports");
+        assert_eq!(restored.export_options, settings.export_options);
         assert_eq!(restored.recent_files, ["first.png", "second.pfe"]);
         assert_eq!(restored.persist_colors_panel_size, Some((150.0, 210.0)));
         assert_eq!(restored.persist_tools_panel_size, Some((420.0, 170.0)));

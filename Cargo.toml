@@ -1,6 +1,6 @@
 [package]
 name = "PaintFE"
-version = "1.4.21"
+version = "1.4.22"
 edition = "2024"
 
 [lib]
@@ -112,3 +112,5 @@ opt-level = 2
 [patch.crates-io]
 epaint = { path = "vendor/epaint" }
 egui = { path = "vendor/egui" }
+
+rfd = { path = "vendor/rfd" }

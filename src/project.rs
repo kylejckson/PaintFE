@@ -36,6 +36,10 @@ pub struct Project {
 }
 
 impl Project {
+    pub fn needs_save(&self) -> bool {
+        self.is_dirty || self.path.is_none()
+    }
+
     pub fn new_untitled(untitled_counter: usize, width: u32, height: u32) -> Self {
         let name = format!("Untitled-{}", untitled_counter);
 

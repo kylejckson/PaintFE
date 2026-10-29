@@ -34,52 +34,10 @@ fn run() -> Result<()> {
     let args: Vec<_> = std::env::args().collect();
     match args.get(1).map(String::as_str).unwrap_or("baseline") {
         "baseline" => println!(
-            "heif={} avif_encode={} avif_decode={}",
-            cfg!(feature = "heif"),
+            "avif_encode={} avif_decode={}",
             cfg!(feature = "avif-encode"),
             cfg!(feature = "avif-decode")
         ),
-        #[cfg(feature = "heif")]
-        "heif-decode" => {
-            if args.len() < 4 {
-                return Err("heif-decode INPUT OUTPUT.rgba [RUNS] [THREADS] [MAX_PIXELS]".into());
-            }
-            let bytes = std::fs::read(&args[2])?;
-            let options = heifer::Options {
-                max_pixels: args
-                    .get(6)
-                    .map(|s| s.parse())
-                    .transpose()?
-                    .unwrap_or(32_000_000),
-                max_threads: args.get(5).map(|s| s.parse()).transpose()?.unwrap_or(0),
-            };
-            let (image, rgba) = timed(
-                args.get(4).map(|s| s.parse()).transpose()?.unwrap_or(5),
-                || {
-                    let image = heifer::decode_with_options(&bytes, &options)?;
-                    let rgba = image.to_rgba8();
-                    Ok((image, rgba))
-                },
-            )?;
-            println!(
-                "width={} height={} depth={} alpha={}",
-                image.width, image.height, image.bit_depth, image.has_alpha
-            );
-            let file = heifer::heifer_isobmff::HeifFile::parse(&bytes)?;
-            println!("primary_type={}", file.primary_item()?.item_type);
-            output(&args[3], &rgba)?;
-        }
-        #[cfg(feature = "heif")]
-        "heif-encoder-primitive" => {
-            let mut encoder = heifer::heifer_hevc_enc::cabac::ArithmeticEncoder::new();
-            encoder.encode_bypass_bits(0x55, 8);
-            encoder.encode_terminate(1);
-            let bytes = encoder.finish();
-            println!(
-                "CABAC primitive produced {} bytes; not an HEVC image or HEIC file. No image encoder/container writer API exists in Heifer 0.2.0.",
-                bytes.len()
-            );
-        }
         #[cfg(feature = "avif-encode")]
         "avif-encode" => {
             use image::ImageEncoder;

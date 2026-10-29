@@ -571,12 +571,13 @@ fn format_dimension_value(value: f32) -> String {
 }
 
 use crate::ui::numeric::evaluate_dimension_expression;
+mod export_ui;
 
 // ============================================================================
 // IMAGE FORMAT ENUM
 // ============================================================================
 
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum SaveFormat {
     #[default]
     Png,
@@ -594,7 +595,7 @@ pub enum SaveFormat {
 }
 
 /// Compression options for TIFF format
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum TiffCompression {
     #[default]
     None,
@@ -931,18 +932,18 @@ fn rgba_to_color_image(img: &RgbaImage) -> ColorImage {
 #[derive(Clone, Debug)]
 pub struct SaveAction {
     pub path: PathBuf,
-    pub format: SaveFormat,
-    pub quality: u8,
-    pub webp_lossless: bool,
-    pub tiff_compression: TiffCompression,
-    /// Whether to save as animated (multi-frame)
-    pub animated: bool,
-    /// Animation FPS (1-60)
-    pub animation_fps: f32,
-    /// GIF max colors (2-256)
-    pub gif_colors: u16,
-    /// GIF dithering enabled
-    pub gif_dither: bool,
+    pub options: crate::io::export::ExportOptions,
+}
+impl std::ops::Deref for SaveAction {
+    type Target = crate::io::export::ExportOptions;
+    fn deref(&self) -> &Self::Target {
+        &self.options
+    }
+}
+impl std::ops::DerefMut for SaveAction {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.options
+    }
 }
 
 // ============================================================================
@@ -952,8 +953,6 @@ pub struct SaveAction {
 /// Maximum size for preview thumbnail (keeps preview generation fast).
 /// 512 gives enough resolution to zoom in meaningfully on large images.
 const PREVIEW_MAX_SIZE: u32 = 512;
-/// Pixel size of the interactive preview panel (square).
-const PREVIEW_PANEL_SIZE: f32 = 320.0;
 
 /// Return destination and UV rectangles for the texture-backed portion of a
 /// preview viewport, leaving out-of-bounds areas for the checkerboard.
@@ -1006,14 +1005,18 @@ fn clipped_preview_rects(
     Some((destination, uv))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct PreviewKey {
+    options: crate::io::export::ExportOptions,
+    generation: u64,
+    frame: usize,
+}
+
 pub struct SaveFileDialog {
     encoded_preview: Option<ColorImage>,
     pub open: bool,
+    options: crate::io::export::ExportOptions,
     filename: String,
-    format: SaveFormat,
-    quality: u8,
-    webp_lossless: bool,
-    tiff_compression: TiffCompression,
     pub target_directory: Option<PathBuf>,
 
     // Preview state
@@ -1022,11 +1025,18 @@ pub struct SaveFileDialog {
     preview_texture: Option<TextureHandle>,
     preview_file_size: usize,   // Thumbnail-based file size
     estimated_full_size: usize, // Estimated full-resolution file size
-    last_preview_format: SaveFormat,
-    last_preview_quality: u8,
-    last_preview_webp_lossless: bool,
+    source_generation: u64,
+    source_depth: u8,
+    source_has_alpha: bool,
+    source_has_color: bool,
+    prepared_thumbnail: Option<crate::io::PreparedExportImage>,
+    preview_requested: Option<(PreviewKey, f64)>,
+    preview_completed: Option<PreviewKey>,
+    preview_active: Option<PreviewKey>,
+    preview_error: Option<String>,
+    format_options: std::collections::BTreeMap<String, crate::io::export::ExportOptions>,
     needs_preview_update: bool,
-    jxl_preview_job: Option<std::sync::mpsc::Receiver<(SaveFormat, u8, Option<PreviewResult>)>>,
+    jxl_preview_job: Option<std::sync::mpsc::Receiver<(PreviewKey, Result<PreviewResult, String>)>>,
 
     // Interactive preview pan/zoom
     /// 0.0 = not yet computed (will auto-fit on first frame)
@@ -1039,10 +1049,6 @@ pub struct SaveFileDialog {
     preview_texture_is_nearest: bool,
 
     // Animation options
-    animated: bool,     // "Animated" checkbox
-    animation_fps: f32, // FPS slider (1–60, default 10)
-    gif_colors: u16,    // GIF color count (2–256, default 256)
-    gif_dither: bool,   // GIF dithering toggle
     layer_count: usize, // number of layers/frames available
     was_animated: bool, // whether source was animated on import
 
@@ -1059,20 +1065,24 @@ impl Default for SaveFileDialog {
         Self {
             encoded_preview: None,
             open: false,
+            options: Default::default(),
             filename: "untitled".to_string(),
-            format: SaveFormat::Png,
-            quality: 90,
-            webp_lossless: true,
-            tiff_compression: TiffCompression::None,
             target_directory: None,
             source_thumbnail: None,
             source_dimensions: (0, 0),
             preview_texture: None,
             preview_file_size: 0,
             estimated_full_size: 0,
-            last_preview_format: SaveFormat::Png,
-            last_preview_quality: 90,
-            last_preview_webp_lossless: true,
+            source_generation: 0,
+            source_depth: 8,
+            source_has_alpha: false,
+            source_has_color: false,
+            prepared_thumbnail: None,
+            preview_requested: None,
+            preview_completed: None,
+            preview_active: None,
+            preview_error: None,
+            format_options: Default::default(),
             needs_preview_update: true,
             jxl_preview_job: None,
             preview_zoom: 0.0,
@@ -1080,10 +1090,6 @@ impl Default for SaveFileDialog {
             preview_drag_start: None,
             preview_texture_is_nearest: false,
             // Animation
-            animated: false,
-            animation_fps: 10.0,
-            gif_colors: 256,
-            gif_dither: true,
             layer_count: 1,
             was_animated: false,
             anim_playing: false,
@@ -1092,6 +1098,18 @@ impl Default for SaveFileDialog {
             frame_thumbnails: Vec::new(),
             frame_textures: Vec::new(),
         }
+    }
+}
+
+impl std::ops::Deref for SaveFileDialog {
+    type Target = crate::io::export::ExportOptions;
+    fn deref(&self) -> &Self::Target {
+        &self.options
+    }
+}
+impl std::ops::DerefMut for SaveFileDialog {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.options
     }
 }
 
@@ -1110,7 +1128,11 @@ impl SaveFileDialog {
         self.filename = "untitled".to_string();
         self.target_directory = None;
         self.source_thumbnail = None;
-        self.jxl_preview_job = None;
+        self.source_generation = self.source_generation.wrapping_add(1);
+        self.prepared_thumbnail = None;
+        self.preview_requested = None;
+        self.preview_completed = None;
+        self.preview_error = None;
         self.source_dimensions = (0, 0);
         self.preview_texture = None;
         self.preview_file_size = 0;
@@ -1138,8 +1160,15 @@ impl SaveFileDialog {
     /// Set the source image for preview generation
     /// Creates a thumbnail for efficient preview rendering
     pub fn set_source_image(&mut self, image: &RgbaImage) {
-        self.jxl_preview_job = None;
+        self.source_generation = self.source_generation.wrapping_add(1);
+        self.prepared_thumbnail = None;
+        self.preview_requested = None;
+        self.preview_completed = None;
+        self.preview_error = None;
         self.source_dimensions = (image.width(), image.height());
+        self.source_depth = 8;
+        self.source_has_alpha = image.pixels().any(|p| p[3] != 255);
+        self.source_has_color = image.pixels().any(|p| p[0] != p[1] || p[1] != p[2]);
         self.source_thumbnail = Some(create_thumbnail(image, PREVIEW_MAX_SIZE));
         self.needs_preview_update = true;
         // Reset pan/zoom so auto-fit recalculates for the new image.
@@ -1201,89 +1230,162 @@ impl SaveFileDialog {
         self.needs_preview_update = true;
     }
 
-    /// Update preview if settings have changed
-    fn update_preview_if_needed(&mut self, ctx: &egui::Context) {
-        // Expensive JPEG XL preview encoding stays off the UI thread. At most
-        // one job per dialog is active; stale results are discarded after edits.
-        if matches!(
-            self.format,
-            SaveFormat::Jxl(_) | SaveFormat::Avif | SaveFormat::Heic
-        ) {
-            #[cfg(not(target_arch = "wasm32"))]
-            if (self.format == SaveFormat::Heic && !crate::io::heic::capabilities().encode)
-                || (self.format != SaveFormat::Heic
-                    && !crate::services::optional_packs::is_present(
-                        if self.format == SaveFormat::Avif {
-                            crate::services::optional_packs::Pack::Avif
-                        } else {
-                            crate::services::optional_packs::Pack::Jxl
-                        },
-                    ))
-            {
-                self.jxl_preview_job = None;
-                self.needs_preview_update = true;
-                return;
-            }
-            if let Some(job) = &self.jxl_preview_job {
-                match job.try_recv() {
-                    Ok((format, quality, result)) => {
-                        self.jxl_preview_job = None;
-                        if format == self.format && quality == self.quality {
-                            if let Some(result) = result {
-                                self.apply_preview(ctx, result);
-                            }
-                            self.last_preview_format = format;
-                            self.last_preview_quality = quality;
-                            self.needs_preview_update = false;
-                        }
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        self.jxl_preview_job = None;
-                        self.needs_preview_update = false;
-                        self.last_preview_format = self.format;
-                        self.last_preview_quality = self.quality;
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Empty) => {
-                        ctx.request_repaint_after(std::time::Duration::from_millis(40));
-                        return;
-                    }
+    pub fn restore_options(
+        &mut self,
+        options: &std::collections::BTreeMap<String, crate::io::export::ExportOptions>,
+    ) {
+        self.format_options = options.clone();
+        if let Some(saved) = options
+            .get(self.format.extension())
+            .filter(|o| o.format.extension() == self.format.extension() && o.validate().is_ok())
+        {
+            self.options = *saved;
+        }
+    }
+
+    pub fn set_prepared_source(&mut self, prepared: &crate::io::PreparedExportImage) {
+        use crate::io::PreparedExportImage;
+        fn sample<T: Copy>(source: &[T], width: u32, height: u32, tw: u32, th: u32) -> Vec<T> {
+            let mut data = Vec::with_capacity(tw as usize * th as usize * 4);
+            for y in 0..th {
+                for x in 0..tw {
+                    let index = ((u64::from(y) * u64::from(height) / u64::from(th))
+                        * u64::from(width)
+                        + u64::from(x) * u64::from(width) / u64::from(tw))
+                        as usize
+                        * 4;
+                    data.extend_from_slice(&source[index..index + 4]);
                 }
             }
-            let changed = self.needs_preview_update
-                || self.last_preview_format != self.format
-                || self.last_preview_quality != self.quality;
-            if changed && let Some(thumbnail) = self.source_thumbnail.clone() {
-                let (tx, rx) = std::sync::mpsc::channel();
-                let (format, quality) = (self.format, self.quality);
-                let ctx = ctx.clone();
-                crate::par_compat::spawn(move || {
-                    let result = generate_preview(&thumbnail, format, quality, true);
-                    let _ = tx.send((format, quality, result));
-                    ctx.request_repaint();
-                });
-                self.jxl_preview_job = Some(rx);
-                self.needs_preview_update = false;
+            data
+        }
+        self.source_has_alpha = prepared.has_alpha();
+        self.source_has_color = prepared.has_color();
+        self.source_generation = self.source_generation.wrapping_add(1);
+        self.needs_preview_update = true;
+        let (tw, th) = self
+            .source_thumbnail
+            .as_ref()
+            .map(|t| t.dimensions())
+            .unwrap_or((1, 1));
+        self.source_depth = match prepared {
+            PreparedExportImage::Rgba8(_) => 8,
+            PreparedExportImage::Rgba16 { .. } => 16,
+            PreparedExportImage::RgbaF32 { .. } => 32,
+        };
+        self.prepared_thumbnail = match prepared {
+            PreparedExportImage::Rgba16 {
+                width,
+                height,
+                pixels,
+            } => Some(PreparedExportImage::Rgba16 {
+                width: tw,
+                height: th,
+                pixels: sample(pixels, *width, *height, tw, th),
+            }),
+            PreparedExportImage::RgbaF32 {
+                width,
+                height,
+                pixels,
+            } => Some(PreparedExportImage::RgbaF32 {
+                width: tw,
+                height: th,
+                pixels: sample(pixels, *width, *height, tw, th),
+            }),
+            PreparedExportImage::Rgba8(_) => None,
+        };
+    }
+
+    fn effective_options(&self) -> crate::io::export::ExportOptions {
+        let mut options = self.options;
+        options.animated &= options.format.supports_animation();
+        if options.animated && options.format == SaveFormat::Png {
+            options.png = Default::default();
+        }
+        options
+    }
+
+    fn preview_key(&self) -> PreviewKey {
+        PreviewKey {
+            options: self.effective_options(),
+            generation: self.source_generation,
+            frame: if self.animated && self.format.supports_animation() {
+                self.anim_current_frame
+            } else {
+                0
+            },
+        }
+    }
+
+    /// One active job, a debounced latest request, and source-aware stale-result rejection.
+    fn update_preview_if_needed(&mut self, ctx: &egui::Context) {
+        let key = self.preview_key();
+        let now = ctx.input(|i| i.time);
+        if self.needs_preview_update || self.preview_requested.is_none_or(|(last, _)| last != key) {
+            self.preview_requested = Some((key, now));
+            self.needs_preview_update = false;
+            self.preview_error = None;
+        }
+        if let Some(job) = &self.jxl_preview_job {
+            match job.try_recv() {
+                Ok((finished, result)) => {
+                    self.jxl_preview_job = None;
+                    self.preview_active = None;
+                    if finished == key {
+                        self.preview_completed = Some(finished);
+                        match result {
+                            Ok(result) => self.apply_preview(ctx, result),
+                            Err(error) => self.preview_error = Some(error),
+                        }
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.jxl_preview_job = None;
+                    if self.preview_active.take() == Some(key) {
+                        self.preview_completed = Some(key);
+                        self.preview_error = Some(crate::t!("export.preview_failed"));
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
             }
+        }
+        if self.preview_completed == Some(key) {
             return;
         }
-        let changed = self.needs_preview_update
-            || self.format != self.last_preview_format
-            || (self.format.supports_quality() && self.quality != self.last_preview_quality)
-            || (self.format == SaveFormat::Webp
-                && self.webp_lossless != self.last_preview_webp_lossless);
-        if !changed {
+        // Playback uses source thumbnails. Encode the selected frame once paused.
+        if self.anim_playing && self.animated {
             return;
         }
-        if let Some(thumbnail) = &self.source_thumbnail
-            && let Some(result) =
-                generate_preview(thumbnail, self.format, self.quality, self.webp_lossless)
+        ctx.request_repaint_after(std::time::Duration::from_millis(40));
+        if self.jxl_preview_job.is_some() || now - self.preview_requested.unwrap().1 < 0.15 {
+            return;
+        }
+        let thumbnail = if self.animated
+            && self.format.supports_animation()
+            && !self.frame_thumbnails.is_empty()
         {
-            self.apply_preview(ctx, result);
-        }
-        self.last_preview_format = self.format;
-        self.last_preview_quality = self.quality;
-        self.last_preview_webp_lossless = self.webp_lossless;
-        self.needs_preview_update = false;
+            Some(crate::io::PreparedExportImage::Rgba8(
+                self.frame_thumbnails[key.frame.min(self.frame_thumbnails.len() - 1)].clone(),
+            ))
+        } else {
+            self.prepared_thumbnail.clone().or_else(|| {
+                self.source_thumbnail
+                    .clone()
+                    .map(crate::io::PreparedExportImage::Rgba8)
+            })
+        };
+        let Some(thumbnail) = thumbnail else {
+            return;
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        let ctx = ctx.clone();
+        crate::par_compat::spawn(move || {
+            let result = crate::io::export::preview(thumbnail, key.options);
+            let _ = tx.send((key, result));
+            ctx.request_repaint();
+        });
+        self.preview_active = Some(key);
+        self.jxl_preview_job = Some(rx);
     }
 
     fn apply_preview(&mut self, ctx: &egui::Context, result: PreviewResult) {
@@ -1318,7 +1420,7 @@ impl SaveFileDialog {
     /// Show the dialog and return SaveAction if user confirms
     pub fn show(&mut self, ctx: &egui::Context) -> Option<SaveAction> {
         use crate::ops::dialogs::{
-            DialogColors, accent_separator, contrast_text_color, paint_dialog_header, section_label,
+            DialogColors, accent_separator, contrast_text_color, paint_dialog_header,
         };
 
         let mut result = None;
@@ -1347,7 +1449,7 @@ impl SaveFileDialog {
             let position_id = egui::Id::new("save_as_heading_position");
             let position = ctx
                 .data(|d| d.get_temp::<egui::Pos2>(position_id))
-                .unwrap_or(ctx.content_rect().center() - egui::vec2(330.0, 230.0));
+                .unwrap_or(ctx.content_rect().center() - egui::vec2(390.0, 290.0));
             let mut moved_position = None;
             let response = crate::ui::polish::window(ctx, "save_file_dialog_internal")
                 .title_bar(false)
@@ -1355,451 +1457,41 @@ impl SaveFileDialog {
                 .current_pos(position)
                 .collapsible(false)
                 .resizable(true)
-                .default_size(egui::vec2(660.0, 520.0))
-                .default_pos(ctx.content_rect().center() - egui::vec2(330.0, 230.0))
+                .default_size(egui::vec2(780.0, 580.0))
+                .min_size(egui::vec2(280.0, 300.0))
+                .default_pos(ctx.content_rect().center() - egui::vec2(390.0, 290.0))
                 .max_size(ctx.content_rect().size() - egui::vec2(24.0, 24.0))
                 .show(ctx, |ui| {
                     let colors = DialogColors::from_ctx(ctx);
-                    ui.set_min_width(640.0);
 
                     // ── Header ──────────────────────────────────────────────
                     let header_min = ui.cursor().min;
                     let header_height = 32.0 * crate::ui::polish::settings(ctx).spacing_scale;
-                    let header_rect = egui::Rect::from_min_size(header_min, egui::vec2((ui.available_width() - header_height * 3.0).max(1.0), header_height));
-                    should_close |= paint_dialog_header(ui, &colors, "\u{1F4BE}", &crate::t!("keybind.save_as"));
-                    let heading = ui.interact(header_rect, ui.id().with("save_as_heading_drag"), egui::Sense::drag());
+                    let header_rect = egui::Rect::from_min_size(
+                        header_min,
+                        egui::vec2(
+                            (ui.available_width() - header_height * 3.0).max(1.0),
+                            header_height,
+                        ),
+                    );
+                    should_close |= paint_dialog_header(
+                        ui,
+                        &colors,
+                        "\u{1F4BE}",
+                        &crate::t!("keybind.save_as"),
+                    );
+                    let heading = ui.interact(
+                        header_rect,
+                        ui.id().with("save_as_heading_drag"),
+                        egui::Sense::drag(),
+                    );
                     if heading.dragged() {
                         moved_position = Some(position + ui.input(|i| i.pointer.delta()));
                         ctx.request_repaint();
                     }
                     ui.add_space(8.0);
 
-                    // ── Two-column layout ────────────────────────────────────
-                    egui::ScrollArea::vertical()
-                        .id_salt("save_as_body")
-                        .max_height((ui.available_height() - 56.0).max(120.0))
-                        .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        // ── LEFT: Preview ────────────────────────────────────
-                        ui.vertical(|ui| {
-                            ui.set_width(PREVIEW_PANEL_SIZE);
-
-                            let preview_size = egui::vec2(PREVIEW_PANEL_SIZE, PREVIEW_PANEL_SIZE);
-                            let (rect, response) = ui.allocate_exact_size(preview_size, egui::Sense::click_and_drag());
-
-                            // Choose texture filter based on zoom level
-                            let use_nearest = self.preview_zoom > 2.0;
-                            let tex_opts = if use_nearest { TextureOptions::NEAREST } else { TextureOptions::LINEAR };
-
-                            // Reload textures if filter changed
-                            if use_nearest != self.preview_texture_is_nearest {
-                                if let (Some(texture), Some(encoded)) = (self.preview_texture.as_mut(), self.encoded_preview.as_ref()) {
-                                    texture.set(encoded.clone(), tex_opts);
-                                }
-                                for (texture, thumbnail) in self.frame_textures.iter_mut().zip(&self.frame_thumbnails) {
-                                    if let Some(texture) = texture { texture.set(rgba_to_color_image(thumbnail), tex_opts); }
-                                }
-                                self.preview_texture_is_nearest = use_nearest;
-                            }
-
-                            // Load still preview texture on demand
-                            if !show_anim_controls
-                                && self.preview_texture.is_none()
-                                && let Some(thumb) = &self.source_thumbnail
-                            {
-                                let color_image = rgba_to_color_image(thumb);
-                                self.preview_texture = Some(ctx.load_texture(
-                                    "save_preview",
-                                    color_image,
-                                    tex_opts,
-                                ));
-                            }
-
-                            // Determine which texture to show
-                            let display_texture = if show_anim_controls {
-                                let idx = self.anim_current_frame.min(self.frame_thumbnails.len().saturating_sub(1));
-                                if self.frame_textures[idx].is_none() {
-                                    let color_image = rgba_to_color_image(&self.frame_thumbnails[idx]);
-                                    self.frame_textures[idx] = Some(ctx.load_texture(
-                                        format!("frame_preview_{}", idx),
-                                        color_image,
-                                        tex_opts,
-                                    ));
-                                }
-                                self.frame_textures[idx].as_ref()
-                            } else {
-                                self.preview_texture.as_ref()
-                            };
-
-                            // Auto-fit: compute initial zoom when zoom == 0.0
-                            if let Some(texture) = display_texture {
-                                let tex_size = texture.size_vec2();
-                                if self.preview_zoom == 0.0 {
-                                    let fit = (PREVIEW_PANEL_SIZE / tex_size.x).min(PREVIEW_PANEL_SIZE / tex_size.y);
-                                    self.preview_zoom = if fit < 1.0 { fit } else { fit.min(32.0) };
-                                    let vis_w = PREVIEW_PANEL_SIZE / self.preview_zoom;
-                                    let vis_h = PREVIEW_PANEL_SIZE / self.preview_zoom;
-                                    self.preview_pan = egui::Vec2::new(
-                                        (tex_size.x - vis_w) / 2.0,
-                                        (tex_size.y - vis_h) / 2.0,
-                                    );
-                                }
-                            }
-
-                            // Drag to pan
-                            if response.dragged() {
-                                self.preview_pan -= response.drag_delta() / self.preview_zoom;
-                            }
-
-                            // Scroll to zoom (centered on cursor)
-                            let scroll_dy = ctx.input(|i| i.smooth_scroll_delta.y);
-                            let hover_pos = ctx.input(|i| i.pointer.hover_pos());
-                            if rect.contains(hover_pos.unwrap_or(egui::Pos2::ZERO)) && scroll_dy != 0.0 {
-                                let old_zoom = self.preview_zoom;
-                                let factor = (scroll_dy * 0.002).exp();
-                                self.preview_zoom = (self.preview_zoom * factor).clamp(0.05, 64.0);
-                                if let Some(cursor) = hover_pos {
-                                    let off = cursor - rect.min;
-                                    let src_x = self.preview_pan.x + off.x / old_zoom;
-                                    let src_y = self.preview_pan.y + off.y / old_zoom;
-                                    self.preview_pan = egui::Vec2::new(
-                                        src_x - off.x / self.preview_zoom,
-                                        src_y - off.y / self.preview_zoom,
-                                    );
-                                }
-                                ctx.request_repaint();
-                            }
-
-                            // Double-click: reset to auto-fit
-                            if response.double_clicked() {
-                                if let Some(texture) = display_texture {
-                                    let size = texture.size_vec2();
-                                    self.preview_zoom = (PREVIEW_PANEL_SIZE / size.x.max(size.y)).clamp(0.05, 32.0);
-                                }
-                                self.preview_pan = egui::Vec2::ZERO;
-                            }
-
-                            // Clamp pan to valid range
-                            if let Some(texture) = display_texture {
-                                let ts = texture.size_vec2();
-                                let vis_w = PREVIEW_PANEL_SIZE / self.preview_zoom;
-                                let vis_h = PREVIEW_PANEL_SIZE / self.preview_zoom;
-                                self.preview_pan.x = self.preview_pan.x
-                                    .clamp((0.0_f32).min(ts.x - vis_w), (ts.x - vis_w).max(0.0));
-                                self.preview_pan.y = self.preview_pan.y
-                                    .clamp((0.0_f32).min(ts.y - vis_h), (ts.y - vis_h).max(0.0));
-                            }
-
-                            // Checkerboard background
-                            let painter = ui.painter_at(rect);
-                            let grid_size = 8.0;
-                            let light = Color32::from_gray(200);
-                            let dark  = Color32::from_gray(160);
-                            for row in 0..((rect.height() / grid_size).ceil() as i32) {
-                                for col in 0..((rect.width() / grid_size).ceil() as i32) {
-                                    let color = if (col + row) % 2 == 0 { light } else { dark };
-                                    let cell_rect = egui::Rect::from_min_size(
-                                        rect.min + egui::vec2(col as f32 * grid_size, row as f32 * grid_size),
-                                        egui::vec2(grid_size, grid_size),
-                                    ).intersect(rect);
-                                    painter.rect_filled(cell_rect, 0.0, color);
-                                }
-                            }
-
-                            // Draw only the texture-backed portion of the viewport. At
-                            // auto-fit, one source axis extends beyond the image to
-                            // create letterboxing; drawing that full UV range would make
-                            // clamp-to-edge repeat the image's border pixels.
-                            if let Some(texture) = display_texture {
-                                let ts = texture.size_vec2();
-                                let vis_w = PREVIEW_PANEL_SIZE / self.preview_zoom;
-                                let vis_h = PREVIEW_PANEL_SIZE / self.preview_zoom;
-                                if let Some((destination, uv)) = clipped_preview_rects(
-                                    rect,
-                                    ts,
-                                    egui::pos2(self.preview_pan.x, self.preview_pan.y),
-                                    egui::vec2(vis_w, vis_h),
-                                ) {
-                                    painter.image(
-                                        texture.id(),
-                                        destination,
-                                        uv,
-                                        Color32::WHITE,
-                                    );
-                                }
-
-                                // Thin scrollbar indicators
-                                let bar_color = Color32::from_rgba_premultiplied(120, 120, 120, 160);
-                                let bar_w = 4.0;
-                                if vis_w < ts.x {
-                                    let ratio = self.preview_pan.x / (ts.x - vis_w).max(1.0);
-                                    let bar_len = (PREVIEW_PANEL_SIZE * (vis_w / ts.x)).max(16.0);
-                                    let bar_x = rect.min.x + ratio * (PREVIEW_PANEL_SIZE - bar_len);
-                                    painter.rect_filled(
-                                        egui::Rect::from_min_size(
-                                            egui::pos2(bar_x, rect.max.y - bar_w - 1.0),
-                                            egui::vec2(bar_len, bar_w),
-                                        ),
-                                        2.0, bar_color,
-                                    );
-                                }
-                                if vis_h < ts.y {
-                                    let ratio = self.preview_pan.y / (ts.y - vis_h).max(1.0);
-                                    let bar_len = (PREVIEW_PANEL_SIZE * (vis_h / ts.y)).max(16.0);
-                                    let bar_y = rect.min.y + ratio * (PREVIEW_PANEL_SIZE - bar_len);
-                                    painter.rect_filled(
-                                        egui::Rect::from_min_size(
-                                            egui::pos2(rect.max.x - bar_w - 1.0, bar_y),
-                                            egui::vec2(bar_w, bar_len),
-                                        ),
-                                        2.0, bar_color,
-                                    );
-                                }
-                            }
-
-                            // Zoom controls strip
-                            ui.add_space(4.0);
-                            ui.horizontal(|ui| {
-                                if ui.small_button("\u{2212}").clicked() {
-                                    self.preview_zoom = (self.preview_zoom / 1.25).max(0.05);
-                                }
-                                let mut zoom_pct = (self.preview_zoom * 100.0).round();
-                                let zoom_response = ui.add(crate::ui::controls::Numeric::new(&mut zoom_pct).range(5.0..=6400.0).speed(1.0).suffix("%"));
-                                #[cfg(test)]
-                                ctx.data_mut(|d| d.insert_temp(egui::Id::new("save_as_zoom_rect"), zoom_response.rect));
-                                if zoom_response.changed() {
-                                    self.preview_zoom = zoom_pct / 100.0;
-                                    if let Some(texture) = display_texture {
-                                        let ts = texture.size_vec2();
-                                        let vis_w = PREVIEW_PANEL_SIZE / self.preview_zoom;
-                                        let vis_h = PREVIEW_PANEL_SIZE / self.preview_zoom;
-                                        self.preview_pan = egui::Vec2::new(
-                                            (ts.x - vis_w) / 2.0,
-                                            (ts.y - vis_h) / 2.0,
-                                        );
-                                    }
-                                }
-                                if ui.small_button("\u{2B}").clicked() {
-                                    self.preview_zoom = (self.preview_zoom * 1.25).min(64.0);
-                                }
-                                if ui.small_button(crate::t!("ui.fit")).clicked() {
-                                    self.preview_zoom = 0.0;
-                                    self.preview_pan = egui::Vec2::ZERO;
-                                    ctx.request_repaint();
-                                }
-                            });
-
-                            // Animation playback controls
-                            if show_anim_controls {
-                                ui.add_space(2.0);
-                                ui.horizontal(|ui| {
-                                    if ui.small_button("\u{23EE}").clicked() {
-                                        self.anim_current_frame = 0;
-                                        self.anim_playing = false;
-                                    }
-                                    if ui.small_button("\u{23EA}").clicked() {
-                                        if self.anim_current_frame > 0 {
-                                            self.anim_current_frame -= 1;
-                                        } else {
-                                            self.anim_current_frame = self.frame_thumbnails.len() - 1;
-                                        }
-                                        self.anim_playing = false;
-                                    }
-                                    let play_label = if self.anim_playing { "\u{23F8}" } else { "\u{25B6}" };
-                                    if ui.small_button(play_label).clicked() {
-                                        self.anim_playing = !self.anim_playing;
-                                        if self.anim_playing {
-                                            self.anim_last_frame_time = ctx.input(|i| i.time);
-                                        }
-                                    }
-                                    if ui.small_button("\u{23E9}").clicked() {
-                                        self.anim_current_frame = (self.anim_current_frame + 1) % self.frame_thumbnails.len();
-                                        self.anim_playing = false;
-                                    }
-                                    if ui.small_button("\u{23ED}").clicked() {
-                                        self.anim_current_frame = self.frame_thumbnails.len() - 1;
-                                        self.anim_playing = false;
-                                    }
-                                });
-                                ui.small(crate::i18n::format_translation("ui.frame_0_1", &[("0", format!("{}", self.anim_current_frame + 1)), ("1", format!("{}", self.frame_thumbnails.len()))]));
-                            } else {
-                                let size_text = format!("Est. {}", Self::format_file_size(self.estimated_full_size));
-                                ui.label(egui::RichText::new(size_text).size(11.0).color(colors.text_muted));
-                            }
-
-                            let dim_text = format!("{}×{}", self.source_dimensions.0, self.source_dimensions.1);
-                            ui.label(egui::RichText::new(dim_text).size(11.0).color(colors.text_muted));
-                        });
-
-                        ui.add_space(12.0);
-                        ui.separator();
-                        ui.add_space(8.0);
-
-                        // ── RIGHT: Format settings ────────────────────────────
-                        ui.vertical(|ui| {
-                            ui.set_width(240.0);
-
-                            // ── FORMAT ────────────────────────────────────────
-                            section_label(ui, &colors, &crate::t!("ui.format"));
-                            egui::ComboBox::from_id_salt("format_combo")
-                                .width(220.0)
-                                .selected_text(crate::i18n::translate_english(&self.format.label()))
-                                .show_ui(ui, |ui| {
-                                    for format in SaveFormat::all() {
-                                        if ui.selectable_label(self.format.extension() == format.extension(),
-                                            crate::i18n::translate_english(&format.label())).clicked()
-                                            && self.format.extension() != format.extension() {
-                                            self.format = *format;
-                                        }
-                                    }
-                                });
-
-                            #[cfg(not(target_arch = "wasm32"))]
-                            if matches!(self.format,SaveFormat::Jxl(_)) && !crate::services::optional_packs::is_present(crate::services::optional_packs::Pack::Jxl) {
-                                ui.label(crate::t!("packs.jxl_missing"));
-                                if ui.button(crate::t!("packs.install_jxl")).clicked() {crate::services::optional_packs::request_jxl();}
-                            }
-                            #[cfg(not(target_arch = "wasm32"))]
-                            if self.format == SaveFormat::Heic {
-                                ui.weak(crate::t!("heic.export_note"));
-                                ui.label(crate::io::heic::size_limit_message(self.source_dimensions.0,self.source_dimensions.1));
-                                ui.label(crate::io::heic::setup_message());
-                            }
-                            #[cfg(not(target_arch = "wasm32"))]
-                            if self.format == SaveFormat::Avif {
-                                ui.weak(crate::t!("avif.export_note"));
-                                if !crate::services::optional_packs::is_present(crate::services::optional_packs::Pack::Avif) {
-                                    ui.label(crate::t!("packs.avif_missing"));
-                                    if ui.button(crate::t!("packs.install_avif")).clicked() { crate::services::optional_packs::request_avif(); }
-                                }
-                            }
-                            if self.jxl_preview_job.is_some() && matches!(self.format, SaveFormat::Jxl(_) | SaveFormat::Avif | SaveFormat::Heic) { ui.spinner(); }
-                            if let SaveFormat::Jxl(options) = &mut self.format {
-                                accent_separator(ui, &colors);
-                                ui.checkbox(&mut options.lossless, crate::t!("ui.lossless"));
-                                ui.label(crate::t!("jxl.effort"));
-                                ui.add(crate::ui::controls::Slider::new(&mut options.effort, 1..=9)
-                                    .reset_to(5));
-                                ui.weak(crate::t!("jxl.still_images"));
-                            }
-                            // ── QUALITY (JPEG / WebP) ─────────────────────────
-                            if self.format.supports_quality() {
-                                accent_separator(ui, &colors);
-                                if self.format == SaveFormat::Webp {
-                                    section_label(ui, &colors, &crate::t!("ui.webp"));
-                                    if ui.checkbox(&mut self.webp_lossless, crate::t!("ui.lossless")).changed() {
-                                        self.needs_preview_update = true;
-                                        ctx.request_repaint();
-                                    }
-                                }
-                                if !matches!(self.format, SaveFormat::Jxl(options) if options.lossless)
-                                    && (self.format != SaveFormat::Webp || !self.webp_lossless) {
-                                    section_label(ui, &colors, &crate::t!("dialog.resize_image.quality"));
-                                    let mut quality = self.quality as f32;
-                                    if crate::ui::dialogs::core::numeric_field_with_buttons(ui, &mut quality, 1.0, 1.0..=100.0, "%", 1.0) {
-                                        self.quality = quality.round() as u8;
-                                        ctx.request_repaint();
-                                    }
-                                }
-                                if !matches!(self.format, SaveFormat::Jxl(options) if options.lossless)
-                                    && (self.format != SaveFormat::Webp || !self.webp_lossless) {
-                                    let hint = match self.quality {
-                                        1..=30 => "Very Low",
-                                        31..=50 => "Low",
-                                        51..=70 => "Medium",
-                                        71..=85 => "Good",
-                                        86..=95 => "High",
-                                        _ => "Maximum",
-                                    };
-                                    ui.label(egui::RichText::new(hint).size(11.0).color(colors.text_muted));
-                                } else {
-                                    ui.label(egui::RichText::new(crate::t!("ui.exact_pixels_larger_than_lossy")).size(11.0).color(colors.text_muted));
-                                }
-                                if self.format == SaveFormat::Webp && self.animated {
-                                    ui.label(egui::RichText::new(crate::t!("ui.animated_webp_can_use_per_frame_layer_options")).size(11.0).color(colors.text_muted));
-                                }
-                            }
-
-                            // ── COMPRESSION (TIFF) ────────────────────────────
-                            if self.format == SaveFormat::Tiff {
-                                accent_separator(ui, &colors);
-                                section_label(ui, &colors, &crate::t!("ui.compression"));
-                                egui::ComboBox::from_id_salt("tiff_compression_combo")
-                                    .width(160.0)
-                                    .selected_text(match self.tiff_compression {
-                                        TiffCompression::None    => crate::t!("line_end.none"),
-                                        TiffCompression::Lzw     => "LZW".to_string(),
-                                        TiffCompression::Deflate => "Deflate".to_string(),
-                                    })
-                                    .show_ui(ui, |ui| {
-                                        ui.selectable_value(&mut self.tiff_compression, TiffCompression::None,    crate::t!("line_end.none"));
-                                        ui.selectable_value(&mut self.tiff_compression, TiffCompression::Lzw,     "LZW");
-                                        ui.selectable_value(&mut self.tiff_compression, TiffCompression::Deflate, "Deflate");
-                                    });
-                            }
-
-                            // ── ICO warning ───────────────────────────────────
-                            if self.format == SaveFormat::Ico {
-                                accent_separator(ui, &colors);
-                                ui.add_space(4.0);
-                                let (w, h) = self.source_dimensions;
-                                if w > 256 || h > 256 {
-                                    ui.colored_label(
-                                        Color32::from_rgb(255, 180, 50),
-                                        crate::i18n::format_translation("ui.0_1_exceeds_256_256_and_will_be_scaled_down", &[("0", format!("{}", w)), ("1", format!("{}", h))]),
-                                    );
-                                } else {
-                                    ui.label(egui::RichText::new(crate::t!("ui.ico_supports_up_to_256_256_per_entry")).size(11.0).color(colors.text_muted));
-                                }
-                            }
-
-                            // ── ANIMATION (PNG / GIF with multiple layers) ────
-                            if self.format.supports_animation() && self.layer_count > 1 {
-                                accent_separator(ui, &colors);
-                                section_label(ui, &colors, &crate::t!("ui.animation"));
-                                ui.checkbox(&mut self.animated, crate::t!("ui.animated"));
-
-                                if self.animated {
-                                    ui.add_space(4.0);
-                                    egui::Grid::new("anim_options_grid")
-                                        .num_columns(2)
-                                        .min_col_width(60.0)
-                                        .spacing([8.0, 4.0])
-                                        .show(ui, |ui| {
-                                            ui.label(crate::t!("ui.fps"));
-                                            ui.add(crate::ui::controls::Slider::new(&mut self.animation_fps, 1.0..=60.0).double_click_reset_to(10.0)
-                                                .step_by(1.0)
-                                                .suffix(" fps"));
-                                            ui.end_row();
-
-                                            if self.format == SaveFormat::Gif {
-                                                ui.label(crate::t!("ui.colors"));
-                                                let mut colors_f = self.gif_colors as f32;
-                                                if ui.add(crate::ui::controls::Slider::new(&mut colors_f, 2.0..=256.0).double_click_reset_to(256.0)
-                                                    .step_by(1.0)
-                                                    .logarithmic(true)
-                                                ).changed() {
-                                                    self.gif_colors = colors_f as u16;
-                                                }
-                                                ui.end_row();
-
-                                                ui.label(crate::t!("ui.dither"));
-                                                ui.checkbox(&mut self.gif_dither, "");
-                                                ui.end_row();
-                                            }
-                                        });
-
-                                    if self.layer_count > 1 {
-                                        ui.label(egui::RichText::new(
-                                            crate::i18n::format_translation("ui.0_frames_1_fps_2_s", &[("0", format!("{}", self.layer_count)), ("1", format!("{:.0}", self.animation_fps)), ("2", format!("{:.1}", self.layer_count as f32 / self.animation_fps))])
-                                        ).size(11.0).color(colors.text_muted));
-                                    }
-                                }
-                            }
-                        });
-                    });
-
-                        });
+                    self.show_export_body(ui, ctx, &colors, show_anim_controls);
                     // ── Footer (full-width, below both columns) ───────────────
                     let (enter, esc) = crate::ui::dialogs::core::dialog_footer_keys(ctx);
                     should_close |= esc;
@@ -1813,29 +1505,55 @@ impl SaveFileDialog {
                             let save_btn = egui::Button::new(
                                 egui::RichText::new(crate::t!("ui.save"))
                                     .color(contrast_text_color(colors.accent))
-                                    .strong()
-                            ).fill(colors.accent);
-                            let heic_size_ok = self.format != SaveFormat::Heic || crate::io::heic::validate_dimensions(self.source_dimensions.0,self.source_dimensions.1).is_ok();
-                            let save_clicked = (ui.add_enabled(heic_size_ok,save_btn).clicked() || enter) && heic_size_ok;
+                                    .strong(),
+                            )
+                            .fill(colors.accent);
+                            let heic_size_ok = self.format != SaveFormat::Heic
+                                || crate::io::heic::validate_dimensions(
+                                    self.source_dimensions.0,
+                                    self.source_dimensions.1,
+                                )
+                                .is_ok();
+                            let save_response = ui.add_enabled(heic_size_ok, save_btn);
+                            #[cfg(test)]
+                            ctx.data_mut(|d| {
+                                d.insert_temp(
+                                    egui::Id::new("save_as_save_rect"),
+                                    save_response.rect,
+                                )
+                            });
+                            let save_clicked = (save_response.clicked() || enter) && heic_size_ok;
                             #[cfg(not(target_arch = "wasm32"))]
-                            let needs_jxl = matches!(self.format,SaveFormat::Jxl(_)) && !crate::services::optional_packs::is_present(crate::services::optional_packs::Pack::Jxl);
+                            let needs_jxl = matches!(self.format, SaveFormat::Jxl(_))
+                                && !crate::services::optional_packs::is_present(
+                                    crate::services::optional_packs::Pack::Jxl,
+                                );
                             #[cfg(target_arch = "wasm32")]
                             let needs_jxl = false;
                             #[cfg(not(target_arch = "wasm32"))]
-                            let needs_avif = self.format == SaveFormat::Avif && !crate::services::optional_packs::is_present(crate::services::optional_packs::Pack::Avif);
+                            let needs_avif = self.format == SaveFormat::Avif
+                                && !crate::services::optional_packs::is_present(
+                                    crate::services::optional_packs::Pack::Avif,
+                                );
                             #[cfg(target_arch = "wasm32")]
                             let needs_avif = self.format == SaveFormat::Avif;
                             #[cfg(not(target_arch = "wasm32"))]
-                            if save_clicked && needs_avif { crate::services::optional_packs::request_avif(); }
+                            if save_clicked && needs_avif {
+                                crate::services::optional_packs::request_avif();
+                            }
                             #[cfg(not(target_arch = "wasm32"))]
-                            if save_clicked && needs_jxl {crate::services::optional_packs::request_jxl();}
+                            if save_clicked && needs_jxl {
+                                crate::services::optional_packs::request_jxl();
+                            }
                             #[cfg(not(target_arch = "wasm32"))]
-                            let needs_heic = self.format == SaveFormat::Heic && !crate::io::heic::capabilities().encode;
+                            let needs_heic = self.format == SaveFormat::Heic
+                                && !crate::io::heic::capabilities().encode;
                             #[cfg(target_arch = "wasm32")]
                             let needs_heic = self.format == SaveFormat::Heic;
                             #[cfg(not(target_arch = "wasm32"))]
                             if save_clicked && !needs_jxl && !needs_avif && !needs_heic {
-                                let full_filename = format!("{}.{}", self.filename, self.format.extension());
+                                let full_filename =
+                                    format!("{}.{}", self.filename, self.format.extension());
                                 // Web has no native save-location picker: downloads always
                                 // go to the browser's default download folder, so we skip
                                 // straight to a virtual path carrying just the file name.
@@ -1843,10 +1561,20 @@ impl SaveFileDialog {
                                 let picked_path = Some(std::path::PathBuf::from(&full_filename));
                                 #[cfg(not(target_arch = "wasm32"))]
                                 let picked_path = {
-                                    let extensions = if self.format == SaveFormat::Heic { vec!["heic","heif"] } else { vec![self.format.extension()] };
-                                    let mut dialog = rfd::FileDialog::new()
-                                        .set_file_name(&full_filename)
-                                        .add_filter(crate::i18n::translate_english(&self.format.label()), &extensions);
+                                    let extensions = if self.format == SaveFormat::Heic {
+                                        vec!["heic", "heif"]
+                                    } else {
+                                        vec![self.format.extension()]
+                                    };
+                                    let mut dialog = crate::services::file_dialogs::dialog(
+                                        crate::services::file_dialogs::Purpose::Documents,
+                                        None,
+                                    )
+                                    .set_file_name(&full_filename)
+                                    .add_filter(
+                                        crate::i18n::translate_english(&self.format.label()),
+                                        &extensions,
+                                    );
                                     if let Some(dir) = &self.target_directory {
                                         dialog = dialog.set_directory(dir);
                                     }
@@ -1855,14 +1583,7 @@ impl SaveFileDialog {
                                 if let Some(path) = picked_path {
                                     result = Some(SaveAction {
                                         path,
-                                        format: self.format,
-                                        quality: self.quality,
-                                        webp_lossless: self.webp_lossless,
-                                        tiff_compression: self.tiff_compression,
-                                        animated: self.animated && self.format.supports_animation(),
-                                        animation_fps: self.animation_fps,
-                                        gif_colors: self.gif_colors,
-                                        gif_dither: self.gif_dither,
+                                        options: self.effective_options(),
                                     });
                                     should_close = true;
                                 }
@@ -1871,6 +1592,10 @@ impl SaveFileDialog {
                     });
                 });
             if let Some(response) = response {
+                #[cfg(test)]
+                ctx.data_mut(|d| {
+                    d.insert_temp(egui::Id::new("save_as_window_rect"), response.response.rect)
+                });
                 ctx.data_mut(|d| {
                     d.insert_temp(
                         position_id,
@@ -1895,6 +1620,15 @@ impl SaveFileDialog {
 mod jxl_preview_tests {
     use super::*;
 
+    fn tick(dialog: &mut SaveFileDialog, ctx: &egui::Context, time: f64) {
+        let _ = ctx.run_ui(
+            egui::RawInput {
+                time: Some(time),
+                ..Default::default()
+            },
+            |_| dialog.update_preview_if_needed(ctx),
+        );
+    }
     #[test]
     fn asynchronous_preview_discards_stale_options_and_encodes_current_settings() {
         if let Some(path) = std::env::var_os("PAINTFE_TEST_JXL_PACK") {
@@ -1906,51 +1640,99 @@ mod jxl_preview_tests {
         }
         let ctx = egui::Context::default();
         let image = RgbaImage::from_pixel(12, 9, image::Rgba([83, 142, 217, 128]));
-        let format = SaveFormat::Jxl(crate::io::jxl::JxlOptions {
-            lossless: true,
-            effort: 1,
-        });
         let mut dialog = SaveFileDialog {
-            format,
-            source_thumbnail: Some(image.clone()),
-            source_dimensions: image.dimensions(),
+            options: crate::io::export::ExportOptions {
+                format: SaveFormat::Jxl(crate::io::jxl::JxlOptions {
+                    lossless: true,
+                    effort: 1,
+                }),
+                ..Default::default()
+            },
             ..Default::default()
         };
+        dialog.set_source_image(&image);
         let (tx, rx) = std::sync::mpsc::channel();
+        let stale = PreviewKey {
+            options: Default::default(),
+            generation: 0,
+            frame: 0,
+        };
         tx.send((
-            SaveFormat::Jxl(crate::io::jxl::JxlOptions::default()),
-            90,
-            Some(PreviewResult {
+            stale,
+            Ok(PreviewResult {
                 file_size: 1,
                 preview_image: RgbaImage::new(1, 1),
             }),
         ))
         .unwrap();
         dialog.jxl_preview_job = Some(rx);
-        dialog.update_preview_if_needed(&ctx);
-        assert_eq!(dialog.preview_file_size, 0, "stale preview was displayed");
+        tick(&mut dialog, &ctx, 0.0);
+        assert_eq!(dialog.preview_file_size, 0, "stale preview displayed");
+        assert!(
+            dialog.jxl_preview_job.is_none(),
+            "debounce must finish before starting another job"
+        );
+        tick(&mut dialog, &ctx, 0.2);
         assert!(dialog.jxl_preview_job.is_some());
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while dialog.jxl_preview_job.is_some() {
             assert!(std::time::Instant::now() < deadline, "preview timed out");
             std::thread::sleep(std::time::Duration::from_millis(2));
-            dialog.update_preview_if_needed(&ctx);
+            tick(&mut dialog, &ctx, 0.4);
         }
-        let expected = generate_preview(&image, format, 90, true).unwrap();
+        assert!(dialog.preview_error.is_none(), "{:?}", dialog.preview_error);
+        let expected = crate::io::export::preview(
+            crate::io::PreparedExportImage::Rgba8(image),
+            dialog.options,
+        )
+        .unwrap();
         assert_eq!(dialog.preview_file_size, expected.file_size);
-        assert_eq!(dialog.encoded_preview.unwrap().size, [12, 9]);
-        assert_eq!(dialog.last_preview_format, format);
+        assert_eq!(dialog.encoded_preview.as_ref().unwrap().size, [12, 9]);
+        assert_eq!(dialog.preview_completed, Some(dialog.preview_key()));
     }
-
     #[test]
-    fn reset_disconnects_previous_source_preview() {
+    fn reset_keeps_one_running_job_but_rejects_its_old_source() {
         let mut dialog = SaveFileDialog::default();
+        let previous = dialog.preview_key();
         let (tx, rx) = std::sync::mpsc::channel();
         dialog.jxl_preview_job = Some(rx);
         dialog.reset();
+        assert!(
+            dialog.jxl_preview_job.is_some(),
+            "dropping a receiver would orphan a running encoder"
+        );
+        tx.send((
+            previous,
+            Ok(PreviewResult {
+                file_size: 1,
+                preview_image: RgbaImage::new(1, 1),
+            }),
+        ))
+        .unwrap();
+        tick(&mut dialog, &egui::Context::default(), 0.0);
         assert!(dialog.jxl_preview_job.is_none());
-        assert!(tx.send((SaveFormat::Png, 90, None)).is_err());
         assert!(dialog.encoded_preview.is_none());
+    }
+    #[test]
+    fn png_and_tiff_changes_invalidate_keys_and_failed_preview_remains_marked() {
+        let mut dialog = SaveFileDialog::default();
+        let png = dialog.preview_key();
+        dialog.png.mode = crate::io::export::png::Mode::Gray;
+        assert_ne!(png, dialog.preview_key());
+        dialog.format = SaveFormat::Tiff;
+        let tiff = dialog.preview_key();
+        dialog.tiff_compression = TiffCompression::Lzw;
+        assert_ne!(tiff, dialog.preview_key());
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send((dialog.preview_key(), Err("test encoder failure".into())))
+            .unwrap();
+        dialog.jxl_preview_job = Some(rx);
+        tick(&mut dialog, &egui::Context::default(), 0.0);
+        assert_eq!(
+            dialog.preview_error.as_deref(),
+            Some("test encoder failure")
+        );
+        assert_eq!(dialog.preview_completed, Some(dialog.preview_key()));
     }
 }
 
@@ -2022,6 +1804,139 @@ mod preview_mapping_tests {
 #[cfg(test)]
 mod save_as_controls_tests {
     use super::*;
+
+    #[test]
+    fn save_as_corner_drag_changes_both_dimensions_without_hiding_the_footer() {
+        crate::i18n::init();
+        let ctx = egui::Context::default();
+        let mut fonts = egui::FontDefinitions::default();
+        fonts.families.insert(
+            egui::FontFamily::Name("WidgetTitle".into()),
+            fonts.families[&egui::FontFamily::Proportional].clone(),
+        );
+        ctx.set_fonts(fonts);
+        let mut dialog = SaveFileDialog {
+            open: true,
+            ..Default::default()
+        };
+        dialog.set_source_image(&RgbaImage::from_pixel(
+            32,
+            24,
+            image::Rgba([20, 80, 180, 127]),
+        ));
+        for _ in 0..4 {
+            frame(&ctx, &mut dialog, Vec::new());
+        }
+        let id = egui::Id::new("save_as_window_rect");
+        let before = ctx.data(|d| d.get_temp::<egui::Rect>(id)).unwrap();
+        drag(
+            &ctx,
+            &mut dialog,
+            before.right_bottom() - egui::vec2(3.0, 3.0),
+            egui::vec2(-180.0, -130.0),
+        );
+        for _ in 0..3 {
+            frame(&ctx, &mut dialog, Vec::new());
+        }
+        let after = ctx.data(|d| d.get_temp::<egui::Rect>(id)).unwrap();
+        assert!(
+            after.width() < before.width() - 80.0,
+            "width did not shrink: {before:?} -> {after:?}"
+        );
+        assert!(
+            after.height() < before.height() - 60.0,
+            "height did not shrink: {before:?} -> {after:?}"
+        );
+        let save = ctx
+            .data(|d| d.get_temp::<egui::Rect>(egui::Id::new("save_as_save_rect")))
+            .unwrap();
+        assert!(after.contains_rect(save), "footer escaped resized window");
+    }
+
+    #[test]
+    fn save_as_footer_remains_visible_in_compact_and_large_text_layouts() {
+        crate::i18n::init();
+        for (width, height, scale, dark) in [
+            (1280.0, 900.0, 1.0, false),
+            (700.0, 500.0, 1.0, true),
+            (420.0, 620.0, 1.0, false),
+            (900.0, 360.0, 1.0, true),
+            (1024.0, 768.0, 1.5, true),
+        ] {
+            let ctx = egui::Context::default();
+            ctx.set_visuals(if dark {
+                egui::Visuals::dark()
+            } else {
+                egui::Visuals::light()
+            });
+            let mut fonts = egui::FontDefinitions::default();
+            fonts.families.insert(
+                egui::FontFamily::Name("WidgetTitle".into()),
+                fonts.families[&egui::FontFamily::Proportional].clone(),
+            );
+            ctx.set_fonts(fonts);
+            ctx.all_styles_mut(|style| {
+                for font in style.text_styles.values_mut() {
+                    font.size *= scale;
+                }
+            });
+            let mut dialog = SaveFileDialog {
+                open: true,
+                ..Default::default()
+            };
+            dialog.set_source_image(&RgbaImage::from_pixel(
+                32,
+                24,
+                image::Rgba([20, 80, 180, 127]),
+            ));
+            for _ in 0..4 {
+                let _ = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(width, height),
+                        )),
+                        ..Default::default()
+                    },
+                    |_| {
+                        dialog.show(&ctx);
+                    },
+                );
+            }
+            let save = ctx
+                .data(|d| d.get_temp::<egui::Rect>(egui::Id::new("save_as_save_rect")))
+                .unwrap();
+            assert!(
+                save.bottom() <= height && save.right() <= width && save.left() >= 0.0,
+                "save button outside {width}x{height}: {save:?}"
+            );
+            let zoom = ctx
+                .data(|d| d.get_temp::<egui::Rect>(egui::Id::new("save_as_zoom_rect")))
+                .unwrap();
+            assert!(
+                zoom.right() <= width,
+                "preview controls overflowed: {zoom:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn format_presets_restore_without_changing_the_requested_format() {
+        let mut dialog = SaveFileDialog::default();
+        let png = crate::io::export::ExportOptions {
+            png: crate::io::export::png::PngOptions {
+                mode: crate::io::export::png::Mode::GrayAlpha,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let options = std::collections::BTreeMap::from([("png".into(), png)]);
+        dialog.restore_options(&options);
+        assert_eq!(dialog.options, png);
+        dialog.format = SaveFormat::Jpeg;
+        dialog.restore_options(&options);
+        assert_eq!(dialog.format, SaveFormat::Jpeg);
+    }
 
     fn frame(ctx: &egui::Context, dialog: &mut SaveFileDialog, events: Vec<egui::Event>) {
         let _ = ctx.run_ui(

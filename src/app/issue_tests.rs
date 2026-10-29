@@ -28,7 +28,10 @@ fn dropped_heic_uses_system_codec_and_keeps_alpha_and_save_target() {
     finish(&mut app);
     let project = &app.projects[app.active_project_index];
     assert_eq!(project.file_handler.current_path.as_ref(), Some(&source));
-    assert_eq!(project.file_handler.last_format, SaveFormat::Heic);
+    assert_eq!(
+        project.file_handler.last_export_options.format,
+        SaveFormat::Heic
+    );
     assert!(project.canvas_state.layers[0].pixels.get_pixel(0, 0)[3] < 255);
 }
 
@@ -56,29 +59,38 @@ fn heif_source_retains_save_target_and_repairs_pre_pack_documents() {
         app.projects[idx].file_handler.current_path.as_ref(),
         Some(&path)
     );
-    assert_eq!(app.projects[idx].file_handler.last_format, SaveFormat::Heic);
+    assert_eq!(
+        app.projects[idx].file_handler.last_export_options.format,
+        SaveFormat::Heic
+    );
     // Simulate an already-open document from the decode-only implementation.
     app.projects[idx].file_handler.current_path = None;
-    app.projects[idx].file_handler.last_format = SaveFormat::Png;
+    app.projects[idx].file_handler.last_export_options.format = SaveFormat::Png;
     let ready = app.prepare_heic_save(idx);
     assert_eq!(ready, crate::io::heic::capabilities().encode);
     assert_eq!(
         app.projects[idx].file_handler.current_path.as_ref(),
         Some(&path)
     );
-    assert_eq!(app.projects[idx].file_handler.last_format, SaveFormat::Heic);
+    assert_eq!(
+        app.projects[idx].file_handler.last_export_options.format,
+        SaveFormat::Heic
+    );
     assert!(!app.save_file_dialog.open);
     assert_eq!(app.pending_io_ops, 0);
     // Save As to a new PNG must continue saving the chosen PNG, not the HEIC source.
     let exported = path.with_extension("png");
     app.projects[idx].file_handler.current_path = Some(exported.clone());
-    app.projects[idx].file_handler.last_format = SaveFormat::Png;
+    app.projects[idx].file_handler.last_export_options.format = SaveFormat::Png;
     assert!(app.prepare_heic_save(idx));
     assert_eq!(
         app.projects[idx].file_handler.current_path.as_ref(),
         Some(&exported)
     );
-    assert_eq!(app.projects[idx].file_handler.last_format, SaveFormat::Png);
+    assert_eq!(
+        app.projects[idx].file_handler.last_export_options.format,
+        SaveFormat::Png
+    );
     for extension in ["heic", "heif", "hif", "HEIC"] {
         app.save_file_dialog
             .set_from_path(&path.with_extension(extension));

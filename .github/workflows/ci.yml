@@ -51,7 +51,10 @@ jobs:
         run: cargo clippy --all-targets -j1 -- -D warnings
 
       - name: Check shared UI control boundary
-        run: python tools/check_ui_controls.py --self-test
+        run: |
+          python tools/check_ui_controls.py --self-test
+          python tools/check_codec_boundary.py
+          python tools/check_file_dialogs.py
 
       - name: Prepare signed optional packs for codec tests
         run: |

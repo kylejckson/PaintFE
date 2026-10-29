@@ -94,7 +94,11 @@ slower than speed 8 for a modest size saving on this sample. Quality 100 still
 was not pixel-exact, including alpha differences of up to two levels on the
 artwork. Do not label this export path lossless or use it as the document format.
 
-## Original proposal (followed by local implementation)
+## Historical proposal (superseded)
+
+The Heifer decoder experiment and vendored wrapper have been removed. Current
+HEIC processing uses system codecs; only the container parser remains. The
+following records the original investigation, not a current bundling proposal.
 
 1. Keep the experiment separate from the app until the grid-alpha issue is fixed
    and verified, or evaluate a different HEIC backend as a fallback. Do not
@@ -140,6 +144,6 @@ with Preferences. Existing duplicate-document independence and Preferences
 search-navigation regression tests passed. Cargo check, formatting and locale
 checks passed. Cargo normalized the pre-existing root lockfile's package version
 from 1.4.12 to the already-declared 1.4.13; production dependency versions did not
-change during that initial experiment. The follow-up now adds vendored Heifer
-and moves AVIF codecs into the optional helper. PR #200 was merged separately
+change during that initial experiment. The historical follow-up added a vendored Heifer wrapper, since removed,
+and moved AVIF codecs into the optional helper. PR #200 was merged separately
 after its CI checks passed.

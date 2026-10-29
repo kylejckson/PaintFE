@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 The local experimental patch moves auxiliary-alpha attachment into the common
 item path, before parent transforms, so coded, grid and overlay parents share it.
 It also decodes derived auxiliary items through the bounded item path and checks
-both alpha dimensions. See `vendor/heifer/PAINTFE-PATCHES.md` and its local source.
+both alpha dimensions. See the [historical patch](https://github.com/kylejckson/PaintFE/blob/feda9d2411ebcd9d578cf9879fff2e1cdcd8137a/vendor/heifer/PAINTFE-PATCHES.md). The obsolete decoder sources have since been removed.
 The independent alpha references matched after that patch.
 
 PaintFE's new production backend uses system codecs instead, so this report

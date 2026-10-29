@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "PaintFE"
-version = "1.4.21"
+version = "1.4.22"
 dependencies = [
  "ab_glyph",
  "arboard",
@@ -4016,8 +4016,6 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 [[package]]
 name = "rfd"
 version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c9e7b57df6e8472152674607f6cc68aa14a748a3157a857a94f516e11aeacc2"
 dependencies = [
  "block",
  "dispatch",

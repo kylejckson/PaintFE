@@ -39,9 +39,7 @@ pub(super) fn validate(bytes: &[u8]) -> Result<Info, String> {
         .image_size(file.primary_id)
         .map_err(|e| e.to_string())?
         .ok_or("Missing HEIC primary dimensions")?;
-    if width == 0 || height == 0 || u64::from(width) * u64::from(height) > 64_000_000 {
-        return Err("HEIC image exceeds supported dimensions".into());
-    }
+    super::validate_dimensions(width, height)?;
     let mut alpha = false;
     let mut budget = 1024;
     let mut bits = depth(&file, file.primary_id, 0, &mut budget)?;

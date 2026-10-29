@@ -1747,7 +1747,7 @@ impl Canvas {
             }
 
             // Right-click context menu on the paste overlay.
-            response.context_menu(|ui| {
+            crate::ui::menus::context_menu(&response, |ui| {
                 // Interpolation filter selector.
                 ui.label(crate::t!("ui.filter_2"));
                 for interp in crate::ops::transform::Interpolation::all() {
@@ -3390,8 +3390,7 @@ impl Canvas {
         let (w, h) = (canvas_size.0.max(1) as f32, canvas_size.1.max(1) as f32);
         self.navigation_size = Some(canvas_size);
         let size = rect.size() - Vec2::splat(24.0);
-        self.zoom = ((size.x.max(1.0) / w).min(size.y.max(1.0) / h))
-            .clamp(Self::MIN_ZOOM, 100.0);
+        self.zoom = ((size.x.max(1.0) / w).min(size.y.max(1.0) / h)).clamp(Self::MIN_ZOOM, 100.0);
         self.pan_offset = Vec2::ZERO;
     }
 
@@ -3401,8 +3400,7 @@ impl Canvas {
             return Self::MIN_ZOOM;
         };
         let size = rect.size() - Vec2::splat(24.0);
-        (0.1 * (size.x.max(1.0) / w.max(1) as f32)
-            .min(size.y.max(1.0) / h.max(1) as f32))
+        (0.1 * (size.x.max(1.0) / w.max(1) as f32).min(size.y.max(1.0) / h.max(1) as f32))
             .clamp(Self::MIN_ZOOM, 1.0)
     }
 
