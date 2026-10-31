@@ -1,6 +1,13 @@
 //! Bounded, deterministic RGBA palette generation and optional error diffusion.
 use image::RgbaImage;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Algorithm {
+    #[default]
+    MedianCut,
+    NeuQuant,
+}
 
 struct SearchNode {
     point: [f32; 4],
@@ -63,6 +70,15 @@ impl SearchNode {
 }
 
 pub fn quantize(image: &RgbaImage, colors: usize, dither: bool) -> (Vec<[u8; 4]>, Vec<u8>) {
+    quantize_with_options(image, colors, dither, Algorithm::MedianCut, 100)
+}
+pub fn quantize_with_options(
+    image: &RgbaImage,
+    colors: usize,
+    dither: bool,
+    algorithm: Algorithm,
+    strength: u8,
+) -> (Vec<[u8; 4]>, Vec<u8>) {
     let colors = colors.clamp(1, 256);
     let mut exact = BTreeMap::new();
     for pixel in image.pixels() {
@@ -81,8 +97,23 @@ pub fn quantize(image: &RgbaImage, colors: usize, dither: bool) -> (Vec<[u8; 4]>
     }
     let stride = (image.len() / 4).div_ceil(65_536).max(1);
     let sample: Vec<[u8; 4]> = image.pixels().step_by(stride).map(|p| p.0).collect();
+    let neural = if algorithm == Algorithm::NeuQuant && colors > 2 {
+        Some(
+            color_quant::NeuQuant::new(
+                10,
+                colors,
+                &sample.iter().flatten().copied().collect::<Vec<_>>(),
+            )
+            .color_map_rgba()
+            .chunks_exact(4)
+            .map(|p| [p[0], p[1], p[2], p[3]])
+            .collect::<Vec<_>>(),
+        )
+    } else {
+        None
+    };
     let mut boxes = vec![sample];
-    while boxes.len() < colors {
+    while neural.is_none() && boxes.len() < colors {
         let choice = boxes
             .iter()
             .enumerate()
@@ -117,6 +148,7 @@ pub fn quantize(image: &RgbaImage, colors: usize, dither: bool) -> (Vec<[u8; 4]>
             })
         })
         .collect();
+    let palette = neural.unwrap_or(palette);
     let width = image.width() as usize;
     let mut points: Vec<_> = palette
         .iter()
@@ -158,7 +190,9 @@ pub fn quantize(image: &RgbaImage, colors: usize, dither: bool) -> (Vec<[u8; 4]>
             indices.push(index as u8);
             if dither && pixel[3] > 0 {
                 for (c, &value) in adjusted.iter().take(3).enumerate() {
-                    let error = value - f32::from(palette[index][c]);
+                    let error = (value - f32::from(palette[index][c]))
+                        * f32::from(strength.min(100))
+                        / 100.0;
                     errors[x + 2][c] += error * 7.0 / 16.0;
                     next[x][c] += error * 3.0 / 16.0;
                     next[x + 1][c] += error * 5.0 / 16.0;
@@ -173,21 +207,33 @@ pub fn quantize(image: &RgbaImage, colors: usize, dither: bool) -> (Vec<[u8; 4]>
 }
 
 pub fn gif(image: &RgbaImage, colors: usize, dither: bool) -> (Vec<u8>, Vec<u8>, Option<u8>) {
-    let transparent = image.pixels().any(|p| p[3] < 128);
+    gif_with_options(image, colors, dither, Algorithm::MedianCut, 100, 128)
+}
+pub fn gif_with_options(
+    image: &RgbaImage,
+    colors: usize,
+    dither: bool,
+    algorithm: Algorithm,
+    strength: u8,
+    threshold: u8,
+) -> (Vec<u8>, Vec<u8>, Option<u8>) {
+    let transparent = image.pixels().any(|p| p[3] < threshold);
     let mut opaque = image.clone();
     for p in opaque.pixels_mut() {
         p[3] = 255;
     }
-    let (mut palette, mut indices) = quantize(
+    let (mut palette, mut indices) = quantize_with_options(
         &opaque,
         colors.clamp(2, 256) - usize::from(transparent),
         dither,
+        algorithm,
+        strength,
     );
     let transparency = if transparent {
         let index = palette.len() as u8;
         palette.push([0, 0, 0, 0]);
         for (p, i) in image.pixels().zip(&mut indices) {
-            if p[3] < 128 {
+            if p[3] < threshold {
                 *i = index;
             }
         }

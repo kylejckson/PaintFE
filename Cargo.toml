@@ -1,6 +1,6 @@
 [package]
 name = "PaintFE"
-version = "1.4.22"
+version = "1.4.23"
 edition = "2024"
 
 [lib]
@@ -27,6 +27,8 @@ bincode = "1"        # Binary serialization for .pfe files
 
 gif = "0.13"             # Direct GIF encoder/decoder (multi-frame animation)
 png = "0.17"             # Direct PNG encoder/decoder (APNG animation support)
+jpeg-encoder = "=0.7.1"
+flate2 = "1"
 color_quant = "1"        # Color quantization for GIF palette reduction
 
 wgpu = "29"                                      # GPU acceleration (WebGPU API)
@@ -49,11 +51,10 @@ x11-dl = "2.21"
 # CLI arg parsing, and the OS clipboard).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 winit = "0.30"                                   # Native frame pacing and Windows keyboard hook
-# Container metadata only; no HEVC decoding or encoding implementation.
-heifer-isobmff = "=0.2.0"
 ed25519-dalek = { version = "2.2", default-features = false, features = ["std"] }
 rfd = "0.12"
 webp = "0.3"
+libwebp-sys = "=0.9.6"
 arboard = { version = "3", features = ["wayland-data-control"] }
 font-kit = "0.14"
 libloading = "0.8"

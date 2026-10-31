@@ -50,7 +50,25 @@ uint8_t capabilities() {
     Library l;
     auto decoder=l.get<int(*)(int)>("heif_have_decoder_for_format");
     auto encoder=l.get<int(*)(int)>("heif_have_encoder_for_format");
-    return (decoder(1)?1:0)|(encoder(1)?2:0);
+    uint8_t flags=(decoder(1)?1:0)|(encoder(1)?2:0);
+    const void* descriptor=nullptr;
+    try {
+    if(encoder(1) && l.get<int(*)(int,const char*,const void**,int)>("heif_get_encoder_descriptors")(1,nullptr,&descriptor,1)>0) {
+        if(l.get<int(*)(const void*)>("heif_encoder_descriptor_supports_lossless_compression")(descriptor)) flags|=4;
+        Owned selected(l.get<void(*)(void*)>("heif_encoder_release"));
+        Owned ctx(l.get<void(*)(void*)>("heif_context_free"));ctx.value=l.get<void*(*)()>("heif_context_alloc")();
+        if(!ctx.value) throw std::bad_alloc();
+        check(l.get<Error(*)(void*,const void*,void**)>("heif_context_get_encoder")(ctx.value,descriptor,&selected.value));
+        const char* const* values=nullptr;
+        auto error=l.get<Error(*)(void*,const char*,const char* const**)>("heif_encoder_parameter_string_valid_values")(selected.value,"chroma",&values);
+        if(!error.code && values) for(size_t i=0;i<32 && values[i];i++) {
+            if(!std::strcmp(values[i],"444")) flags|=8;
+            if(!std::strcmp(values[i],"422")) flags|=16;
+            if(!std::strcmp(values[i],"420")) flags|=32;
+        }
+    }
+    } catch(const std::runtime_error&) { /* Optional capabilities must not disable basic decoding. */ }
+    return flags;
 }
 Image decode(const uint8_t* data,size_t size,bool requires_alpha,bool high_depth) {
     Library l;
@@ -91,13 +109,17 @@ static Error write_bytes(void*,const void* data,size_t size,void* user) noexcept
         auto p=static_cast<const uint8_t*>(data); bytes.insert(bytes.end(),p,p+size); return {0,0,"Success"};
     } catch(...) {return {9,0,"HEIC output allocation failed"};}
 }
-Image encode(const uint8_t* data,uint32_t w,uint32_t h,uint8_t quality) {
+Image encode(const uint8_t* data,uint32_t w,uint32_t h,uint8_t quality,uint8_t options) {
     Library l;
     Owned ctx(l.get<void(*)(void*)>("heif_context_free")); ctx.value=l.get<void*(*)()>("heif_context_alloc")();
     if(!ctx.value) throw std::bad_alloc();
     Owned encoder(l.get<void(*)(void*)>("heif_encoder_release"));
     check(l.get<Error(*)(void*,int,void**)>("heif_context_get_encoder_for_format")(ctx.value,1,&encoder.value));
     check(l.get<Error(*)(void*,int)>("heif_encoder_set_lossy_quality")(encoder.value,quality));
+    if(options&1) check(l.get<Error(*)(void*,int)>("heif_encoder_set_lossless")(encoder.value,1));
+    int chroma=(options>>1)&3;
+    if(options&1) chroma=1;
+    if(chroma) check(l.get<Error(*)(void*,const char*,const char*)>("heif_encoder_set_parameter_string")(encoder.value,"chroma",chroma==1?"444":chroma==2?"422":"420"));
     // Encoders expose different parameter sets; use the standard thread control
     // when supported without requiring a particular HEVC implementation.
     l.get<Error(*)(void*,const char*,int)>("heif_encoder_set_parameter_integer")(encoder.value,"threads",2);
@@ -107,6 +129,16 @@ Image encode(const uint8_t* data,uint32_t w,uint32_t h,uint8_t quality) {
     int stride=0; auto* pixels=l.get<uint8_t*(*)(void*,int,int*)>("heif_image_get_plane")(image.value,10,&stride);
     if(!pixels || stride<int(w*4)) throw std::runtime_error("Invalid system HEIC output plane");
     for(uint32_t y=0;y<h;y++) std::memcpy(pixels+size_t(y)*stride,data+size_t(y)*w*4,w*4);
+    // Stable version-1 NCLX prefix. Identity, full-range RGB avoids conversion loss.
+    struct NclxPrefix {uint8_t version; int primaries,transfer,matrix; uint8_t full_range;};
+    Owned nclx(l.get<void(*)(void*)>("heif_nclx_color_profile_free"));
+    if(options&1) {
+        nclx.value=l.get<void*(*)()>("heif_nclx_color_profile_alloc")();
+        if(!nclx.value) throw std::bad_alloc();
+        auto* profile=static_cast<NclxPrefix*>(nclx.value);
+        profile->primaries=1;profile->transfer=13;profile->matrix=0;profile->full_range=1;
+        check(l.get<Error(*)(void*,const void*)>("heif_image_set_nclx_color_profile")(image.value,nclx.value));
+    }
     check(l.get<Error(*)(void*,const void*,void*,const void*,void**)>("heif_context_encode_image")(ctx.value,image.value,encoder.value,nullptr,nullptr));
     Image out; Writer writer{1,write_bytes};
     check(l.get<Error(*)(void*,const Writer*,void*)>("heif_context_write")(ctx.value,&writer,&out.bytes));

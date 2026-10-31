@@ -11,7 +11,11 @@ default = ["asm"]
 asm = ["image/nasm"]
 
 [dependencies]
+avif-serialize = "=0.8.9"
 image = { version = "=0.25.9", default-features = false, features = ["avif", "avif-native", "rayon"] }
+
+[build-dependencies]
+cc = "1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

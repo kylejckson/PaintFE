@@ -1,6 +1,7 @@
 //! Offline AVIF still-image helper. stdin/stdout only; never accesses the network.
 use image::{ImageDecoder, ImageEncoder};
 use std::io::{Read, Write};
+mod lossless;
 const MAX_PIXELS: u64 = 64_000_000;
 const MAX_INPUT: u64 = 512 * 1024 * 1024;
 
@@ -95,7 +96,14 @@ fn run() -> Result<(), String> {
     let mut input = std::io::stdin().lock();
     let mut header = [0u8; 40];
     input.read_exact(&mut header).map_err(|e| e.to_string())?;
-    if &header[..8] != b"PFEAVF01" || header[9..12] != [0; 3] || header[26..32] != [0; 6] {
+    let advanced = &header[..8] == b"PFEAVF02";
+    if (!advanced && &header[..8] != b"PFEAVF01")
+        || header[9..12] != [0; 3]
+        || header[27..32] != [0; 5]
+        || header[26] > 3
+        || (!advanced && header[26] != 0)
+        || (advanced && header[8] != 1)
+    {
         return Err("Invalid AVIF protocol header".into());
     }
     let field = |offset| u32::from_le_bytes(header[offset..offset + 4].try_into().unwrap());
@@ -124,14 +132,20 @@ fn run() -> Result<(), String> {
     }
     let mut output = std::io::stdout().lock();
     if header[8] == 1 {
-        image::codecs::avif::AvifEncoder::new_with_speed_quality(
-            &mut output,
-            header[25],
-            header[24],
-        )
-        .with_num_threads(Some(4))
-        .write_image(&bytes, width, height, image::ExtendedColorType::Rgba8)
-        .map_err(|e| e.to_string())?;
+        if advanced {
+            let encoded =
+                lossless::encode(&bytes, width, height, header[24], header[25], header[26])?;
+            output.write_all(&encoded).map_err(|e| e.to_string())?;
+        } else {
+            image::codecs::avif::AvifEncoder::new_with_speed_quality(
+                &mut output,
+                header[25],
+                header[24],
+            )
+            .with_num_threads(Some(4))
+            .write_image(&bytes, width, height, image::ExtendedColorType::Rgba8)
+            .map_err(|e| e.to_string())?;
+        }
     } else {
         let decoder = image::codecs::avif::AvifDecoder::new(std::io::Cursor::new(bytes))
             .map_err(|e| e.to_string())?;

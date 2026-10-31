@@ -1,6 +1,6 @@
 # PaintFE
 
-Free, open-source raster image editor built in Rust. Single portable binary, no installer required.
+Free, open-source image editor for Windows, macOS and Linux, built in Rust. Layers, brushes, filters, selections, colour adjustments, animation and scripting, with portable desktop builds, optional feature packs and an experimental web version.
 
 **[Download the latest release](https://github.com/kylejckson/PaintFE/releases/latest)** &nbsp;·&nbsp;
 **[Website](https://paintfe.com)** &nbsp;·&nbsp;
@@ -17,8 +17,8 @@ Free, open-source raster image editor built in Rust. Single portable binary, no 
 24 tools · 25 blend modes · GPU compositing · Rhai scripting · CLI batch processing · local background removal · GIF/APNG/WebP animation · RAW camera support · 26 UI languages
 
 Linux DEB/RPM packaging and signed package repository setup are described in the
-[Linux installation guide](docs/linux-packages.md). Packages become available with
-the next release containing this support. Arabic includes a bundled font; see
+[Linux installation guide](docs/linux-packages.md). Packages are available from
+the releases page. Arabic includes a bundled font; see
 [Arabic translation notes](docs/arabic.md) for current RTL limitations.
 
 ![PaintFE photo workspace in light mode with Luminous icons](screenshot/main_screenshot.png)
@@ -237,9 +237,9 @@ I recognise that AI’s place in creative work is a sensitive subject. I want to
 
 Bug reports, feature requests, translations, and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution guidelines.
 
-26 locales ship built in and can be switched through **Preferences > General > Language**: English, Arabic, German, French, Spanish, Brazilian Portuguese, European Portuguese, Italian, Russian, Ukrainian, Czech, Romanian, Belarusian, Polish, Dutch, Turkish, Japanese, Simplified Chinese, Traditional Chinese, Korean, Indonesian, Vietnamese, Thai, Hungarian, Bogan English, and Fancy English (FE). All catalogs cover the current English interface keys. Thai and Arabic font fallbacks are bundled. Chinese, Japanese and Korean use suitable system fonts or an optional font pack. Installed packs work offline; downloading one requires an explicit request. Translation improvements from fluent speakers are welcome.
+26 locales ship built in and can be switched through **Preferences > Interface > Language**: English, Arabic, German, French, Spanish, Brazilian Portuguese, European Portuguese, Italian, Russian, Ukrainian, Czech, Romanian, Belarusian, Polish, Dutch, Turkish, Japanese, Simplified Chinese, Traditional Chinese, Korean, Indonesian, Vietnamese, Thai, Hungarian, Bogan English, and Fancy English (FE). All catalogs cover the current English interface keys. Thai and Arabic font fallbacks are bundled. Chinese, Japanese and Korean use suitable system fonts or an optional font pack. Installed packs work offline; downloading one requires an explicit request. Translation improvements from fluent speakers are welcome.
 
-Use **Preferences > General > Language > Customize labels** to search for interface text and change its wording in the selected language. Changes are personal overlays, survive updates, and can be reset or shared without rebuilding PaintFE. See [personal labels](docs/personal-labels.md).
+Use **Preferences > Interface > Language > Customize interface labels** to search for interface text and change its wording in the selected language. Changes are personal overlays, survive updates, and can be reset or shared without rebuilding PaintFE. See [personal labels](docs/personal-labels.md).
 
 To add a translation, copy `locales/en.txt`, translate the values without changing keys, and name the file with its BCP-47 code, such as `ko.txt`.
 

@@ -97,28 +97,33 @@ fn process() -> Result<(), String> {
     let mut stdin = std::io::stdin().lock();
     let mut header = [0; 40];
     stdin.read_exact(&mut header).map_err(|e| e.to_string())?;
-    if &header[..8] != b"PFEHIC02" || !matches!(header[8], 0..=2) {
+    let operation = header[8] & 3;
+    if &header[..8] != b"PFEHIC02"
+        || operation > 2
+        || header[8] & 0xe0 != 0
+        || (operation != 1 && header[8] != operation)
+    {
         return Err("Invalid system HEIC request".into());
     }
     let size = u64::from_le_bytes(header[32..40].try_into().unwrap());
     let w = u32::from_le_bytes(header[12..16].try_into().unwrap());
     let h = u32::from_le_bytes(header[16..20].try_into().unwrap());
-    let limit = if header[8] == 0 {
+    let limit = if operation == 0 {
         0
-    } else if header[8] == 1 {
+    } else if operation == 1 {
         super::validate_dimensions(w, h)?;
         u64::from(w) * u64::from(h) * 4
     } else {
         256 * 1024 * 1024
     };
-    if size > limit || (header[8] == 1 && size != limit) {
+    if size > limit || (operation == 1 && size != limit) {
         return Err("Invalid HEIC input length".into());
     }
     let mut input = vec![0; size as usize];
     stdin.read_exact(&mut input).map_err(|e| e.to_string())?;
     let (output, width, height, bits) = native(header[8], &input, w, h, header[24].clamp(1, 100))?;
     let mut stdout = std::io::stdout().lock();
-    if header[8] == 2 {
+    if operation == 2 {
         stdout
             .write_all(b"PFEHIO03")
             .and_then(|_| stdout.write_all(&width.to_le_bytes()))

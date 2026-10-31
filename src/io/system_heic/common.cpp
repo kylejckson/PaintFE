@@ -5,13 +5,20 @@ extern "C" int pf_system_heic(uint8_t op, const uint8_t* data, size_t length,
     *output = nullptr; *size = 0;
     const bool requires_alpha=(op&0x80)!=0;
     const bool high_depth=(op&0x40)!=0;
-    op&=0x3f;
+    const uint8_t options=(op>>2)&7;
+    op&=3;
     try {
         Image result;
         if (op == 0) result.bytes = {capabilities()};
         else if (op == 1) {
             if (length != pixel_bytes(width,height)) throw std::runtime_error("Invalid HEIC input length");
-            result = encode(data,width,height,quality);
+            result = encode(data,width,height,quality,options);
+            if(options&1) {
+                bool required=false; for(size_t i=3;i<length;i+=4) if(data[i]!=255) {required=true;break;}
+                auto verified=decode(result.bytes.data(),result.bytes.size(),required,false);
+                if(verified.width!=width || verified.height!=height || verified.bytes.size()!=length || std::memcmp(verified.bytes.data(),data,length)!=0)
+                    throw std::runtime_error("The installed HEIC encoder did not produce exact lossless pixels");
+            }
             bool alpha=false;
             for(size_t i=3;i<length;i+=4) if(data[i]!=255) {alpha=true;break;}
             if(alpha) {

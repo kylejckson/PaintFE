@@ -1,12 +1,11 @@
 use eframe::egui;
 use egui::{Color32, ColorImage, TextureHandle, TextureOptions};
 use image::ImageEncoder;
+use image::RgbaImage;
 use image::codecs::bmp::BmpEncoder;
-use image::codecs::jpeg::JpegEncoder;
 use image::codecs::png::PngEncoder;
 use image::codecs::tiff::TiffEncoder;
 use image::imageops::FilterType;
-use image::{DynamicImage, RgbaImage};
 use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -571,6 +570,8 @@ fn format_dimension_value(value: f32) -> String {
 }
 
 use crate::ui::numeric::evaluate_dimension_expression;
+#[path = "dialogs/export_advanced.rs"]
+mod export_advanced;
 mod export_ui;
 
 // ============================================================================
@@ -721,17 +722,13 @@ pub fn generate_preview(
         }
         SaveFormat::Jpeg => {
             // JPEG is lossy - encode then decode to show artifacts
-            let rgb_image = DynamicImage::ImageRgba8(image.clone()).to_rgb8();
-            let mut cursor = Cursor::new(&mut buffer);
-            let mut encoder = JpegEncoder::new_with_quality(&mut cursor, quality);
-            encoder
-                .encode(
-                    rgb_image.as_raw(),
-                    rgb_image.width(),
-                    rgb_image.height(),
-                    image::ColorType::Rgb8.into(),
-                )
-                .ok()?;
+            crate::io::export::formats::encode_jpeg(
+                image,
+                &mut buffer,
+                quality,
+                crate::io::export::JpegSampling::Full,
+            )
+            .ok()?;
 
             // Decode back to show compression artifacts
             let decoded = image::load_from_memory(&buffer).ok()?;
@@ -1863,60 +1860,82 @@ mod save_as_controls_tests {
             (900.0, 360.0, 1.0, true),
             (1024.0, 768.0, 1.5, true),
         ] {
-            let ctx = egui::Context::default();
-            ctx.set_visuals(if dark {
-                egui::Visuals::dark()
-            } else {
-                egui::Visuals::light()
-            });
-            let mut fonts = egui::FontDefinitions::default();
-            fonts.families.insert(
-                egui::FontFamily::Name("WidgetTitle".into()),
-                fonts.families[&egui::FontFamily::Proportional].clone(),
-            );
-            ctx.set_fonts(fonts);
-            ctx.all_styles_mut(|style| {
-                for font in style.text_styles.values_mut() {
-                    font.size *= scale;
-                }
-            });
-            let mut dialog = SaveFileDialog {
-                open: true,
-                ..Default::default()
-            };
-            dialog.set_source_image(&RgbaImage::from_pixel(
-                32,
-                24,
-                image::Rgba([20, 80, 180, 127]),
-            ));
-            for _ in 0..4 {
-                let _ = ctx.run_ui(
-                    egui::RawInput {
-                        screen_rect: Some(egui::Rect::from_min_size(
-                            egui::Pos2::ZERO,
-                            egui::vec2(width, height),
-                        )),
+            for format in [
+                SaveFormat::Png,
+                SaveFormat::Jpeg,
+                SaveFormat::Webp,
+                SaveFormat::Gif,
+                SaveFormat::Bmp,
+                SaveFormat::Tga,
+                SaveFormat::Tiff,
+                SaveFormat::Avif,
+                SaveFormat::Heic,
+            ] {
+                let ctx = egui::Context::default();
+                ctx.set_visuals(if dark {
+                    egui::Visuals::dark()
+                } else {
+                    egui::Visuals::light()
+                });
+                let mut fonts = egui::FontDefinitions::default();
+                fonts.families.insert(
+                    egui::FontFamily::Name("WidgetTitle".into()),
+                    fonts.families[&egui::FontFamily::Proportional].clone(),
+                );
+                ctx.set_fonts(fonts);
+                ctx.all_styles_mut(|style| {
+                    for font in style.text_styles.values_mut() {
+                        font.size *= scale;
+                    }
+                });
+                let mut dialog = SaveFileDialog {
+                    open: true,
+                    options: crate::io::export::ExportOptions {
+                        format,
                         ..Default::default()
                     },
-                    |_| {
-                        dialog.show(&ctx);
-                    },
+                    ..Default::default()
+                };
+                if format == SaveFormat::Png {
+                    dialog.options.png.mode = crate::io::export::png::Mode::Indexed;
+                }
+                if format == SaveFormat::Bmp {
+                    dialog.options.raster_mode = crate::io::export::RasterMode::Indexed;
+                }
+                dialog.set_source_image(&RgbaImage::from_pixel(
+                    32,
+                    24,
+                    image::Rgba([20, 80, 180, 127]),
+                ));
+                for _ in 0..4 {
+                    let _ = ctx.run_ui(
+                        egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                egui::vec2(width, height),
+                            )),
+                            ..Default::default()
+                        },
+                        |_| {
+                            dialog.show(&ctx);
+                        },
+                    );
+                }
+                let save = ctx
+                    .data(|d| d.get_temp::<egui::Rect>(egui::Id::new("save_as_save_rect")))
+                    .unwrap();
+                assert!(
+                    save.bottom() <= height && save.right() <= width && save.left() >= 0.0,
+                    "save button outside {width}x{height}: {save:?}"
+                );
+                let zoom = ctx
+                    .data(|d| d.get_temp::<egui::Rect>(egui::Id::new("save_as_zoom_rect")))
+                    .unwrap();
+                assert!(
+                    zoom.right() <= width,
+                    "preview controls overflowed: {zoom:?}"
                 );
             }
-            let save = ctx
-                .data(|d| d.get_temp::<egui::Rect>(egui::Id::new("save_as_save_rect")))
-                .unwrap();
-            assert!(
-                save.bottom() <= height && save.right() <= width && save.left() >= 0.0,
-                "save button outside {width}x{height}: {save:?}"
-            );
-            let zoom = ctx
-                .data(|d| d.get_temp::<egui::Rect>(egui::Id::new("save_as_zoom_rect")))
-                .unwrap();
-            assert!(
-                zoom.right() <= width,
-                "preview controls overflowed: {zoom:?}"
-            );
         }
     }
 

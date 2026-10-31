@@ -1,9 +1,7 @@
 # Codec experiment harness
 
 This separate Cargo package measures candidate codecs independently of PaintFE.
-The obsolete Heifer decoder and encoder experiment has been removed. Historical
-measurements remain in `results/windows-x86_64.json` and
-`results/windows-heifer-patched.json`; they do not describe current production.
+Retired HEIC experiments and their benchmark output are preserved only in Git history.
 Build output, reference libraries and downloaded samples belong in
 the repository's ignored `target/codec-*` directories.
 
@@ -47,8 +45,6 @@ requirements, not a proposed installation procedure for PaintFE users.
 Commands supported by the probe:
 
 ```text
-heif-decode INPUT OUTPUT.rgba [RUNS=5] [THREADS=0] [MAX_PIXELS=32000000]
-heif-encoder-primitive
 avif-encode INPUT.rgba WIDTH HEIGHT OUTPUT.avif [SPEED=8] [QUALITY=80] [RUNS=3]
 avif-decode INPUT OUTPUT.rgba [RUNS=5]
 ```
@@ -64,11 +60,8 @@ target/codec-venv/Scripts/python.exe tools/codec_probe/run_samples.py target/cod
 The runner records JSON results beside the samples. Timing excludes file I/O,
 includes conversion to RGBA8, and uses repeated in-memory inputs. Optimized AVIF
 encoding uses four threads; the minimal variant has threading disabled.
-The sample runner permits up to 64 million HEIC pixels so the 48 MP photo is
-included; this is an experiment setting, not a proposed production limit.
 Reference comparisons sample approximately 100,000 pixels; they do not
-establish full conformance or colour-managed equivalence. No HEIC export test can
-be performed until Heifer exposes an image encoder and HEIF writer.
+establish full conformance or colour-managed equivalence.
 
 See [the results and limitations](../../docs/codec-experiments.md). Do not ship
 upstream fixture photos without reviewing their redistribution permissions.

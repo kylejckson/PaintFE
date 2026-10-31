@@ -189,3 +189,90 @@ fn user_supplied_windows_libheif_opens_alpha_fixtures_and_can_export() {
     io::heic::set_library_path("");
     std::fs::remove_file(bad).unwrap();
 }
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires PAINTFE_TEST_HEIF_LIBRARY with lossless and chroma encoding support"]
+fn user_supplied_libheif_advanced_options_preserve_exact_transparent_pixels() {
+    use io::export::{ExportOptions, HeicChroma};
+    use paintfe::components::dialogs::SaveFormat;
+    let library = std::env::var("PAINTFE_TEST_HEIF_LIBRARY").unwrap();
+    io::heic::set_library_path(&library);
+    let caps = io::heic::capabilities();
+    assert!(caps.decode && caps.encode && caps.lossless);
+    assert_eq!(caps.chroma & 56, 56);
+    let source = image::RgbaImage::from_fn(37, 29, |x, y| {
+        image::Rgba([
+            (x * 17 + y * 3) as u8,
+            (x * 7 + y * 29) as u8,
+            (x * 31 + y * 11) as u8,
+            (x * 19 + y * 23) as u8,
+        ])
+    });
+    let path = std::env::temp_dir().join(format!("paintfe-lossless-{}.heic", uuid::Uuid::new_v4()));
+    for chroma in [
+        HeicChroma::Full,
+        HeicChroma::Horizontal,
+        HeicChroma::Quarter,
+    ] {
+        std::fs::write(&path, b"previous contents").unwrap();
+        let options = ExportOptions {
+            format: SaveFormat::Heic,
+            heic_chroma: chroma,
+            ..Default::default()
+        };
+        match io::export::write(
+            io::PreparedExportImage::Rgba8(source.clone()),
+            &path,
+            options,
+        ) {
+            Ok(()) => {
+                let decoded = io::decode_image_path(&path).unwrap().to_rgba8();
+                assert!(
+                    decoded
+                        .pixels()
+                        .zip(source.pixels())
+                        .all(|(a, b)| a[3].abs_diff(b[3]) <= 1)
+                );
+            }
+            Err(error) => {
+                assert!(error.contains("cannot preserve transparency"), "{error}");
+                assert_eq!(std::fs::read(&path).unwrap(), b"previous contents");
+            }
+        }
+        let mut opaque = source.clone();
+        for pixel in opaque.pixels_mut() {
+            pixel[3] = 255;
+        }
+        io::export::write(
+            io::PreparedExportImage::Rgba8(opaque),
+            &path,
+            ExportOptions {
+                format: SaveFormat::Heic,
+                heic_chroma: chroma,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            io::decode_image_path(&path)
+                .unwrap()
+                .to_rgba8()
+                .dimensions(),
+            source.dimensions()
+        );
+    }
+    io::export::write(
+        io::PreparedExportImage::Rgba8(source.clone()),
+        &path,
+        ExportOptions {
+            format: SaveFormat::Heic,
+            heic_lossless: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(io::decode_image_path(&path).unwrap().to_rgba8(), source);
+    std::fs::remove_file(path).unwrap();
+    io::heic::set_library_path("");
+}

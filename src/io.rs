@@ -3,7 +3,6 @@ use crate::components::dialogs::TiffCompression;
 use crate::web_fs::File;
 use image::ImageEncoder;
 use image::codecs::bmp::BmpEncoder;
-use image::codecs::jpeg::JpegEncoder;
 use image::codecs::tga::TgaEncoder;
 use image::{DynamicImage, ImageError, Rgba, RgbaImage};
 #[cfg(not(target_arch = "wasm32"))]
@@ -1910,14 +1909,8 @@ pub fn encode_and_write(
             .map_err(|e| ImageError::IoError(std::io::Error::other(e)))?;
         }
         SaveFormat::Jpeg => {
-            let rgb_image = DynamicImage::ImageRgba8(image.clone()).to_rgb8();
-            let encoder = JpegEncoder::new_with_quality(&mut writer, quality);
-            encoder.write_image(
-                rgb_image.as_raw(),
-                rgb_image.width(),
-                rgb_image.height(),
-                image::ExtendedColorType::Rgb8,
-            )?;
+            export::formats::encode_jpeg(image, &mut writer, quality, export::JpegSampling::Full)
+                .map_err(|e| ImageError::IoError(std::io::Error::other(e)))?;
         }
         SaveFormat::Heic => {
             writer.write_all(&heic::encode_rgba8(image, quality)?)?;
@@ -2826,6 +2819,25 @@ pub fn encode_animated_gif(
     dither: bool,
     path: &Path,
 ) -> Result<(), String> {
+    encode_animated_gif_options(
+        frames,
+        fps,
+        export::ExportOptions {
+            gif_colors: max_colors,
+            gif_dither: dither,
+            ..Default::default()
+        },
+        path,
+    )
+}
+pub fn encode_animated_gif_options(
+    frames: &[RgbaImage],
+    fps: f32,
+    options: export::ExportOptions,
+    path: &Path,
+) -> Result<(), String> {
+    let max_colors = options.gif_colors;
+    let dither = options.gif_dither;
     if frames.is_empty() {
         return Err("No frames to encode".to_string());
     }
@@ -2834,13 +2846,31 @@ pub fn encode_animated_gif(
         return Err("Image dimensions exceed GIF maximum (65535×65535)".to_string());
     }
     let (w, h) = (frames[0].width() as u16, frames[0].height() as u16);
-    let delay_cs = ((100.0 / fps).round() as u16).max(1); // centiseconds
-
+    if !fps.is_finite()
+        || fps <= 0.0
+        || w == 0
+        || h == 0
+        || frames
+            .iter()
+            .any(|f| f.dimensions() != frames[0].dimensions())
+    {
+        return Err("Invalid GIF frames or timing".into());
+    }
+    options.validate()?;
+    let delay_cs = ((100.0 / fps).round() as u16).max(1);
     let file = File::create(path).map_err(|e| format!("Failed to create GIF file: {}", e))?;
-
-    // Build a global palette from the first frame (or could use per-frame palettes)
     let colors = (max_colors as usize).clamp(2, 256);
-    let (global_palette, _, _) = export::palette::gif(&frames[0], colors, dither);
+    let palette_for = |image: &RgbaImage| {
+        export::palette::gif_with_options(
+            image,
+            colors,
+            dither,
+            options.quantizer,
+            options.dither_strength,
+            options.gif_alpha_threshold,
+        )
+    };
+    let (global_palette, _, _) = palette_for(&frames[0]);
 
     let mut encoder = gif::Encoder::new(BufWriter::new(file), w, h, &global_palette)
         .map_err(|e| format!("GIF encoder init error: {}", e))?;
@@ -2851,8 +2881,7 @@ pub fn encode_animated_gif(
 
     for frame_img in frames {
         // Use per-frame local palette for better color accuracy
-        let (local_palette, local_indexed, transparent) =
-            export::palette::gif(frame_img, colors, dither);
+        let (local_palette, local_indexed, transparent) = palette_for(frame_img);
         let frame = gif::Frame {
             width: w,
             height: h,

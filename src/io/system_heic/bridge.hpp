@@ -12,6 +12,6 @@ inline size_t pixel_bytes(uint32_t w, uint32_t h) {
     return size_t(w)*h*4;
 }
 Image decode(const uint8_t*, size_t, bool, bool);
-Image encode(const uint8_t*, uint32_t, uint32_t, uint8_t);
+Image encode(const uint8_t*, uint32_t, uint32_t, uint8_t, uint8_t);
 uint8_t capabilities();
 void limits();

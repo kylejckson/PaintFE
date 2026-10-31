@@ -39,6 +39,8 @@ pub fn validate_dimensions(width: u32, height: u32) -> Result<(), String> {
 pub struct Capabilities {
     pub decode: bool,
     pub encode: bool,
+    pub lossless: bool,
+    pub chroma: u8,
     pub detail: String,
 }
 static LIBRARY_PATH: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
@@ -71,6 +73,8 @@ pub fn display_capabilities() -> Capabilities {
             .unwrap_or(Capabilities {
                 decode: false,
                 encode: false,
+                lossless: false,
+                chroma: 0,
                 detail: crate::t!("heic.test_hint"),
             });
     }
@@ -97,11 +101,15 @@ pub fn capabilities() -> Capabilities {
         Ok((bits, _, _, _)) => Capabilities {
             decode: bits.first().is_some_and(|b| b & 1 != 0),
             encode: bits.first().is_some_and(|b| b & 2 != 0),
+            lossless: bits.first().is_some_and(|b| b & 4 != 0),
+            chroma: bits.first().copied().unwrap_or(0) & 0x38,
             detail: String::new(),
         },
         Err(detail) => Capabilities {
             decode: false,
             encode: false,
+            lossless: false,
+            chroma: 0,
             detail,
         },
     };
@@ -149,7 +157,7 @@ fn request(
     #[cfg(not(target_arch = "wasm32"))]
     {
         let caps = capabilities();
-        if (op == 1 && !caps.encode) || (op == 2 && !caps.decode) {
+        if (op & 3 == 1 && !caps.encode) || (op & 3 == 2 && !caps.decode) {
             return Err(error(setup_message()));
         }
         let mut header = [0; 40];
@@ -185,6 +193,38 @@ fn encode(image: &RgbaImage, quality: u8, tracked: bool) -> ImageResult<Vec<u8>>
 }
 pub fn encode_rgba8(image: &RgbaImage, quality: u8) -> ImageResult<Vec<u8>> {
     encode(image, quality, true)
+}
+pub(crate) fn encode_options(
+    image: &RgbaImage,
+    o: crate::io::export::ExportOptions,
+    tracked: bool,
+) -> Result<Vec<u8>, String> {
+    use crate::io::export::HeicChroma;
+    validate_dimensions(image.width(), image.height())?;
+    let caps = capabilities();
+    let (chroma, mask) = match if o.heic_lossless {
+        HeicChroma::Automatic
+    } else {
+        o.heic_chroma
+    } {
+        HeicChroma::Automatic => (0, 0),
+        HeicChroma::Full => (1, 8),
+        HeicChroma::Horizontal => (2, 16),
+        HeicChroma::Quarter => (3, 32),
+    };
+    if (o.heic_lossless && !caps.lossless) || (mask != 0 && caps.chroma & mask == 0) {
+        return Err("The installed HEIC encoder does not support these options".into());
+    }
+    let op = 1 | (u8::from(o.heic_lossless) << 2) | (chroma << 3);
+    request(
+        op,
+        image.as_raw(),
+        image.width(),
+        image.height(),
+        o.quality,
+        tracked,
+    )
+    .map_err(|e| e.to_string())
 }
 pub fn decode(bytes: &[u8]) -> ImageResult<DynamicImage> {
     decode_tracked(bytes, true)

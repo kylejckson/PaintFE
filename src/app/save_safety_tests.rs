@@ -41,6 +41,33 @@ fn png_colour_alpha_and_palette_losses_use_the_same_options_as_the_save_job() {
     );
 }
 
+#[test]
+fn gif_zero_threshold_warns_before_discarding_binary_transparency() {
+    let mut app = app();
+    app.projects[0].canvas_state.layers[0]
+        .pixels
+        .put_pixel(0, 0, image::Rgba([40, 120, 220, 0]));
+    app.projects[0].canvas_state.mark_dirty(None);
+    let mut gif = action(directory().join("output.gif"), SaveFormat::Gif);
+    assert!(
+        !app.projects[0]
+            .save_losses(&gif)
+            .contains(&crate::t!("save.loss_alpha"))
+    );
+    gif.gif_alpha_threshold = 0;
+    assert!(
+        app.projects[0]
+            .save_losses(&gif)
+            .contains(&crate::t!("save.loss_alpha"))
+    );
+    gif.gif_alpha_threshold = 128;
+    assert!(
+        !app.projects[0]
+            .save_losses(&gif)
+            .contains(&crate::t!("save.loss_alpha"))
+    );
+}
+
 fn layered(app: &mut PaintFEApp) {
     let layer = Layer::new("Second".into(), 4, 4, image::Rgba([200, 50, 20, 255]));
     app.projects[0].canvas_state.layers.push(layer);

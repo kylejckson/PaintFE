@@ -12,17 +12,27 @@ fn request(
     width: u32,
     height: u32,
     quality: u8,
+    settings: Option<crate::io::export::ExportOptions>,
     data: &[u8],
     tracked: bool,
 ) -> ImageResult<Vec<u8>> {
     let mut header = [0; 40];
-    header[..8].copy_from_slice(b"PFEAVF01");
+    header[..8].copy_from_slice(
+        if settings.is_some_and(|o| o.avif_lossless || o.avif_lossless_alpha) {
+            b"PFEAVF02"
+        } else {
+            b"PFEAVF01"
+        },
+    );
     header[8] = op;
     header[12..16].copy_from_slice(&width.to_le_bytes());
     header[16..20].copy_from_slice(&height.to_le_bytes());
     header[20..24].copy_from_slice(&8u32.to_le_bytes());
     header[24] = quality.clamp(1, 100);
-    header[25] = 8;
+    header[25] = settings.map_or(8, |o| o.avif_speed);
+    header[26] = settings.map_or(0, |o| {
+        u8::from(o.avif_lossless) | (u8::from(o.avif_lossless_alpha) << 1)
+    });
     header[32..40].copy_from_slice(&(data.len() as u64).to_le_bytes());
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -58,6 +68,7 @@ fn encode(image: &image::RgbaImage, quality: u8, tracked: bool) -> ImageResult<V
         image.width(),
         image.height(),
         quality,
+        None,
         image.as_raw(),
         tracked,
     )?;
@@ -68,6 +79,48 @@ fn encode(image: &image::RgbaImage, quality: u8, tracked: bool) -> ImageResult<V
 }
 pub fn encode_rgba8(image: &image::RgbaImage, quality: u8) -> ImageResult<Vec<u8>> {
     encode(image, quality, true)
+}
+pub(crate) fn encode_options(
+    image: &image::RgbaImage,
+    options: crate::io::export::ExportOptions,
+    tracked: bool,
+) -> Result<Vec<u8>, String> {
+    if u64::from(image.width()) * u64::from(image.height()) > MAX_PIXELS {
+        return Err("AVIF image exceeds 64 million pixels".into());
+    }
+    let output = request(
+        1,
+        image.width(),
+        image.height(),
+        options.quality,
+        Some(options),
+        image.as_raw(),
+        tracked,
+    )
+    .map_err(|e| format!("AVIF encoding failed. For lossless options, update the AVIF pack in Preferences > Optional features. {e}"))?;
+    if !is_avif(&output) {
+        return Err("Invalid AVIF helper output".into());
+    }
+    if options.avif_lossless || options.avif_lossless_alpha {
+        let decoded = image::DynamicImage::from_decoder(
+            Decoder::new_with_tracking(std::io::Cursor::new(&output), tracked)
+                .map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?
+        .to_rgba8();
+        if decoded.dimensions() != image.dimensions()
+            || decoded.pixels().zip(image.pixels()).any(|(a, b)| {
+                if options.avif_lossless {
+                    a != b
+                } else {
+                    a[3] != b[3]
+                }
+            })
+        {
+            return Err("AVIF encoder could not preserve the requested lossless pixels".into());
+        }
+    }
+    Ok(output)
 }
 pub fn preview(image: &image::RgbaImage, quality: u8) -> ImageResult<(Vec<u8>, image::RgbaImage)> {
     let bytes = encode(image, quality, false)?;
@@ -96,7 +149,7 @@ impl Decoder {
         if input.len() > 256 * 1024 * 1024 {
             return Err(error("AVIF input exceeds 256 MiB"));
         }
-        let reply = request(0, 0, 0, 80, &input, tracked)?;
+        let reply = request(0, 0, 0, 80, None, &input, tracked)?;
         if reply.len() < 32 || &reply[..8] != b"PFEAVO01" {
             return Err(error("Invalid AVIF pixel header"));
         }

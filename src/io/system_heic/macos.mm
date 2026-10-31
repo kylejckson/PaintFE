@@ -76,7 +76,8 @@ Image decode(const uint8_t* data, size_t size, bool requires_alpha, bool high_de
         return result;
     }
 }
-Image encode(const uint8_t* data, uint32_t w, uint32_t h, uint8_t quality) {
+Image encode(const uint8_t* data, uint32_t w, uint32_t h, uint8_t quality,uint8_t options) {
+    if(options) throw std::runtime_error("Advanced HEIC options are not exposed by this ImageIO adapter");
     @autoreleasepool {
         CF<CFDataRef> bytes(CFDataCreate(kCFAllocatorDefault,data,pixel_bytes(w,h)));
         CF<CGDataProviderRef> provider(CGDataProviderCreateWithCFData(bytes));

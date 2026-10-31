@@ -4,8 +4,10 @@ use crate::components::dialogs::{SaveFormat, TiffCompression};
 use serde::{Deserialize, Serialize};
 use std::{io::Write, path::Path};
 
+pub mod formats;
 pub mod palette;
 pub mod png;
+pub use formats::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -19,6 +21,19 @@ pub struct ExportOptions {
     pub animation_fps: f32,
     pub gif_colors: u16,
     pub gif_dither: bool,
+    pub quantizer: palette::Algorithm,
+    pub dither_strength: u8,
+    pub gif_alpha_threshold: u8,
+    pub jpeg_sampling: JpegSampling,
+    pub webp_preset: WebpPreset,
+    pub raster_depth: RasterDepth,
+    pub raster_mode: RasterMode,
+    pub tga_rle: bool,
+    pub avif_speed: u8,
+    pub avif_lossless: bool,
+    pub avif_lossless_alpha: bool,
+    pub heic_lossless: bool,
+    pub heic_chroma: HeicChroma,
 }
 impl Default for ExportOptions {
     fn default() -> Self {
@@ -32,12 +47,28 @@ impl Default for ExportOptions {
             animation_fps: 10.0,
             gif_colors: 256,
             gif_dither: true,
+            quantizer: Default::default(),
+            dither_strength: 100,
+            gif_alpha_threshold: 128,
+            jpeg_sampling: Default::default(),
+            webp_preset: Default::default(),
+            raster_depth: Default::default(),
+            raster_mode: Default::default(),
+            tga_rle: true,
+            avif_speed: 8,
+            avif_lossless: false,
+            avif_lossless_alpha: false,
+            heic_lossless: false,
+            heic_chroma: Default::default(),
         }
     }
 }
 impl ExportOptions {
     pub fn validate(&self) -> Result<(), String> {
-        if !(1..=100).contains(&self.quality)
+        if self.dither_strength > 100
+            || self.png.dither_strength > 100
+            || !(1..=10).contains(&self.avif_speed)
+            || !(1..=100).contains(&self.quality)
             || !(2..=256).contains(&self.gif_colors)
             || (self.animated
                 && self.format.supports_animation()
@@ -60,7 +91,18 @@ pub fn write(
     path: &Path,
     options: ExportOptions,
 ) -> Result<(), String> {
+    write_with_tracking(image, path, options, true)
+}
+fn write_with_tracking(
+    image: PreparedExportImage,
+    path: &Path,
+    options: ExportOptions,
+    tracked: bool,
+) -> Result<(), String> {
     options.validate()?;
+    if formats::write(&image, path, options, tracked)? {
+        return Ok(());
+    }
     match options.format {
         SaveFormat::Png => {
             let mut writer =
@@ -68,12 +110,9 @@ pub fn write(
             png::write(&image, options.png, &mut writer)?;
             writer.flush().map_err(|e| e.to_string())
         }
-        SaveFormat::Gif => super::encode_static_gif_with_options(
-            &image.rgba8(),
-            path,
-            options.gif_colors,
-            options.gif_dither,
-        ),
+        SaveFormat::Gif => {
+            super::encode_animated_gif_options(&[image.rgba8()], 10.0, options, path)
+        }
         _ => encode_prepared_and_write(
             image,
             path,
@@ -125,7 +164,7 @@ pub fn preview(
                     preview_image: image.rgba8(),
                 });
             }
-            write(image, &path, options)?;
+            write_with_tracking(image, &path, options, false)?;
             let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
             let decoded = super::decode_image_path(&path)
                 .map_err(|e| e.to_string())?

@@ -6,6 +6,26 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.23] - 2026-10-31
+
+- Expand image export settings across supported formats.
+- Add lossless AVIF options through the optional codec pack.
+- Simplify HEIF handling and refresh the documentation.
+
+### Export improvements
+
+- Add JPEG sampling, PNG interlacing, WebP presets and more palette and dithering controls.
+- Expand GIF transparency, BMP/TGA colour modes and TIFF colour and precision options.
+- Add AVIF encoding speed, lossless output and lossless alpha options in the updated optional pack.
+- Offer additional HEIC sampling and lossless controls when supported by the selected codec.
+
+### Codec and documentation improvements
+
+- Replace the remaining Heifer container dependency with an independent HEIF metadata reader. Related to issue 196.
+- Update README and codec documentation to reflect current features and optional packs. Related to issue 222.
+
+Export improvements relate to issue 221.
+
 ## [1.4.22] - 2026-10-29
 
 - Improve menu interactions and Save All handling.

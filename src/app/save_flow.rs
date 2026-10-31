@@ -71,7 +71,7 @@ impl Project {
         if matches!(action.format, SaveFormat::Jpeg | SaveFormat::Gif)
             && self.canvas_state.composite().pixels().any(|pixel| {
                 if action.format == SaveFormat::Gif {
-                    pixel[3] > 0 && pixel[3] < 255
+                    pixel[3] < 255 && (pixel[3] > 0 || action.gif_alpha_threshold == 0)
                 } else {
                     pixel[3] < 255
                 }
@@ -98,6 +98,27 @@ impl Project {
                 losses.push(crate::t!("export.loss_palette"));
             }
         }
+        if matches!(
+            action.format,
+            SaveFormat::Bmp | SaveFormat::Tga | SaveFormat::Tiff
+        ) {
+            use crate::io::export::RasterMode;
+            if matches!(
+                action.raster_mode,
+                RasterMode::Rgb | RasterMode::Gray | RasterMode::Indexed
+            ) {
+                let prepared = crate::io::prepare_export_image(&self.canvas_state);
+                if prepared.has_alpha() {
+                    losses.push(crate::t!("save.loss_alpha"));
+                }
+                if action.raster_mode == RasterMode::Gray && prepared.has_color() {
+                    losses.push(crate::t!("export.loss_color"));
+                }
+                if action.raster_mode == RasterMode::Indexed {
+                    losses.push(crate::t!("export.loss_palette"));
+                }
+            }
+        }
         let deep = self.canvas_state.layers.iter().any(|layer| {
             layer
                 .deep_pixels
@@ -118,6 +139,10 @@ impl Project {
                     )
                 );
             let preserves_depth = preserves_depth
+                && !(action.format == SaveFormat::Tiff
+                    && (action.raster_depth == crate::io::export::RasterDepth::Eight
+                        || (matches!(prepared, crate::io::PreparedExportImage::RgbaF32 { .. })
+                            && action.raster_depth == crate::io::export::RasterDepth::Sixteen)))
                 && !(action.format == SaveFormat::Png
                     && (action.png.depth == crate::io::export::png::Depth::Eight
                         || action.png.mode == crate::io::export::png::Mode::Indexed));
@@ -480,11 +505,10 @@ fn write_save_atomically(
                 crate::io::export::write(image, &temporary, action.options)?
             }
             SavePayload::Frames(frames, modes) => match action.format {
-                SaveFormat::Gif => crate::io::encode_animated_gif(
+                SaveFormat::Gif => crate::io::encode_animated_gif_options(
                     &frames,
                     action.animation_fps,
-                    action.gif_colors,
-                    action.gif_dither,
+                    action.options,
                     &temporary,
                 ),
                 SaveFormat::Png => {

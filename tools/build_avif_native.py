@@ -1,8 +1,9 @@
-"""Pinned native AVIF decoder build; returns an environment for the Rust helper.
+"""Pinned native AVIF codec builds; returns an environment for the Rust helper.
 
 Build-time downloads only. Nothing here is called by the PaintFE application.
 """
 import hashlib
+import json
 import os
 from pathlib import Path
 import platform
@@ -17,6 +18,57 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = '1.5.4'
 NASM_SHA256 = '3ee4782247bcb874378d02f7eab4e294a84d3d15f3f6ee2de2f47a46aa7226e6'
 SOURCE_SHA256 = '686616b7c69eb88d44459391ab25cac13b6647a3b288835c5784e71c1514a5c5'
+AOM_VERSION = '3.15.1'
+AOM_SHA256 = '3502a3aaf7bfccf4cee9aa02da3cf13fb3d5a67489e734ded66aac2644ac6466'
+
+
+def prepare_aom(target, env):
+    """Static AV1 encoder for the optional helper only, with no bundled decoder."""
+    work = ROOT / 'target' / 'avif-native'
+    cmake = shutil.which('cmake', path=env.get('PATH'))
+    if not cmake:
+        python = work / 'tools' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+        cmake = str(python.parent / ('cmake.exe' if os.name == 'nt' else 'cmake'))
+        if not Path(cmake).is_file():
+            subprocess.run([str(python), '-m', 'pip', 'install', 'cmake==3.31.6'], env=env, check=True)
+    archive = work / f'aom-{AOM_VERSION}.tar.gz'
+    download(f'https://aomedia.googlesource.com/aom/+archive/refs/tags/v{AOM_VERSION}.tar.gz', archive, AOM_SHA256)
+    source = work / f'aom-{AOM_VERSION}'
+    if not (source / 'CMakeLists.txt').exists():
+        source.mkdir(parents=True, exist_ok=True)
+        with tarfile.open(archive) as tar:
+            for member in tar.getmembers():
+                if not (source / member.name).resolve().is_relative_to(source.resolve()) or not (member.isfile() or member.isdir()):
+                    raise ValueError('Unsafe AV1 encoder archive')
+            tar.extractall(source, filter='data')
+    build = work / ('aom-' + (target or f'{platform.system()}-{platform.machine()}'))
+    args = [cmake, '-S', str(source), '-B', str(build), '-DCMAKE_BUILD_TYPE=Release',
+            '-DBUILD_SHARED_LIBS=OFF', '-DCONFIG_PIC=1', '-DCONFIG_AV1_DECODER=0', '-DCONFIG_AV1_HIGHBITDEPTH=0',
+            '-DENABLE_APPS=0', '-DENABLE_DOCS=0', '-DENABLE_EXAMPLES=0',
+            '-DENABLE_TESTDATA=0', '-DENABLE_TESTS=0', '-DENABLE_TOOLS=0']
+    if os.name == 'nt':
+        args += ['-DCONFIG_STATIC_MSVCRT=1', '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded', '-A', 'x64']
+        git = shutil.which('git', path=env.get('PATH'))
+        perl = next((parent / 'usr/bin/perl.exe' for parent in Path(git).parents if (parent / 'usr/bin/perl.exe').is_file()), None) if git else None
+        if perl:
+            args += [f'-DPERL_EXECUTABLE={perl}']
+    if target and 'apple' in target:
+        arch = 'x86_64' if target.startswith('x86_64') else 'arm64'
+        args += [f'-DCMAKE_OSX_ARCHITECTURES={arch}', f'-DAOM_TARGET_CPU={arch}']
+    stamp = build / 'paintfe-config.json'
+    signature = {'args': args, 'source_sha256': AOM_SHA256}
+    if not (build / 'CMakeCache.txt').is_file() or not stamp.is_file() or json.loads(stamp.read_text(encoding='utf-8')) != signature:
+        subprocess.run(args, env=env, check=True)
+        stamp.write_text(json.dumps(signature), encoding='utf-8')
+    jobs = env.get('CARGO_BUILD_JOBS', '1')
+    build_env = env.copy()
+    if os.name == 'nt':
+        # MSVC appends _CL_ after project flags, bounding libaom's /MP as well.
+        build_env['_CL_'] = build_env.get('_CL_', '') + f' /MP{jobs}'
+    subprocess.run([cmake, '--build', str(build), '--config', 'Release', '--target', 'aom', '--parallel', jobs], env=build_env, check=True)
+    lib = build / 'Release' if os.name == 'nt' else build
+    env.update(PAINTFE_AOM_INCLUDE=str(source), PAINTFE_AOM_LIB_DIR=str(lib))
+    return source
 
 
 def download(url, path, sha256):
@@ -77,4 +129,11 @@ def prepare(target, original_env):
     if os.name == 'nt': shutil.copy2(build / 'src/libdav1d.a', build / 'src/dav1d.lib')
     env.update(SYSTEM_DEPS_DAV1D_NO_PKG_CONFIG='1', SYSTEM_DEPS_DAV1D_LIB='dav1d',
                SYSTEM_DEPS_DAV1D_SEARCH_NATIVE=str(build / 'src'), SYSTEM_DEPS_DAV1D_LINK='static')
-    return env, source / 'COPYING'
+    aom = prepare_aom(target, env)
+    notices = [source.joinpath('COPYING').read_text(encoding='utf-8')]
+    for path in sorted(aom.rglob('*')):
+        if path.is_file() and path.name.upper().startswith(('LICENSE', 'COPYING', 'PATENTS', 'NOTICE')):
+            notices += [f'\n--- libaom/{path.relative_to(aom)} ---\n', path.read_text(encoding='utf-8', errors='replace')]
+    combined = work / 'native-NOTICES.txt'
+    combined.write_text('\n'.join(notices), encoding='utf-8')
+    return env, combined

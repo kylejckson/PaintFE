@@ -92,8 +92,9 @@ Image decode(const uint8_t* data, size_t size, bool requires_alpha, bool high_de
         throw std::runtime_error("The installed Windows HEIC decoder cannot read this image's transparency. Convert it with a codec supporting this HEIC variant; PaintFE has not imported an opaque copy.");
     return image;
 }
-Image encode(const uint8_t* data, uint32_t w, uint32_t h, uint8_t quality) {
-    if(_wgetenv(L"PAINTFE_HEIF_LIBRARY")) return runtime_heif::encode(data,w,h,quality);
+Image encode(const uint8_t* data, uint32_t w, uint32_t h, uint8_t quality,uint8_t options) {
+    if(_wgetenv(L"PAINTFE_HEIF_LIBRARY")) return runtime_heif::encode(data,w,h,quality,options);
+    if(options) throw std::runtime_error("Advanced HEIC options require an encoder exposing these capabilities");
     COM init; auto f = factory();
     ComPtr<IStream> stream; stream.Attach(SHCreateMemStream(nullptr,0));
     if (!stream) throw std::bad_alloc();

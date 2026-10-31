@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "PaintFE"
-version = "1.4.22"
+version = "1.4.23"
 dependencies = [
  "ab_glyph",
  "arboard",
@@ -17,19 +17,21 @@ dependencies = [
  "ed25519-dalek",
  "eframe",
  "egui",
+ "flate2",
  "font-kit",
  "getrandom 0.3.4",
  "gif 0.13.3",
  "glob",
  "half",
- "heifer-isobmff",
  "image 0.25.10",
  "imagepipe",
+ "jpeg-encoder",
  "js-sys",
  "jxl-image-rs-integration",
  "kurbo",
  "libc",
  "libloading",
+ "libwebp-sys",
  "png 0.17.16",
  "pollster",
  "rawloader",
@@ -2216,15 +2218,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
-name = "heifer-isobmff"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0857d42d85122f8f442c1120bb5d208e2bd4c3a46d3df48c738b12b4b8e63504"
-dependencies = [
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "hermit-abi"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2550,6 +2543,12 @@ checksum = "00810f1d8b74be64b13dbf3db89ac67740615d6c891f0e7b6179326533011a07"
 dependencies = [
  "rayon",
 ]
+
+[[package]]
+name = "jpeg-encoder"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0370574b86f7eca156b9f298392b5e69a23f8c86f3f865add60bbc2e79467a6"
 
 [[package]]
 name = "js-sys"

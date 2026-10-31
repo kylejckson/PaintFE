@@ -3,12 +3,15 @@ from pathlib import Path
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
-BANNED = {"heifer", "heifer-hevc-dec", "heifer-hevc-enc"}
+BANNED = {"heifer", "heifer-isobmff", "heifer-hevc-dec", "heifer-hevc-enc"}
 PACKAGES = (".", "web", "tools/codec_probe", "optional/jxl-encoder", "optional/avif-codec")
 
 
 def check(root=ROOT):
     errors = []
+    for retired in ("optional/heic-encoder", "tools/build_heic_native.py"):
+        if (root / retired).exists():
+            errors.append(f"{retired}: retired codec build machinery")
     for package in PACKAGES:
         directory = root / package
         for filename in ("Cargo.toml", "Cargo.lock"):
@@ -36,5 +39,5 @@ def check(root=ROOT):
 
 if __name__ == "__main__":
     failures = check()
-    print("\n".join(failures) if failures else "Codec boundary passed: container parser permitted, obsolete HEVC experiment absent.")
+    print("\n".join(failures) if failures else "Codec boundary passed: Heifer dependencies and retired HEVC build machinery absent.")
     raise SystemExit(bool(failures))

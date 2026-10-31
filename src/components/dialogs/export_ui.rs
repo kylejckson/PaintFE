@@ -60,6 +60,26 @@ impl SaveFileDialog {
             bits = 32;
         }
         let mut alpha = !matches!(self.format, SaveFormat::Jpeg);
+        if self.format == SaveFormat::Tiff {
+            use crate::io::export::RasterDepth;
+            bits = match self.raster_depth {
+                RasterDepth::Eight => 8,
+                RasterDepth::Sixteen => 16,
+                RasterDepth::Float => 32,
+                RasterDepth::Automatic => self.source_depth,
+            };
+        }
+        if matches!(
+            self.format,
+            SaveFormat::Tiff | SaveFormat::Bmp | SaveFormat::Tga
+        ) && matches!(
+            self.raster_mode,
+            crate::io::export::RasterMode::Rgb
+                | crate::io::export::RasterMode::Gray
+                | crate::io::export::RasterMode::Indexed
+        ) {
+            alpha = false;
+        }
         if self.format == SaveFormat::Png && !self.animated {
             bits = if self.options.png.mode != Mode::Indexed
                 && (self.options.png.depth == Depth::Sixteen
@@ -599,6 +619,7 @@ impl SaveFileDialog {
             }
         }
         self.show_png_options(ui);
+        self.show_advanced_options(ui);
         self.show_output_description(ui);
         if ui.button(crate::t!("export.reset")).clicked() {
             self.options = crate::io::export::ExportOptions {
@@ -618,7 +639,7 @@ impl SaveFileDialog {
         // ── QUALITY (JPEG / WebP) ─────────────────────────
         if self.format.supports_quality() {
             accent_separator(ui, colors);
-            if self.format == SaveFormat::Webp {
+            if self.format == SaveFormat::Webp && cfg!(not(target_arch = "wasm32")) {
                 section_label(ui, colors, &crate::t!("ui.webp"));
                 if ui
                     .checkbox(&mut self.webp_lossless, crate::t!("ui.lossless"))
@@ -628,9 +649,14 @@ impl SaveFileDialog {
                     ctx.request_repaint();
                 }
             }
-            if !matches!(self.format, SaveFormat::Jxl(options) if options.lossless)
-                && (self.format != SaveFormat::Webp || !self.webp_lossless)
-            {
+            let lossless = match self.format {
+                SaveFormat::Jxl(options) => options.lossless,
+                SaveFormat::Avif => self.avif_lossless,
+                SaveFormat::Heic => self.heic_lossless,
+                SaveFormat::Webp => self.webp_lossless,
+                _ => false,
+            };
+            if !lossless {
                 section_label(ui, colors, &crate::t!("dialog.resize_image.quality"));
                 let mut quality = self.quality as f32;
                 if crate::ui::dialogs::core::numeric_field_with_buttons(
@@ -645,9 +671,7 @@ impl SaveFileDialog {
                     ctx.request_repaint();
                 }
             }
-            if !matches!(self.format, SaveFormat::Jxl(options) if options.lossless)
-                && (self.format != SaveFormat::Webp || !self.webp_lossless)
-            {
+            if !lossless {
                 let hint = match self.quality {
                     1..=30 => "Very Low",
                     31..=50 => "Low",

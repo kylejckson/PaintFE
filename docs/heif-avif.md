@@ -80,20 +80,19 @@ jobs, cancellation, a 120-second timeout, 64-million-pixel / 256-MiB input limit
 and worker memory limits. Decoded RGBA and encoded output lengths are validated.
 Process separation contains crashes but is not a security sandbox.
 
-The small `heifer-isobmff` dependency reads container metadata only. It has no
-HEVC decoding/encoding implementation. It validates primary and auxiliary-alpha
-dimensions, identifies source precision and bounds derived-item traversal before
-the system codec runs. The HEVC decoder/encoder crates are absent from the app's
-dependency graph. No manual byte-pattern heuristic substitutes for item associations.
+A bounded, codec-independent metadata reader validates primary and auxiliary-alpha
+dimensions, source precision, box lengths and derived-item traversal before the
+system codec runs. No Heifer-family package remains in the dependency graph.
+The parser follows item associations rather than searching for byte patterns.
 
 Transparent exports are either preserved by the installed encoder (checked by
 decoding the result) or rejected. Unsupported transparency is never flattened
 silently. These measures avoid distributing an HEVC implementation; they do not
 constitute a patent licence or legal clearance for every use or jurisdiction.
 
-The former [Heifer grid-alpha patch](https://github.com/kylejckson/PaintFE/blob/feda9d2411ebcd9d578cf9879fff2e1cdcd8137a/vendor/heifer/PAINTFE-PATCHES.md) remains in Git history
-for an upstream report. Its decoder and encoder experiment have been removed;
-only the bounded `heifer-isobmff` container parser remains in production. Nothing has been posted upstream on the user's behalf.
+Retired decoder experiments, standalone HEIC helper sources and their native
+build recipes have been removed. Historical source remains in Git history.
+Obsolete HEIC packs are rejected rather than executed.
 
 ## AVIF optional pack
 
@@ -105,14 +104,25 @@ and keeps the dialog open until an encoder is available.
 Downloads occur only after user confirmation, from the matching GitHub release.
 Opening and saving remain offline afterward. The helper is signed and verified
 like the JPEG XL pack, including platform identity, protocol, payload names and
-checksums. The core does not compile the AV1 encoder/decoder. The initial Windows
-pack is approximately 2.15 MiB compressed, including license notices.
+checksums. The core does not compile the AV1 encoder/decoder. Pack size varies by platform; codec binaries and licence notices stay outside
+the core executable.
 
-AVIF export is a lossy **8-bit still image**, with the existing quality control
-and encoder speed 8 using four threads and CPU optimizations. Quality 100 is not
-lossless. Use PFE/PNG/JPEG XL when exact pixels are needed. Import supports the
-native decoder's supported high-bit-depth images. ICC/HDR metadata are not
-preserved by this helper protocol. Animated AVIF is not imported as animation.
+AVIF export is an **8-bit still image**, with quality and speed controls (speed
+1 to 10, default 8). The original ravif/rav1e backend remains available for lossy
+output. The updated optional helper statically links libaom 3.15.1 for exact
+lossless RGBA or lossless-alpha output. No AV1 codec is linked into the editor,
+and the helper does not require a separate encoder DLL. Source precision above
+eight bits still requires conversion and a save warning.
+
+Lossless requests use a bounded version-2 worker request, preserve unassociated
+RGB including hidden colour below alpha zero, and are decoded and compared before
+the save is accepted. The original version-1 requests remain compatible. An older
+installed pack can still encode ordinary lossy files; new options report an
+update instruction rather than silently falling back or replacing a destination.
+
+Import supports the native decoder's supported high-bit-depth images. ICC/HDR
+metadata are not preserved by this helper protocol. Animated AVIF is not imported
+as animation. Libavif source tile layout is not preserved.
 
 Expensive main open/save operations run in the existing background I/O flow;
 preview jobs are coalesced separately. A processing dialog can cancel active
@@ -152,11 +162,14 @@ and private runtime directory to later steps. The real toolbar-save regression
 stays enabled and needs no physical GPU or desktop session.
 
 The AVIF helper builds separately from `optional/avif-codec/Cargo.toml`.
-`tools/build_avif_native.py` downloads a SHA-256-pinned dav1d 1.5.4 source archive
-and uses isolated pinned Meson/Ninja tools. Windows uses a verified portable
+`tools/build_avif_native.py` downloads SHA-256-pinned dav1d 1.5.4 and libaom
+3.15.1 source archives. Isolated pinned Meson/Ninja and, when needed, CMake tools
+prepare static libraries. The AOM decoder and high-bit-depth encoder are disabled;
+high-depth import continues to use dav1d. Windows uses a verified portable
 NASM download when needed and a static CRT. Unix build hosts need their C toolchain
 and NASM for x86 assembly. Intel macOS cross-builds explicitly configure the
-native decoder's target architecture.
+native codecs' target architecture. AOM build parallelism follows CARGO_BUILD_JOBS,
+including MSVC's internal compiler parallelism. Git for Windows supplies Perl.
 
 Third-party license texts are collected into the signed AVIF pack. Rust dependency
 audits do not replace reviewing native codec security updates. Local builds use
@@ -164,8 +177,7 @@ a disposable signing key unless explicitly configured otherwise: keep their
 core executable and pack files together. Do not upload local-key packs to an
 official release or replace an existing release's signed assets.
 
-See [the original experiments](codec-experiments.md) for measured performance,
-resource use and the independent-reference transparency failures that motivated
-the patch. Windows system-codec execution and Ubuntu WSL2 runtime checks are
-locally tested; CI checks still need confirmation on an approved push. macOS
-still needs testing on a Mac.
+See [codec investigation](codec-experiments.md) for the current investigation
+policy and historical scope. Platform-specific runtime behaviour still needs
+confirmation on each supported desktop; local Windows checks do not replace
+native macOS or Linux validation of new encoder settings.
