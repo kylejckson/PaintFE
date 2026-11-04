@@ -639,7 +639,7 @@ jobs:
           cat checksums-SHA256.txt
 
       - name: Create release
-        uses: softprops/action-gh-release@7c4723f7a335432393329f8f1c564994ce50185d
+        uses: softprops/action-gh-release@6680cc089e59314c4460b839412c25fb6a71ce3b
         with:
           name: PaintFE ${{ github.ref_name }}
           draft: false
