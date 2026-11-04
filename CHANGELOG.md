@@ -6,6 +6,36 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.24] - 2026-11-04
+
+- Make Undo and tool previews more predictable.
+- Add reference mesh editing and more Liquify controls.
+- Improve brush behaviour and add a getting-started guide.
+
+### Fixes and improvements
+
+- Use the same Undo and Redo handling from shortcuts, menus and the toolbar. By default, Undo discards an unapplied canvas preview and undoes the last committed edit.
+- Improve Mesh Warp and Liquify handling for quick drags, applying changes, Reset and switching tools. Keep previews separate from document history until applied.
+- Make stationary brush clicks deposit consistently, align brush and line footprints with the pixel grid, and reduce preview flashes when a stroke finishes.
+- Keep the brush outline visible outside the image while giving menus and panel controls priority.
+- Keep the docked tool options bar and neighbouring controls steady when switching tools or changing numeric values. Support brush sizes up to 999 px without shifting nearby controls.
+- Improve brush-tip popup selection and cancellation, control ordering and tooltips. Related to issues 223, 224, 225 and 226.
+
+### Features and interface
+
+- Add an option under Preferences > Editing to include individual uncommitted tool adjustments in Undo. It is off by default.
+- Add Edit mesh and Deform modes so reference points can be positioned before warping. Reset removes deformation while keeping the reference mesh.
+- Give Liquify its own brush size and strength, add Reconstruct and selection protection, and keep protection when resetting deformation.
+- Add a tablet-pressure preference and input diagnostics.
+- Put Straighten Canvas under Canvas > Rotate Canvas.
+
+### Help and maintenance
+
+- Add a six-step Quick start covering opening, editing and saving images, with direct links to AI setup, Preferences and Keybinds.
+- Point Full documentation to paintfe.com/docs and refresh format guidance, AI setup and repository guides.
+- Improve Italian File labels and include the documentation updates from pull request 228.
+- Verify the pinned AVIF encoder source consistently for fresh and cached downloads, and update GitHub Actions dependencies.
+
 ## [1.4.23] - 2026-10-31
 
 - Expand image export settings across supported formats.

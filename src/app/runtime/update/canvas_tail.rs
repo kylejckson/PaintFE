@@ -27,6 +27,13 @@ impl PaintFEApp {
             ctx.request_repaint();
         }
 
+        self.tools_panel.record_tool_adjustments = self.settings.undo_tool_adjustments;
+        ctx.data_mut(|d| {
+            d.insert_temp(
+                egui::Id::new("tablet_pressure_enabled"),
+                self.settings.tablet_pressure_enabled,
+            )
+        });
         let mut start_straighten = false;
         let mut commit_straighten = false;
         let mut cancel_straighten = false;
@@ -495,11 +502,6 @@ impl PaintFEApp {
                     {
                         self.paste_transform_undo.push(before);
                         self.paste_transform_redo.clear();
-                        project.history.push(Box::new(
-                            crate::components::history::MarkerCommand::new(
-                                HistoryAction::MovePaste.label("Move Paste"),
-                            ),
-                        ));
                     }
 
                     // Handle paste overlay context menu results.

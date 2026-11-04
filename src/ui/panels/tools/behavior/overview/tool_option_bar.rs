@@ -7,16 +7,15 @@ impl ToolsPanel {
         secondary_color: Color32,
         theme: &crate::theme::Theme,
     ) -> bool {
-        // Reserve the image button's padded height before placing any controls.
-        let button_style = ui
-            .style()
-            .button_style(&Default::default(), Default::default());
-        let row_height =
-            (20.0 + button_style.frame.total_margin().sum().y).max(ui.spacing().interact_size.y);
+        // Reserve the tallest icon/control before any tool-specific content is laid out.
+        let row_height = ui.text_style_height(&egui::TextStyle::Body).max(20.0)
+            + ui.spacing().button_padding.y * 2.0
+            + 2.0;
         ui.allocate_ui_with_layout(
             egui::vec2(ui.available_width(), row_height),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
+                ui.set_min_height(row_height);
                 // Tool name tag badge (Signal Grid style)
                 crate::signal_widgets::tool_shelf_tag(
                     ui,
@@ -130,31 +129,7 @@ impl ToolsPanel {
                         self.show_content_aware_options(ui);
                     }
                 }
-                // Share the controls' row so the action uses the same vertical alignment.
-                let icon = crate::assets::Icon::UiStraighten;
-                let button = if let Some(texture) = assets.icon_texture(icon) {
-                    egui::Button::image(
-                        egui::Image::new(texture).fit_to_exact_size(Vec2::splat(20.0)),
-                    )
-                } else {
-                    egui::Button::new(icon.emoji())
-                };
-                // Let the button allocate its full frame instead of constraining
-                // its padded image inside icon_button's smaller add_sized child.
-                let response = ui.add(button);
-                response.widget_info(|| {
-                    egui::WidgetInfo::labeled(
-                        egui::WidgetType::Button,
-                        ui.is_enabled(),
-                        icon.tooltip(),
-                    )
-                });
-                crate::ui::polish::focus(
-                    ui,
-                    &response,
-                    crate::theme::Theme::tool_button_rounding_for(ui),
-                );
-                response.on_hover_text(icon.tooltip()).clicked()
+                false
             },
         )
         .inner
@@ -295,6 +270,7 @@ impl ToolsPanel {
                     ui.painter().circle_filled(center, r, stroke_color);
                     if response.clicked() {
                         self.properties.brush_tip = BrushTip::Circle;
+                        ui.close();
                     }
                     response.on_hover_text(crate::t!("ui.circle"));
 
@@ -336,13 +312,14 @@ impl ToolsPanel {
                                 ui.painter().text(
                                     rect.center(),
                                     egui::Align2::CENTER_CENTER,
-                                    &tip_name[..2.min(tip_name.len())],
+                                    tip_name.chars().take(2).collect::<String>(),
                                     egui::FontId::proportional(11.0),
                                     ui.visuals().text_color(),
                                 );
                             }
                             if response.clicked() {
                                 self.properties.brush_tip = BrushTip::Image(tip_name.clone());
+                                ui.close();
                             }
                             response.on_hover_text(tip_name);
                             col += 1;
@@ -401,13 +378,14 @@ impl ToolsPanel {
                                 ui.painter().text(
                                     rect.center(),
                                     egui::Align2::CENTER_CENTER,
-                                    &tip_name[..2.min(tip_name.len())],
+                                    tip_name.chars().take(2).collect::<String>(),
                                     egui::FontId::proportional(11.0),
                                     ui.visuals().text_color(),
                                 );
                             }
                             if response.clicked() {
                                 self.properties.brush_tip = BrushTip::Image(tip_name.clone());
+                                ui.close();
                             }
                             // Right-click opens context menu (only non-default tips)
                             let is_default_cat = cat.name == "Basic"
@@ -474,7 +452,7 @@ impl ToolsPanel {
         ui.label(t!("ctx.size"));
         let popup_id = ui.make_persistent_id(combo_id);
 
-        if ui.small_button("\u{2212}").clicked() {
+        if crate::ui::controls::stepper(ui, false).clicked() {
             self.properties.size =
                 (self.properties.size - crate::ui::numeric::step(ui, 1.0)).max(1.0);
         }
@@ -500,7 +478,8 @@ impl ToolsPanel {
                 let dv_resp = ui.add(
                     crate::ui::controls::Numeric::new(&mut self.properties.size)
                         .speed(0.5)
-                        .range(1.0..=256.0)
+                        .range(1.0..=999.0)
+                        .width_for("999.0px")
                         .suffix("px"),
                 );
                 let dv_rect = dv_resp.rect;
@@ -556,7 +535,7 @@ impl ToolsPanel {
         });
         if crate::ui::controls::stepper(ui, true).clicked() {
             self.properties.size =
-                (self.properties.size + crate::ui::numeric::step(ui, 1.0)).min(256.0);
+                (self.properties.size + crate::ui::numeric::step(ui, 1.0)).min(999.0);
         }
     }
 
@@ -565,7 +544,7 @@ impl ToolsPanel {
         ui.label(t!("ctx.size"));
         let popup_id = ui.make_persistent_id(combo_id);
 
-        if ui.small_button("\u{2212}").clicked() {
+        if crate::ui::controls::stepper(ui, false).clicked() {
             self.text_state.font_size =
                 (self.text_state.font_size - crate::ui::numeric::step(ui, 1.0)).max(6.0);
             self.text_state.preview_dirty = true;
@@ -704,6 +683,30 @@ impl ToolsPanel {
             ui.separator();
         }
 
+        for (key, value) in [
+            ("Opacity", &mut self.properties.opacity),
+            ("Flow", &mut self.properties.flow),
+        ] {
+            ui.label(crate::i18n::translate_english(key));
+            let mut percent = *value * 100.;
+            if ui
+                .add(
+                    crate::ui::controls::Numeric::percentage(&mut percent)
+                        .id_salt(("brush_main", key))
+                        .width_for("100.0%")
+                        .reset_to(100.),
+                )
+                .on_hover_text(crate::i18n::translate(if key == "Opacity" {
+                    "tools.brush.opacity_help"
+                } else {
+                    "tools.brush.flow_help"
+                }))
+                .changed()
+            {
+                *value = percent / 100.;
+            }
+        }
+        ui.separator();
         // Blend Mode
         ui.label(t!("ctx.blend"));
         let current_mode = self.properties.blending_mode;
@@ -714,12 +717,15 @@ impl ToolsPanel {
                 for &mode in BlendMode::all() {
                     if ui
                         .selectable_label(mode == current_mode, mode.display_name())
+                        .on_hover_text(mode.help_text())
                         .clicked()
                     {
                         self.properties.blending_mode = mode;
                     }
                 }
-            });
+            })
+            .response
+            .on_hover_text(current_mode.help_text());
 
         ui.separator();
 
@@ -752,8 +758,10 @@ impl ToolsPanel {
                     }
                 })
                 .response
-                .on_hover_text(crate::t!(
-                    "ui.normal_builds_with_movement_uniform_keeps_the_strongest_coverage"
+                .on_hover_text(format!(
+                    "{}\n{}",
+                    crate::i18n::translate_english(current_bm.label()),
+                    crate::t!("tools.brush.mode_hint")
                 ));
         }
 
@@ -790,22 +798,12 @@ impl ToolsPanel {
                 .num_columns(2)
                 .spacing([8.0, 4.0])
                 .show(ui, |ui| {
-                    for (label, value) in [
-                        ("Opacity", &mut self.properties.opacity),
-                        ("Flow", &mut self.properties.flow),
-                    ] {
-                        ui.label(crate::i18n::translate_english(label));
-                        let mut percent = *value * 100.0;
-                        if ui.add(crate::ui::controls::Numeric::percentage(&mut percent).id_salt(label).steppers(5.0).reset_to(100.0)).changed() {
-                            *value = percent / 100.0;
-                        }
-                        ui.end_row();
-                    }
                     ui.label(crate::t!("ui.scatter"));
                     let mut scatter_pct = (self.properties.scatter * 200.0).round();
                     if ui
                         .add(
-                            crate::ui::controls::Slider::new(&mut scatter_pct, 0.0..=200.0).double_click_reset_to(0.0)
+                            crate::ui::controls::Slider::new(&mut scatter_pct, 0.0..=200.0)
+                                .double_click_reset_to(0.0)
                                 .suffix("%")
                                 .max_decimals(0),
                         )
@@ -818,7 +816,8 @@ impl ToolsPanel {
                     let mut hj_pct = (self.properties.hue_jitter * 100.0).round();
                     if ui
                         .add(
-                            crate::ui::controls::Slider::new(&mut hj_pct, 0.0..=100.0).double_click_reset_to(0.0)
+                            crate::ui::controls::Slider::new(&mut hj_pct, 0.0..=100.0)
+                                .double_click_reset_to(0.0)
                                 .suffix("%")
                                 .max_decimals(0),
                         )
@@ -831,7 +830,8 @@ impl ToolsPanel {
                     let mut bj_pct = (self.properties.brightness_jitter * 100.0).round();
                     if ui
                         .add(
-                            crate::ui::controls::Slider::new(&mut bj_pct, 0.0..=100.0).double_click_reset_to(0.0)
+                            crate::ui::controls::Slider::new(&mut bj_pct, 0.0..=100.0)
+                                .double_click_reset_to(0.0)
                                 .suffix("%")
                                 .max_decimals(0),
                         )
@@ -856,7 +856,8 @@ impl ToolsPanel {
                     if ui
                         .add_enabled(
                             self.properties.pressure_size,
-                            crate::ui::controls::Slider::new(&mut min_size_pct, 1.0..=100.0).double_click_reset_to(10.0)
+                            crate::ui::controls::Slider::new(&mut min_size_pct, 1.0..=100.0)
+                                .double_click_reset_to(10.0)
                                 .suffix("% min")
                                 .max_decimals(0),
                         )
@@ -877,7 +878,8 @@ impl ToolsPanel {
                     if ui
                         .add_enabled(
                             self.properties.pressure_opacity,
-                            crate::ui::controls::Slider::new(&mut min_opacity_pct, 1.0..=100.0).double_click_reset_to(10.0)
+                            crate::ui::controls::Slider::new(&mut min_opacity_pct, 1.0..=100.0)
+                                .double_click_reset_to(10.0)
                                 .suffix("% min")
                                 .max_decimals(0),
                         )
@@ -1187,7 +1189,8 @@ impl ToolsPanel {
                     let mut scatter_pct = (self.properties.scatter * 200.0).round();
                     if ui
                         .add(
-                            crate::ui::controls::Slider::new(&mut scatter_pct, 0.0..=200.0).double_click_reset_to(0.0)
+                            crate::ui::controls::Slider::new(&mut scatter_pct, 0.0..=200.0)
+                                .double_click_reset_to(0.0)
                                 .suffix("%")
                                 .max_decimals(0),
                         )
@@ -1482,8 +1485,18 @@ impl ToolsPanel {
     /// Returns `Some(new_value)` if changed, `None` otherwise.
     fn tolerance_slider(ui: &mut egui::Ui, id_salt: &str, value: f32) -> Option<f32> {
         let mut next = value;
-        ui.add(crate::ui::controls::Slider::new(&mut next, 0.0..=100.0).double_click_reset_to(5.0).id_salt(id_salt).step_by(1.0).suffix("%").fixed_decimals(0).steppers(true))
-            .on_hover_text(t!("ctx.tolerance_tooltip")).changed().then_some(next)
+        ui.add(
+            crate::ui::controls::Slider::new(&mut next, 0.0..=100.0)
+                .double_click_reset_to(5.0)
+                .id_salt(id_salt)
+                .step_by(1.0)
+                .suffix("%")
+                .fixed_decimals(0)
+                .steppers(true),
+        )
+        .on_hover_text(t!("ctx.tolerance_tooltip"))
+        .changed()
+        .then_some(next)
     }
 
     fn show_magic_wand_options(&mut self, ui: &mut egui::Ui) {

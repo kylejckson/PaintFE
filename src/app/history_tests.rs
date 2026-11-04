@@ -474,9 +474,10 @@ macro_rules! tool_history_case {
 }
 
 #[test]
-fn paste_transform_checkpoint_uses_move_pixels_icon_and_keeps_overlay_undo() {
+fn paste_transform_adjustments_keep_overlay_undo_and_commit_one_paste_entry() {
     let mut app = app();
     let ctx = context();
+    app.settings.undo_tool_adjustments = true;
     let mut overlay =
         PasteOverlay::new(RgbaImage::from_pixel(4, 4, Rgba([255, 0, 0, 255])), 32, 24);
     let before = overlay.transform();
@@ -487,10 +488,8 @@ fn paste_transform_checkpoint_uses_move_pixels_icon_and_keeps_overlay_undo() {
     let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
         app.show_runtime_canvas_tail(&ctx, ui, false)
     });
-    assert_eq!(
-        app.projects[0].history.presentation_history()[0].action,
-        HistoryAction::MovePaste
-    );
+    assert_eq!(app.projects[0].history.undo_count(), 0);
+    assert_eq!(app.paste_transform_undo.len(), 1);
     app.perform_undo();
     assert_eq!(app.paste_overlay.as_ref().unwrap().center, before.center);
     let _ = ctx.run_ui(
@@ -509,6 +508,12 @@ fn paste_transform_checkpoint_uses_move_pixels_icon_and_keeps_overlay_undo() {
         },
     );
     assert_eq!(app.paste_overlay.as_ref().unwrap().center, after.center);
+    app.commit_paste_overlay(false);
+    assert_eq!(app.projects[0].history.undo_count(), 1);
+    assert_eq!(
+        app.projects[0].history.presentation_history()[0].action,
+        HistoryAction::Paste
+    );
 }
 
 #[test]

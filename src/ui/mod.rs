@@ -8,3 +8,5 @@ pub mod workspace;
 
 pub mod guides;
 pub mod menus;
+
+pub mod help;

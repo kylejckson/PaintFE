@@ -1631,10 +1631,10 @@ impl HistoryPanel {
         &mut self,
         ui: &mut egui::Ui,
         history: &mut HistoryManager,
-        canvas: &mut CanvasState,
         assets: &Assets,
         theme: &crate::theme::Theme,
-    ) {
+    ) -> Option<usize> {
+        let mut requested_revert = None;
         let now = ui.input(|i| i.time);
         let key = (history.identity, history.revision);
         if self.cached_key != Some(key) {
@@ -1729,10 +1729,11 @@ impl HistoryPanel {
                         }
                     }
                     if let Some(index) = revert {
-                        history.undo_to(index, canvas);
+                        requested_revert = Some(index);
                     }
                 }
             });
+        requested_revert
     }
 
     fn card(
@@ -1953,7 +1954,9 @@ mod mega_pass_history_tests {
                     ..Default::default()
                 },
                 |ui| {
-                    panel.show_interactive(ui, history, &mut canvas, &assets, &theme);
+                    if let Some(index) = panel.show_interactive(ui, history, &assets, &theme) {
+                        history.undo_to(index, &mut canvas);
+                    }
                 },
             );
         };

@@ -237,7 +237,10 @@ impl ToolsPanel {
             Tool::Text => self.text_state.is_editing,
             Tool::Fill => false,
             Tool::Liquify => self.liquify_state.is_active,
-            Tool::MeshWarp => self.mesh_warp_state.is_active,
+            Tool::MeshWarp => {
+                self.mesh_warp_state.is_active
+                    && self.mesh_warp_state.points != self.mesh_warp_state.original_points
+            }
             _ => false,
         }
     }
@@ -337,20 +340,14 @@ impl ToolsPanel {
             }
             Tool::Fill => false,
             Tool::Liquify if self.liquify_state.is_active => {
-                self.liquify_state.displacement = None;
-                self.liquify_state.is_active = false;
-                self.liquify_state.source_snapshot = None;
-                self.liquify_state.warp_buffer.clear();
-                self.liquify_state.dirty_rect = None;
+                self.liquify_state.reset_session();
                 canvas_state.clear_preview_state();
                 canvas_state.mark_dirty(None);
                 true
             }
             Tool::Liquify => false,
             Tool::MeshWarp if self.mesh_warp_state.is_active => {
-                self.mesh_warp_state.is_active = false;
-                self.mesh_warp_state.source_snapshot = None;
-                self.mesh_warp_state.warp_buffer.clear();
+                self.mesh_warp_state.reset_session();
                 self.stroke_tracker.cancel();
                 canvas_state.clear_preview_state();
                 canvas_state.mark_dirty(None);

@@ -186,9 +186,8 @@ impl PaintFEApp {
                     });
 
                     ui.menu_button(t!("menu.edit"), |ui| {
-                        let can_undo = self.active_project().is_some_and(|p| p.history.can_undo())
-                            || self.paste_overlay.is_some() || self.tools_panel.has_active_tool_preview();
-                        let can_redo = self.active_project().is_some_and(|p| p.history.can_redo());
+                        let can_undo = self.can_undo_action();
+                        let can_redo = self.can_redo_action();
 
                         if self
                             .assets
@@ -217,9 +216,7 @@ impl PaintFEApp {
                             )
                             .clicked()
                         {
-                            if let Some(project) = self.active_project_mut() {
-                                project.history.redo(&mut project.canvas_state);
-                            }
+                            self.perform_redo();
                             ui.close();
                         }
 
@@ -554,6 +551,11 @@ impl PaintFEApp {
                         });
                         ui.menu_button(t!("menu.canvas.rotate_canvas"), |ui| {
                             ui.set_min_width(ui.min_rect().width().max(160.0));
+                            if ui.button(t!("ui.straighten")).clicked() {
+                                self.start_straighten();
+                                ui.close();
+                            }
+                            ui.separator();
                             if self
                                 .assets
                                 .menu_item(
@@ -1522,17 +1524,21 @@ impl PaintFEApp {
                             ui,
                             HistoryAction::RemoveBackground.icon(),
                             &t!("menu.filter.remove_background"),
-                            no_dialog && self.onnx_available && !self.background_removal_pending,
+                            no_dialog && !self.background_removal_pending,
                         );
                         if !self.onnx_available {
-                            remove_bg_resp.clone().on_disabled_hover_text(
+                            remove_bg_resp.clone().on_hover_text(
                                 crate::t!("menu.filter.remove_background.disabled_hint"),
                             );
                         }
                         if remove_bg_resp.clicked() {
+                            if !self.onnx_available {
+                                self.settings_window.open_ai_settings(&self.settings);
+                            } else {
                             self.active_dialog = ActiveDialog::RemoveBackground(
                                 crate::ops::effect_dialogs::RemoveBackgroundDialog::new(),
                             );
+                            }
                             ui.close();
                         }
 
@@ -1849,6 +1855,27 @@ impl PaintFEApp {
                     #[cfg(test)]
                     ctx.data_mut(|d|d.insert_temp(egui::Id::new("view_menu_test_rect"),view_menu.response.rect));
                     let _=view_menu;
+                    ui.menu_button(t!("help.title"), |ui| {
+                        if ui.button(t!("help.quick_start")).clicked() {
+                            crate::ui::help::open(ctx);
+                            ui.close();
+                        }
+                        if ui.button(t!("help.ai_setup")).clicked() {
+                            self.settings_window.open_ai_settings(&self.settings);
+                            ui.close();
+                        }
+                        ui.hyperlink_to(t!("help.documentation"), crate::ui::help::DOCUMENTATION_URL);
+                    });
+                    if let Some(response) = crate::ui::help::show(ctx) {
+                        self.remember_ui_cursor_rect(response.rect);
+                        match response.action {
+                            Some(crate::ui::help::HelpAction::AiSetup) => self.settings_window.open_ai_settings(&self.settings),
+                            Some(crate::ui::help::HelpAction::Preferences) => self.settings_window.open = true,
+                            Some(crate::ui::help::HelpAction::Keybindings) => self.settings_window.open_keybindings_settings(&self.settings),
+                            None => {},
+                        }
+                    }
+
                 });
             });
 
@@ -1900,39 +1927,22 @@ impl PaintFEApp {
                     ui.separator();
 
                     // === Undo/Redo ===
-                    let can_undo = self.active_project().is_some_and(|p| p.history.can_undo());
-                    let can_redo = self.active_project().is_some_and(|p| p.history.can_redo());
+                    let can_undo = self.can_undo_action();
+                    let can_redo = self.can_redo_action();
 
                     if self
                         .assets
                         .icon_button_enabled(ui, Icon::Undo, can_undo)
                         .clicked()
                     {
-                        if self.paste_overlay.is_some() {
-                            self.cancel_paste_overlay();
-                            if let Some(project) = self.active_project_mut() {
-                                project.canvas_state.clear_selection();
-                            }
-                        } else if self.tools_panel.has_active_tool_preview() {
-                            if let Some(project) = self.projects.get_mut(self.active_project_index)
-                            {
-                                self.tools_panel
-                                    .cancel_active_tool(&mut project.canvas_state);
-                            }
-                        } else {
-                            self.commit_pending_tool_history();
-                            if let Some(project) = self.active_project_mut() {
-                                project.history.undo(&mut project.canvas_state);
-                            }
-                        }
+                        self.perform_undo();
                     }
                     if self
                         .assets
                         .icon_button_enabled(ui, Icon::Redo, can_redo)
                         .clicked()
-                        && let Some(project) = self.active_project_mut()
                     {
-                        project.history.redo(&mut project.canvas_state);
+                        self.perform_redo();
                     }
 
                     ui.separator();

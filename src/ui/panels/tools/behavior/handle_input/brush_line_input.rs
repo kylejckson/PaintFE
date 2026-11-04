@@ -90,7 +90,7 @@ impl ToolsPanel {
                                 self.tool_state.brush_resize_drag_active = true;
                                 self.properties.size =
                                     (self.tool_state.brush_resize_drag_start_size + delta.x)
-                                        .clamp(1.0, 500.0);
+                                        .clamp(1.0, 999.0);
                                 self.reset_brush_pointer_state();
                                 ui.ctx().request_repaint();
                             }

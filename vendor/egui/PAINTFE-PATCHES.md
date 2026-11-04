@@ -1,9 +1,9 @@
 # PaintFE text-layout patch
 
 Base: upstream egui/epaint 0.35.0, copied from the published crates. Both original
-MIT and Apache-2.0 license texts are preserved. Only egui text-selection painting
+MIT and Apache-2.0 license texts are preserved. The original patch changes only egui text-selection painting
 and epaint's text layout, glyph clusters, caret mapping and row metadata change.
-No widgets, numeric controls or application action identities are reimplemented.
+The additional focused button patch is documented below. Numeric controls and application action identities are not reimplemented.
 
 - Shape runs with explicit direction; preserve logical source order for wrapping.
 - Represent a logical character cluster separately from its additional ink glyphs.
@@ -26,3 +26,13 @@ Upgrade both vendored crates together with eframe. Rebase these changes on the
 new upstream text implementation and run the regression suite; do not silently
 remove either `[patch.crates-io]` entry or add display-order transformations to
 `i18n::translate`. Keep saved strings in logical Unicode order.
+
+## Stable button geometry and primary-button feedback
+
+Button borders now paint inside the allocated frame. Layout uses the same
+padding in inactive, hovered and active states, including small buttons, rather
+than rounded state-specific border compensation. Primary-only controls no longer
+show a pressed state merely because the secondary pointer button is down.
+Keyboard focus, activation and separate context-menu actions remain available.
+Rebase `widgets/button.rs` and `widget_style.rs` when upgrading, and run the
+button geometry, keyboard, context-menu and production-toolbar regressions.

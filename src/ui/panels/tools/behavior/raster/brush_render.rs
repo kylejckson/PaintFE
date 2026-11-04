@@ -1,11 +1,22 @@
 impl ToolsPanel {
     pub fn pressure_size(&self) -> f32 {
-        if self.properties.pressure_size {
+        let size = if self.properties.pressure_size {
             let p = self.tool_state.current_pressure;
             let min = self.properties.pressure_min_size;
             self.properties.size * (min + (1.0 - min) * p)
         } else {
             self.properties.size
+        };
+        if !self.properties.anti_aliased
+            && self.properties.brush_tip.is_circle()
+            && matches!(
+                self.active_tool,
+                Tool::Brush | Tool::Eraser | Tool::Line | Tool::Pencil
+            )
+        {
+            size.round().max(1.)
+        } else {
+            size
         }
     }
 
@@ -218,6 +229,16 @@ impl ToolsPanel {
         let aa_inner_radius_sq = (radius - 0.5).max(0.0).powi(2);
         let inv_radius_sq = 1.0 / radius_sq;
 
+        let start = crate::ui::panels::tools::pixel_aligned_brush_center(
+            start,
+            self.pressure_size(),
+            !self.properties.anti_aliased,
+        );
+        let end = crate::ui::panels::tools::pixel_aligned_brush_center(
+            end,
+            self.pressure_size(),
+            !self.properties.anti_aliased,
+        );
         // Segment geometry for point-to-segment distance.
         let (dx, dy) = (end.0 - start.0, end.1 - start.1);
         let len_sq = dx * dx + dy * dy;
@@ -297,8 +318,8 @@ impl ToolsPanel {
                         }
 
                         // Distance from the pixel to the segment.
-                        let px = global_x as f32;
-                        let py = global_y as f32;
+                        let px = global_x as f32 + 0.5;
+                        let py = global_y as f32 + 0.5;
                         let t = if inv_len_sq > 0.0 {
                             (((px - start.0) * dx + (py - start.1) * dy) * inv_len_sq)
                                 .clamp(0.0, 1.0)
@@ -435,6 +456,11 @@ impl ToolsPanel {
                 (px, py)
             }
         };
+        let (cx, cy) = pixel_aligned_brush_center(
+            (cx, cy),
+            self.pressure_size(),
+            !self.properties.anti_aliased,
+        );
         let radius = self.pressure_size() / 2.0;
         let radius_sq = radius * radius;
         if radius_sq < 0.001 {
@@ -550,12 +576,12 @@ impl ToolsPanel {
                     // Quick check: does ANY pixel in this chunk-local range fall within the circle?
                     // Test the closest point of the local rect to the circle center
                     let near_x = (cx).clamp(
-                        chunk_base_x as f32 + lx0 as f32,
-                        chunk_base_x as f32 + lx1 as f32 - 1.0,
+                        chunk_base_x as f32 + lx0 as f32 + 0.5,
+                        chunk_base_x as f32 + lx1 as f32 - 0.5,
                     );
                     let near_y = (cy).clamp(
-                        chunk_base_y as f32 + ly0 as f32,
-                        chunk_base_y as f32 + ly1 as f32 - 1.0,
+                        chunk_base_y as f32 + ly0 as f32 + 0.5,
+                        chunk_base_y as f32 + ly1 as f32 - 0.5,
                     );
                     let nd = (near_x - cx) * (near_x - cx) + (near_y - cy) * (near_y - cy);
                     if nd > draw_radius_sq {
@@ -567,7 +593,7 @@ impl ToolsPanel {
 
                     for ly in ly0..ly1 {
                         let global_y = chunk_base_y + ly;
-                        let dy = global_y as f32 - cy;
+                        let dy = global_y as f32 + 0.5 - cy;
                         let dy_sq = dy * dy;
                         let row_off = ly as usize * chunk_stride;
 
@@ -585,7 +611,7 @@ impl ToolsPanel {
                                 }
                             }
 
-                            let dx = global_x as f32 - cx;
+                            let dx = global_x as f32 + 0.5 - cx;
                             let dist_sq = dx * dx + dy_sq;
                             if dist_sq > draw_radius_sq {
                                 continue;
@@ -654,12 +680,12 @@ impl ToolsPanel {
                 // Quick check: does ANY pixel in this chunk-local range fall within the circle?
                 // Test the closest point of the local rect to the circle center
                 let near_x = (cx).clamp(
-                    chunk_base_x as f32 + lx0 as f32,
-                    chunk_base_x as f32 + lx1 as f32 - 1.0,
+                    chunk_base_x as f32 + lx0 as f32 + 0.5,
+                    chunk_base_x as f32 + lx1 as f32 - 0.5,
                 );
                 let near_y = (cy).clamp(
-                    chunk_base_y as f32 + ly0 as f32,
-                    chunk_base_y as f32 + ly1 as f32 - 1.0,
+                    chunk_base_y as f32 + ly0 as f32 + 0.5,
+                    chunk_base_y as f32 + ly1 as f32 - 0.5,
                 );
                 let nd = (near_x - cx) * (near_x - cx) + (near_y - cy) * (near_y - cy);
                 if nd > draw_radius_sq {
@@ -680,7 +706,7 @@ impl ToolsPanel {
 
                 for ly in ly0..ly1 {
                     let global_y = chunk_base_y + ly;
-                    let dy = global_y as f32 - cy;
+                    let dy = global_y as f32 + 0.5 - cy;
                     let dy_sq = dy * dy;
                     let row_off = ly as usize * chunk_stride;
 
@@ -698,7 +724,7 @@ impl ToolsPanel {
                             }
                         }
 
-                        let dx = global_x as f32 - cx;
+                        let dx = global_x as f32 + 0.5 - cx;
                         let dist_sq = dx * dx + dy_sq;
                         if dist_sq > draw_radius_sq {
                             continue;
@@ -1533,8 +1559,15 @@ impl BrushPixelWriter {
                     .map_or(chunk_raw[px_off + 3] as f32 / 255.0, |a| {
                         *a as f32 / 65535.0
                     });
-                let cap = (src_a * self.opacity).clamp(0.0, 1.0);
-                let add = (cap - old_a).max(0.0) * (geom_alpha * self.flow).clamp(0.0, 1.0);
+                let (cap, deposit) = if self.mode == BrushMode::BuildUp {
+                    (1.0, geom_alpha * self.flow * src_a * self.opacity)
+                } else {
+                    (
+                        (src_a * self.opacity).clamp(0.0, 1.0),
+                        geom_alpha * self.flow,
+                    )
+                };
+                let add = (cap - old_a).max(0.0) * deposit.clamp(0.0, 1.0);
                 if add == 0.0 {
                     return;
                 }

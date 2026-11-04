@@ -331,7 +331,7 @@ impl<'a> Button<'a> {
         let ButtonStyle { frame, text_style } = ui.style().button_style(&classes, state);
 
         let mut button_padding = if has_frame_margin {
-            frame.inner_margin
+            ui.spacing().button_padding.into()
         } else {
             Margin::ZERO
         };
@@ -354,6 +354,13 @@ impl<'a> Button<'a> {
         }
 
         frame = frame.inner_margin(button_padding);
+        // Keep hit targets and neighbouring controls stable across visual states.
+        let paint_stroke = frame.stroke;
+        let paint_rounding = frame.corner_radius;
+        let paint_frame =
+            has_frame_margin && (state != WidgetState::Inactive || frame_when_inactive);
+        frame.stroke = Stroke::NONE;
+        frame.outer_margin = Margin::ZERO;
 
         // Apply the style font and color as fallback
         layout = layout
@@ -381,6 +388,15 @@ impl<'a> Button<'a> {
         } else {
             AtomLayoutResponse::empty(prepared.response)
         };
+
+        if paint_frame && paint_stroke.width > 0.0 {
+            ui.painter().rect_stroke(
+                response.response.rect,
+                paint_rounding,
+                paint_stroke,
+                crate::StrokeKind::Inside,
+            );
+        }
 
         if let Some(cursor) = ui.visuals().interact_cursor
             && response.response.hovered()

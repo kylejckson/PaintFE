@@ -10,14 +10,34 @@ impl PaintFEApp {
         });
         if self.paste_overlay.is_some()
             && previous_tool.is_some_and(|previous| previous != tool)
-            && !matches!(tool, Tool::MovePixels | Tool::Pan) {
+            && !matches!(tool, Tool::MovePixels | Tool::Pan)
+        {
             self.commit_paste_overlay(true);
         }
-        let guide_pointer = self.active_project().zip(self.canvas.last_image_rect).zip(self.canvas.last_canvas_rect).is_some_and(|((p,image),view)| {
-            crate::ui::guides::owns_pointer(ctx, &p.canvas_state, image, view, self.canvas.view_state().0,
-                matches!(self.tools_panel.active_tool, Tool::MovePixels | Tool::MoveSelection | Tool::Pan))
-        });
-        let ui_blocks_canvas_input = self.ui_pointer_capture_active || (guide_pointer && ctx.input(|i|i.pointer.primary_down() || i.pointer.primary_pressed() || i.pointer.primary_released()));
+        let guide_pointer = self
+            .active_project()
+            .zip(self.canvas.last_image_rect)
+            .zip(self.canvas.last_canvas_rect)
+            .is_some_and(|((p, image), view)| {
+                crate::ui::guides::owns_pointer(
+                    ctx,
+                    &p.canvas_state,
+                    image,
+                    view,
+                    self.canvas.view_state().0,
+                    matches!(
+                        self.tools_panel.active_tool,
+                        Tool::MovePixels | Tool::MoveSelection | Tool::Pan
+                    ),
+                )
+            });
+        let ui_blocks_canvas_input = self.ui_pointer_capture_active
+            || (guide_pointer
+                && ctx.input(|i| {
+                    i.pointer.primary_down()
+                        || i.pointer.primary_pressed()
+                        || i.pointer.primary_released()
+                }));
         // Keep editing/navigation keys with focused panel text and numeric fields.
         let escape_event = ctx.input(|i| i.key_pressed(egui::Key::Escape));
         let (previous_field, previous_popup) = ctx
@@ -27,7 +47,8 @@ impl PaintFEApp {
             .unwrap_or_default();
         let escaped_field = escape_event
             && previous_field.is_some_and(|id| ctx.memory(|m| m.had_focus_last_frame(id)));
-        let panel_keyboard_focus = crate::ui::guides::gesture_active(ctx) || escaped_field
+        let panel_keyboard_focus = crate::ui::guides::gesture_active(ctx)
+            || escaped_field
             || (self.window_visibility.colors && self.colors_panel.is_hex_editing())
             || (ctx.text_edit_focused()
                 && ctx
@@ -36,11 +57,15 @@ impl PaintFEApp {
 
         // Determine if a modal dialog is open — block all shortcuts and canvas interaction.
         let modal_open = self.document_modal_open()
-            || ctx.data(|d|d.get_temp::<bool>(egui::Id::new("optional_pack_modal_open"))).unwrap_or(false);
+            || crate::ui::help::is_open(ctx)
+            || ctx
+                .data(|d| d.get_temp::<bool>(egui::Id::new("optional_pack_modal_open")))
+                .unwrap_or(false);
         let popup_open = egui::Popup::is_any_open(ctx) || (escape_event && previous_popup);
         let escape_operation = self.move_sel_dragging
             || self.paste_overlay.is_some()
             || self.straighten_session.is_some()
+            || crate::ui::help::is_open(ctx)
             || self.tools_panel.has_escape_operation();
 
         let global_probe = ctx.input(|i| {
@@ -151,12 +176,17 @@ impl PaintFEApp {
             }
         }
 
-        let text_owns_keyboard = self.tools_panel.active_tool == Tool::Text
-            && self.tools_panel.text_state.is_editing;
+        let text_owns_keyboard =
+            self.tools_panel.active_tool == Tool::Text && self.tools_panel.text_state.is_editing;
         let is_rebinding = self.settings_window.rebinding_action.is_some();
         // Cancel a floating paste without also modifying the underlying selection.
         let mut paste_cancelled = false;
-        if self.paste_overlay.is_some() && !modal_open && !panel_keyboard_focus && !text_owns_keyboard && !is_rebinding {
+        if self.paste_overlay.is_some()
+            && !modal_open
+            && !panel_keyboard_focus
+            && !text_owns_keyboard
+            && !is_rebinding
+        {
             paste_cancelled = ctx.input_mut(|i| {
                 let delete = i.consume_key(egui::Modifiers::NONE, egui::Key::Delete);
                 let backspace = i.consume_key(egui::Modifiers::NONE, egui::Key::Backspace);
@@ -376,280 +406,270 @@ impl PaintFEApp {
                 i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::Z)
             });
             if redo_from_binding || redo_from_ctrl_shift_z {
-                if let Some(overlay) = self.paste_overlay.as_mut()
-                    && let Some(next) = self.paste_transform_redo.pop()
-                {
-                    let current = overlay.transform();
-                    overlay.set_transform(next);
-                    self.paste_transform_undo.push(current);
-                    if let Some(project) = self.active_project_mut() {
-                        project.history.redo(&mut project.canvas_state);
-                    }
-                } else if let Some(project) = self.active_project_mut() {
-                    project.history.redo(&mut project.canvas_state);
-                }
+                self.perform_redo();
             }
 
             if !text_owns_keyboard {
-            // Ctrl+C — Copy
-            let copy_from_binding = kb.is_pressed_with_legacy(
-                ctx,
-                BindableAction::Copy,
-                self.settings.legacy_clipboard_shortcuts,
-            );
-            let copy_from_event = ctx.input_mut(|i| {
-                let pos = i.events.iter().position(|e| matches!(e, egui::Event::Copy));
-                if let Some(idx) = pos {
-                    i.events.remove(idx);
-                    true
-                } else {
-                    false
-                }
-            });
-            let copy_from_raw = ctx.input_mut(|i| {
-                let pos = i.events.iter().position(|e| {
-                    matches!(
-                        e,
-                        egui::Event::Key {
-                            key,
-                            physical_key,
-                            pressed: true,
-                            modifiers,
-                            ..
-                        } if (*key == egui::Key::C || *physical_key == Some(egui::Key::C))
-                            && (modifiers.command || modifiers.ctrl)
-                    )
-                });
-                if let Some(idx) = pos {
-                    i.events.remove(idx);
-                    true
-                } else {
-                    false
-                }
-            });
-            let copy_from_ctrl_char = ctx.input_mut(|i| {
-                let mut found = false;
-                i.events.retain(|ev| {
-                    if !found
-                        && let egui::Event::Text(t) = ev
-                        && t.chars().any(|c| c == '\u{3}')
-                    {
-                        found = true;
-                        return false;
+                // Ctrl+C — Copy
+                let copy_from_binding = kb.is_pressed_with_legacy(
+                    ctx,
+                    BindableAction::Copy,
+                    self.settings.legacy_clipboard_shortcuts,
+                );
+                let copy_from_event = ctx.input_mut(|i| {
+                    let pos = i.events.iter().position(|e| matches!(e, egui::Event::Copy));
+                    if let Some(idx) = pos {
+                        i.events.remove(idx);
+                        true
+                    } else {
+                        false
                     }
-                    true
                 });
-                found
-            });
-            let copy_pressed =
-                copy_from_binding || copy_from_event || copy_from_raw || copy_from_ctrl_char;
-            let poll_ctrl_c_down =
-                (global_probe.0 && global_probe.1) || (linux_probe.ctrl_down && linux_probe.c_down);
-            let copy_poll_edge = poll_ctrl_c_down && !self.prev_ctrl_c_down;
-            let copy_vk_edge =
-                vk_probe.ctrl_down && vk_probe.c_press_count != self.prev_vk_c_press_count;
-            if copy_pressed || copy_poll_edge || copy_vk_edge {
-                self.copy_active_selection_or_overlay();
-            }
+                let copy_from_raw = ctx.input_mut(|i| {
+                    let pos = i.events.iter().position(|e| {
+                        matches!(
+                            e,
+                            egui::Event::Key {
+                                key,
+                                physical_key,
+                                pressed: true,
+                                modifiers,
+                                ..
+                            } if (*key == egui::Key::C || *physical_key == Some(egui::Key::C))
+                                && (modifiers.command || modifiers.ctrl)
+                        )
+                    });
+                    if let Some(idx) = pos {
+                        i.events.remove(idx);
+                        true
+                    } else {
+                        false
+                    }
+                });
+                let copy_from_ctrl_char = ctx.input_mut(|i| {
+                    let mut found = false;
+                    i.events.retain(|ev| {
+                        if !found
+                            && let egui::Event::Text(t) = ev
+                            && t.chars().any(|c| c == '\u{3}')
+                        {
+                            found = true;
+                            return false;
+                        }
+                        true
+                    });
+                    found
+                });
+                let copy_pressed =
+                    copy_from_binding || copy_from_event || copy_from_raw || copy_from_ctrl_char;
+                let poll_ctrl_c_down = (global_probe.0 && global_probe.1)
+                    || (linux_probe.ctrl_down && linux_probe.c_down);
+                let copy_poll_edge = poll_ctrl_c_down && !self.prev_ctrl_c_down;
+                let copy_vk_edge =
+                    vk_probe.ctrl_down && vk_probe.c_press_count != self.prev_vk_c_press_count;
+                if copy_pressed || copy_poll_edge || copy_vk_edge {
+                    self.copy_active_selection_or_overlay();
+                }
 
-            // Ctrl+X — Cut
-            let cut_from_binding = kb.is_pressed_with_legacy(
-                ctx,
-                BindableAction::Cut,
-                self.settings.legacy_clipboard_shortcuts,
-            );
-            let cut_from_event = ctx.input_mut(|i| {
-                let pos = i.events.iter().position(|e| matches!(e, egui::Event::Cut));
-                if let Some(idx) = pos {
-                    i.events.remove(idx);
-                    true
-                } else {
-                    false
-                }
-            });
-            let cut_from_raw = ctx.input_mut(|i| {
-                let pos = i.events.iter().position(|e| {
-                    matches!(
-                        e,
-                        egui::Event::Key {
-                            key,
-                            physical_key,
-                            pressed: true,
-                            modifiers,
-                            ..
-                        } if (*key == egui::Key::X || *physical_key == Some(egui::Key::X))
-                            && (modifiers.command || modifiers.ctrl)
-                    )
-                });
-                if let Some(idx) = pos {
-                    i.events.remove(idx);
-                    true
-                } else {
-                    false
-                }
-            });
-            let cut_from_ctrl_char = ctx.input_mut(|i| {
-                let mut found = false;
-                i.events.retain(|ev| {
-                    if !found
-                        && let egui::Event::Text(t) = ev
-                        && t.chars().any(|c| c == '\u{18}')
-                    {
-                        found = true;
-                        return false;
+                // Ctrl+X — Cut
+                let cut_from_binding = kb.is_pressed_with_legacy(
+                    ctx,
+                    BindableAction::Cut,
+                    self.settings.legacy_clipboard_shortcuts,
+                );
+                let cut_from_event = ctx.input_mut(|i| {
+                    let pos = i.events.iter().position(|e| matches!(e, egui::Event::Cut));
+                    if let Some(idx) = pos {
+                        i.events.remove(idx);
+                        true
+                    } else {
+                        false
                     }
-                    true
                 });
-                found
-            });
-            let cut_pressed =
-                cut_from_binding || cut_from_event || cut_from_raw || cut_from_ctrl_char;
-            let poll_ctrl_x_down =
-                (global_probe.0 && global_probe.2) || (linux_probe.ctrl_down && linux_probe.x_down);
-            let cut_poll_edge = poll_ctrl_x_down && !self.prev_ctrl_x_down;
-            let cut_vk_edge =
-                vk_probe.ctrl_down && vk_probe.x_press_count != self.prev_vk_x_press_count;
-            if cut_pressed || cut_poll_edge || cut_vk_edge {
-                let has_sel = self
-                    .active_project()
-                    .is_some_and(|p| p.canvas_state.has_selection());
-                let transparent_cutout = self.settings.clipboard_copy_transparent_cutout;
-                if has_sel {
-                    self.cut_selection_with_history(transparent_cutout);
+                let cut_from_raw = ctx.input_mut(|i| {
+                    let pos = i.events.iter().position(|e| {
+                        matches!(
+                            e,
+                            egui::Event::Key {
+                                key,
+                                physical_key,
+                                pressed: true,
+                                modifiers,
+                                ..
+                            } if (*key == egui::Key::X || *physical_key == Some(egui::Key::X))
+                                && (modifiers.command || modifiers.ctrl)
+                        )
+                    });
+                    if let Some(idx) = pos {
+                        i.events.remove(idx);
+                        true
+                    } else {
+                        false
+                    }
+                });
+                let cut_from_ctrl_char = ctx.input_mut(|i| {
+                    let mut found = false;
+                    i.events.retain(|ev| {
+                        if !found
+                            && let egui::Event::Text(t) = ev
+                            && t.chars().any(|c| c == '\u{18}')
+                        {
+                            found = true;
+                            return false;
+                        }
+                        true
+                    });
+                    found
+                });
+                let cut_pressed =
+                    cut_from_binding || cut_from_event || cut_from_raw || cut_from_ctrl_char;
+                let poll_ctrl_x_down = (global_probe.0 && global_probe.2)
+                    || (linux_probe.ctrl_down && linux_probe.x_down);
+                let cut_poll_edge = poll_ctrl_x_down && !self.prev_ctrl_x_down;
+                let cut_vk_edge =
+                    vk_probe.ctrl_down && vk_probe.x_press_count != self.prev_vk_x_press_count;
+                if cut_pressed || cut_poll_edge || cut_vk_edge {
+                    let has_sel = self
+                        .active_project()
+                        .is_some_and(|p| p.canvas_state.has_selection());
+                    let transparent_cutout = self.settings.clipboard_copy_transparent_cutout;
+                    if has_sel {
+                        self.cut_selection_with_history(transparent_cutout);
+                    }
                 }
-            }
 
-            // Ctrl+V — Paste
-            let paste_from_binding = kb.is_pressed_with_legacy(
-                ctx,
-                BindableAction::Paste,
-                self.settings.legacy_clipboard_shortcuts,
-            );
-            let paste_from_event = ctx.input_mut(|i| {
-                let pos = i
-                    .events
-                    .iter()
-                    .position(|e| matches!(e, egui::Event::Paste(_)));
-                if let Some(idx) = pos {
-                    i.events.remove(idx);
-                    true
-                } else {
-                    false
-                }
-            });
-            let paste_from_raw = ctx.input_mut(|i| {
-                let pos = i.events.iter().position(|e| {
-                    matches!(
-                        e,
-                        egui::Event::Key {
-                            key,
-                            physical_key,
-                            pressed: true,
-                            modifiers,
-                            ..
-                        } if (*key == egui::Key::V || *physical_key == Some(egui::Key::V))
-                            && (modifiers.command || modifiers.ctrl)
-                    )
-                });
-                if let Some(idx) = pos {
-                    i.events.remove(idx);
-                    true
-                } else {
-                    false
-                }
-            });
-            let paste_from_release = ctx.input_mut(|i| {
-                let pos = i.events.iter().position(|e| {
-                    matches!(
-                        e,
-                        egui::Event::Key {
-                            key,
-                            physical_key,
-                            pressed: false,
-                            modifiers,
-                            ..
-                        } if (*key == egui::Key::V || *physical_key == Some(egui::Key::V))
-                            && (modifiers.command || modifiers.ctrl)
-                    )
-                });
-                if let Some(idx) = pos {
-                    i.events.remove(idx);
-                    true
-                } else {
-                    false
-                }
-            });
-            let paste_from_ctrl_char = ctx.input_mut(|i| {
-                let mut found = false;
-                i.events.retain(|ev| {
-                    if !found
-                        && let egui::Event::Text(t) = ev
-                        && t.chars().any(|c| c == '\u{16}')
-                    {
-                        found = true;
-                        return false;
+                // Ctrl+V — Paste
+                let paste_from_binding = kb.is_pressed_with_legacy(
+                    ctx,
+                    BindableAction::Paste,
+                    self.settings.legacy_clipboard_shortcuts,
+                );
+                let paste_from_event = ctx.input_mut(|i| {
+                    let pos = i
+                        .events
+                        .iter()
+                        .position(|e| matches!(e, egui::Event::Paste(_)));
+                    if let Some(idx) = pos {
+                        i.events.remove(idx);
+                        true
+                    } else {
+                        false
                     }
-                    true
                 });
-                found
-            });
-            let paste_from_state = ctx.input(|i| {
-                i.key_pressed(egui::Key::V) && (i.modifiers.ctrl || i.modifiers.command)
-            });
-            let paste_from_raw_input = ctx.input(|i| {
-                i.raw.events.iter().any(|e| {
-                    matches!(
-                        e,
-                        egui::Event::Key {
-                            key,
-                            physical_key,
-                            pressed: true,
-                            modifiers,
-                            ..
-                        } if (*key == egui::Key::V || *physical_key == Some(egui::Key::V))
-                            && (modifiers.command || modifiers.ctrl)
-                    ) || matches!(e, egui::Event::Paste(_))
-                        || matches!(e, egui::Event::Text(t) if t.chars().any(|c| c == '\u{16}'))
-                })
-            });
-            let paste_primary_trigger = paste_from_binding
-                || paste_from_event
-                || paste_from_raw
-                || paste_from_ctrl_char
-                || paste_from_state
-                || paste_from_raw_input;
-            // Release fallback is only for sessions where press-path signals are missing.
-            let poll_ctrl_v_down =
-                (global_probe.0 && global_probe.3) || (linux_probe.ctrl_down && linux_probe.v_down);
-            let paste_poll_edge = poll_ctrl_v_down && !self.prev_ctrl_v_down;
-            let paste_vk_edge =
-                vk_probe.ctrl_down && vk_probe.v_press_count != self.prev_vk_v_press_count;
-            let now = ctx.input(|i| i.time);
-            let recent_paste =
-                self.last_paste_trigger_time >= 0.0 && (now - self.last_paste_trigger_time) < 0.25;
-            let release_only_trigger = paste_from_release
-                && !paste_primary_trigger
-                && !paste_poll_edge
-                && !paste_vk_edge
-                && !recent_paste;
-            if paste_primary_trigger || paste_poll_edge || paste_vk_edge || release_only_trigger {
-                self.last_paste_trigger_time = now;
-                // Compute cursor canvas position before mutable borrow
-                let cursor_canvas = if self.active_project_index < self.projects.len() {
-                    ctx.input(|i| i.pointer.latest_pos())
-                        .and_then(|screen_pos| {
-                            self.canvas.last_canvas_rect.and_then(|rect| {
-                                let state = &self.projects[self.active_project_index].canvas_state;
-                                self.canvas
-                                    .screen_to_canvas_f32_pub(screen_pos, rect, state)
+                let paste_from_raw = ctx.input_mut(|i| {
+                    let pos = i.events.iter().position(|e| {
+                        matches!(
+                            e,
+                            egui::Event::Key {
+                                key,
+                                physical_key,
+                                pressed: true,
+                                modifiers,
+                                ..
+                            } if (*key == egui::Key::V || *physical_key == Some(egui::Key::V))
+                                && (modifiers.command || modifiers.ctrl)
+                        )
+                    });
+                    if let Some(idx) = pos {
+                        i.events.remove(idx);
+                        true
+                    } else {
+                        false
+                    }
+                });
+                let paste_from_release = ctx.input_mut(|i| {
+                    let pos = i.events.iter().position(|e| {
+                        matches!(
+                            e,
+                            egui::Event::Key {
+                                key,
+                                physical_key,
+                                pressed: false,
+                                modifiers,
+                                ..
+                            } if (*key == egui::Key::V || *physical_key == Some(egui::Key::V))
+                                && (modifiers.command || modifiers.ctrl)
+                        )
+                    });
+                    if let Some(idx) = pos {
+                        i.events.remove(idx);
+                        true
+                    } else {
+                        false
+                    }
+                });
+                let paste_from_ctrl_char = ctx.input_mut(|i| {
+                    let mut found = false;
+                    i.events.retain(|ev| {
+                        if !found
+                            && let egui::Event::Text(t) = ev
+                            && t.chars().any(|c| c == '\u{16}')
+                        {
+                            found = true;
+                            return false;
+                        }
+                        true
+                    });
+                    found
+                });
+                let paste_from_state = ctx.input(|i| {
+                    i.key_pressed(egui::Key::V) && (i.modifiers.ctrl || i.modifiers.command)
+                });
+                let paste_from_raw_input = ctx.input(|i| {
+                    i.raw.events.iter().any(|e| {
+                        matches!(
+                            e,
+                            egui::Event::Key {
+                                key,
+                                physical_key,
+                                pressed: true,
+                                modifiers,
+                                ..
+                            } if (*key == egui::Key::V || *physical_key == Some(egui::Key::V))
+                                && (modifiers.command || modifiers.ctrl)
+                        ) || matches!(e, egui::Event::Paste(_))
+                            || matches!(e, egui::Event::Text(t) if t.chars().any(|c| c == '\u{16}'))
+                    })
+                });
+                let paste_primary_trigger = paste_from_binding
+                    || paste_from_event
+                    || paste_from_raw
+                    || paste_from_ctrl_char
+                    || paste_from_state
+                    || paste_from_raw_input;
+                // Release fallback is only for sessions where press-path signals are missing.
+                let poll_ctrl_v_down = (global_probe.0 && global_probe.3)
+                    || (linux_probe.ctrl_down && linux_probe.v_down);
+                let paste_poll_edge = poll_ctrl_v_down && !self.prev_ctrl_v_down;
+                let paste_vk_edge =
+                    vk_probe.ctrl_down && vk_probe.v_press_count != self.prev_vk_v_press_count;
+                let now = ctx.input(|i| i.time);
+                let recent_paste = self.last_paste_trigger_time >= 0.0
+                    && (now - self.last_paste_trigger_time) < 0.25;
+                let release_only_trigger = paste_from_release
+                    && !paste_primary_trigger
+                    && !paste_poll_edge
+                    && !paste_vk_edge
+                    && !recent_paste;
+                if paste_primary_trigger || paste_poll_edge || paste_vk_edge || release_only_trigger
+                {
+                    self.last_paste_trigger_time = now;
+                    // Compute cursor canvas position before mutable borrow
+                    let cursor_canvas = if self.active_project_index < self.projects.len() {
+                        ctx.input(|i| i.pointer.latest_pos())
+                            .and_then(|screen_pos| {
+                                self.canvas.last_canvas_rect.and_then(|rect| {
+                                    let state =
+                                        &self.projects[self.active_project_index].canvas_state;
+                                    self.canvas
+                                        .screen_to_canvas_f32_pub(screen_pos, rect, state)
+                                })
                             })
-                        })
-                } else {
-                    None
-                };
-                self.queue_paste_from_clipboard(ctx, cursor_canvas);
-            }
-
+                    } else {
+                        None
+                    };
+                    self.queue_paste_from_clipboard(ctx, cursor_canvas);
+                }
             }
 
             let enter_vk_edge = vk_probe.enter_press_count != self.prev_vk_enter_press_count;
@@ -716,7 +736,7 @@ impl PaintFEApp {
                     self.tools_panel.mesh_warp_state.commit_pending = true;
                     self.tools_panel.mesh_warp_state.commit_pending_frame = 0;
                     if let Some(project) = self.active_project_mut() {
-                        project.canvas_state.mark_dirty(None);
+                        project.canvas_state.mark_render_dirty(None);
                     }
                 }
                 if self.tools_panel.active_tool == crate::components::tools::Tool::Liquify
@@ -725,7 +745,7 @@ impl PaintFEApp {
                     self.tools_panel.liquify_state.commit_pending = true;
                     self.tools_panel.liquify_state.commit_pending_frame = 0;
                     if let Some(project) = self.active_project_mut() {
-                        project.canvas_state.mark_dirty(None);
+                        project.canvas_state.mark_render_dirty(None);
                     }
                 }
             }
@@ -762,29 +782,23 @@ impl PaintFEApp {
                 {
                     self.clear_selection_with_history();
                 }
-                if self.tools_panel.active_tool == crate::components::tools::Tool::MeshWarp
-                    && self.tools_panel.mesh_warp_state.is_active
+                if matches!(
+                    self.tools_panel.active_tool,
+                    crate::components::tools::Tool::MeshWarp
+                        | crate::components::tools::Tool::Liquify
+                ) && let Some(project) = self.projects.get_mut(self.active_project_index)
                 {
-                    self.tools_panel.mesh_warp_state.points =
-                        self.tools_panel.mesh_warp_state.original_points.clone();
-                    if let Some(project) = self.active_project_mut() {
-                        project.canvas_state.mark_dirty(None);
-                    }
-                }
-                if self.tools_panel.active_tool == crate::components::tools::Tool::Liquify
-                    && self.tools_panel.liquify_state.is_active
-                {
-                    self.tools_panel.liquify_state.is_active = false;
-                    if let Some(project) = self.active_project_mut() {
-                        project.canvas_state.clear_preview_state();
-                        project.canvas_state.mark_dirty(None);
-                    }
+                    self.tools_panel
+                        .cancel_active_tool(&mut project.canvas_state);
                 }
             }
 
-            self.prev_ctrl_c_down = (global_probe.0 && global_probe.1) || (linux_probe.ctrl_down && linux_probe.c_down);
-            self.prev_ctrl_x_down = (global_probe.0 && global_probe.2) || (linux_probe.ctrl_down && linux_probe.x_down);
-            self.prev_ctrl_v_down = (global_probe.0 && global_probe.3) || (linux_probe.ctrl_down && linux_probe.v_down);
+            self.prev_ctrl_c_down =
+                (global_probe.0 && global_probe.1) || (linux_probe.ctrl_down && linux_probe.c_down);
+            self.prev_ctrl_x_down =
+                (global_probe.0 && global_probe.2) || (linux_probe.ctrl_down && linux_probe.x_down);
+            self.prev_ctrl_v_down =
+                (global_probe.0 && global_probe.3) || (linux_probe.ctrl_down && linux_probe.v_down);
             self.prev_enter_down = global_probe.4;
             self.prev_escape_down = global_probe.5;
             self.prev_vk_c_press_count = vk_probe.c_press_count;
@@ -1176,7 +1190,7 @@ impl PaintFEApp {
                     }
                     if kb.is_pressed(ctx, BindableAction::BrushSizeIncrease) {
                         self.tools_panel.properties.size =
-                            (self.tools_panel.properties.size + 1.0).min(500.0);
+                            (self.tools_panel.properties.size + 1.0).min(999.0);
                     }
                 }
             }
@@ -1654,19 +1668,35 @@ impl PaintFEApp {
                     let mut dx = cx - lx;
                     let mut dy = cy - ly;
                     let zoom = self.canvas.view_state().0;
-                    let snap = self.active_project().is_some_and(|p|p.canvas_state.guides.snap && p.canvas_state.guides.visible);
-                    if snap && let (Some(start),Some(current),Some(project)) = (self.move_sel_start_bounds,
-                        self.active_project().and_then(|p|p.canvas_state.selection_mask_bounds()), self.active_project()) {
-                        let rect=egui::Rect::from_min_max(egui::pos2(start.0 as f32+dx as f32,start.1 as f32+dy as f32),egui::pos2(start.2 as f32+1.0+dx as f32,start.3 as f32+1.0+dy as f32));
-                        let delta=project.canvas_state.guides.snap_delta(rect,zoom);
-                        dx=(rect.left()+delta.x).round() as i32-current.0 as i32;
-                        dy=(rect.top()+delta.y).round() as i32-current.1 as i32;
+                    let snap = self.active_project().is_some_and(|p| {
+                        p.canvas_state.guides.snap && p.canvas_state.guides.visible
+                    });
+                    if snap
+                        && let (Some(start), Some(current), Some(project)) = (
+                            self.move_sel_start_bounds,
+                            self.active_project()
+                                .and_then(|p| p.canvas_state.selection_mask_bounds()),
+                            self.active_project(),
+                        )
+                    {
+                        let rect = egui::Rect::from_min_max(
+                            egui::pos2(start.0 as f32 + dx as f32, start.1 as f32 + dy as f32),
+                            egui::pos2(
+                                start.2 as f32 + 1.0 + dx as f32,
+                                start.3 as f32 + 1.0 + dy as f32,
+                            ),
+                        );
+                        let delta = project.canvas_state.guides.snap_delta(rect, zoom);
+                        dx = (rect.left() + delta.x).round() as i32 - current.0 as i32;
+                        dy = (rect.top() + delta.y).round() as i32 - current.1 as i32;
                     }
                     if dx != 0 || dy != 0 {
                         if let Some(project) = self.active_project_mut() {
                             project.canvas_state.translate_selection(dx, dy);
                         }
-                        if !snap { self.move_sel_last_canvas = Some((cx, cy)); }
+                        if !snap {
+                            self.move_sel_last_canvas = Some((cx, cy));
+                        }
                     }
                 } else if let (Some(canvas_dimensions), Some(start_bounds), Some(handle)) = (
                     self.move_sel_start_mask

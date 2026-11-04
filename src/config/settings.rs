@@ -426,6 +426,8 @@ pub struct AppSettings {
     pub tools_palette: ToolsPaletteSettings,
     pub escape_deselect: bool,
     pub enter_deselect: bool,
+    pub undo_tool_adjustments: bool,
+    pub tablet_pressure_enabled: bool,
     pub paste_at_source_position: bool,
     pub paste_keep_visible: bool,
     pub legacy_clipboard_shortcuts: bool,
@@ -638,6 +640,8 @@ impl Default for AppSettings {
             tools_palette: ToolsPaletteSettings::default(),
             escape_deselect: true,
             enter_deselect: false,
+            undo_tool_adjustments: false,
+            tablet_pressure_enabled: true,
             paste_at_source_position: true,
             paste_keep_visible: true,
             legacy_clipboard_shortcuts: true,
@@ -1380,6 +1384,14 @@ impl AppSettings {
         ));
         content.push_str(&format!("escape_deselect={}\n", self.escape_deselect));
         content.push_str(&format!("enter_deselect={}\n", self.enter_deselect));
+        content.push_str(&format!(
+            "undo_tool_adjustments={}\n",
+            self.undo_tool_adjustments
+        ));
+        content.push_str(&format!(
+            "tablet_pressure_enabled={}\n",
+            self.tablet_pressure_enabled
+        ));
         content.push_str(&format!(
             "paste_at_source_position={}\n",
             self.paste_at_source_position
@@ -2313,6 +2325,8 @@ impl AppSettings {
                 "tools_show_colors" => s.tools_show_colors = val == "true",
                 "escape_deselect" => s.escape_deselect = val == "true",
                 "enter_deselect" => s.enter_deselect = val == "true",
+                "undo_tool_adjustments" => s.undo_tool_adjustments = val == "true",
+                "tablet_pressure_enabled" => s.tablet_pressure_enabled = val == "true",
                 "paste_at_source_position" => s.paste_at_source_position = val == "true",
                 "paste_keep_visible" => s.paste_keep_visible = val == "true",
                 "legacy_clipboard_shortcuts" => s.legacy_clipboard_shortcuts = val == "true",
@@ -2517,6 +2531,8 @@ mod refinement_tests {
     #[test]
     fn preferences_roundtrip_preserves_tab_and_onnx_options() {
         let settings = AppSettings {
+            undo_tool_adjustments: true,
+            tablet_pressure_enabled: false,
             ruler: RulerSettings {
                 monospace: false,
                 font_size: 18.0,
@@ -2601,6 +2617,8 @@ mod refinement_tests {
         assert_eq!(restored.last_export_format, "webp");
         assert_eq!(restored.last_export_directory, "saved exports");
         assert_eq!(restored.export_options, settings.export_options);
+        assert!(restored.undo_tool_adjustments);
+        assert!(!restored.tablet_pressure_enabled);
         assert_eq!(restored.recent_files, ["first.png", "second.pfe"]);
         assert_eq!(restored.persist_colors_panel_size, Some((150.0, 210.0)));
         assert_eq!(restored.persist_tools_panel_size, Some((420.0, 170.0)));

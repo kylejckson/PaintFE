@@ -1,4 +1,30 @@
 impl ToolsPanel {
+    fn primary_press_canvas_position(
+        ui: &egui::Ui,
+        canvas_rect: Rect,
+        zoom: f32,
+    ) -> Option<(f32, f32)> {
+        ui.input(|input| {
+            input.events.iter().find_map(|event| match event {
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    ..
+                }
+                | egui::Event::Touch {
+                    pos,
+                    phase: egui::TouchPhase::Start,
+                    ..
+                } => Some((
+                    (pos.x - canvas_rect.min.x) / zoom,
+                    (pos.y - canvas_rect.min.y) / zoom,
+                )),
+                _ => None,
+            })
+        })
+    }
+
     #[allow(clippy::too_many_arguments, unused_variables)]
     fn handle_surface_transform_input(
         &mut self,
@@ -32,6 +58,90 @@ impl ToolsPanel {
             // LIQUIFY TOOL - click+drag to push/pull pixels
             // ================================================================
             Tool::Liquify => {
+                if self.liquify_state.is_active {
+                    let generation = canvas_state
+                        .layers
+                        .get(canvas_state.active_layer_index)
+                        .map(|layer| layer.gpu_generation);
+                    if self.liquify_state.source_layer_index
+                        != Some(canvas_state.active_layer_index)
+                        || generation != Some(self.liquify_state.snapshot_generation)
+                        || self
+                            .liquify_state
+                            .source_snapshot
+                            .as_ref()
+                            .is_none_or(|source| {
+                                source.dimensions() != (canvas_state.width, canvas_state.height)
+                            })
+                    {
+                        self.liquify_state.reset_session();
+                        canvas_state.clear_preview_state();
+                        return;
+                    }
+                }
+                if self.liquify_state.protection.as_ref().is_some_and(|mask| {
+                    mask.dimensions() != (canvas_state.width, canvas_state.height)
+                }) {
+                    self.liquify_state.protection = None;
+                    self.liquify_state.protection_texture = None;
+                }
+                if self.liquify_state.reset_pending {
+                    self.liquify_state.reset_pending = false;
+                    self.liquify_state.commit_pending = false;
+                    self.liquify_state.commit_pending_frame = 0;
+                    if let Some(field) = self.liquify_state.displacement.as_mut() {
+                        if self.record_tool_adjustments {
+                            self.liquify_state.history.begin();
+                            let center = [field.width as f32 * 0.5, field.height as f32 * 0.5];
+                            let radius = (field.width as f32).hypot(field.height as f32);
+                            self.liquify_state.history.capture(field, center, radius);
+                        }
+                        field.data.fill(0.);
+                        if self.record_tool_adjustments {
+                            self.liquify_state.history.finish(field);
+                        }
+                    }
+                    self.liquify_state.dirty_rect = None;
+                    self.render_liquify_preview(canvas_state, None);
+                }
+                if self.liquify_state.clear_protection_pending {
+                    self.liquify_state.protection = None;
+                    self.liquify_state.protection_texture = None;
+                    self.liquify_state.clear_protection_pending = false;
+                    if self.liquify_state.is_active {
+                        self.liquify_state.dirty_rect = None;
+                        self.render_liquify_preview(canvas_state, None);
+                    }
+                }
+                if self.liquify_state.protect_selection_pending {
+                    self.liquify_state.protect_selection_pending = false;
+                    if let Some(mask) = &canvas_state.selection_mask {
+                        let protection = self.liquify_state.protection.get_or_insert_with(|| {
+                            image::GrayImage::new(canvas_state.width, canvas_state.height)
+                        });
+                        for (x, y, pixel) in mask
+                            .enumerate_pixels()
+                            .filter(|(x, y, _)| *x < canvas_state.width && *y < canvas_state.height)
+                        {
+                            let value = protection.get_pixel_mut(x, y);
+                            value.0[0] = value.0[0].max(pixel.0[0]);
+                        }
+                        self.liquify_state.protection_dirty = true;
+                    }
+                    if self.liquify_state.is_active {
+                        self.liquify_state.dirty_rect = None;
+                        self.render_liquify_preview(canvas_state, None);
+                    }
+                }
+                if self.liquify_state.is_active
+                    && self.liquify_state.selection_generation
+                        != canvas_state.selection_overlay_generation
+                {
+                    self.liquify_state.selection_generation =
+                        canvas_state.selection_overlay_generation;
+                    self.liquify_state.dirty_rect = None;
+                    self.render_liquify_preview(canvas_state, None);
+                }
                 // Guard: auto-rasterize text layers before destructive liquify
                 if is_primary_pressed
                     && let Some(layer) = canvas_state.layers.get(canvas_state.active_layer_index)
@@ -45,12 +155,7 @@ impl ToolsPanel {
 
                 // Escape: reset
                 if escape_pressed && self.liquify_state.is_active {
-                    self.liquify_state.displacement = None;
-                    self.liquify_state.is_active = false;
-                    self.liquify_state.source_snapshot = None;
-                    self.liquify_state.source_layer_index = None;
-                    self.liquify_state.warp_buffer.clear();
-                    self.liquify_state.dirty_rect = None;
+                    self.liquify_state.reset_session();
                     canvas_state.clear_preview_state();
                     canvas_state.mark_dirty(None);
                 }
@@ -62,114 +167,132 @@ impl ToolsPanel {
                 }
 
                 // Mouse drag: apply displacement
-                if is_primary_down {
-                    if let Some(pos_f) = canvas_pos_f32 {
-                        // Initialize on first use
-                        if !self.liquify_state.is_active {
-                            self.liquify_state.is_active = true;
-                            if let Some(layer) =
-                                canvas_state.layers.get(canvas_state.active_layer_index)
-                            {
-                                self.liquify_state.source_snapshot =
-                                    Some(layer.pixels.to_rgba_image());
-                                self.liquify_state.source_layer_index =
-                                    Some(canvas_state.active_layer_index);
-                            }
-                            self.liquify_state.displacement =
-                                Some(crate::ops::transform::DisplacementField::new(
-                                    canvas_state.width,
-                                    canvas_state.height,
-                                ));
-                            self.stroke_tracker.start_preview_tool(
-                                canvas_state.active_layer_index,
-                                HistoryAction::Liquify.label("Liquify"),
-                            );
-                            // Tell GPU pipeline the source snapshot changed
-                            if let Some(gpu) = gpu_renderer {
-                                gpu.liquify_pipeline.invalidate_source();
-                            }
+                if (is_primary_down
+                    || is_primary_pressed
+                    || (is_primary_released && self.liquify_state.last_pos.is_some()))
+                    && let Some(pos_f) = canvas_pos_f32
+                {
+                    // Initialize on first use
+                    if !self.liquify_state.is_active {
+                        self.liquify_state.is_active = true;
+                        if let Some(layer) =
+                            canvas_state.layers.get(canvas_state.active_layer_index)
+                        {
+                            self.liquify_state.source_snapshot = Some(layer.pixels.to_rgba_image());
+                            self.liquify_state.source_layer_index =
+                                Some(canvas_state.active_layer_index);
+                            self.liquify_state.snapshot_generation = layer.gpu_generation;
+                            self.liquify_state.selection_generation =
+                                canvas_state.selection_overlay_generation;
                         }
-
-                        if let Some(ref mut disp) = self.liquify_state.displacement {
-                            let radius = self.properties.size;
-                            let cx = pos_f.0;
-                            let cy = pos_f.1;
-
-                            match self.liquify_state.mode {
-                                LiquifyMode::Push => {
-                                    // Get delta from last position
-                                    if let Some(last) = self.liquify_state.last_pos {
-                                        let dx = cx - last[0];
-                                        let dy = cy - last[1];
-                                        if dx.abs() > 0.1 || dy.abs() > 0.1 {
-                                            disp.apply_push(
-                                                cx,
-                                                cy,
-                                                dx * self.liquify_state.strength,
-                                                dy * self.liquify_state.strength,
-                                                radius,
-                                                self.liquify_state.strength,
-                                            );
-                                        }
-                                    }
-                                }
-                                LiquifyMode::Expand => {
-                                    disp.apply_expand(
-                                        cx,
-                                        cy,
-                                        radius,
-                                        self.liquify_state.strength * 2.0,
-                                    );
-                                }
-                                LiquifyMode::Contract => {
-                                    disp.apply_contract(
-                                        cx,
-                                        cy,
-                                        radius,
-                                        self.liquify_state.strength * 2.0,
-                                    );
-                                }
-                                LiquifyMode::TwirlCW => {
-                                    disp.apply_twirl(
-                                        cx,
-                                        cy,
-                                        radius,
-                                        self.liquify_state.strength * 0.05,
-                                        true,
-                                    );
-                                }
-                                LiquifyMode::TwirlCCW => {
-                                    disp.apply_twirl(
-                                        cx,
-                                        cy,
-                                        radius,
-                                        self.liquify_state.strength * 0.05,
-                                        false,
-                                    );
-                                }
-                            }
-
-                            // Update dirty rect
-                            let r = radius as i32 + 2;
-                            let new_dirty =
-                                [cx as i32 - r, cy as i32 - r, cx as i32 + r, cy as i32 + r];
-                            self.liquify_state.dirty_rect =
-                                Some(match self.liquify_state.dirty_rect {
-                                    Some(d) => [
-                                        d[0].min(new_dirty[0]),
-                                        d[1].min(new_dirty[1]),
-                                        d[2].max(new_dirty[2]),
-                                        d[3].max(new_dirty[3]),
-                                    ],
-                                    None => new_dirty,
-                                });
-
-                            self.liquify_state.last_pos = Some([cx, cy]);
-                            self.render_liquify_preview(canvas_state, gpu_renderer.as_deref_mut());
+                        self.liquify_state.displacement =
+                            Some(crate::ops::transform::DisplacementField::new(
+                                canvas_state.width,
+                                canvas_state.height,
+                            ));
+                        self.stroke_tracker.start_preview_tool(
+                            canvas_state.active_layer_index,
+                            HistoryAction::Liquify.label("Liquify"),
+                        );
+                        // Tell GPU pipeline the source snapshot changed
+                        if let Some(gpu) = gpu_renderer {
+                            gpu.liquify_pipeline.invalidate_source();
                         }
                     }
-                } else if self.liquify_state.last_pos.is_some() {
+
+                    if is_primary_pressed {
+                        self.liquify_state.history.begin();
+                        self.liquify_state.last_frame_time = None;
+                        self.liquify_state.last_pos = None;
+                        self.liquify_state.sample_position = None;
+                    }
+                    let press =
+                        Self::primary_press_canvas_position(ui, canvas_rect, zoom).unwrap_or(pos_f);
+                    let fallback = [press, pos_f];
+                    let motion = if raw_motion_events.is_empty() {
+                        &fallback[..]
+                    } else {
+                        raw_motion_events
+                    };
+                    let previous = self.liquify_state.last_pos.unwrap_or([press.0, press.1]);
+                    let (time, frame_dt) = ui.input(|i| (i.time, f64::from(i.stable_dt)));
+                    let samples = self.liquify_state.sample_frame_motion(
+                        motion,
+                        time,
+                        frame_dt,
+                        is_primary_released,
+                    );
+                    if let Some(ref mut disp) = self.liquify_state.displacement {
+                        let radius = self.liquify_state.diameter * 0.5;
+                        for (point, delta) in samples {
+                            let [x, y] = point;
+                            let strength = self.liquify_state.strength;
+                            if self.record_tool_adjustments {
+                                self.liquify_state.history.capture(disp, point, radius);
+                            }
+                            match self.liquify_state.mode {
+                                LiquifyMode::Push => {
+                                    disp.apply_push(x, y, delta[0], delta[1], radius, strength);
+                                }
+                                LiquifyMode::Expand => {
+                                    disp.apply_expand(x, y, radius, strength * 2.);
+                                }
+                                LiquifyMode::Contract => {
+                                    disp.apply_contract(x, y, radius, strength * 2.);
+                                }
+                                LiquifyMode::TwirlCW => {
+                                    disp.apply_twirl(x, y, radius, strength * 0.05, true);
+                                }
+                                LiquifyMode::TwirlCCW => {
+                                    disp.apply_twirl(x, y, radius, strength * 0.05, false);
+                                }
+                                LiquifyMode::Reconstruct => {
+                                    disp.reconstruct(x, y, radius, strength);
+                                }
+                            }
+                        }
+
+                        // Update dirty rect
+                        let r = radius as i32 + 2;
+                        let bounds = motion.iter().fold(
+                            [
+                                previous[0].min(pos_f.0),
+                                previous[1].min(pos_f.1),
+                                previous[0].max(pos_f.0),
+                                previous[1].max(pos_f.1),
+                            ],
+                            |b, p| [b[0].min(p.0), b[1].min(p.1), b[2].max(p.0), b[3].max(p.1)],
+                        );
+                        let new_dirty = [
+                            bounds[0].floor() as i32 - r,
+                            bounds[1].floor() as i32 - r,
+                            bounds[2].ceil() as i32 + r,
+                            bounds[3].ceil() as i32 + r,
+                        ];
+                        self.liquify_state.dirty_rect = Some(match self.liquify_state.dirty_rect {
+                            Some(d) => [
+                                d[0].min(new_dirty[0]),
+                                d[1].min(new_dirty[1]),
+                                d[2].max(new_dirty[2]),
+                                d[3].max(new_dirty[3]),
+                            ],
+                            None => new_dirty,
+                        });
+
+                        self.render_liquify_preview(canvas_state, gpu_renderer.as_deref_mut());
+                    }
+                }
+                if (!is_primary_down || is_primary_released)
+                    && self.liquify_state.last_pos.is_some()
+                {
+                    if self.record_tool_adjustments
+                        && let Some(field) = &self.liquify_state.displacement
+                    {
+                        self.liquify_state.history.finish(field);
+                    }
                     self.liquify_state.last_pos = None;
+                    self.liquify_state.last_frame_time = None;
+                    self.liquify_state.sample_position = None;
                     self.liquify_state.dirty_rect = None;
                 }
             }
@@ -190,7 +313,7 @@ impl ToolsPanel {
 
                 // Escape: reset to original
                 if escape_pressed && self.mesh_warp_state.is_active {
-                    self.mesh_warp_state.points = self.mesh_warp_state.original_points.clone();
+                    self.cancel_active_tool(canvas_state);
                 }
 
                 // Enter: commit
@@ -216,6 +339,13 @@ impl ToolsPanel {
                         .unwrap_or(0);
                     if cur_layer_idx != self.mesh_warp_state.snapshot_layer_index
                         || cur_gen != self.mesh_warp_state.snapshot_generation
+                        || self
+                            .mesh_warp_state
+                            .source_snapshot
+                            .as_ref()
+                            .is_none_or(|source| {
+                                source.dimensions() != (canvas_state.width, canvas_state.height)
+                            })
                     {
                         // Re-snapshot: layer content or active layer changed
                         self.init_mesh_warp_grid(canvas_state);
@@ -233,12 +363,16 @@ impl ToolsPanel {
                         let hit_radius = 12.0 / zoom; // screen pixels -> canvas pixels
 
                         if is_primary_pressed {
-                            // Start drag
+                            // A press and movement can share a frame. Hit-test the
+                            // press position, then move the captured anchor below.
+                            let press_pos =
+                                Self::primary_press_canvas_position(ui, canvas_rect, zoom)
+                                    .unwrap_or(pos_f);
                             let mut best_idx = None;
                             let mut best_dist = f32::MAX;
                             for (i, pt) in self.mesh_warp_state.points.iter().enumerate() {
-                                let dx = pos_f.0 - pt[0];
-                                let dy = pos_f.1 - pt[1];
+                                let dx = press_pos.0 - pt[0];
+                                let dy = press_pos.1 - pt[1];
                                 let dist = (dx * dx + dy * dy).sqrt();
                                 if dist < hit_radius && dist < best_dist {
                                     best_dist = dist;
@@ -246,14 +380,20 @@ impl ToolsPanel {
                                 }
                             }
                             self.mesh_warp_state.dragging_index = best_idx;
+                            self.mesh_warp_state.drag_before =
+                                best_idx.map(|_| self.mesh_warp_state.layout());
                         }
 
-                        if is_primary_down && let Some(idx) = self.mesh_warp_state.dragging_index {
-                            self.mesh_warp_state.points[idx] = [pos_f.0, pos_f.1];
-                        }
-
-                        if is_primary_released {
-                            self.mesh_warp_state.dragging_index = None;
+                        if (is_primary_down || is_primary_released)
+                            && let Some(idx) = self.mesh_warp_state.dragging_index
+                        {
+                            let point = [pos_f.0, pos_f.1];
+                            if !self.mesh_warp_state.edit_reference {
+                                self.mesh_warp_state.points[idx] = point;
+                            } else if self.mesh_warp_state.reference_move_valid(idx, point) {
+                                self.mesh_warp_state.original_points[idx] = point;
+                                self.mesh_warp_state.points[idx] = point;
+                            }
                         }
 
                         // Hover detection
@@ -273,8 +413,11 @@ impl ToolsPanel {
                         }
                     }
 
-                    // Draw overlay (grid + handles) - no live preview, warp only on commit
-                    self.draw_mesh_warp_overlay(ui, painter, canvas_rect, zoom, canvas_state);
+                    if is_primary_released {
+                        self.mesh_warp_state.finish_drag();
+                        self.mesh_warp_state.dragging_index = None;
+                    }
+                    self.advance_mesh_preview(ui.ctx(), canvas_state);
                 }
             }
 

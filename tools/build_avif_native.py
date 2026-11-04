@@ -19,7 +19,66 @@ VERSION = '1.5.4'
 NASM_SHA256 = '3ee4782247bcb874378d02f7eab4e294a84d3d15f3f6ee2de2f47a46aa7226e6'
 SOURCE_SHA256 = '686616b7c69eb88d44459391ab25cac13b6647a3b288835c5784e71c1514a5c5'
 AOM_VERSION = '3.15.1'
-AOM_SHA256 = '3502a3aaf7bfccf4cee9aa02da3cf13fb3d5a67489e734ded66aac2644ac6466'
+AOM_COMMIT = '44d0a57786f432d933ff64b653347c66f4d0fa1d'
+# Hash paths, file modes and file contents, not Gitiles' generated timestamps.
+AOM_SHA256 = '4c65fbb81250f7cc5bbf70531efbd622fa10ec229a9ac64226c7d93e729e203b'
+
+
+def aom_manifest(archive):
+    manifest = {}
+    with tarfile.open(archive) as tar:
+        total = 0
+        for index, member in enumerate(tar):
+            total += member.size
+            if index >= 10000 or total > 256 * 1024 * 1024:
+                raise ValueError('Unsafe AV1 encoder archive')
+            parts = member.name.replace('\\', '/').split('/')
+            if member.name.startswith(('/', '\\')) or ':' in parts[0] or '..' in parts or not (member.isfile() or member.isdir()):
+                raise ValueError('Unsafe AV1 encoder archive')
+            if member.isfile():
+                if member.name in manifest or member.size > 64 * 1024 * 1024:
+                    raise ValueError('Unsafe AV1 encoder archive')
+                manifest[member.name] = (member.mode, hashlib.sha256(tar.extractfile(member).read()).hexdigest())
+    digest = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
+    if digest != AOM_SHA256:
+        raise ValueError('AV1 encoder source contents do not match the pinned revision')
+    return manifest
+
+
+def prepare_aom_source(work):
+    work.mkdir(parents=True, exist_ok=True)
+    archive = work / f'aom-{AOM_VERSION}.tar.gz'
+    if not archive.is_file():
+        temporary = archive.with_suffix('.download')
+        try:
+            url = f'https://aomedia.googlesource.com/aom/+archive/{AOM_COMMIT}.tar.gz'
+            with urllib.request.urlopen(url, timeout=60) as response, temporary.open('wb') as output:
+                count = 0
+                while chunk := response.read(1024 * 1024):
+                    count += len(chunk)
+                    if count > 64 * 1024 * 1024:
+                        raise ValueError('AV1 source download exceeds its limit')
+                    output.write(chunk)
+            aom_manifest(temporary)
+            temporary.replace(archive)
+        finally:
+            temporary.unlink(missing_ok=True)
+    manifest = aom_manifest(archive)
+    source = work / f'aom-{AOM_VERSION}'
+    if source.is_symlink():
+        raise ValueError('Unsafe AV1 source cache')
+    if source.exists():
+        entries = list(source.rglob('*'))
+        if any(p.is_symlink() for p in entries):
+            raise ValueError('Unsafe AV1 source cache')
+        files = {p.relative_to(source).as_posix(): p for p in entries if p.is_file()}
+        if set(files) != set(manifest) or any(p.is_symlink() or hashlib.sha256(p.read_bytes()).hexdigest() != manifest[name][1] for name, p in files.items()):
+            raise ValueError('Cached AV1 source contents changed; remove this source cache and retry')
+    else:
+        source.mkdir()
+        with tarfile.open(archive) as tar:
+            tar.extractall(source, filter='data')
+    return source
 
 
 def prepare_aom(target, env):
@@ -31,16 +90,7 @@ def prepare_aom(target, env):
         cmake = str(python.parent / ('cmake.exe' if os.name == 'nt' else 'cmake'))
         if not Path(cmake).is_file():
             subprocess.run([str(python), '-m', 'pip', 'install', 'cmake==3.31.6'], env=env, check=True)
-    archive = work / f'aom-{AOM_VERSION}.tar.gz'
-    download(f'https://aomedia.googlesource.com/aom/+archive/refs/tags/v{AOM_VERSION}.tar.gz', archive, AOM_SHA256)
-    source = work / f'aom-{AOM_VERSION}'
-    if not (source / 'CMakeLists.txt').exists():
-        source.mkdir(parents=True, exist_ok=True)
-        with tarfile.open(archive) as tar:
-            for member in tar.getmembers():
-                if not (source / member.name).resolve().is_relative_to(source.resolve()) or not (member.isfile() or member.isdir()):
-                    raise ValueError('Unsafe AV1 encoder archive')
-            tar.extractall(source, filter='data')
+    source = prepare_aom_source(work)
     build = work / ('aom-' + (target or f'{platform.system()}-{platform.machine()}'))
     args = [cmake, '-S', str(source), '-B', str(build), '-DCMAKE_BUILD_TYPE=Release',
             '-DBUILD_SHARED_LIBS=OFF', '-DCONFIG_PIC=1', '-DCONFIG_AV1_DECODER=0', '-DCONFIG_AV1_HIGHBITDEPTH=0',
@@ -56,7 +106,7 @@ def prepare_aom(target, env):
         arch = 'x86_64' if target.startswith('x86_64') else 'arm64'
         args += [f'-DCMAKE_OSX_ARCHITECTURES={arch}', f'-DAOM_TARGET_CPU={arch}']
     stamp = build / 'paintfe-config.json'
-    signature = {'args': args, 'source_sha256': AOM_SHA256}
+    signature = {'args': args, 'source_commit': AOM_COMMIT, 'source_sha256': AOM_SHA256}
     if not (build / 'CMakeCache.txt').is_file() or not stamp.is_file() or json.loads(stamp.read_text(encoding='utf-8')) != signature:
         subprocess.run(args, env=env, check=True)
         stamp.write_text(json.dumps(signature), encoding='utf-8')

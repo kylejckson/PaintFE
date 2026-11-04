@@ -524,6 +524,18 @@ impl PaintFEApp {
     }
 
     fn restore_active_project_view(&mut self) {
+        let document = self.active_project().map(|project| project.id);
+        if self.tools_panel.deformation_document != document {
+            if let Some(previous) = self.tools_panel.deformation_document
+                && let Some(project) = self.projects.iter_mut().find(|p| p.id == previous)
+            {
+                project.canvas_state.clear_preview_state();
+                project.canvas_state.mark_dirty(None);
+            }
+            self.tools_panel.clear_deformation_sessions();
+            self.tools_panel.deformation_document = document;
+        }
+
         // All document activation paths converge here, including async opens,
         // closing a tab and restoring an existing clean/blank document.
         self.canvas.gpu_clear_layers();

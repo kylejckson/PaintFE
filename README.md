@@ -225,6 +225,12 @@ See [Cargo.toml](Cargo.toml) for versions and the complete dependency list.
 
 </details>
 
+## Documentation
+
+Start with the [user manual](https://paintfe.com/docs). The repository also includes
+a [quick start](docs/quick-start.md), [focused guides and developer notes](docs/README.md),
+[local AI setup](docs/local-ai.md), and a [Warp and Liquify guide](docs/warp-and-liquify.md).
+
 ## Project background
 
 PaintFE started with a free month of GitHub Copilot from a friend and a question: could I build an image editor inspired by Paint.NET with its help? As a software engineer, I was curious, but didn’t expect it to get very far. It gave me something worth continuing, and I’ve kept developing and refining it since.

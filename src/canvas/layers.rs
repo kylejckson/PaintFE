@@ -29,6 +29,14 @@ pub enum BlendMode {
 }
 
 impl BlendMode {
+    pub fn help_text(self) -> String {
+        format!(
+            "{}\n{}",
+            self.display_name(),
+            crate::i18n::translate(&format!("blend_help.{}", self.to_u8()))
+        )
+    }
+
     /// Returns all blend modes for UI display
     pub fn all() -> &'static [BlendMode] {
         &[

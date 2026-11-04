@@ -138,7 +138,10 @@ impl ToolsPanel {
         mut gpu_renderer: Option<&mut crate::gpu::GpuRenderer>,
         ui_blocks_canvas_input: bool,
     ) {
-        gpu_renderer = gpu_renderer.filter(|gpu| gpu.ctx.supports_size(canvas_state.width, canvas_state.height));
+        gpu_renderer = gpu_renderer.filter(|gpu| {
+            gpu.ctx
+                .supports_size(canvas_state.width, canvas_state.height)
+        });
         let mut stroke_event: Option<StrokeEvent> = None;
 
         self.poll_active_layer_rgba_prewarm();
@@ -285,6 +288,9 @@ impl ToolsPanel {
         }
 
         // -- Deferred liquify commit --
+        if self.liquify_state.cancel_pending || self.mesh_warp_state.cancel_pending {
+            self.cancel_active_tool(canvas_state);
+        }
         if self.liquify_state.commit_pending {
             if self.liquify_state.commit_pending_frame == 0 {
                 self.liquify_state.commit_pending_frame = 1;
@@ -518,7 +524,13 @@ impl ToolsPanel {
             }
             pressure
         });
-        if let Some(p) = touch_pressure {
+        if !ui
+            .ctx()
+            .data(|d| d.get_temp::<bool>(egui::Id::new("tablet_pressure_enabled")))
+            .unwrap_or(true)
+        {
+            self.tool_state.current_pressure = 1.0;
+        } else if let Some(p) = touch_pressure {
             self.tool_state.current_pressure = p.clamp(0.0, 1.0);
         } else if !is_primary_down && !is_secondary_down {
             // Reset to full pressure when not actively drawing

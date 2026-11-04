@@ -105,7 +105,10 @@ impl Response {
     pub fn widget_state(&self) -> WidgetState {
         if !self.sense.interactive() {
             WidgetState::Noninteractive
-        } else if self.is_pointer_button_down_on() || self.has_focus() || self.clicked() {
+        } else if (self.is_pointer_button_down_on() && self.ctx.input(|i| i.pointer.primary_down()))
+            || self.has_focus()
+            || self.clicked()
+        {
             WidgetState::Active
         } else if self.hovered() || self.highlighted() {
             WidgetState::Hovered

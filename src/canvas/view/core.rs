@@ -44,7 +44,9 @@ impl Canvas {
             return;
         }
 
-        let (region_image, [rx, ry]) = state.composite_partial(rect);
+        // The layer already contains the stroke. Its deferred preview is only
+        // retained for the previous display frame, and must not be blended again.
+        let (region_image, [rx, ry]) = state.composite_committed_downscaled(rect, 1);
         let [rw, rh] = region_image.size;
         if rw == 0 || rh == 0 || rx + rw > state.width as usize || ry + rh > state.height as usize {
             return;
@@ -1975,40 +1977,55 @@ impl Canvas {
             .is_some_and(|t| t.zoom_tool_state.zoom_out_mode);
         // Extract brush cursor info before tools ref is consumed
         // (size, clone_source, is_circle, mask_data_for_cursor, rotation_deg)
-        let brush_cursor_info: Option<(f32, Option<Pos2>, bool, Option<(Vec<u8>, u32)>, f32)> =
-            tools.as_ref().and_then(|t| {
-                use crate::components::tools::Tool;
-                match t.active_tool {
-                    Tool::Brush
-                    | Tool::Eraser
-                    | Tool::CloneStamp
-                    | Tool::ContentAwareBrush
-                    | Tool::Liquify => {
-                        let clone_source = if t.active_tool == Tool::CloneStamp {
-                            t.clone_stamp_state.source
+        let brush_cursor_info: Option<(
+            f32,
+            Option<Pos2>,
+            bool,
+            Option<(Vec<u8>, u32)>,
+            f32,
+            bool,
+        )> = tools.as_ref().and_then(|t| {
+            use crate::components::tools::Tool;
+            match t.active_tool {
+                Tool::Brush
+                | Tool::Eraser
+                | Tool::CloneStamp
+                | Tool::ContentAwareBrush
+                | Tool::Liquify
+                | Tool::Smudge => {
+                    let clone_source = if t.active_tool == Tool::CloneStamp {
+                        t.clone_stamp_state.source
+                    } else {
+                        None
+                    };
+                    let is_circle_tip = matches!(t.active_tool, Tool::Liquify | Tool::Smudge)
+                        || t.properties.brush_tip.is_circle();
+                    // For image tips, pass the mask so cursor can draw shape overlay
+                    let mask_info = if !is_circle_tip && !t.brush_tip_mask.is_empty() {
+                        Some((t.brush_tip_mask.clone(), t.brush_tip_mask_size))
+                    } else {
+                        None
+                    };
+                    // For fixed rotation, pass angle to cursor; for random, 0 (no preview)
+                    let cursor_rotation = t.active_tip_rotation_deg;
+                    Some((
+                        if t.active_tool == Tool::Liquify {
+                            t.liquify_state.diameter
                         } else {
-                            None
-                        };
-                        let is_circle_tip = t.properties.brush_tip.is_circle();
-                        // For image tips, pass the mask so cursor can draw shape overlay
-                        let mask_info = if !is_circle_tip && !t.brush_tip_mask.is_empty() {
-                            Some((t.brush_tip_mask.clone(), t.brush_tip_mask_size))
-                        } else {
-                            None
-                        };
-                        // For fixed rotation, pass angle to cursor; for random, 0 (no preview)
-                        let cursor_rotation = t.active_tip_rotation_deg;
-                        Some((
-                            t.pressure_size(),
-                            clone_source,
-                            is_circle_tip,
-                            mask_info,
-                            cursor_rotation,
-                        ))
-                    }
-                    _ => None,
+                            t.pressure_size()
+                        },
+                        clone_source,
+                        is_circle_tip,
+                        mask_info,
+                        cursor_rotation,
+                        !t.properties.anti_aliased
+                            && is_circle_tip
+                            && matches!(t.active_tool, Tool::Brush | Tool::Eraser),
+                    ))
                 }
-            });
+                _ => None,
+            }
+        });
         let tip_name_for_cursor: Option<String> =
             tools.as_ref().and_then(|t| match &t.properties.brush_tip {
                 crate::components::tools::BrushTip::Image(name) => Some(name.clone()),
@@ -2199,7 +2216,8 @@ impl Canvas {
             let pending_tool_commit = tools.mesh_warp_state.commit_pending
                 || tools.liquify_state.commit_pending
                 || tools.gradient_state.commit_pending
-                || tools.text_state.commit_pending;
+                || tools.text_state.commit_pending
+                || tools.needs_deformation_update(state);
             let keyboard_tool_override = keyboard_finalize_pressed
                 && (tools.mesh_warp_state.is_active
                     || tools.liquify_state.is_active
@@ -2370,6 +2388,13 @@ impl Canvas {
                 true,
             );
 
+            if tools.active_tool == crate::components::tools::Tool::MeshWarp {
+                tools.draw_mesh_warp_overlay(ui, &painter, image_rect, self.zoom, state);
+            }
+            if tools.active_tool == crate::components::tools::Tool::Liquify {
+                tools.draw_liquify_protection(ui, &painter, image_rect);
+            }
+
             if tools.active_tool == crate::components::tools::Tool::Text {
                 // Draw overlay (border, handle, cursor) above the preview,
                 // even when pointer is off-canvas.
@@ -2412,7 +2437,19 @@ impl Canvas {
             } else {
                 false
             };
-            let cursor_visual_allowed = pointer_over_image_for_cursor
+            let painting_workspace = {
+                use crate::components::tools::Tool;
+                matches!(
+                    tools.active_tool,
+                    Tool::Brush
+                        | Tool::Eraser
+                        | Tool::CloneStamp
+                        | Tool::ContentAwareBrush
+                        | Tool::Liquify
+                        | Tool::Smudge
+                )
+            } && mouse_pos.is_some_and(|pos| canvas_rect.contains(pos));
+            let cursor_visual_allowed = (pointer_over_image_for_cursor || painting_workspace)
                 && !modal_open
                 && !egui::Popup::is_any_open(ui.ctx())
                 && !pointer_over_egui_with_touch
@@ -2772,12 +2809,17 @@ impl Canvas {
                 is_circle_tip,
                 ref mask_info,
                 cursor_rotation_deg,
+                snap_pixels,
             )) = brush_cursor_info
                 && cursor_visual_allowed
                 && let Some(pos) = mouse_pos
-                && let Some((canvas_x, canvas_y)) =
-                    self.screen_to_canvas_f32(pos, canvas_rect, state)
             {
+                let point = self.screen_to_canvas_unclamped(pos, canvas_rect, state);
+                let (canvas_x, canvas_y) = crate::components::tools::pixel_aligned_brush_center(
+                    point,
+                    brush_size,
+                    snap_pixels,
+                );
                 // Brush center in screen coords
                 let screen_cx = image_rect.min.x + canvas_x * self.zoom;
                 let screen_cy = image_rect.min.y + canvas_y * self.zoom;
@@ -3761,3 +3803,6 @@ mod brush_preview_optimization_tests {
         assert!(state.preview_tile_textures.is_empty());
     }
 }
+
+#[cfg(test)]
+include!("commit_preview_tests.rs");

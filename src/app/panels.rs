@@ -594,6 +594,7 @@ impl PaintFEApp {
 
     /// Show the floating History panel
     fn show_floating_history_panel(&mut self, ctx: &egui::Context, screen_size_changed: bool) {
+        self.commit_pending_tool_history();
         let _profile = crate::ui::perf::Scope::new(10);
         let mut show = self.window_visibility.history;
         let mut close_clicked = false;
@@ -651,6 +652,7 @@ impl PaintFEApp {
         }) {
             window = window.fixed_size(size);
         }
+        let mut requested_revert = None;
         let resp = window.show(ctx, |ui| {
             // Signal Grid panel header
             if signal_widgets::panel_header(
@@ -662,17 +664,30 @@ impl PaintFEApp {
                 close_clicked = true;
             }
             ui.style_mut().override_text_style = Some(egui::TextStyle::Small);
-            if let Some(project) = self.projects.get_mut(self.active_project_index) {
-                self.history_panel.show_interactive(
+            if let Some(project) = self.projects.get_mut(self.active_project_index)
+                && let Some(index) = self.history_panel.show_interactive(
                     ui,
                     &mut project.history,
-                    &mut project.canvas_state,
                     &self.assets,
                     &self.theme,
-                );
+                )
+            {
+                requested_revert = Some(index);
             }
         });
 
+        if let Some(index) = requested_revert {
+            self.commit_pending_tool_history();
+            self.cancel_straighten();
+            if self.paste_overlay.is_some() {
+                self.cancel_paste_overlay();
+            }
+            if let Some(project) = self.projects.get_mut(self.active_project_index) {
+                self.tools_panel
+                    .cancel_active_tool(&mut project.canvas_state);
+                project.history.undo_to(index, &mut project.canvas_state);
+            }
+        }
         if let Some(inner_resp) = resp {
             let win_rect = inner_resp.response.rect;
             crate::ui::workspace::register(ctx, "History", win_rect);

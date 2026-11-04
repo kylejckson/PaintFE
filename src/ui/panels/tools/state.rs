@@ -1692,6 +1692,7 @@ pub enum LiquifyMode {
     Contract,
     TwirlCW,
     TwirlCCW,
+    Reconstruct,
 }
 
 impl LiquifyMode {
@@ -1702,6 +1703,7 @@ impl LiquifyMode {
             LiquifyMode::Contract => t!("liquify_mode.contract"),
             LiquifyMode::TwirlCW => t!("liquify_mode.twirl_cw"),
             LiquifyMode::TwirlCCW => t!("liquify_mode.twirl_ccw"),
+            LiquifyMode::Reconstruct => t!("tools.liquify.reconstruct"),
         }
     }
     pub fn all() -> &'static [LiquifyMode] {
@@ -1711,26 +1713,51 @@ impl LiquifyMode {
             LiquifyMode::Contract,
             LiquifyMode::TwirlCW,
             LiquifyMode::TwirlCCW,
+            LiquifyMode::Reconstruct,
         ]
     }
 }
 
 /// State for the Liquify tool.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct LiquifyToolState {
     pub displacement: Option<crate::ops::transform::DisplacementField>,
     pub is_active: bool,
     pub last_pos: Option<[f32; 2]>,
     pub is_dragging: bool,
     pub strength: f32,
+    pub history: LiquifyAdjustmentHistory,
+    pub diameter: f32,
+    pub snapshot_generation: u64,
+    pub selection_generation: u64,
+    pub protection: Option<image::GrayImage>,
+    pub protect_selection_pending: bool,
+    pub clear_protection_pending: bool,
+    pub protection_texture: Option<egui::TextureHandle>,
+    pub protection_dirty: bool,
+    pub last_frame_time: Option<f64>,
+    pub next_sample_time: f64,
+    pub sample_position: Option<[f32; 2]>,
     pub mode: LiquifyMode,
     pub dirty_rect: Option<[i32; 4]>,
     pub source_snapshot: Option<image::RgbaImage>,
     /// Layer index captured with `source_snapshot`.
     pub source_layer_index: Option<usize>,
     pub warp_buffer: Vec<u8>,
+    pub reset_pending: bool,
+    pub cancel_pending: bool,
     pub commit_pending: bool,
     pub commit_pending_frame: u8,
+}
+
+impl std::fmt::Debug for LiquifyToolState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LiquifyToolState")
+            .field("is_active", &self.is_active)
+            .field("diameter", &self.diameter)
+            .field("mode", &self.mode)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for LiquifyToolState {
@@ -1741,11 +1768,25 @@ impl Default for LiquifyToolState {
             last_pos: None,
             is_dragging: false,
             strength: 0.5,
+            history: LiquifyAdjustmentHistory::default(),
+            diameter: 100.,
+            snapshot_generation: 0,
+            selection_generation: 0,
+            protection: None,
+            protect_selection_pending: false,
+            clear_protection_pending: false,
+            protection_texture: None,
+            protection_dirty: false,
+            last_frame_time: None,
+            next_sample_time: 0.,
+            sample_position: None,
             mode: LiquifyMode::Push,
             dirty_rect: None,
             source_snapshot: None,
             source_layer_index: None,
             warp_buffer: Vec::new(),
+            reset_pending: false,
+            cancel_pending: false,
             commit_pending: false,
             commit_pending_frame: 0,
         }
@@ -1756,18 +1797,46 @@ impl Default for LiquifyToolState {
 // MESH WARP TOOL STATE
 // ============================================================================
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct MeshLayout {
+    pub original: Vec<[f32; 2]>,
+    pub points: Vec<[f32; 2]>,
+}
+
+#[derive(Debug)]
+pub struct MeshPreview {
+    pub layout: MeshLayout,
+    pub epoch: u64,
+    pub downscale: u32,
+    pub source: std::sync::Arc<image::RgbaImage>,
+    pub pixels: image::RgbaImage,
+}
+
 /// State for the Mesh Warp tool.
 #[derive(Clone, Debug)]
 pub struct MeshWarpToolState {
     pub grid_cols: usize,
     pub grid_rows: usize,
+    pub edit_reference: bool,
+    pub drag_before: Option<MeshLayout>,
+    pub undo_layouts: Vec<MeshLayout>,
+    pub redo_layouts: Vec<MeshLayout>,
     pub points: Vec<[f32; 2]>,
     pub original_points: Vec<[f32; 2]>,
     pub is_active: bool,
     pub dragging_index: Option<usize>,
     pub hover_index: Option<usize>,
-    pub source_snapshot: Option<image::RgbaImage>,
+    pub source_snapshot: Option<std::sync::Arc<image::RgbaImage>>,
+    pub preview_source: Option<std::sync::Arc<image::RgbaImage>>,
+    pub preview_receiver:
+        Option<std::sync::Arc<std::sync::Mutex<std::sync::mpsc::Receiver<MeshPreview>>>>,
+    pub preview_cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub preview_layout: Option<MeshLayout>,
+    pub preview_epoch: u64,
+    pub preview_selection_generation: u64,
+    pub selection_snapshot: Option<std::sync::Arc<image::GrayImage>>,
     pub warp_buffer: Vec<u8>,
+    pub cancel_pending: bool,
     pub commit_pending: bool,
     pub commit_pending_frame: u8,
     /// True when grid size changed and needs auto-reinit on next frame.
@@ -1783,13 +1852,25 @@ impl Default for MeshWarpToolState {
         Self {
             grid_cols: 4,
             grid_rows: 4,
+            edit_reference: false,
+            drag_before: None,
+            undo_layouts: Vec::new(),
+            redo_layouts: Vec::new(),
             points: Vec::new(),
             original_points: Vec::new(),
             is_active: false,
             dragging_index: None,
             hover_index: None,
             source_snapshot: None,
+            preview_source: None,
+            preview_receiver: None,
+            preview_cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            preview_layout: None,
+            preview_epoch: 0,
+            preview_selection_generation: 0,
+            selection_snapshot: None,
             warp_buffer: Vec::new(),
+            cancel_pending: false,
             commit_pending: false,
             commit_pending_frame: 0,
             needs_reinit: false,
@@ -1910,6 +1991,8 @@ impl Default for ShapesToolState {
 
 pub struct ToolsPanel {
     pub active_tool: Tool,
+    pub record_tool_adjustments: bool,
+    pub deformation_document: Option<uuid::Uuid>,
     pub properties: ToolProperties,
     tool_state: ToolState,
     pub line_state: LineState,
@@ -2006,6 +2089,8 @@ impl Default for ToolsPanel {
     fn default() -> Self {
         Self {
             active_tool: Tool::default(),
+            record_tool_adjustments: false,
+            deformation_document: None,
             properties: ToolProperties::default(),
             tool_state: ToolState::default(),
             line_state: LineState::default(),

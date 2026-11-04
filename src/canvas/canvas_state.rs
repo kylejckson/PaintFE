@@ -1553,7 +1553,8 @@ impl CanvasState {
         self.layers.get_mut(self.active_layer_index)
     }
 
-    pub fn mark_dirty(&mut self, rect: Option<egui::Rect>) {
+    /// Invalidate display compositing without changing document pixels or layer generations.
+    pub fn mark_render_dirty(&mut self, rect: Option<egui::Rect>) {
         let full = egui::Rect::from_min_max(
             egui::pos2(0.0, 0.0),
             egui::pos2(self.width as f32, self.height as f32),
@@ -1565,6 +1566,16 @@ impl CanvasState {
             None => new_rect,
         });
         self.dirty_generation = self.dirty_generation.wrapping_add(1);
+    }
+
+    pub fn mark_dirty(&mut self, rect: Option<egui::Rect>) {
+        self.mark_render_dirty(rect);
+        let new_rect = rect.unwrap_or_else(|| {
+            egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(self.width as f32, self.height as f32),
+            )
+        });
 
         // Per-layer GPU generation tracking: if a specific rect is provided,
         // only the active layer changed.  If None (full-image dirty), bump

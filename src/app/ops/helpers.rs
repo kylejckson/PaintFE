@@ -1,30 +1,93 @@
 impl PaintFEApp {
+    pub(crate) fn can_undo_action(&self) -> bool {
+        if self.settings.undo_tool_adjustments
+            && self.tools_panel.active_tool == crate::components::tools::Tool::Liquify
+            && self.tools_panel.liquify_state.history.limited
+        {
+            return false;
+        }
+        self.active_project().is_some_and(|p| p.history.can_undo())
+            || self.paste_overlay.is_some()
+            || self.tools_panel.has_active_tool_preview()
+            || (self.settings.undo_tool_adjustments && self.tools_panel.can_undo_adjustment())
+    }
+
+    pub(crate) fn can_redo_action(&self) -> bool {
+        if self.settings.undo_tool_adjustments
+            && self.tools_panel.active_tool == crate::components::tools::Tool::Liquify
+            && self.tools_panel.liquify_state.history.limited
+        {
+            return false;
+        }
+        self.active_project().is_some_and(|p| p.history.can_redo())
+            || (self.settings.undo_tool_adjustments
+                && (!self.paste_transform_redo.is_empty()
+                    || self.tools_panel.can_redo_adjustment()))
+    }
+
     pub(crate) fn perform_undo(&mut self) {
-        if let Some(overlay) = self.paste_overlay.as_mut() {
-            if let Some(prev) = self.paste_transform_undo.pop() {
-                let current = overlay.transform();
+        self.tools_panel.cancel_pending_deformation_commit();
+        if self.settings.undo_tool_adjustments {
+            if self.tools_panel.active_tool == crate::components::tools::Tool::Liquify
+                && self.tools_panel.liquify_state.history.limited
+            {
+                return;
+            }
+            if let Some(overlay) = self.paste_overlay.as_mut()
+                && let Some(prev) = self.paste_transform_undo.pop()
+            {
+                self.paste_transform_redo.push(overlay.transform());
                 overlay.set_transform(prev);
-                self.paste_transform_redo.push(current);
-                if let Some(project) = self.active_project_mut() {
-                    project.history.undo(&mut project.canvas_state);
-                }
-            } else {
-                self.cancel_paste_overlay();
-                if let Some(project) = self.active_project_mut() {
-                    project.canvas_state.clear_selection();
-                }
+                return;
             }
-        } else if self.tools_panel.has_active_tool_preview() {
-            // Cancel in-progress tool operation instead of undoing
-            if let Some(project) = self.projects.get_mut(self.active_project_index) {
-                self.tools_panel
-                    .cancel_active_tool(&mut project.canvas_state);
+            if let Some(project) = self.projects.get_mut(self.active_project_index)
+                && self.tools_panel.undo_adjustment(&mut project.canvas_state)
+            {
+                return;
             }
-        } else {
-            self.commit_pending_tool_history();
-            if let Some(project) = self.active_project_mut() {
-                project.history.undo(&mut project.canvas_state);
+        }
+        self.commit_pending_tool_history();
+        self.cancel_straighten();
+        if self.paste_overlay.is_some() {
+            self.cancel_paste_overlay();
+        }
+        if let Some(project) = self.projects.get_mut(self.active_project_index) {
+            self.tools_panel
+                .cancel_active_tool(&mut project.canvas_state);
+            project.history.undo(&mut project.canvas_state);
+        }
+    }
+
+    pub(crate) fn perform_redo(&mut self) {
+        self.tools_panel.cancel_pending_deformation_commit();
+        if self.settings.undo_tool_adjustments {
+            if self.tools_panel.active_tool == crate::components::tools::Tool::Liquify
+                && self.tools_panel.liquify_state.history.limited
+            {
+                return;
             }
+            if let Some(overlay) = self.paste_overlay.as_mut()
+                && let Some(next) = self.paste_transform_redo.pop()
+            {
+                self.paste_transform_undo.push(overlay.transform());
+                overlay.set_transform(next);
+                return;
+            }
+            if let Some(project) = self.projects.get_mut(self.active_project_index)
+                && self.tools_panel.redo_adjustment(&mut project.canvas_state)
+            {
+                return;
+            }
+        }
+        self.commit_pending_tool_history();
+        self.cancel_straighten();
+        if self.paste_overlay.is_some() {
+            self.cancel_paste_overlay();
+        }
+        if let Some(project) = self.projects.get_mut(self.active_project_index) {
+            self.tools_panel
+                .cancel_active_tool(&mut project.canvas_state);
+            project.history.redo(&mut project.canvas_state);
         }
     }
     /// Spawn a filter job on a background thread.

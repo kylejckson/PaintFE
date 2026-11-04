@@ -756,3 +756,93 @@ fn reopening_a_hidden_numeric_editor_starts_a_new_escape_transaction() {
         "Escape restored a stale transaction from the closed popup"
     );
 }
+
+#[test]
+fn native_buttons_keep_their_geometry_and_ignore_secondary_press_style() {
+    for dark in [false, true] {
+        for scale in [1., 1.5] {
+            let ctx = egui::Context::default();
+            ctx.set_visuals(if dark {
+                egui::Visuals::dark()
+            } else {
+                egui::Visuals::light()
+            });
+            ctx.style_mut_of(
+                if dark {
+                    egui::Theme::Dark
+                } else {
+                    egui::Theme::Light
+                },
+                |style| {
+                    style
+                        .text_styles
+                        .get_mut(&egui::TextStyle::Button)
+                        .unwrap()
+                        .size *= scale;
+                    style.visuals.widgets.inactive.bg_stroke.width = 0.;
+                    style.visuals.widgets.hovered.bg_stroke.width = 2.;
+                    style.visuals.widgets.active.bg_stroke.width = 3.;
+                },
+            );
+            let draw = |events| {
+                let mut result = None;
+                let _ = ctx.run_ui(input(events), |ui| {
+                    ui.horizontal(|ui| {
+                        let a = ui.button("Preview");
+                        let b = ui.button("Apply");
+                        result = Some((a, b.rect));
+                    });
+                });
+                result.unwrap()
+            };
+            let initial = draw(vec![]);
+            let pos = initial.0.rect.center();
+            let hovered = draw(vec![Event::PointerMoved(pos)]);
+            assert_eq!(initial.0.rect, hovered.0.rect);
+            assert_eq!(initial.1, hovered.1);
+            let primary = draw(vec![pointer(pos, true)]);
+            assert_eq!(initial.0.rect, primary.0.rect);
+            assert_eq!(initial.1, primary.1);
+            draw(vec![pointer(pos, false)]);
+            ctx.memory_mut(|m| m.surrender_focus(primary.0.id));
+            let secondary = draw(vec![Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Secondary,
+                pressed: true,
+                modifiers: Modifiers::NONE,
+            }]);
+            assert_ne!(format!("{:?}", secondary.0.widget_state()), "Active");
+        }
+    }
+}
+
+#[test]
+fn reserved_numeric_width_does_not_move_adjacent_controls() {
+    for dark in [false, true] {
+        let ctx = egui::Context::default();
+        ctx.set_visuals(if dark {
+            egui::Visuals::dark()
+        } else {
+            egui::Visuals::light()
+        });
+        let mut positions = Vec::new();
+        for value in [1., 9., 10., 99., 100., 999.] {
+            let mut value = value;
+            let _ = ctx.run_ui(input(vec![]), |ui| {
+                ui.horizontal(|ui| {
+                    ui.add(
+                        Numeric::new(&mut value)
+                            .range(1.0..=999.0)
+                            .suffix("px")
+                            .width_for("999.0px"),
+                    );
+                    positions.push(ui.button("Next").rect);
+                });
+            });
+        }
+        assert!(
+            positions.iter().all(|rect| *rect == positions[0]),
+            "{positions:?}"
+        );
+    }
+}

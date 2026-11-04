@@ -311,6 +311,18 @@ const SEARCH_ENTRIES: &[SearchEntry] = &[
     },
     SearchEntry {
         tab: SettingsTab::Editing,
+        key: "tools.tablet.enabled",
+        english: "Enable tablet pressure input",
+        section: "tools.tablet.title",
+    },
+    SearchEntry {
+        tab: SettingsTab::Editing,
+        key: "settings.editing.undo_adjustments",
+        english: "Include uncommitted tool adjustments in Undo",
+        section: "settings.editing.selection_keys",
+    },
+    SearchEntry {
+        tab: SettingsTab::Editing,
         key: "settings.editing.enter_deselect",
         english: "Enter clears the selection",
         section: "settings.editing.selection_keys",

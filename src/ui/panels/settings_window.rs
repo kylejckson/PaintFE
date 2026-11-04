@@ -1094,6 +1094,12 @@ impl SettingsWindow {
             .weak(),
         );
 
+        ui.checkbox(
+            &mut settings.undo_tool_adjustments,
+            t!("settings.editing.undo_adjustments"),
+        )
+        .search_target(ui, "settings.editing.undo_adjustments");
+        ui.weak(t!("settings.editing.undo_adjustments_hint"));
         Self::section_header(ui, &t!("settings.editing.selection_keys"));
         ui.checkbox(
             &mut settings.escape_deselect,
@@ -1114,6 +1120,37 @@ impl SettingsWindow {
         .search_target(ui, "settings.editing.legacy_clipboard");
         ui.weak(t!("settings.editing.legacy_clipboard_hint"))
             .search_target(ui, "settings.editing.legacy_clipboard_hint");
+        Self::section_header(ui, &t!("tools.tablet.title"));
+        ui.checkbox(
+            &mut settings.tablet_pressure_enabled,
+            t!("tools.tablet.enabled"),
+        )
+        .search_target(ui, "tools.tablet.enabled");
+        ui.weak(t!("tools.tablet.hint"));
+        let pressure = ui.input(|i| {
+            i.events.iter().rev().find_map(|event| {
+                if let egui::Event::Touch {
+                    force: Some(force), ..
+                } = event
+                {
+                    Some(*force)
+                } else {
+                    None
+                }
+            })
+        });
+        if let Some(value) = pressure {
+            ui.data_mut(|d| d.insert_temp(egui::Id::new("tablet_last_pressure"), value));
+        }
+        if let Some(value) = ui.data(|d| d.get_temp::<f32>(egui::Id::new("tablet_last_pressure"))) {
+            ui.label(format!(
+                "{}: {:.0}%",
+                t!("tools.tablet.pressure"),
+                value * 100.
+            ));
+        } else {
+            ui.weak(t!("tools.tablet.no_signal"));
+        }
         settings.save();
     }
 
@@ -1574,13 +1611,35 @@ impl SettingsWindow {
                     .suffix(suffix)
                     .steppers(true)
                     .double_click_reset_to(default);
+                let mut inherited = false;
                 if let Some(inherit) = inherit {
                     slider = slider.on_double_click_reset(|| *inherit = true);
+                    let mut response = ui.add(slider);
+                    if crate::ui::controls::reset(ui, true).clicked() {
+                        *inherit = true;
+                        inherited = true;
+                        response.mark_changed();
+                    }
+                    return response.changed() || inherited;
                 }
-                ui.add(slider).changed()
+                ui.add(slider.reset_to(default)).changed()
             });
         Self::search_mark(ui, label, &row.label);
         row.inner
+    }
+
+    pub(crate) fn open_ai_settings(&mut self, settings: &AppSettings) {
+        self.sync_from_settings(settings);
+        self.search_query.clear();
+        self.active_tab = SettingsTab::AI;
+        self.open = true;
+    }
+
+    pub(crate) fn open_keybindings_settings(&mut self, settings: &AppSettings) {
+        self.sync_from_settings(settings);
+        self.search_query.clear();
+        self.active_tab = SettingsTab::Keybinds;
+        self.open = true;
     }
 
     pub(crate) fn open_tools_settings(&mut self, settings: &AppSettings) {

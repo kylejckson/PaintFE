@@ -38,14 +38,41 @@ impl ToolsPanel {
         ui.separator();
         ui.label(t!("ctx.size"));
         ui.add(
-            crate::ui::controls::Numeric::new(&mut self.properties.size)
+            crate::ui::controls::Numeric::new(&mut self.liquify_state.diameter)
                 .speed(0.5)
-                .range(5.0..=500.0)
+                .range(5.0..=999.0)
+                .width_for("999.0px")
                 .suffix("px"),
         );
 
+        ui.separator();
+        if ui.button(t!("tools.liquify.protect")).clicked() {
+            self.liquify_state.protect_selection_pending = true;
+        }
+        if ui
+            .add_enabled(
+                self.liquify_state.protection.is_some(),
+                egui::Button::new(t!("tools.liquify.clear_protection")),
+            )
+            .clicked()
+        {
+            self.liquify_state.clear_protection_pending = true;
+        }
+        if self.liquify_state.history.limited {
+            ui.weak(t!("tools.liquify.history_limit"));
+        }
         if self.liquify_state.is_active {
             ui.separator();
+            if ui.button(t!("tools.session.apply")).clicked() {
+                self.liquify_state.commit_pending = true;
+                self.liquify_state.commit_pending_frame = 0;
+            }
+            if ui.button(t!("common.reset")).clicked() {
+                self.liquify_state.reset_pending = true;
+            }
+            if ui.button(t!("ui.cancel")).clicked() {
+                self.liquify_state.cancel_pending = true;
+            }
             ui.label(
                 egui::RichText::new(t!("ctx.press_enter_to_apply"))
                     .weak()
@@ -73,7 +100,13 @@ impl ToolsPanel {
             self.stroke_tracker.cancel();
             return;
         };
-        if target_layer_idx >= canvas_state.layers.len() {
+        if source.dimensions() != (canvas_state.width, canvas_state.height)
+            || target_layer_idx != canvas_state.active_layer_index
+            || canvas_state
+                .layers
+                .get(target_layer_idx)
+                .is_none_or(|layer| layer.gpu_generation != self.liquify_state.snapshot_generation)
+        {
             self.liquify_state.displacement = None;
             self.liquify_state.is_active = false;
             self.liquify_state.source_snapshot = None;
@@ -97,6 +130,13 @@ impl ToolsPanel {
                 }
             }
         }
+        if let Some(mask) = &self.liquify_state.protection {
+            for (x, y, pixel) in warped.enumerate_pixels_mut() {
+                if x < mask.width() && y < mask.height() && mask.get_pixel(x, y).0[0] > 0 {
+                    *pixel = *source.get_pixel(x, y);
+                }
+            }
+        }
         let mut history_cmd = crate::components::history::SingleLayerSnapshotCommand::new_for_layer(
             HistoryAction::Liquify.label("Liquify".to_string()),
             canvas_state,
@@ -116,12 +156,7 @@ impl ToolsPanel {
             active_layer.gpu_generation += 1;
         }
 
-        self.liquify_state.displacement = None;
-        self.liquify_state.is_active = false;
-        self.liquify_state.source_snapshot = None;
-        self.liquify_state.source_layer_index = None;
-        self.liquify_state.warp_buffer.clear();
-        self.liquify_state.dirty_rect = None;
+        self.liquify_state.reset_session();
         self.stroke_tracker.cancel();
         canvas_state.clear_preview_state();
         if changed {
@@ -167,7 +202,7 @@ impl ToolsPanel {
                 .liquify_state
                 .dirty_rect
                 .unwrap_or([0, 0, w as i32, h as i32]);
-            let pad = self.properties.size as i32 + 20;
+            let pad = self.liquify_state.diameter.ceil() as i32 / 2 + 2;
             let dr = [
                 (dirty[0] - pad).max(0),
                 (dirty[1] - pad).max(0),
@@ -204,6 +239,15 @@ impl ToolsPanel {
             }
         }
 
+        if let Some(mask) = &self.liquify_state.protection {
+            for (x, y, pixel) in mask.enumerate_pixels().filter(|(x, y, _)| *x < w && *y < h) {
+                if pixel.0[0] > 0 {
+                    let index = (y as usize * w as usize + x as usize) * 4;
+                    self.liquify_state.warp_buffer[index..index + 4]
+                        .copy_from_slice(&source.as_raw()[index..index + 4]);
+                }
+            }
+        }
         let preview = TiledImage::from_raw_rgba(w, h, &self.liquify_state.warp_buffer);
         canvas_state.preview_layer = Some(preview);
         canvas_state.preview_blend_mode = BlendMode::Normal;
@@ -216,7 +260,7 @@ impl ToolsPanel {
             egui::pos2(w as f32, h as f32),
         ));
         canvas_state.preview_texture_cache = None; // Force re-upload
-        canvas_state.mark_dirty(None);
+        canvas_state.mark_render_dirty(None);
     }
 
     // ====================================================================
@@ -224,6 +268,21 @@ impl ToolsPanel {
     // ====================================================================
 
     fn show_mesh_warp_options(&mut self, ui: &mut egui::Ui) {
+        ui.add_enabled_ui(
+            self.mesh_warp_state.points == self.mesh_warp_state.original_points,
+            |ui| {
+                ui.selectable_value(
+                    &mut self.mesh_warp_state.edit_reference,
+                    true,
+                    t!("tools.mesh.setup"),
+                );
+                ui.selectable_value(
+                    &mut self.mesh_warp_state.edit_reference,
+                    false,
+                    t!("tools.mesh.deform"),
+                );
+            },
+        );
         ui.label(t!("ctx.mesh_warp.grid"));
         let grid_label = format!(
             "{}×{}",
@@ -253,6 +312,22 @@ impl ToolsPanel {
 
         if self.mesh_warp_state.is_active {
             ui.separator();
+            if ui.button(t!("tools.session.apply")).clicked() {
+                self.mesh_warp_state.commit_pending = true;
+                self.mesh_warp_state.commit_pending_frame = 0;
+            }
+            if ui
+                .add_enabled(
+                    self.mesh_warp_state.points != self.mesh_warp_state.original_points,
+                    egui::Button::new(t!("common.reset")),
+                )
+                .clicked()
+            {
+                self.reset_mesh_deformation();
+            }
+            if ui.button(t!("ui.cancel")).clicked() {
+                self.mesh_warp_state.cancel_pending = true;
+            }
             ui.label(
                 egui::RichText::new(t!("ctx.press_enter_to_apply"))
                     .weak()
@@ -273,31 +348,61 @@ impl ToolsPanel {
                 points.push([c as f32 / cols as f32 * w, r as f32 / rows as f32 * h]);
             }
         }
+        self.mesh_warp_state
+            .preview_cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.mesh_warp_state.preview_cancel =
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.mesh_warp_state.preview_receiver = None;
+        self.mesh_warp_state.preview_source = None;
+        self.mesh_warp_state.preview_layout = None;
+        self.mesh_warp_state.preview_epoch = self.mesh_warp_state.preview_epoch.wrapping_add(1);
+        self.mesh_warp_state.preview_selection_generation =
+            canvas_state.selection_overlay_generation;
+        self.mesh_warp_state.selection_snapshot =
+            canvas_state.selection_mask.clone().map(std::sync::Arc::new);
         self.mesh_warp_state.original_points = points.clone();
         self.mesh_warp_state.points = points;
+        self.mesh_warp_state.undo_layouts.clear();
+        self.mesh_warp_state.redo_layouts.clear();
+        self.mesh_warp_state.drag_before = None;
         self.mesh_warp_state.is_active = true;
 
         let idx = canvas_state.active_layer_index;
         if let Some(layer) = canvas_state.layers.get(idx) {
-            self.mesh_warp_state.source_snapshot = Some(layer.pixels.to_rgba_image());
+            self.mesh_warp_state.source_snapshot =
+                Some(std::sync::Arc::new(layer.pixels.to_rgba_image()));
             self.mesh_warp_state.snapshot_layer_index = idx;
             self.mesh_warp_state.snapshot_generation = layer.gpu_generation;
         }
     }
 
     fn commit_mesh_warp(&mut self, canvas_state: &mut CanvasState) {
+        if self.mesh_warp_state.points == self.mesh_warp_state.original_points {
+            self.mesh_warp_state.reset_session();
+            self.stroke_tracker.cancel();
+            canvas_state.clear_preview_state();
+            canvas_state.mark_render_dirty(None);
+            return;
+        }
         let source = match &self.mesh_warp_state.source_snapshot {
             Some(s) => s,
             None => return,
         };
         let target_layer_idx = self.mesh_warp_state.snapshot_layer_index;
-        if target_layer_idx >= canvas_state.layers.len() {
-            self.mesh_warp_state.is_active = false;
-            self.mesh_warp_state.points.clear();
-            self.mesh_warp_state.original_points.clear();
-            self.mesh_warp_state.source_snapshot = None;
-            self.mesh_warp_state.warp_buffer.clear();
+        if source.dimensions() != (canvas_state.width, canvas_state.height)
+            || target_layer_idx != canvas_state.active_layer_index
+            || canvas_state
+                .layers
+                .get(target_layer_idx)
+                .is_none_or(|layer| {
+                    layer.gpu_generation != self.mesh_warp_state.snapshot_generation
+                })
+        {
+            self.mesh_warp_state.reset_session();
+            self.stroke_tracker.cancel();
             canvas_state.clear_preview_state();
+            canvas_state.mark_render_dirty(None);
             return;
         }
 
@@ -308,16 +413,21 @@ impl ToolsPanel {
         ));
 
         let stroke_event = self.stroke_tracker.finish(canvas_state);
-        let warped = crate::ops::transform::warp_mesh_catmull_rom(
+        let mut warped = crate::ops::transform::warp_reference_mesh(
             source,
             &self.mesh_warp_state.original_points,
             &self.mesh_warp_state.points,
             self.mesh_warp_state.grid_cols,
             self.mesh_warp_state.grid_rows,
-            canvas_state.width,
-            canvas_state.height,
         );
 
+        if let Some(mask) = &self.mesh_warp_state.selection_snapshot {
+            for (x, y, pixel) in warped.enumerate_pixels_mut() {
+                if x >= mask.width() || y >= mask.height() || mask.get_pixel(x, y).0[0] == 0 {
+                    *pixel = *source.get_pixel(x, y);
+                }
+            }
+        }
         if let Some(active_layer) = canvas_state.layers.get_mut(target_layer_idx) {
             let w = canvas_state.width.min(warped.width());
             let h = canvas_state.height.min(warped.height());
@@ -330,11 +440,7 @@ impl ToolsPanel {
             active_layer.gpu_generation += 1;
         }
 
-        self.mesh_warp_state.is_active = false;
-        self.mesh_warp_state.points.clear();
-        self.mesh_warp_state.original_points.clear();
-        self.mesh_warp_state.source_snapshot = None;
-        self.mesh_warp_state.warp_buffer.clear();
+        self.mesh_warp_state.reset_session();
         canvas_state.clear_preview_state();
         canvas_state.mark_dirty(None);
 
@@ -343,7 +449,7 @@ impl ToolsPanel {
         }
     }
 
-    fn draw_mesh_warp_overlay(
+    pub(crate) fn draw_mesh_warp_overlay(
         &self,
         ui: &egui::Ui,
         painter: &egui::Painter,
@@ -492,7 +598,11 @@ impl ToolsPanel {
         );
         ui.separator();
         ui.label(crate::t!("ctx.liquify.strength"));
-        ui.add(crate::ui::controls::Slider::new(&mut self.smudge_state.strength, 0.01..=1.0).double_click_reset_to(0.6).fixed_decimals(2));
+        ui.add(
+            crate::ui::controls::Slider::new(&mut self.smudge_state.strength, 0.01..=1.0)
+                .double_click_reset_to(0.6)
+                .fixed_decimals(2),
+        );
     }
 
     /// Smudge one brush circle at (cx, cy): picks up color from canvas and

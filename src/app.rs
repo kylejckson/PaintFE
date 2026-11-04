@@ -44,3 +44,5 @@ mod issue_tests;
 mod preferences_review_tests;
 #[cfg(test)]
 mod save_safety_tests;
+#[cfg(test)]
+mod session_review_tests;

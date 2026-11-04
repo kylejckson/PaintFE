@@ -125,6 +125,7 @@ pub struct Numeric<'a, T: Number> {
     formatter: Option<Formatter<'a>>,
     parser: Option<Parser<'a>>,
     focus_on_open: bool,
+    width_sample: Option<String>,
 }
 impl<'a, T: Number> Numeric<'a, T> {
     #[track_caller]
@@ -137,6 +138,7 @@ impl<'a, T: Number> Numeric<'a, T> {
             formatter: None,
             parser: None,
             focus_on_open: false,
+            width_sample: None,
             value,
             speed: 1.0,
             range: f64::NEG_INFINITY..=f64::INFINITY,
@@ -152,6 +154,12 @@ impl<'a, T: Number> Numeric<'a, T> {
     /// Override the call-site ID for repeated controls; use a stable model key.
     pub fn id_salt(mut self, salt: impl egui::AsId) -> Self {
         self.id_salt = egui::Id::new(salt);
+        self
+    }
+
+    /// Reserve the displayed width of a representative maximum value.
+    pub fn width_for(mut self, sample: impl Into<String>) -> Self {
+        self.width_sample = Some(sample.into());
         self
     }
     /// Auto-focus and select the existing value when a dialog opens.
@@ -362,7 +370,18 @@ impl<T: Number> Numeric<'_, T> {
         if let Some(decimals) = self.decimals {
             widget = widget.max_decimals(decimals);
         }
-        let mut response = ui.add(widget);
+        let mut response = if let Some(sample) = &self.width_sample {
+            let font = egui::TextStyle::Button.resolve(ui.style());
+            let width = ui
+                .painter()
+                .layout_no_wrap(sample.clone(), font, ui.visuals().text_color())
+                .size()
+                .x
+                + ui.spacing().button_padding.x * 2.0;
+            ui.add_sized(egui::vec2(width, ui.spacing().interact_size.y), widget)
+        } else {
+            ui.add(widget)
+        };
         if self.focus_on_open {
             // Request after registration: windows may still be in their sizing
             // pass before the widget has been registered as a focus candidate.

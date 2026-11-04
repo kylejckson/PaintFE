@@ -2283,6 +2283,8 @@ pub fn warp_mesh_catmull_rom(
     warp_displacement_full(src, &displacement)
 }
 
+include!("transform_mesh.rs");
+
 #[cfg(test)]
 mod tests {
     use super::*;
