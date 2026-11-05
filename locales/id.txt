@@ -1854,3 +1854,11 @@ help.start.undo_body=Gunakan "Sunting > Urungkan" atau "Ulangi" untuk melakukan 
 help.start.save=Simpan pekerjaan Anda
 help.start.save_body=Gunakan "Berkas > Simpan" untuk menyimpan dokumen Anda. Pilih PFE dalam "Simpan Sebagai" agar lapisan tetap dapat diedit, atau PNG dan JPEG untuk dibagikan. Simpan salinan PFE saat Anda ingin mengedit lapisan lagi.
 help.start.explore=Jelajahi lebih lanjut
+
+settings.tab.tablet=Pena & Tablet Grafis
+tools.tablet.windows=Windows Ink (input penunjuk sistem)
+tools.tablet.system=Masukan pena sistem
+tools.tablet.windows_hint=Aktifkan Windows Ink di driver tablet Anda untuk menerima tekanan pena. PaintFE tidak mengubah pengaturan driver.
+tools.tablet.test=Uji tekanan pena
+tools.tablet.test_hint=Gambarlah di sini dengan pena. Tekanan pena mengubah ketebalan goresan. Area ini tidak mengubah gambar Anda.
+tools.tablet.clear=Hapus uji

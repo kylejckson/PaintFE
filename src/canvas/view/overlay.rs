@@ -7,93 +7,12 @@ impl Canvas {
         viewport: Rect,
         settings: &crate::assets::AppSettings,
     ) {
-        let pixel_size = self.zoom;
-
-        // Only draw grid if pixels are large enough to see
-        if pixel_size < 4.0 {
+        if state.width == 0 || state.height == 0 {
             return;
         }
-
-        // Calculate visible range in image coordinates
-        let visible_rect = image_rect.intersect(viewport);
-
-        // Convert to pixel coordinates
-        let start_x = ((visible_rect.min.x - image_rect.min.x) / pixel_size)
-            .floor()
-            .max(0.0) as u32;
-        let end_x = ((visible_rect.max.x - image_rect.min.x) / pixel_size)
-            .ceil()
-            .min(state.width as f32) as u32;
-        let start_y = ((visible_rect.min.y - image_rect.min.y) / pixel_size)
-            .floor()
-            .max(0.0) as u32;
-        let end_y = ((visible_rect.max.y - image_rect.min.y) / pixel_size)
-            .ceil()
-            .min(state.height as f32) as u32;
-
-        // Grid colors from user settings, softened by the configured opacity
-        // (premultiplied-safe scaling keeps the tint proportional).
-        let opacity = settings.pixel_grid_opacity.clamp(0.0, 1.0);
-        let grid_outline = scale_color(settings.pixel_grid_outline_color, opacity);
-        let grid_center = scale_color(settings.pixel_grid_center_color, opacity);
-        let dashed = settings.pixel_grid_dashed;
-
-        // Adaptive stroke width: thinner lines as zoom increases for less visual clutter
-        // At zoom 8 (minimum grid display): base thickness (1.2 and 0.6, which is 40% smaller than original 2.0 and 1.0)
-        // At zoom 20+ (far zoomed in): minimal thickness (0.5 and 0.3)
-        let base_outline = 1.2;
-        let base_center = 0.6;
-        let reference_zoom = 8.0; // zoom level where we use base thickness
-        let outline_stroke = (base_outline * reference_zoom / pixel_size)
-            .max(0.5)
-            .min(base_outline);
-        let center_stroke = (base_center * reference_zoom / pixel_size)
-            .max(0.3)
-            .min(base_center);
-
-        // Draw vertical lines (dashed single stroke, or solid dual-stroke)
-        for x in start_x..=end_x {
-            let screen_x = image_rect.min.x + x as f32 * pixel_size;
-            if screen_x >= visible_rect.min.x && screen_x <= visible_rect.max.x {
-                let p0 = Pos2::new(screen_x, visible_rect.min.y.max(image_rect.min.y));
-                let p1 = Pos2::new(screen_x, visible_rect.max.y.min(image_rect.max.y));
-                if dashed {
-                    painter.add(egui::Shape::dashed_line(
-                        &[p0, p1],
-                        (outline_stroke, grid_outline),
-                        2.5,
-                        2.5,
-                    ));
-                } else {
-                    // Draw black outline first
-                    painter.line_segment([p0, p1], (outline_stroke, grid_outline));
-                    // Draw white center line on top
-                    painter.line_segment([p0, p1], (center_stroke, grid_center));
-                }
-            }
-        }
-
-        // Draw horizontal lines (dashed single stroke, or solid dual-stroke)
-        for y in start_y..=end_y {
-            let screen_y = image_rect.min.y + y as f32 * pixel_size;
-            if screen_y >= visible_rect.min.y && screen_y <= visible_rect.max.y {
-                let p0 = Pos2::new(visible_rect.min.x.max(image_rect.min.x), screen_y);
-                let p1 = Pos2::new(visible_rect.max.x.min(image_rect.max.x), screen_y);
-                if dashed {
-                    painter.add(egui::Shape::dashed_line(
-                        &[p0, p1],
-                        (outline_stroke, grid_outline),
-                        2.5,
-                        2.5,
-                    ));
-                } else {
-                    // Draw black outline first
-                    painter.line_segment([p0, p1], (outline_stroke, grid_outline));
-                    // Draw white center line on top
-                    painter.line_segment([p0, p1], (center_stroke, grid_center));
-                }
-            }
-        }
+        self.pixel_grid
+            .borrow_mut()
+            .paint(painter, image_rect, viewport, self.zoom, settings);
     }
 
     // ========================================================================
@@ -276,16 +195,35 @@ impl Canvas {
         tint: Color32,
         draw_eraser_checkerboard: bool,
     ) {
+        painter
+            .with_clip_rect(viewport)
+            .extend(self.preview_texture_shapes(
+                image_rect,
+                viewport,
+                state,
+                tint,
+                draw_eraser_checkerboard,
+            ));
+    }
+
+    fn preview_texture_shapes(
+        &self,
+        image_rect: Rect,
+        viewport: Rect,
+        state: &CanvasState,
+        tint: Color32,
+        draw_eraser_checkerboard: bool,
+    ) -> Vec<egui::Shape> {
+        let mut shapes = Vec::new();
         if tint.a() == 0 {
-            return;
+            return shapes;
         }
         let visible = image_rect.intersect(viewport);
         if visible.width() <= 0.0 || visible.height() <= 0.0 {
-            return;
+            return shapes;
         }
 
         if !state.preview_tile_textures.is_empty() {
-            let clipped = painter.with_clip_rect(viewport);
             let cs = BRUSH_PREVIEW_TILE_SIZE;
             for (&(cx, cy), texture) in &state.preview_tile_textures {
                 let x = cx * cs;
@@ -313,15 +251,14 @@ impl Canvas {
                     Pos2::new((x - tx) as f32 / tw, (y - ty) as f32 / th),
                     Pos2::new((x2 - tx) as f32 / tw, (y2 - ty) as f32 / th),
                 );
-                clipped.image(texture.id(), tile_rect, uv, tint);
+                shapes.push(egui::Shape::image(texture.id(), tile_rect, uv, tint));
             }
-            return;
+            return shapes;
         }
         let Some(tex) = state.preview_texture_cache.as_ref() else {
-            return;
+            return shapes;
         };
 
-        let clipped_painter = painter.with_clip_rect(viewport);
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
 
         // Use image_rect-derived proportional positioning so the preview
@@ -346,7 +283,8 @@ impl Canvas {
             );
 
             if draw_eraser_checkerboard
-                && (state.preview_is_eraser
+                && (state.preview_texture_replaces_composite
+                    || state.preview_is_eraser
                     || matches!(
                         state.preview_blend_mode,
                         BlendMode::Overwrite | BlendMode::Xor
@@ -369,13 +307,19 @@ impl Canvas {
                         (sub_rect.max.y - grid_oy) / tex_h,
                     ),
                 );
-                clipped_painter.image(checker_tex.id(), sub_rect, checker_uv, tint);
+                shapes.push(egui::Shape::image(
+                    checker_tex.id(),
+                    sub_rect,
+                    checker_uv,
+                    tint,
+                ));
             }
 
-            clipped_painter.image(tex.id(), sub_rect, uv, tint);
+            shapes.push(egui::Shape::image(tex.id(), sub_rect, uv, tint));
         } else {
             if draw_eraser_checkerboard
-                && (state.preview_is_eraser
+                && (state.preview_texture_replaces_composite
+                    || state.preview_is_eraser
                     || matches!(
                         state.preview_blend_mode,
                         BlendMode::Overwrite | BlendMode::Xor
@@ -398,11 +342,17 @@ impl Canvas {
                         (image_rect.max.y - grid_oy) / tex_h,
                     ),
                 );
-                clipped_painter.image(checker_tex.id(), image_rect, checker_uv, tint);
+                shapes.push(egui::Shape::image(
+                    checker_tex.id(),
+                    image_rect,
+                    checker_uv,
+                    tint,
+                ));
             }
 
-            clipped_painter.image(tex.id(), image_rect, uv, tint);
+            shapes.push(egui::Shape::image(tex.id(), image_rect, uv, tint));
         }
+        shapes
     }
 
     fn draw_wrap_preview(

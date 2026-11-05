@@ -24,3 +24,20 @@ Separator opacity fades that line. Background opacity fades the bar over the
 window background. Corner radius rounds the bar's outer corners, with square
 corners as the default for a docked bar. Reset buttons restore the defaults or
 resume following the theme for inherited values.
+
+Theme background alpha and Background opacity multiply. A docked bar blends over
+the window background, while its reserved height keeps the canvas in place when
+tools or horizontal overflow change. Reset in Tool options restores that section.
+
+## Pen and tablet input
+
+Preferences > Pen & Tablet contains the tablet-pressure switch, a live pressure
+readout and a scratch area for testing strokes. Pressure size and opacity
+responses remain in Brush Dynamics. The test area never changes a document or
+adds history entries; Clear test clears only those temporary test marks.
+
+On Windows, PaintFE receives pen pressure through Windows Ink/system pointer
+input. Enable Windows Ink in the tablet driver's application settings when
+needed. PaintFE does not change driver settings or offer a WinTab backend.
+A mouse uses full pressure; a mouse-only test cannot confirm tablet-driver
+compatibility. Preferences search accepts Pen, Tablet, Windows Ink and pressure.

@@ -22,6 +22,8 @@ pub struct CanvasState {
     /// otherwise the stroke visibly disappears for a frame on release.
     /// Reset by `clear_preview_state`.
     pub preview_clear_pending: bool,
+    /// The cached overlay contains a full composite and replaces the base region.
+    pub preview_texture_replaces_composite: bool,
     pub show_pixel_grid: bool, // Toggle for pixel grid overlay
     pub guides: crate::canvas::guides::Guides,
     pub show_guidelines: bool, // Toggle for center/thirds guidelines overlay
@@ -165,6 +167,7 @@ impl CanvasState {
             dirty_rect: None,
             commit_composite_flush_rect: None,
             preview_clear_pending: false,
+            preview_texture_replaces_composite: false,
             show_pixel_grid: true, // Enable by default
             guides: crate::canvas::guides::Guides::default(),
             show_guidelines: false, // Disabled by default
@@ -259,6 +262,7 @@ impl CanvasState {
         self.preview_mask_reveal = false;
         self.selection_transform_preview_bounds = None;
         self.preview_clear_pending = false;
+        self.preview_texture_replaces_composite = false;
     }
 
     /// Keep the preview visible after a stroke commit until the composite has
@@ -266,6 +270,9 @@ impl CanvasState {
     /// deferred clear runs from the canvas view once `dirty_rect` is gone.
     pub fn defer_preview_clear(&mut self) {
         self.preview_clear_pending = true;
+        // Rebuild from committed pixels, never blend this retained stroke again.
+        self.preview_texture_cache = None;
+        self.preview_tile_textures.clear();
     }
 
     pub fn push_fill_commit_overlay(
@@ -576,7 +583,11 @@ impl CanvasState {
             .map(|idx| self.layer_effectively_visible(idx))
             .collect();
         let layers = &self.layers;
-        let preview = &self.preview_layer;
+        let preview = if self.preview_clear_pending {
+            &None
+        } else {
+            &self.preview_layer
+        };
         let preview_blend = self.preview_blend_mode;
         let preview_is_eraser = self.preview_is_eraser;
         let preview_replaces = self.preview_replaces_layer;
@@ -760,7 +771,7 @@ impl CanvasState {
             .map(|idx| self.layer_effectively_visible(idx))
             .collect();
         let layers = &self.layers;
-        let preview_layer = if include_preview {
+        let preview_layer = if include_preview && !self.preview_clear_pending {
             self.preview_layer.as_ref()
         } else {
             None
@@ -768,7 +779,8 @@ impl CanvasState {
         let preview_blend_mode = self.preview_blend_mode;
         let preview_is_eraser = self.preview_is_eraser;
         let preview_replaces = self.preview_replaces_layer;
-        let preview_targets_mask = include_preview && self.preview_targets_mask;
+        let preview_targets_mask =
+            include_preview && !self.preview_clear_pending && self.preview_targets_mask;
         let preview_mask_reveal = self.preview_mask_reveal;
         let active_layer_index = self.active_layer_index;
 
@@ -936,11 +948,15 @@ impl CanvasState {
             .map(|idx| self.layer_effectively_visible(idx))
             .collect();
         let layers = &self.layers;
-        let preview_layer = &self.preview_layer;
+        let preview_layer = if self.preview_clear_pending {
+            &None
+        } else {
+            &self.preview_layer
+        };
         let preview_blend_mode = self.preview_blend_mode;
         let preview_is_eraser = self.preview_is_eraser;
         let preview_replaces = self.preview_replaces_layer;
-        let preview_targets_mask = self.preview_targets_mask;
+        let preview_targets_mask = !self.preview_clear_pending && self.preview_targets_mask;
         let preview_mask_reveal = self.preview_mask_reveal;
         let active_layer_index = self.active_layer_index;
 

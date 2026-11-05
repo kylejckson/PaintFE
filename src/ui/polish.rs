@@ -459,7 +459,7 @@ pub fn control(
     );
     let fill = if !ui.is_enabled() {
         visuals.widgets.noninteractive.weak_bg_fill
-    } else if response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()) {
+    } else if response.is_primary_button_down_on() {
         visuals.widgets.active.bg_fill
     } else if selected {
         visuals.selection.bg_fill
@@ -469,8 +469,7 @@ pub fn control(
     if fill.a() > 0 {
         ui.painter().rect_filled(response.rect, rounding, fill);
     }
-    if selected || (response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()))
-    {
+    if selected || response.is_primary_button_down_on() {
         ui.painter().rect_stroke(
             response.rect.shrink(0.5),
             rounding,

@@ -1854,3 +1854,11 @@ help.start.undo_body=Verwenden Sie "Bearbeiten > Rückgängig" oder "Wiederholen
 help.start.save=Speichern Sie Ihre Arbeit
 help.start.save_body=Verwenden Sie "Datei > Speichern", um Ihr Dokument zu speichern. Wählen Sie PFE in "Speichern unter", um bearbeitbare Ebenen beizubehalten, oder PNG und JPEG zum Teilen. Bewahren Sie eine PFE-Kopie auf, wenn Sie die Ebenen erneut bearbeiten möchten.
 help.start.explore=Entdecken Sie mehr
+
+settings.tab.tablet=Stift und Grafiktablett
+tools.tablet.windows=Windows Ink (Systemzeigereingabe)
+tools.tablet.system=Systemstift-Eingabe
+tools.tablet.windows_hint=Aktivieren Sie Windows Ink in Ihrem Tablet-Treiber, um Stiftdruck zu empfangen. PaintFE ändert die Treibereinstellungen nicht.
+tools.tablet.test=Stiftdruck testen
+tools.tablet.test_hint=Zeichnen Sie hier mit Ihrem Stift. Der Stiftdruck verändert die Strichbreite. Dieser Bereich verändert Ihr Bild nicht.
+tools.tablet.clear=Test löschen

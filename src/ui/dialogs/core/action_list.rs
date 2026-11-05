@@ -170,7 +170,7 @@ fn close_button(ui: &mut egui::Ui, muted: Color32) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     let t = ui.ctx().animate_bool(
         response.id,
-        response.hovered() || response.is_pointer_button_down_on(),
+        response.hovered() || response.is_primary_button_down_on(),
     );
     if t > 0.01 {
         ui.painter()
@@ -240,7 +240,10 @@ pub fn action_list(
         previous.is_none_or(|previous| previous.saturating_add(1) < frame)
     });
     if opened {
-        let default = actions.iter().position(|action| action.recommended).unwrap_or(0);
+        let default = actions
+            .iter()
+            .position(|action| action.recommended)
+            .unwrap_or(0);
         responses[default].request_focus();
     }
     // egui supplies Tab/Shift+Tab and spatial arrow navigation, including the
@@ -276,7 +279,7 @@ fn action_row(
     let hover = ui.ctx().animate_bool(id.with("hover"), response.hovered());
     let press = ui
         .ctx()
-        .animate_bool(id.with("press"), response.is_pointer_button_down_on());
+        .animate_bool(id.with("press"), response.is_primary_button_down_on());
 
     // Background: subtle hover tint; the recommended row is tinted from the start.
     let base_tint = if action.recommended { 0.85 } else { 0.0 };
@@ -373,8 +376,10 @@ fn action_row(
 
     if response.has_focus() {
         ui.painter().rect_stroke(
-            rect.expand(1.), ROW_RADIUS,
-            Stroke::new(1.5, tint.accent_text), egui::StrokeKind::Outside,
+            rect.expand(1.),
+            ROW_RADIUS,
+            Stroke::new(1.5, tint.accent_text),
+            egui::StrokeKind::Outside,
         );
     }
     response
@@ -443,7 +448,7 @@ fn confirm_button(
     let hover = ui.ctx().animate_bool(id.with("hover"), response.hovered());
     let press = ui
         .ctx()
-        .animate_bool(id.with("press"), response.is_pointer_button_down_on());
+        .animate_bool(id.with("press"), response.is_primary_button_down_on());
 
     let (fill, fg) = if button.primary {
         (
@@ -502,4 +507,92 @@ fn confirm_button(
         );
     }
     response
+}
+
+#[cfg(test)]
+mod secondary_feedback_tests {
+    use super::*;
+
+    #[test]
+    fn cards_and_custom_buttons_keep_hover_colours_on_secondary_press() {
+        for dark in [false, true] {
+            for kind in 0..3 {
+                let ctx = egui::Context::default();
+                ctx.set_visuals(if dark {
+                    egui::Visuals::dark()
+                } else {
+                    egui::Visuals::light()
+                });
+                ctx.style_mut_of(
+                    if dark {
+                        egui::Theme::Dark
+                    } else {
+                        egui::Theme::Light
+                    },
+                    |style| style.animation_time = 0.,
+                );
+                let theme = if dark {
+                    crate::theme::Theme::dark()
+                } else {
+                    crate::theme::Theme::light()
+                };
+                let mut assets = Assets::new();
+                assets.init(&ctx);
+                let mut time = 0.;
+                let mut draw = |events| {
+                    time += 1.;
+                    let mut response = None;
+                    let output = ctx.run_ui(
+                        egui::RawInput {
+                            time: Some(time),
+                            events,
+                            ..Default::default()
+                        },
+                        |ui| {
+                            let tint = DialogTint::from_ui(ui);
+                            response = Some(match kind {
+                                0 => crate::signal_widgets::SignalButton::new("Apply")
+                                    .primary()
+                                    .show(ui, &theme),
+                                1 => action_row(
+                                    ui,
+                                    &assets,
+                                    0,
+                                    &DialogAction::new(Icon::Brush, "Open", "Import image"),
+                                    &tint,
+                                    1.,
+                                ),
+                                _ => confirm_button(
+                                    ui,
+                                    &assets,
+                                    &ConfirmButton::new("Save").primary(),
+                                    &tint,
+                                ),
+                            });
+                        },
+                    );
+                    let fills: Vec<_> = output
+                        .shapes
+                        .iter()
+                        .filter_map(|shape| match &shape.shape {
+                            egui::Shape::Rect(rect) => Some(rect.fill),
+                            _ => None,
+                        })
+                        .collect();
+                    (response.unwrap(), fills)
+                };
+                let pos = draw(vec![]).0.rect.center();
+                draw(vec![egui::Event::PointerMoved(pos)]);
+                let hover = draw(vec![]).1;
+                let held = draw(vec![egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Secondary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                }]);
+                assert_eq!(hover, held.1, "dark {dark} kind {kind}");
+                assert!(!held.0.is_primary_button_down_on());
+            }
+        }
+    }
 }

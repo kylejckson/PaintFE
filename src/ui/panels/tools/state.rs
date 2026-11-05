@@ -2044,8 +2044,10 @@ pub struct ToolsPanel {
     pub(crate) brush_tip_mask: Vec<u8>,
     /// Side length of cached mask
     pub(crate) brush_tip_mask_size: u32,
-    /// Cache key for brush tip mask: (tip_name, rounded_size, hardness_pct)
-    brush_tip_cache_key: (String, u32, u32),
+    pub(crate) brush_tip_mask_revision: u64,
+    /// Cache key includes AA so changing the edge policy rebuilds the mask.
+    brush_tip_cache_key: (String, u32, u32, bool),
+    brush_tip_geometry: Option<crate::config::brushes::BuiltinTipGeometry>,
     /// Monotonic stamp counter, used to seed per-stamp random rotation.
     stamp_counter: u32,
     /// The effective rotation angle (degrees) used for cursor overlay display.
@@ -2128,7 +2130,9 @@ impl Default for ToolsPanel {
             lut_params: (0.0, 0.0, false),
             brush_tip_mask: Vec::new(),
             brush_tip_mask_size: 0,
-            brush_tip_cache_key: (String::new(), 0, 0),
+            brush_tip_mask_revision: 0,
+            brush_tip_cache_key: (String::new(), 0, 0, true),
+            brush_tip_geometry: None,
             stamp_counter: 0,
             active_tip_rotation_deg: 0.0,
             pending_history_commands: Vec::new(),

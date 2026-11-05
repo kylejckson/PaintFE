@@ -1,6 +1,24 @@
 // Search catalogue: stable label keys, English fallback and owning section.
 const SEARCH_ENTRIES: &[SearchEntry] = &[
     SearchEntry {
+        tab: SettingsTab::Tablet,
+        key: "settings.tab.tablet",
+        english: "Pen Tablet Windows Ink pressure",
+        section: "tools.tablet.title",
+    },
+    SearchEntry {
+        tab: SettingsTab::Tablet,
+        key: "tools.tablet.test",
+        english: "Pressure test",
+        section: "tools.tablet.test",
+    },
+    SearchEntry {
+        tab: SettingsTab::Tablet,
+        key: "tools.tablet.windows",
+        english: "Windows Ink system pointer input",
+        section: "tools.tablet.title",
+    },
+    SearchEntry {
         tab: SettingsTab::Interface,
         key: "ruler.compact_vertical",
         english: "Compact vertical ruler",
@@ -310,7 +328,7 @@ const SEARCH_ENTRIES: &[SearchEntry] = &[
         section: "settings.editing.selection_keys",
     },
     SearchEntry {
-        tab: SettingsTab::Editing,
+        tab: SettingsTab::Tablet,
         key: "tools.tablet.enabled",
         english: "Enable tablet pressure input",
         section: "tools.tablet.title",

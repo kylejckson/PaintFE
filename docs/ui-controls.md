@@ -28,6 +28,7 @@ Native egui colour-picker popups also contain private DragValue fields. Use our 
 - The Preferences Interface page reserves the wheel for scrolling. Use `controls::without_wheel_adjustment` for such containers: it scopes the policy to child controls without changing the saved global preference. Dragging, typing, keyboard stepping, and buttons remain available.
 - Shift uses the configured fine-adjustment factor; integer quantities still change by at least one. Slider arrows step; Home/End select their limits.
 - Native slider accessibility actions remain native. Custom colour tracks expose slider metadata and keyboard focus. Preserve these when extending a control.
+- Primary-only controls use `Response::is_primary_button_down_on` for press feedback. Legacy and current egui styling share that rule. Right presses and drags do not activate sliders or numeric editors. Preserve keyboard activation, focus, context menus and documented secondary actions such as layer peek/solo.
 - Linked values are updated by the model. The editor discards stale edit state when a linked field changes externally.
 - Use `.focus_on_open(first_frame)` when a dialog initially focuses a field. The shared component handles registration and selecting the formatted value.
 - Integer quantities use integer-backed widget values, even when a legacy effect model stores them as floats. Convert at the model boundary; decimal formatting alone does not make a floating-point editor an integer control.
@@ -38,6 +39,13 @@ Native egui colour-picker popups also contain private DragValue fields. Use our 
 - Genuine strings such as search queries, file paths, hex colours, and W:H aspect ratio expressions remain text editors. A colour wheel, gradient-stop editor, curves editor, or canvas transform is a specialized 2D or multi-value editor, not a scalar slider. Reuse the shared primitives where applicable; document any new numeric exception here and give it independent interaction tests.
 
 ## Examples and Validation
+
+Preferences > Pen & Tablet has a specialized 2D pressure test area. It consumes
+ordered touch/primary-pointer samples, uses the existing pressure enable setting
+and keeps at most 1024 normalized points in temporary window state. It has no
+document or history access. Test force changes, synthesized mouse-event
+deduplication, lift/cancel, secondary input, disabled pressure, mouse fallback,
+clipping and bounded storage when changing it.
 
 Run `cargo run --example control_gallery -j1` for both styles, presets, theme/text scale variations, and the real New Image, resize, and effect dialogs. It has no settings persistence and does not modify user documents.
 

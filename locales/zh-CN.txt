@@ -1854,3 +1854,11 @@ help.start.undo_body=使用 "编辑 > 撤销" 或 "重做" 逐步完成编辑。
 help.start.save=保存您的工作
 help.start.save_body=使用 "文件 > 保存" 保存文档。在"另存为"中选择PFE以保留可编辑图层，或选择PNG和JPEG以进行共享。当您希望再次编辑图层时，请保留 PFE 副本。
 help.start.explore=探索更多
+
+settings.tab.tablet=数位笔与数位板
+tools.tablet.windows=Windows Ink（系统指针输入）
+tools.tablet.system=系统笔输入
+tools.tablet.windows_hint=在数位板驱动程序中启用 Windows Ink，以接收笔压。PaintFE 不会更改驱动程序设置。
+tools.tablet.test=笔压测试
+tools.tablet.test_hint=在此用数位笔绘画。笔压会改变笔画粗细，此区域不会修改您的图像。
+tools.tablet.clear=清除测试

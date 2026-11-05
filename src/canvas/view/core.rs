@@ -96,6 +96,7 @@ impl Canvas {
     ) -> Self {
         Self {
             zoom: 1.0,
+            pixel_grid: Default::default(),
             large_display: Default::default(),
             pan_offset: Vec2::ZERO,
             last_filter_was_linear: None,
@@ -314,6 +315,7 @@ impl Canvas {
                     .skip(state.active_layer_index + 1)
                     .any(|l| l.visible);
                 let use_fast_path = state.preview_blend_mode == BlendMode::Normal
+                    && !state.preview_clear_pending
                     && active_layer_normal
                     && !active_layer_has_live_mask
                     && !state.preview_targets_mask
@@ -321,6 +323,7 @@ impl Canvas {
                     && !has_layers_above
                     && !state.preview_is_eraser;
 
+                state.preview_texture_replaces_composite = !use_fast_path;
                 if use_fast_path {
                     if state.preview_flat_ready {
                         state.preview_tile_textures.clear();
@@ -372,12 +375,17 @@ impl Canvas {
                     // for interactive responsiveness (egui stretches the
                     // smaller texture to fill the canvas rect).
                     let ds = state.preview_downscale;
-                    let (color_image, _offset) = if ds > 1 {
+                    let (mut color_image, _offset) = if state.preview_clear_pending {
+                        state.composite_committed_downscaled(sb, ds.max(1))
+                    } else if ds > 1 {
                         state.composite_partial_downscaled(sb, ds)
                     } else {
                         state.composite_partial(sb)
                     };
 
+                    if state.cmyk_preview {
+                        color_image.pixels = apply_cmyk_soft_proof(&color_image.pixels);
+                    }
                     let image_data = ImageData::Color(Arc::new(color_image));
                     if let Some(ref mut tex) = state.preview_texture_cache {
                         tex.set(bound_canvas_image(ui.ctx(), image_data), tex_options);
@@ -1306,15 +1314,19 @@ impl Canvas {
         // The CPU preview overlay is built+painted after tool input (same-frame
         // stroke feedback) when tools are attached. Without tools there is no
         // input pass, so build + paint here in draw order instead.
+        // Fill this image slot after input without covering the grid or selection.
+        let stroke_preview_slot = painter.with_clip_rect(canvas_rect).add(egui::Shape::Noop);
         if tools.is_none() {
             self.update_preview_overlay(ui, state, debug_settings, prev_filter_was_linear);
-            self.paint_preview_texture(
-                &painter,
-                image_rect,
-                canvas_rect,
-                state,
-                Color32::WHITE,
-                true,
+            painter.with_clip_rect(canvas_rect).set(
+                stroke_preview_slot,
+                egui::Shape::Vec(self.preview_texture_shapes(
+                    image_rect,
+                    canvas_rect,
+                    state,
+                    Color32::WHITE,
+                    true,
+                )),
             );
         }
 
@@ -1981,7 +1993,7 @@ impl Canvas {
             f32,
             Option<Pos2>,
             bool,
-            Option<(Vec<u8>, u32)>,
+            Option<(Vec<u8>, u32, u64)>,
             f32,
             bool,
         )> = tools.as_ref().and_then(|t| {
@@ -2002,7 +2014,11 @@ impl Canvas {
                         || t.properties.brush_tip.is_circle();
                     // For image tips, pass the mask so cursor can draw shape overlay
                     let mask_info = if !is_circle_tip && !t.brush_tip_mask.is_empty() {
-                        Some((t.brush_tip_mask.clone(), t.brush_tip_mask_size))
+                        Some((
+                            t.brush_tip_mask.clone(),
+                            t.brush_tip_mask_size,
+                            t.brush_tip_mask_revision,
+                        ))
                     } else {
                         None
                     };
@@ -2018,8 +2034,7 @@ impl Canvas {
                         is_circle_tip,
                         mask_info,
                         cursor_rotation,
-                        !t.properties.anti_aliased
-                            && is_circle_tip
+                        t.snaps_tip_to_pixels()
                             && matches!(t.active_tool, Tool::Brush | Tool::Eraser),
                     ))
                 }
@@ -2379,13 +2394,15 @@ impl Canvas {
                 state.clear_preview_state();
             }
             self.update_preview_overlay(ui, state, debug_settings, prev_filter_was_linear);
-            self.paint_preview_texture(
-                &painter,
-                image_rect,
-                canvas_rect,
-                state,
-                Color32::WHITE,
-                true,
+            painter.with_clip_rect(canvas_rect).set(
+                stroke_preview_slot,
+                egui::Shape::Vec(self.preview_texture_shapes(
+                    image_rect,
+                    canvas_rect,
+                    state,
+                    Color32::WHITE,
+                    true,
+                )),
             );
 
             if tools.active_tool == crate::components::tools::Tool::MeshWarp {
@@ -2856,7 +2873,7 @@ impl Canvas {
                             screen_radius,
                             stroke_inner,
                         );
-                    } else if let Some((mask_data, mask_sz)) = mask_info {
+                    } else if let Some((mask_data, mask_sz, revision)) = mask_info {
                         // Image tip ÔÇö overlay the mask shape twice (white + black)
                         // for visibility on any background colour.
                         let ms = *mask_sz;
@@ -2864,12 +2881,7 @@ impl Canvas {
                             Some(n) => n.as_str(),
                             None => "",
                         };
-                        // Include mask content hash via simple checksum for staleness
-                        let content_hash = mask_data
-                            .iter()
-                            .step_by(7)
-                            .fold(0u32, |acc, &b| acc.wrapping_add(b as u32));
-                        let key = (tip_name.to_string(), ms, content_hash);
+                        let key = (tip_name.to_string(), ms, *revision);
                         if key != self.brush_tip_cursor_key || self.brush_tip_cursor_tex.is_none() {
                             // Rebuild cursor textures from mask
                             let n = (ms * ms) as usize;

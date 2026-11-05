@@ -10,6 +10,7 @@ pub enum PasteAction {
 
 pub struct Canvas {
     pub zoom: f32,
+    pixel_grid: std::cell::RefCell<pixel_grid::PixelGrid>,
     large_display: large_image::LargeDisplay,
     pan_offset: Vec2,
     last_filter_was_linear: Option<bool>, // Track last filter state to detect changes
@@ -65,7 +66,7 @@ pub struct Canvas {
     /// Second pass texture (inverted) for visibility on all backgrounds.
     brush_tip_cursor_tex_inv: Option<egui::TextureHandle>,
     /// Cache key for brush tip cursor: (tip_name, mask_size, hardness_pct)
-    brush_tip_cursor_key: (String, u32, u32),
+    brush_tip_cursor_key: (String, u32, u64),
     /// Tool icon texture for custom cursor overlay (set from app.rs each frame).
     pub tool_cursor_icon: Option<egui::TextureHandle>,
     /// Preserve authored colors for icon-pack cursor artwork.
@@ -82,7 +83,12 @@ pub struct Canvas {
     checkerboard_cached_size: (usize, usize),
 }
 
-mod large_image { include!("view/large_image.rs"); }
+mod large_image {
+    include!("view/large_image.rs");
+}
+mod pixel_grid {
+    include!("view/pixel_grid.rs");
+}
 include!("view/core.rs");
 include!("view/overlay.rs");
 include!("view/helpers.rs");

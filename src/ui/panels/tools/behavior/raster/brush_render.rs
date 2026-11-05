@@ -7,17 +7,20 @@ impl ToolsPanel {
         } else {
             self.properties.size
         };
-        if !self.properties.anti_aliased
-            && self.properties.brush_tip.is_circle()
-            && matches!(
-                self.active_tool,
-                Tool::Brush | Tool::Eraser | Tool::Line | Tool::Pencil
-            )
-        {
+        if self.snaps_tip_to_pixels() {
             size.round().max(1.)
         } else {
             size
         }
+    }
+
+    pub fn snaps_tip_to_pixels(&self) -> bool {
+        !self.properties.anti_aliased
+            && (self.properties.brush_tip.is_circle() || self.brush_tip_geometry.is_some())
+            && matches!(
+                self.active_tool,
+                Tool::Brush | Tool::Eraser | Tool::Line | Tool::Pencil
+            )
     }
 
     /// Compute effective flow accounting for pen pressure.
@@ -778,13 +781,27 @@ impl ToolsPanel {
             BrushTip::Image(name) => name.clone(),
             BrushTip::Circle => return,
         };
-        let target_size = (self.properties.size.ceil() as u32).max(1);
+        let geometry = assets
+            .get_brush_tip_data(&tip_name)
+            .and_then(|tip| tip.geometry);
+        let target_size = if geometry.is_some() && !self.properties.anti_aliased {
+            self.properties.size.round().max(1.) as u32
+        } else {
+            (self.properties.size.ceil() as u32).max(1)
+        };
         let hardness_key = (self.properties.hardness * 100.0).round() as u32;
-        let key = (tip_name.clone(), target_size, hardness_key);
+        let key = (
+            tip_name.clone(),
+            target_size,
+            hardness_key,
+            self.properties.anti_aliased,
+        );
         if key == self.brush_tip_cache_key {
             return;
         }
         self.brush_tip_cache_key = key;
+        self.brush_tip_mask_revision = self.brush_tip_mask_revision.wrapping_add(1);
+        self.brush_tip_geometry = geometry;
 
         if let Some(data) = assets.get_brush_tip_data(&tip_name) {
             let src = &data.mask;
@@ -797,6 +814,25 @@ impl ToolsPanel {
             self.brush_tip_mask
                 .resize((dst_size * dst_size) as usize, 0);
             self.brush_tip_mask_size = dst_size;
+
+            if let Some(geometry) = geometry {
+                let half = dst_size as f32 / 2.;
+                for y in 0..dst_size {
+                    for x in 0..dst_size {
+                        self.brush_tip_mask[(y * dst_size + x) as usize] =
+                            (crate::ui::panels::tools::geometric_tip_alpha(
+                                geometry,
+                                x as f32 + 0.5 - half,
+                                y as f32 + 0.5 - half,
+                                half,
+                                self.properties.hardness,
+                                self.properties.anti_aliased,
+                            ) * 255.)
+                                .round() as u8;
+                    }
+                }
+                return;
+            }
 
             // Bilinear interpolation from source mask to target size
             let scale = src_size as f32 / dst_size as f32;
@@ -818,7 +854,13 @@ impl ToolsPanel {
 
                     let top = v00 * (1.0 - fx) + v10 * fx;
                     let bot = v01 * (1.0 - fx) + v11 * fx;
-                    let val = top * (1.0 - fy) + bot * fy;
+                    let val = if self.properties.anti_aliased {
+                        top * (1.0 - fy) + bot * fy
+                    } else {
+                        let nx = sx.round().min((src_size - 1) as f32) as u32;
+                        let ny = sy.round().min((src_size - 1) as f32) as u32;
+                        src[(ny * src_size + nx) as usize] as f32
+                    };
                     self.brush_tip_mask[(dy * dst_size + dx) as usize] =
                         val.round().min(255.0) as u8;
                 }
@@ -842,7 +884,7 @@ impl ToolsPanel {
             // bilinear alone can't capture enough of the source detail and edges
             // look blocky. Apply a small box blur whose radius scales with the
             // downscale ratio. This smooths staircased edges while preserving shape.
-            if dst_size < src_size && dst_size >= 3 {
+            if self.properties.anti_aliased && dst_size < src_size && dst_size >= 3 {
                 let ratio = src_size as f32 / dst_size as f32;
                 // blur radius: 1 pass at 2-4× downscale, 2 at higher ratios
                 let passes: usize = if ratio > 4.0 {
@@ -932,7 +974,17 @@ impl ToolsPanel {
                 (px, py)
             }
         };
-        let half = mask_size as f32 / 2.0;
+        let geometry = self.brush_tip_geometry;
+        let half = if geometry.is_some() {
+            self.pressure_size() / 2.
+        } else {
+            mask_size as f32 / 2.
+        };
+        let (cx, cy) = crate::ui::panels::tools::pixel_aligned_brush_center(
+            (cx, cy),
+            half * 2.,
+            geometry.is_some() && !self.properties.anti_aliased,
+        );
 
         // When rotated, the bounding box of the stamp expands.
         // The diagonal of the original square mask is half*sqrt(2) from center.
@@ -1060,7 +1112,19 @@ impl ToolsPanel {
                         let rel_x = global_x as f32 - cx;
                         let rel_y = global_y as f32 - cy;
 
-                        let geom_alpha_u8 = if rotated {
+                        let geom_alpha_u8 = if let Some(geometry) = geometry {
+                            let x = rel_x + 0.5;
+                            let y = rel_y + 0.5;
+                            (crate::ui::panels::tools::geometric_tip_alpha(
+                                geometry,
+                                x * cos_a - y * sin_a,
+                                x * sin_a + y * cos_a,
+                                half,
+                                self.properties.hardness,
+                                self.properties.anti_aliased,
+                            ) * 255.)
+                                .round() as u8
+                        } else if rotated {
                             // Inverse-rotate to find source mask position
                             let rot_x = rel_x * cos_a - rel_y * sin_a + half;
                             let rot_y = rel_x * sin_a + rel_y * cos_a + half;
@@ -1087,7 +1151,13 @@ impl ToolsPanel {
                             let top = v00 * (1.0 - fx) + v10 * fx;
                             let bot = v01 * (1.0 - fx) + v11 * fx;
                             let val = top * (1.0 - fy) + bot * fy;
-                            val.round().min(255.0) as u8
+                            if self.properties.anti_aliased {
+                                val.round().min(255.0) as u8
+                            } else {
+                                let nx = sx.round().min((mask_size - 1) as f32) as u32;
+                                let ny = sy.round().min((mask_size - 1) as f32) as u32;
+                                mask[(ny * mask_size + nx) as usize]
+                            }
                         } else {
                             let mask_x = (rel_x + half).round() as i32;
                             let mask_y = (rel_y + half).round() as i32;
@@ -1261,6 +1331,13 @@ impl ToolsPanel {
 
         let (cx, cy) = pos;
         let radius = self.pressure_size() / 2.0;
+        let radius = if !self.properties.brush_tip.is_circle()
+            && (self.properties.tip_random_rotation || self.properties.tip_rotation.abs() > 0.01)
+        {
+            radius * std::f32::consts::SQRT_2
+        } else {
+            radius
+        };
 
         // Calculate bounds - expanded by max scatter offset so the dirty rect
         // covers stamps that landed far from the nominal position.
@@ -1355,6 +1432,101 @@ fn sample_brush_path(
 #[cfg(test)]
 mod mega_pass_brush_tests {
     use super::*;
+
+    #[test]
+    fn geometric_tips_respect_aa_and_share_the_cursor_mask_geometry() {
+        let ctx = egui::Context::default();
+        let mut assets = Assets::new();
+        assets.init(&ctx);
+        for name in ["Square", "Diamond"] {
+            assert!(assets.get_brush_tip_data(name).unwrap().geometry.is_some());
+            let mut tools = ToolsPanel::default();
+            tools.properties.brush_tip = BrushTip::Image(name.into());
+            tools.properties.hardness = 1.;
+            tools.properties.opacity = 1.;
+            tools.properties.flow = 1.;
+            for size in [1., 2., 3., 4., 5., 9., 16.] {
+                tools.properties.size = size;
+                for angle in [0., 17., 45., 90.] {
+                    tools.properties.tip_rotation = angle;
+                    tools.properties.anti_aliased = false;
+                    tools.rebuild_tip_mask(&assets);
+                    assert!(tools.brush_tip_mask.iter().all(|&a| a == 0 || a == 255));
+                    let mut output = Vec::new();
+                    for pos in [(15.1, 15.1), (15.9, 15.9)] {
+                        tools.brush_coverage.clear();
+                        let mut pixels = TiledImage::new(32, 32);
+                        tools.draw_circle_no_dirty(
+                            &mut pixels,
+                            32,
+                            32,
+                            pos,
+                            false,
+                            false,
+                            [1., 0., 0., 1.],
+                            [0.; 4],
+                            None,
+                        );
+                        let pixels = pixels.to_rgba_image();
+                        assert!(
+                            pixels.pixels().all(|p| p[3] == 0 || p[3] == 255),
+                            "{name} {size} {angle}"
+                        );
+                        if angle == 0. {
+                            let half = size as u32 / 2;
+                            for y in 0..size as u32 {
+                                for x in 0..size as u32 {
+                                    assert_eq!(
+                                        pixels.get_pixel(15 - half + x, 15 - half + y)[3],
+                                        tools.brush_tip_mask[(y * size as u32 + x) as usize]
+                                    );
+                                }
+                            }
+                        }
+                        output.push(pixels);
+                    }
+                    assert_eq!(output[0], output[1], "{name} {size} {angle} subpixel drift");
+                }
+                let previous_revision = tools.brush_tip_mask_revision;
+                tools.properties.anti_aliased = true;
+                tools.rebuild_tip_mask(&assets);
+                assert!(tools.brush_tip_mask_revision > previous_revision);
+                assert!(!tools.snaps_tip_to_pixels());
+                if name == "Diamond" {
+                    assert!(tools.brush_tip_mask.iter().any(|&a| a > 0 && a < 255));
+                }
+                tools.properties.anti_aliased = false;
+                tools.rebuild_tip_mask(&assets);
+                assert!(tools.brush_tip_mask.iter().all(|&a| a == 0 || a == 255));
+            }
+        }
+    }
+
+    #[test]
+    fn custom_image_named_square_keeps_its_greyscale_material() {
+        let ctx = egui::Context::default();
+        let mut assets = Assets::new();
+        let image =
+            image::DynamicImage::ImageLuma8(image::GrayImage::from_pixel(4, 4, image::Luma([128])));
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        image.write_to(&mut bytes, image::ImageFormat::Png).unwrap();
+        assets.load_brush_tip(&ctx, "Square", "Custom", bytes.get_ref());
+        assert!(
+            assets
+                .get_brush_tip_data("Square")
+                .unwrap()
+                .geometry
+                .is_none()
+        );
+        let mut tools = ToolsPanel::default();
+        tools.properties.brush_tip = BrushTip::Image("Square".into());
+        tools.properties.size = 4.;
+        tools.properties.hardness = 1.;
+        tools.properties.anti_aliased = false;
+        tools.rebuild_tip_mask(&assets);
+        assert!(tools.brush_tip_geometry.is_none());
+        assert!(tools.brush_tip_mask.iter().all(|&a| a == 128));
+    }
 
     #[test]
     fn stationary_hold_has_no_extra_deposits() {

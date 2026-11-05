@@ -1854,3 +1854,11 @@ help.start.undo_body=Gebruik "Bewerken > Ongedaan maken" of "Opnieuw" om door be
 help.start.save=Bewaar uw werk
 help.start.save_body=Gebruik "Bestand > Opslaan" om uw document op te slaan. Kies PFE in "Opslaan als" om bewerkbare lagen te behouden, of PNG en JPEG om te delen. Bewaar een PFE-kopie als u verwacht de lagen opnieuw te bewerken.
 help.start.explore=Ontdek meer
+
+settings.tab.tablet=Pen en tekentablet
+tools.tablet.windows=Windows Ink (systeemaanwijzerinvoer)
+tools.tablet.system=Invoer van systeempen
+tools.tablet.windows_hint=Schakel Windows Ink in het stuurprogramma van uw tablet in om pendruk te ontvangen. PaintFE verandert de stuurprogramma-instellingen niet.
+tools.tablet.test=Pendruk testen
+tools.tablet.test_hint=Teken hier met je pen. De pendruk verandert de lijndikte. Dit gebied verandert je afbeelding niet.
+tools.tablet.clear=Test wissen

@@ -1854,3 +1854,11 @@ help.start.undo_body=Utilizați "Editare > Anulează acțiunea" sau "Refă" pent
 help.start.save=Salvează-ți munca
 help.start.save_body=Utilizați "Fișier > Salvează" pentru a vă salva documentul. Alegeți PFE în "Salvează ca" pentru a păstra straturi editabile sau PNG și JPEG pentru partajare. Păstrați o copie PFE atunci când vă așteptați să editați din nou straturile.
 help.start.explore=Explorează mai mult
+
+settings.tab.tablet=Stilou și tabletă grafică
+tools.tablet.windows=Cerneală Windows (introducere pointer de sistem)
+tools.tablet.system=Intrare creion de sistem
+tools.tablet.windows_hint=Activați Windows Ink în driverul tabletei pentru a primi presiunea stiloului. PaintFE nu modifică setările driverului.
+tools.tablet.test=Testarea presiunii stiloului
+tools.tablet.test_hint=Desenați aici cu stiloul. Presiunea schimbă grosimea liniei. Această zonă nu modifică imaginea.
+tools.tablet.clear=Șterge testul

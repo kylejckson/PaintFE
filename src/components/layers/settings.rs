@@ -249,24 +249,17 @@ impl LayersPanel {
 
         ui.horizontal(|ui| {
             ui.label(t!("layer.blend"));
-            egui::ComboBox::from_id_salt("blend_mode_combo_ls")
-                .selected_text(self.settings_state.editing_blend_mode.display_name())
-                .width(120.0)
-                .show_ui(ui, |ui: &mut egui::Ui| {
-                    for &mode in BlendMode::all() {
-                        if ui
-                            .selectable_label(
-                                mode == self.settings_state.editing_blend_mode,
-                                mode.display_name(),
-                            )
-                            .clicked()
-                        {
-                            self.settings_state.editing_blend_mode = mode;
-                            canvas_state.layers[layer_idx].blend_mode = mode;
-                            self.mark_full_dirty(canvas_state);
-                        }
-                    }
-                });
+            if crate::ui::blend_mode::picker(
+                ui,
+                "blend_mode_combo_ls",
+                &mut self.settings_state.editing_blend_mode,
+                120.,
+            )
+            .changed()
+            {
+                canvas_state.layers[layer_idx].blend_mode = self.settings_state.editing_blend_mode;
+                self.mark_full_dirty(canvas_state);
+            }
         });
 
         if matches!(

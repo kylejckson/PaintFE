@@ -1854,3 +1854,11 @@ help.start.undo_body=K procházení úprav použijte "Úpravy > Zpět" nebo "Zno
 help.start.save=Uložte si práci
 help.start.save_body=K uložení dokumentu použijte "Soubor > Uložit". Vyberte PFE v "Uložit jako", chcete-li zachovat upravitelné vrstvy, nebo PNG a JPEG pro sdílení. Ponechejte si kopii PFE, když očekáváte, že vrstvy znovu upravíte.
 help.start.explore=Prozkoumejte více
+
+settings.tab.tablet=Pero a grafický tablet
+tools.tablet.windows=Windows Ink (vstup ukazatele systému)
+tools.tablet.system=Vstup systémového pera
+tools.tablet.windows_hint=Chcete-li používat přítlak pera, zapněte Windows Ink v ovladači tabletu. PaintFE nastavení ovladače nemění.
+tools.tablet.test=Zkouška přítlaku
+tools.tablet.test_hint=Kreslete zde perem. Přítlak mění tloušťku čáry. Tato oblast nemění váš obrázek.
+tools.tablet.clear=Vymazat zkoušku

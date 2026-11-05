@@ -817,6 +817,119 @@ fn native_buttons_keep_their_geometry_and_ignore_secondary_press_style() {
 }
 
 #[test]
+fn secondary_press_and_drag_leave_primary_controls_and_values_unchanged() {
+    for dark in [false, true] {
+        for scale in [1., 1.5] {
+            for kind in 0..8 {
+                let ctx = egui::Context::default();
+                ctx.set_visuals(if dark {
+                    egui::Visuals::dark()
+                } else {
+                    egui::Visuals::light()
+                });
+                ctx.style_mut_of(
+                    if dark {
+                        egui::Theme::Dark
+                    } else {
+                        egui::Theme::Light
+                    },
+                    |style| {
+                        style.animation_time = 0.;
+                        style.visuals.widgets.active.bg_fill = egui::Color32::MAGENTA;
+                        style
+                            .text_styles
+                            .get_mut(&egui::TextStyle::Button)
+                            .unwrap()
+                            .size *= scale;
+                    },
+                );
+                let mut value = 50.;
+                let mut checked = false;
+                let mut draw = |events| {
+                    let mut response = None;
+                    let mut fill = egui::Color32::TRANSPARENT;
+                    let _ = ctx.run_ui(input(events), |ui| {
+                        let r = match kind {
+                            0 => ui.button("Action"),
+                            1 => {
+                                egui::ComboBox::from_id_salt("mode")
+                                    .selected_text("Normal")
+                                    .show_ui(ui, |ui| {
+                                        ui.label("Option");
+                                    })
+                                    .response
+                            }
+                            2 => ui.checkbox(&mut checked, "Enabled"),
+                            3 => ui.radio(false, "Choice"),
+                            4 => ui.selectable_label(false, "Item"),
+                            5 => ui.add(Numeric::new(&mut value).range(0.0..=100.0)),
+                            6 => ui.add(Slider::new(&mut value, 0.0..=100.0).show_value(false)),
+                            _ => ui.add(GradientSlider::new(&mut value, 100., |_| {
+                                egui::Color32::RED
+                            })),
+                        };
+                        fill = ui.style().interact(&r).bg_fill;
+                        response = Some(r);
+                    });
+                    (response.unwrap(), fill)
+                };
+                let pos = draw(vec![]).0.rect.center();
+                draw(vec![Event::PointerMoved(pos)]);
+                let button = |pressed| Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Secondary,
+                    pressed,
+                    modifiers: Modifiers::NONE,
+                };
+                let pressed = draw(vec![button(true)]);
+                assert!(!pressed.0.is_primary_button_down_on(), "kind {kind}");
+                assert_ne!(pressed.1, egui::Color32::MAGENTA, "kind {kind}");
+                let moved = draw(vec![Event::PointerMoved(pos + egui::vec2(12., 0.))]);
+                assert!(!moved.0.changed(), "kind {kind}");
+                let released = draw(vec![button(false)]);
+                assert!(!released.0.clicked());
+                assert!(!released.0.changed());
+                assert_eq!(value, 50., "kind {kind}");
+                assert!(!checked, "kind {kind}");
+            }
+        }
+    }
+}
+
+#[test]
+fn secondary_context_menu_and_keyboard_activation_are_preserved() {
+    let ctx = egui::Context::default();
+    let draw = |events| {
+        let mut response = None;
+        let _ = ctx.run_ui(input(events), |ui| {
+            let r = ui.button("Actions");
+            r.context_menu(|ui| {
+                ui.label("Context action");
+            });
+            response = Some(r);
+        });
+        response.unwrap()
+    };
+    let initial = draw(vec![]);
+    let pos = initial.rect.center();
+    let secondary = |pressed| Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Secondary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    draw(vec![Event::PointerMoved(pos), secondary(true)]);
+    let released = draw(vec![secondary(false)]);
+    assert!(released.secondary_clicked());
+    draw(vec![]);
+    assert!(egui::Popup::is_any_open(&ctx));
+    draw(vec![key(Key::Escape, Modifiers::NONE)]);
+    ctx.memory_mut(|memory| memory.request_focus(initial.id));
+    let activated = draw(vec![key(Key::Enter, Modifiers::NONE)]);
+    assert!(activated.clicked());
+}
+
+#[test]
 fn reserved_numeric_width_does_not_move_adjacent_controls() {
     for dark in [false, true] {
         let ctx = egui::Context::default();

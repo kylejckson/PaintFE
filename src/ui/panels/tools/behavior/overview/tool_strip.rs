@@ -194,7 +194,7 @@ impl ToolsPanel {
 
                 let hover_t = crate::ui::polish::hover(ui.ctx(), resp.id.with("hover"), hovered);
                 if !tool_disabled && !selected {
-                    let fill = if resp.is_pointer_button_down_on() {
+                    let fill = if resp.is_primary_button_down_on() {
                         ui.visuals().widgets.active.bg_fill
                     } else {
                         ui.visuals().widgets.hovered.bg_fill.gamma_multiply(hover_t)

@@ -173,6 +173,10 @@ impl ToolsPanel {
                         // Initialize on first paint
                         let starting_stroke = self.tool_state.last_pos.is_none();
                         if starting_stroke {
+                            // A new stroke may begin before the previous presentation clears.
+                            canvas_state.preview_clear_pending = false;
+                            canvas_state.preview_texture_replaces_composite = false;
+                            canvas_state.preview_stroke_bounds = None;
                             self.brush_coverage.clear();
                             self.tool_state.using_secondary_color =
                                 is_secondary_down || is_secondary_pressed || is_secondary_clicked;

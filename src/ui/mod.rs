@@ -1,3 +1,4 @@
+pub(crate) mod blend_mode;
 pub mod controls;
 pub mod dialogs;
 pub mod numeric;
@@ -10,3 +11,4 @@ pub mod guides;
 pub mod menus;
 
 pub mod help;
+pub(crate) mod tool_shelf;

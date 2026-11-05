@@ -634,7 +634,7 @@ impl Widget for DragValue<'_> {
                 ui.data_mut(|data| data.remove::<String>(id));
                 ui.memory_mut(|mem| mem.request_focus(id));
                 select_all_text(ui, id, response.id, &value_text);
-            } else if response.dragged() {
+            } else if response.dragged_by(crate::PointerButton::Primary) {
                 ui.set_cursor_icon(cursor_icon);
 
                 let mdelta = response.drag_delta();

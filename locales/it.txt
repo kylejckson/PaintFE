@@ -1854,3 +1854,11 @@ help.start.undo_body=Usa Modifica > Annulla o Ripeti per passare da una modifica
 help.start.save=Salva il tuo lavoro
 help.start.save_body=Usa "File > Salva" per salvare il tuo documento. Scegli PFE in "Salva con Nome" per mantenere i livelli modificabili o PNG e JPEG per la condivisione. Conserva una copia PFE quando prevedi di modificare nuovamente i livelli.
 help.start.explore=Esplora di più
+
+settings.tab.tablet=Penna e tavoletta
+tools.tablet.windows=Windows Ink (input del puntatore di sistema)
+tools.tablet.system=Input tramite penna di sistema
+tools.tablet.windows_hint=Abilita Windows Ink nel driver del tablet per ricevere la pressione della penna. PaintFE non modifica le impostazioni del driver.
+tools.tablet.test=Test della pressione
+tools.tablet.test_hint=Disegna qui con la penna. La pressione modifica lo spessore del tratto. Quest’area non modifica la tua immagine.
+tools.tablet.clear=Cancella il test

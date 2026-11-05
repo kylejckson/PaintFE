@@ -47,6 +47,12 @@ impl PaintFEApp {
             (appearance.top, appearance.left, appearance.right)
         };
         let shelf_anchor = viewport_rect.min + egui::vec2(left, top);
+        let shelf_style = crate::ui::tool_shelf::ShelfStyle::resolve(
+            root_ui,
+            &self.theme,
+            &appearance,
+            self.settings.tool_shelf_rounding,
+        );
         let mut show_shelf = |ui: &mut egui::Ui| {
             if modal_open || !has_project {
                 ui.disable();
@@ -57,37 +63,32 @@ impl PaintFEApp {
                 (viewport_rect.width() - left - right).max(0.0)
             };
             ui.set_width(bar_w);
-            let mut shelf_frame = self.theme.tool_shelf_frame();
-            shelf_frame.fill = self
-                .theme
-                .tool_shelf_bg
-                .to_opaque()
-                .gamma_multiply(appearance.effective_opacity());
-            shelf_frame.inner_margin =
-                egui::Margin::symmetric(appearance.padding_x as i8, appearance.padding_y as i8);
-            shelf_frame.corner_radius =
-                egui::CornerRadius::same(self.settings.tool_shelf_rounding.unwrap_or(if docked {
-                    0.0
-                } else {
-                    self.theme.tool_shelf_rounding
-                }) as u8);
-            if docked {
-                shelf_frame.shadow = egui::epaint::Shadow::NONE;
-                shelf_frame.stroke = egui::Stroke::NONE;
-            }
+            let shelf_frame = shelf_style.frame;
             let content_w = (bar_w - shelf_frame.total_margin().sum().x).max(0.0);
             let shelf_inner = shelf_frame.show(ui, |ui| {
                 // The painted frame must reserve the blank space as well.
                 ui.set_width(content_w);
                 // Context bar label styling
-                ui.style_mut().override_font_id =
-                    Some(egui::FontId::proportional(crate::theme::Theme::FONT_LABEL));
+                ui.style_mut().override_font_id = Some(egui::FontId::proportional(
+                    crate::theme::Theme::FONT_LABEL * self.theme.polish.text_scale,
+                ));
                 ui.visuals_mut().override_text_color = Some(self.theme.text_color);
+                if docked {
+                    ui.spacing_mut().scroll.floating = true;
+                }
                 egui::ScrollArea::horizontal()
                     .id_salt("tool_options_scroll")
-                    .auto_shrink([false, true])
+                    .max_height(if docked {
+                        shelf_style.row_height + shelf_style.scroll_space
+                    } else {
+                        f32::INFINITY
+                    })
+                    .auto_shrink([false, !docked])
                     .show(ui, |ui| {
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            if docked {
+                                ui.set_height(shelf_style.row_height);
+                            }
                             if !has_project {
                                 ui.disable();
                             }
@@ -234,19 +235,22 @@ impl PaintFEApp {
             });
             shelf_ui_rect = shelf_inner.response.rect;
             if docked {
-                let color = appearance
-                    .top_separator
-                    .map(|[r, g, b]| egui::Color32::from_rgb(r, g, b))
-                    .unwrap_or(self.theme.tool_shelf_border)
-                    .gamma_multiply(appearance.separator_opacity);
+                let radius = f32::from(shelf_frame.corner_radius.nw);
+                let inset = radius.max(0.5).min(shelf_ui_rect.width() * 0.5);
+                let y = shelf_ui_rect.top() + 0.5;
                 ui.painter().line_segment(
-                    [shelf_ui_rect.left_top(), shelf_ui_rect.right_top()],
-                    egui::Stroke::new(1., color),
+                    [
+                        egui::pos2(shelf_ui_rect.left() + inset, y),
+                        egui::pos2(shelf_ui_rect.right() - inset, y),
+                    ],
+                    egui::Stroke::new(1., shelf_style.separator),
                 );
             }
         };
         if docked {
             egui::Panel::top("docked_tool_options")
+                .exact_size(shelf_style.height())
+                .resizable(false)
                 .frame(egui::Frame::NONE)
                 .show(root_ui, &mut show_shelf);
         } else {

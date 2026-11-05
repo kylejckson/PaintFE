@@ -1854,3 +1854,11 @@ help.start.undo_body=Użyj "Edycja > Cofnij" lub "Ponów", aby przejść przez e
 help.start.save=Zapisz swoją pracę
 help.start.save_body=Użyj "Plik > Zapisz", aby zapisać swój dokument. Wybierz PFE w "Zapisz jako", aby zachować edytowalne warstwy, lub PNG i JPEG, aby udostępnić. Zachowaj kopię PFE, jeśli planujesz ponownie edytować warstwy.
 help.start.explore=Odkryj więcej
+
+settings.tab.tablet=Pióro i tablet
+tools.tablet.windows=Windows Ink (wejście wskaźnika systemowego)
+tools.tablet.system=Wejście pióra systemowego
+tools.tablet.windows_hint=Włącz funkcję Windows Ink w sterowniku tabletu, aby odbierać nacisk pióra. PaintFE nie zmienia ustawień sterownika.
+tools.tablet.test=Test nacisku pióra
+tools.tablet.test_hint=Rysuj tutaj piórem. Nacisk zmienia grubość kreski. Ten obszar nie zmienia Twojego obrazu.
+tools.tablet.clear=Wyczyść test

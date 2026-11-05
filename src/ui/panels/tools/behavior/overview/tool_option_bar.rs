@@ -29,7 +29,7 @@ impl ToolsPanel {
                 // Called both before AND after tool options UI so picker changes
                 // take effect in the same frame (picker runs inside show_*_options).
                 match self.active_tool {
-                    Tool::Brush | Tool::Eraser => {
+                    Tool::Brush | Tool::Eraser | Tool::Line => {
                         self.rebuild_tip_mask(assets);
                     }
                     _ => {}
@@ -50,7 +50,7 @@ impl ToolsPanel {
                 // Re-run rebuild_tip_mask after options UI so that picker changes
                 // (tip/size/hardness) take effect this frame, not next frame.
                 match self.active_tool {
-                    Tool::Brush | Tool::Eraser => {
+                    Tool::Brush | Tool::Eraser | Tool::Line => {
                         self.rebuild_tip_mask(assets);
                     }
                     _ => {}
@@ -524,10 +524,16 @@ impl ToolsPanel {
             ui.set_min_width(80.0);
             for &preset in BRUSH_SIZE_PRESETS.iter() {
                 let label = format!("{:.0} px", preset);
-                if ui
-                    .selectable_label((self.properties.size - preset).abs() < 0.1, &label)
-                    .clicked()
-                {
+                let response =
+                    ui.selectable_label((self.properties.size - preset).abs() < 0.1, &label);
+                #[cfg(test)]
+                ui.ctx().data_mut(|data| {
+                    data.insert_temp(
+                        egui::Id::new(("brush_size_preset", preset.to_bits())),
+                        response.rect,
+                    )
+                });
+                if response.clicked() {
                     self.properties.size = preset;
                     egui::Popup::close_id(ui.ctx(), popup_id);
                 }
@@ -693,8 +699,7 @@ impl ToolsPanel {
                 .add(
                     crate::ui::controls::Numeric::percentage(&mut percent)
                         .id_salt(("brush_main", key))
-                        .width_for("100.0%")
-                        .reset_to(100.),
+                        .width_for("100.0%"),
                 )
                 .on_hover_text(crate::i18n::translate(if key == "Opacity" {
                     "tools.brush.opacity_help"
@@ -709,23 +714,12 @@ impl ToolsPanel {
         ui.separator();
         // Blend Mode
         ui.label(t!("ctx.blend"));
-        let current_mode = self.properties.blending_mode;
-        egui::ComboBox::from_id_salt("ctx_blend_mode")
-            .selected_text(current_mode.display_name())
-            .width(90.0)
-            .show_ui(ui, |ui| {
-                for &mode in BlendMode::all() {
-                    if ui
-                        .selectable_label(mode == current_mode, mode.display_name())
-                        .on_hover_text(mode.help_text())
-                        .clicked()
-                    {
-                        self.properties.blending_mode = mode;
-                    }
-                }
-            })
-            .response
-            .on_hover_text(current_mode.help_text());
+        crate::ui::blend_mode::picker(
+            ui,
+            "ctx_blend_mode",
+            &mut self.properties.blending_mode,
+            90.,
+        );
 
         ui.separator();
 
@@ -1106,20 +1100,12 @@ impl ToolsPanel {
 
         // Blend Mode
         ui.label(t!("ctx.blend"));
-        let current_mode = self.properties.blending_mode;
-        egui::ComboBox::from_id_salt("ctx_line_blend_mode")
-            .selected_text(current_mode.display_name())
-            .width(90.0)
-            .show_ui(ui, |ui| {
-                for &mode in BlendMode::all() {
-                    if ui
-                        .selectable_label(mode == current_mode, mode.display_name())
-                        .clicked()
-                    {
-                        self.properties.blending_mode = mode;
-                    }
-                }
-            });
+        crate::ui::blend_mode::picker(
+            ui,
+            "ctx_line_blend_mode",
+            &mut self.properties.blending_mode,
+            90.,
+        );
     }
 
     /// Show eraser-specific options (size, hardness - opacity from color alpha)
@@ -1655,19 +1641,63 @@ impl ToolsPanel {
 
         // Blend Mode Dropdown (for brush painting)
         ui.label(t!("ctx.blend"));
-        let current_mode = self.properties.blending_mode;
-        egui::ComboBox::from_id_salt("tool_blend_mode")
-            .selected_text(current_mode.display_name())
-            .width(90.0)
-            .show_ui(ui, |ui: &mut egui::Ui| {
-                for &mode in BlendMode::all() {
-                    if ui
-                        .selectable_label(mode == current_mode, mode.display_name())
-                        .clicked()
-                    {
-                        self.properties.blending_mode = mode;
-                    }
-                }
-            });
+        crate::ui::blend_mode::picker(
+            ui,
+            "tool_blend_mode",
+            &mut self.properties.blending_mode,
+            90.,
+        );
+    }
+}
+
+#[cfg(test)]
+mod size_preset_tests {
+    use super::*;
+    #[test]
+    fn large_size_presets_can_be_selected_from_the_real_popup() {
+        let ctx = egui::Context::default();
+        let mut assets = Assets::new();
+        assets.init(&ctx);
+        for preset in [256.0_f32, 512.] {
+            let mut tools = ToolsPanel::default();
+            let mut draw = |events| {
+                ctx.run_ui(
+                    egui::RawInput {
+                        events,
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(800., 800.),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        egui::Popup::open_id(ui.ctx(), ui.make_persistent_id("size_test"));
+                        tools.show_size_widget(ui, "size_test", &assets);
+                    },
+                )
+            };
+            let _ = draw(vec![]);
+            let _ = draw(vec![]);
+            let rect = ctx
+                .data(|data| {
+                    data.get_temp::<egui::Rect>(egui::Id::new((
+                        "brush_size_preset",
+                        preset.to_bits(),
+                    )))
+                })
+                .unwrap();
+            assert!(rect.intersects(ctx.content_rect()));
+            let point = rect.center();
+            let pointer = |pressed| egui::Event::PointerButton {
+                pos: point,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            let _ = draw(vec![egui::Event::PointerMoved(point), pointer(true)]);
+            let _ = draw(vec![pointer(false)]);
+            assert_eq!(tools.properties.size, preset);
+            assert_eq!(tools.pressure_size(), preset);
+        }
     }
 }

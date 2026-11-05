@@ -28,3 +28,9 @@ Keep raw traces and before/after summaries together. Remove temporary diagnostic
 `PAINTFE_PROFILE_FAIL_PREFERRED=1` simulates a Windows preferred-backend selection failure only when a profiling scenario is enabled. The replacement process uses automatic selection once and preserves command-line arguments. When capturing this recovery case, wait for the replacement process as well as the parent; the child writes a separate `.recovery.jsonl` trace. Do not use a real document.
 
 Native UI renderers prepare compute pipelines on one owned worker after an initial delay. Renderer teardown cancels queued jobs and joins that worker. Headless renderers create pipelines on first use without starting background compilation. Record both first UI and background preparation: moving work later does not mean its CPU cost disappeared. Settings write spans also run in the background and must not be counted as UI-thread time.
+
+## Pixel-grid regression probe
+
+The ignored `canvas::profile_pixel_grid_frame_cost` library test measures UI shape creation and tessellation separately at 600%, 800% and 1200%, in dashed and solid modes, at two viewport sizes. Build the library tests first, then run the built test executable with `canvas::profile_pixel_grid_frame_cost --exact --ignored --nocapture --test-threads=1` while no other build or test is running. Keep build settings and hardware comparable for before/after captures. These warm CPU measurements exclude GPU presentation and do not measure displayed FPS.
+
+The canvas grid uses two bounded repeating textures in `src/canvas/view/pixel_grid.rs`. Zoom, display scale and appearance changes refresh the cache; panning changes UV coordinates only. Keep image-origin alignment at fractional zoom, premultiplied alpha, viewport clipping and the grid's position above brush previews covered by regressions. Do not restore per-dash shape generation for the main canvas grid.

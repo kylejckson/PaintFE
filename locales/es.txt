@@ -1854,3 +1854,11 @@ help.start.undo_body=Utilice "Editar > Deshacer" o "Rehacer" para recorrer las e
 help.start.save=Guarda tu trabajo
 help.start.save_body=Utilice "Archivo > Guardar" para guardar su documento. Elija PFE en "Guardar como" para conservar las capas editables, o PNG y JPEG para compartir. Guarde una copia PFE cuando desee editar las capas nuevamente.
 help.start.explore=Explora más
+
+settings.tab.tablet=Lápiz y tableta
+tools.tablet.windows=Windows Ink (entrada del puntero del sistema)
+tools.tablet.system=Entrada del lápiz del sistema
+tools.tablet.windows_hint=Habilite Windows Ink en el controlador de su tableta para recibir la presión del lápiz. PaintFE no cambia la configuración del controlador.
+tools.tablet.test=Prueba de presión del lápiz
+tools.tablet.test_hint=Dibuja aquí con el lápiz. La presión cambia el grosor del trazo. Esta zona no modifica tu imagen.
+tools.tablet.clear=Borrar prueba

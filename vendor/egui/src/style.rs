@@ -1265,16 +1265,7 @@ pub struct Widgets {
 
 impl Widgets {
     pub fn style(&self, response: &Response) -> &WidgetVisuals {
-        if !response.sense.interactive() {
-            &self.noninteractive
-        } else if response.is_pointer_button_down_on() || response.has_focus() || response.clicked()
-        {
-            &self.active
-        } else if response.hovered() || response.highlighted() {
-            &self.hovered
-        } else {
-            &self.inactive
-        }
+        self.state(response.widget_state())
     }
 }
 

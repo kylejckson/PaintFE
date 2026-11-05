@@ -6,6 +6,32 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.25] - 2026-11-05
+
+- Improve brush previews, tip edges and pixel-grid performance.
+- Keep docked tool options steady and make interface controls more consistent.
+- Add a Pen & Tablet settings page and larger brush size presets.
+
+### Brush and canvas improvements
+
+- Prevent a committed stroke from being blended again while its preview is being cleared. This addresses extra darkening on release and preview flashes with blends such as Hard Light. Related to issue 224.
+- Use shared pixel-aligned geometry for Square and Diamond tips when AA is off, and refresh the cursor outline when AA or tip settings change. Custom image tips keep their original grey levels. Related to issue 225.
+- Keep the pixel grid above live brush previews, including when using blend modes.
+- Replace individual grid dashes with cached repeating textures to reduce drawing overhead when the grid appears at 800% zoom. Preserve grid colour, opacity and dashed or solid settings.
+- Add 256 px and 512 px to the brush size presets, and remove the extra reset buttons beside Opacity and Flow.
+
+### Interface improvements
+
+- Reserve a consistent docked tool options height so switching tools or showing the horizontal scrollbar does not move the canvas. Related to issue 223.
+- Preserve the theme background's transparency alongside Background opacity, respect the corner radius and separator settings, and give the section Reset button a clear label.
+- Keep ordinary controls from showing a pressed state on a right-click while preserving context menus and controls with a right-click action.
+- Share blend mode descriptions between layer, brush, shape and text selectors.
+
+### Pen & Tablet
+
+- Add Preferences > Pen & Tablet, bringing pressure input settings and a scratch area together so input can be checked without changing a document.
+- Explain the system pointer input used for tablet support and show the pressure received from the device.
+
 ## [1.4.24] - 2026-11-04
 
 - Make Undo and tool previews more predictable.

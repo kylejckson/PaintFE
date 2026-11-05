@@ -18,6 +18,7 @@ pub struct SettingsWindow {
     /// Set when icon display options changed and textures must be re-uploaded.
     pub pending_icon_pack_reload: bool,
     active_tab: SettingsTab,
+    pub(super) tablet_test: super::tablet_settings::TabletTest,
     search_query: String,
     section_generation: u64,
     section_settle_until: f64,
@@ -61,6 +62,7 @@ enum SettingsTab {
     #[cfg(not(target_arch = "wasm32"))]
     OptionalFeatures,
     Editing,
+    Tablet,
     Interface,
     Hardware,
     Keybinds,
@@ -85,10 +87,11 @@ struct SearchTarget {
     until: f64,
 }
 include!("settings_search_catalog.rs");
+
 #[cfg(test)]
 thread_local! { static AI_PATH_PROBES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
 
-trait SearchableResponse {
+pub(super) trait SearchableResponse {
     fn search_target(self, ui: &egui::Ui, key: &str) -> Self;
 }
 impl SearchableResponse for egui::Response {
@@ -151,6 +154,7 @@ impl Default for SettingsWindow {
             pending_icon_pack_clear: false,
             pending_icon_pack_reload: false,
             active_tab: SettingsTab::General,
+            tablet_test: Default::default(),
             search_query: String::new(),
             section_generation: 0,
             section_settle_until: 0.0,
@@ -215,6 +219,7 @@ impl SettingsWindow {
         assets: &Assets,
     ) -> Option<egui::Rect> {
         if !self.open || super::label_editor::is_open(ctx) {
+            self.tablet_test.stop();
             return None;
         }
 
@@ -382,6 +387,7 @@ impl SettingsWindow {
                                 Icon::MenuEditPaste,
                                 t!("settings.tab.editing"),
                             ),
+                            (SettingsTab::Tablet, Icon::Brush, t!("settings.tab.tablet")),
                             (
                                 SettingsTab::Interface,
                                 Icon::SettingsInterface,
@@ -515,6 +521,9 @@ impl SettingsWindow {
                                     ));
                                 });
                                 ui.add_space(4.0);
+                                if self.active_tab != SettingsTab::Tablet {
+                                    self.tablet_test.stop();
+                                }
                                 match self.active_tab {
                                     #[cfg(not(target_arch = "wasm32"))]
                                     SettingsTab::OptionalFeatures => {
@@ -528,6 +537,9 @@ impl SettingsWindow {
                                     }
                                     SettingsTab::Editing => {
                                         self.show_editing_tab(ui, settings);
+                                    }
+                                    SettingsTab::Tablet => {
+                                        self.show_tablet_tab(ui, settings);
                                     }
                                     SettingsTab::Interface => {
                                         crate::ui::controls::without_wheel_adjustment(ui, |ui| {
@@ -1120,37 +1132,6 @@ impl SettingsWindow {
         .search_target(ui, "settings.editing.legacy_clipboard");
         ui.weak(t!("settings.editing.legacy_clipboard_hint"))
             .search_target(ui, "settings.editing.legacy_clipboard_hint");
-        Self::section_header(ui, &t!("tools.tablet.title"));
-        ui.checkbox(
-            &mut settings.tablet_pressure_enabled,
-            t!("tools.tablet.enabled"),
-        )
-        .search_target(ui, "tools.tablet.enabled");
-        ui.weak(t!("tools.tablet.hint"));
-        let pressure = ui.input(|i| {
-            i.events.iter().rev().find_map(|event| {
-                if let egui::Event::Touch {
-                    force: Some(force), ..
-                } = event
-                {
-                    Some(*force)
-                } else {
-                    None
-                }
-            })
-        });
-        if let Some(value) = pressure {
-            ui.data_mut(|d| d.insert_temp(egui::Id::new("tablet_last_pressure"), value));
-        }
-        if let Some(value) = ui.data(|d| d.get_temp::<f32>(egui::Id::new("tablet_last_pressure"))) {
-            ui.label(format!(
-                "{}: {:.0}%",
-                t!("tools.tablet.pressure"),
-                value * 100.
-            ));
-        } else {
-            ui.weak(t!("tools.tablet.no_signal"));
-        }
         settings.save();
     }
 
@@ -1930,7 +1911,7 @@ impl SettingsWindow {
                         t!("settings.interface.docked"),
                     )
                     .changed();
-                if ui.button("↺").clicked() {
+                if ui.button(t!("common.reset")).clicked() {
                     settings.tool_shelf = Default::default();
                     settings.tool_shelf_rounding = None;
                     layout_changed = true;
@@ -1961,7 +1942,7 @@ impl SettingsWindow {
                     if crate::ui::controls::color_edit_button_srgba(
                         ui,
                         &mut color,
-                        egui::color_picker::Alpha::BlendOrAdditive,
+                        egui::color_picker::Alpha::Opaque,
                     )
                     .changed()
                     {
@@ -5593,5 +5574,32 @@ mod issue_199_tests {
             assert_eq!(entry.tab, SettingsTab::Interface);
             assert_eq!(entry.section, "ui.language");
         }
+    }
+}
+
+#[cfg(test)]
+mod tablet_navigation_tests {
+    use super::*;
+    #[test]
+    fn tablet_search_targets_own_the_dedicated_page() {
+        for key in [
+            "settings.tab.tablet",
+            "tools.tablet.test",
+            "tools.tablet.windows",
+            "tools.tablet.enabled",
+        ] {
+            let entry = SEARCH_ENTRIES
+                .iter()
+                .find(|entry| entry.key == key)
+                .unwrap();
+            assert_eq!(entry.tab, SettingsTab::Tablet);
+            assert!(entry.matches(entry.english));
+        }
+        assert!(
+            SEARCH_ENTRIES
+                .iter()
+                .filter(|entry| entry.matches("Windows Ink"))
+                .any(|entry| entry.tab == SettingsTab::Tablet)
+        );
     }
 }

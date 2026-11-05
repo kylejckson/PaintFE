@@ -1854,3 +1854,11 @@ help.start.undo_body=ใช้ "แก้ไข > เลิกทำ" หรื�
 help.start.save=บันทึกงานของคุณ
 help.start.save_body=ใช้ "ไฟล์ > บันทึก" เพื่อบันทึกเอกสารของคุณ เลือก PFE ใน "บันทึกเป็น" เพื่อเก็บเลเยอร์ที่แก้ไขได้ หรือเลือก PNG และ JPEG สำหรับการแชร์ เก็บสำเนา PFE เมื่อคุณคาดว่าจะแก้ไขเลเยอร์อีกครั้ง
 help.start.explore=สำรวจเพิ่มเติม
+
+settings.tab.tablet=ปากกาและแท็บเล็ตวาดภาพ
+tools.tablet.windows=Windows Ink (อินพุตตัวชี้ระบบ)
+tools.tablet.system=อินพุตปากการะบบ
+tools.tablet.windows_hint=เปิดใช้งาน Windows Ink ในไดรเวอร์แท็บเล็ตของคุณเพื่อรับแรงกดของปากกา PaintFE จะไม่เปลี่ยนการตั้งค่าไดรเวอร์
+tools.tablet.test=ทดสอบแรงกดปากกา
+tools.tablet.test_hint=วาดที่นี่ด้วยปากกา แรงกดปากกาจะเปลี่ยนความหนาของเส้น พื้นที่นี้จะไม่เปลี่ยนแปลงภาพของคุณ
+tools.tablet.clear=ล้างการทดสอบ

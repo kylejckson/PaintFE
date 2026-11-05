@@ -360,7 +360,11 @@ impl ToolsPanel {
                                                 preview_rect.center().y,
                                             ),
                                             egui::Align2::LEFT_CENTER,
-                                            if pending { crate::t!("ui.loading") } else { crate::t!("ui.queued") },
+                                            if pending {
+                                                crate::t!("ui.loading")
+                                            } else {
+                                                crate::t!("ui.queued")
+                                            },
                                             egui::FontId::default(),
                                             ui.visuals().weak_text_color(),
                                         );
@@ -577,18 +581,11 @@ impl ToolsPanel {
 
         ui.separator();
         ui.label(t!("ctx.blend"));
-        egui::ComboBox::from_id_salt("ctx_text_blend")
-            .selected_text(self.properties.blending_mode.name())
-            .width(80.0)
-            .show_ui(ui, |ui| {
-                for mode in BlendMode::all() {
-                    if ui
-                        .selectable_label(self.properties.blending_mode == *mode, mode.name())
-                        .clicked()
-                    {
-                        self.properties.blending_mode = *mode;
-                    }
-                }
-            });
+        crate::ui::blend_mode::picker(
+            ui,
+            "ctx_text_blend",
+            &mut self.properties.blending_mode,
+            80.,
+        );
     }
 }

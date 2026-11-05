@@ -269,6 +269,60 @@ fn tool_bar_height_is_stable_across_every_tool() {
     }
 }
 
+#[test]
+fn docked_shelf_keeps_the_actual_canvas_fixed_through_overflow_and_tool_switches() {
+    let mut app = app();
+    let ctx = context();
+    app.settings.tool_shelf.docked = true;
+    for dark in [false, true] {
+        for scale in [1., 1.35] {
+            app.theme = if dark {
+                crate::theme::Theme::dark()
+            } else {
+                crate::theme::Theme::light()
+            };
+            app.theme.polish.text_scale = scale;
+            app.theme.apply(&ctx);
+            for width in [640., 1050., 2400.] {
+                app.tools_panel.active_tool = Tool::Brush;
+                for _ in 0..2 {
+                    let _ = ctx.run_ui(
+                        egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                egui::vec2(width, 900.),
+                            )),
+                            ..Default::default()
+                        },
+                        |ui| app.show_runtime_canvas_tail(&ctx, ui, false),
+                    );
+                }
+                let expected = app.canvas.last_canvas_rect.unwrap();
+                for tool in [Tool::Fill, Tool::Brush, Tool::Fill, Tool::Brush] {
+                    app.tools_panel.active_tool = tool;
+                    for _ in 0..2 {
+                        let _ = ctx.run_ui(
+                            egui::RawInput {
+                                screen_rect: Some(egui::Rect::from_min_size(
+                                    egui::Pos2::ZERO,
+                                    egui::vec2(width, 900.),
+                                )),
+                                ..Default::default()
+                            },
+                            |ui| app.show_runtime_canvas_tail(&ctx, ui, false),
+                        );
+                        assert_eq!(
+                            app.canvas.last_canvas_rect,
+                            Some(expected),
+                            "{tool:?}, width {width}, dark {dark}, scale {scale}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn brush_pointer(point: (f32, f32), down: bool) -> egui::Event {
     egui::Event::PointerButton {
         pos: egui::pos2(100. + point.0 * 4., 100. + point.1 * 4.),
@@ -581,6 +635,262 @@ fn holding_and_releasing_a_stationary_brush_does_not_add_a_second_deposit() {
             .0;
         assert_eq!(committed, preview, "{mode:?} release");
         assert_eq!(app.projects[0].history.undo_count(), 1);
+    }
+}
+
+#[test]
+fn actual_canvas_frames_keep_stationary_release_identical_to_the_held_stroke() {
+    for blend in [
+        crate::canvas::BlendMode::Normal,
+        crate::canvas::BlendMode::HardLight,
+    ] {
+        for mode in [
+            crate::components::tools::BrushMode::Normal,
+            crate::components::tools::BrushMode::Uniform,
+            crate::components::tools::BrushMode::BuildUp,
+        ] {
+            let mut app = app();
+            let ctx = context();
+            app.tools_panel.active_tool = Tool::Brush;
+            app.tools_panel.properties.size = 16.;
+            app.tools_panel.properties.hardness = 0.5;
+            app.tools_panel.properties.opacity = 0.5;
+            app.tools_panel.properties.flow = 0.3;
+            app.tools_panel.properties.brush_mode = mode;
+            app.tools_panel.properties.blending_mode = blend;
+            app.tools_panel.properties.pressure_size = false;
+            app.tools_panel.properties.pressure_opacity = false;
+            let frame = |app: &mut PaintFEApp, events| {
+                ctx.run_ui(
+                    egui::RawInput {
+                        events,
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(900., 700.),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| app.show_runtime_canvas_tail(&ctx, ui, false),
+                )
+            };
+            for _ in 0..3 {
+                let _ = frame(&mut app, vec![]);
+            }
+            assert_eq!(app.tools_panel.properties.brush_mode, mode);
+            assert_eq!(app.tools_panel.properties.blending_mode, blend);
+            let point = app.canvas.last_image_rect.unwrap().center();
+            let button = |pressed| egui::Event::PointerButton {
+                pos: point,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            let _ = frame(
+                &mut app,
+                vec![egui::Event::PointerMoved(point), button(true)],
+            );
+            let bounds = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(32., 24.));
+            let expected = app.projects[0].canvas_state.composite_partial(bounds).0;
+            for _ in 0..3 {
+                let _ = frame(&mut app, vec![]);
+            }
+            assert_eq!(
+                app.projects[0]
+                    .canvas_state
+                    .composite_partial(bounds)
+                    .0
+                    .pixels,
+                expected.pixels,
+                "{blend:?} {mode:?} hold"
+            );
+            let _ = frame(&mut app, vec![button(false)]);
+            let state = &app.projects[0].canvas_state;
+            assert_eq!(
+                state.composite_committed_downscaled(bounds, 1).0.pixels,
+                expected.pixels,
+                "{blend:?} {mode:?} release"
+            );
+            assert!(state.preview_clear_pending);
+            assert!(state.preview_texture_replaces_composite);
+            assert_eq!(app.projects[0].history.undo_count(), 1);
+            for _ in 0..30 {
+                let _ = frame(&mut app, vec![]);
+                if !app.projects[0].canvas_state.preview_clear_pending {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            assert!(!app.projects[0].canvas_state.preview_clear_pending);
+            assert!(app.projects[0].canvas_state.preview_layer.is_none());
+            assert_eq!(
+                app.projects[0]
+                    .canvas_state
+                    .composite_partial(bounds)
+                    .0
+                    .pixels,
+                expected.pixels
+            );
+        }
+    }
+}
+
+#[test]
+fn docked_appearance_is_used_by_the_actual_frame_painter() {
+    let mut app = app();
+    let ctx = context();
+    app.theme = crate::theme::Theme::light();
+    app.theme.apply(&ctx);
+    app.theme.tool_shelf_bg = egui::Color32::from_rgba_unmultiplied(177, 83, 29, 128);
+    app.settings.tool_shelf.docked = true;
+    app.settings.tool_shelf.opacity = Some(0.5);
+    app.settings.tool_shelf.top_separator = Some([17, 41, 233]);
+    app.settings.tool_shelf.separator_opacity = 0.25;
+    app.settings.tool_shelf_rounding = Some(12.);
+    let output = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(900., 700.),
+            )),
+            ..Default::default()
+        },
+        |ui| app.show_runtime_canvas_tail(&ctx, ui, false),
+    );
+    let fill = app.theme.tool_shelf_bg.gamma_multiply(0.5);
+    assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::epaint::Shape::Rect(rect) if rect.fill==fill && rect.corner_radius.nw==12 && rect.rect.width()>800.)));
+    let separator = egui::Color32::from_rgb(17, 41, 233).gamma_multiply(0.25);
+    assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::epaint::Shape::LineSegment{stroke,..} if stroke.color==separator)));
+}
+
+#[test]
+fn pixel_grid_is_painted_once_above_live_brush_previews_at_pixel_zoom() {
+    fn flatten<'a>(shape: &'a egui::Shape, result: &mut Vec<&'a egui::Shape>) {
+        if let egui::Shape::Vec(children) = shape {
+            for child in children {
+                flatten(child, result);
+            }
+        } else {
+            result.push(shape);
+        }
+    }
+    for blend in [
+        crate::canvas::BlendMode::Normal,
+        crate::canvas::BlendMode::HardLight,
+        crate::canvas::BlendMode::Multiply,
+        crate::canvas::BlendMode::Overwrite,
+    ] {
+        for zoom in [8., 16.] {
+            for transparent in [false, true] {
+                let mut app = app();
+                let ctx = context();
+                app.settings.pixel_grid_opacity = 1.;
+                app.settings.pixel_grid_dashed = false;
+                let grid = egui::Color32::from_rgb(17, 211, 109);
+                app.settings.pixel_grid_outline_color = grid;
+                app.tools_panel.active_tool = Tool::Brush;
+                app.tools_panel.properties.size = 5.;
+                app.tools_panel.properties.blending_mode = blend;
+                app.tools_panel.properties.opacity = 0.4;
+                app.tools_panel.properties.pressure_size = false;
+                app.tools_panel.properties.pressure_opacity = false;
+                if transparent {
+                    app.projects[0].canvas_state.layers[0].pixels = TiledImage::new(32, 24);
+                    app.projects[0].canvas_state.mark_dirty(None);
+                }
+                app.projects[0].canvas_state.show_pixel_grid = true;
+                app.projects[0].canvas_state.selection_mask =
+                    Some(image::GrayImage::from_pixel(32, 24, image::Luma([255])));
+                let frame = |app: &mut PaintFEApp, events| {
+                    ctx.run_ui(
+                        egui::RawInput {
+                            events,
+                            screen_rect: Some(egui::Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                egui::vec2(900., 700.),
+                            )),
+                            ..Default::default()
+                        },
+                        |ui| app.show_runtime_canvas_tail(&ctx, ui, false),
+                    )
+                };
+                for _ in 0..3 {
+                    let _ = frame(&mut app, vec![]);
+                }
+                app.canvas.zoom = zoom;
+                let _ = frame(&mut app, vec![]);
+                let baseline = frame(&mut app, vec![]);
+                let is_grid = |shape: &egui::Shape, ctx: &egui::Context| {
+                    if let egui::Shape::Mesh(mesh) = shape {
+                        ctx.tex_manager()
+                            .read()
+                            .meta(mesh.texture_id)
+                            .is_some_and(|meta| {
+                                matches!(
+                                    meta.name.as_str(),
+                                    "pixel_grid_vertical" | "pixel_grid_horizontal"
+                                )
+                            })
+                    } else {
+                        false
+                    }
+                };
+                let grid_count = |output: &egui::FullOutput| {
+                    let mut shapes = Vec::new();
+                    for shape in &output.shapes {
+                        flatten(&shape.shape, &mut shapes);
+                    }
+                    shapes.iter().filter(|shape| is_grid(shape, &ctx)).count()
+                };
+                let count = grid_count(&baseline);
+                assert_eq!(count, 2, "Both grid axes must be visible at {zoom}x");
+                let point = app.canvas.last_image_rect.unwrap().center();
+                let button = |pressed| egui::Event::PointerButton {
+                    pos: point,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                };
+                for events in [
+                    vec![egui::Event::PointerMoved(point), button(true)],
+                    vec![egui::Event::PointerMoved(point + egui::vec2(zoom, zoom))],
+                    vec![],
+                    vec![button(false)],
+                ] {
+                    let output = frame(&mut app, events);
+                    assert_eq!(
+                        grid_count(&output),
+                        count,
+                        "Grid must not be duplicated or removed: {blend:?} {zoom}"
+                    );
+                    let state = &app.projects[0].canvas_state;
+                    let mut ids: Vec<_> = state
+                        .preview_tile_textures
+                        .values()
+                        .map(|texture| texture.id())
+                        .collect();
+                    ids.extend(
+                        state
+                            .preview_texture_cache
+                            .as_ref()
+                            .map(|texture| texture.id()),
+                    );
+                    assert!(!ids.is_empty(), "Exercise an actual held/committed preview");
+                    let mut shapes = Vec::new();
+                    for shape in &output.shapes {
+                        flatten(&shape.shape, &mut shapes);
+                    }
+                    let preview = shapes.iter().rposition(|shape| matches!(shape,egui::Shape::Mesh(mesh) if ids.contains(&mesh.texture_id))).unwrap();
+                    let first_grid = shapes
+                        .iter()
+                        .position(|shape| is_grid(shape, &ctx))
+                        .unwrap();
+                    assert!(
+                        preview < first_grid,
+                        "Preview covers the grid: {blend:?} {zoom}"
+                    );
+                }
+            }
+        }
     }
 }
 

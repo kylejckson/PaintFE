@@ -36,3 +36,11 @@ show a pressed state merely because the secondary pointer button is down.
 Keyboard focus, activation and separate context-menu actions remain available.
 Rebase `widgets/button.rs` and `widget_style.rs` when upgrading, and run the
 button geometry, keyboard, context-menu and production-toolbar regressions.
+
+The shared response predicate `is_primary_button_down_on` also drives legacy
+`Widgets::style` and PaintFE's custom button/card/tool painting. Slider tracks
+and DragValue value changes accept primary pointer interaction only; preserve
+keyboard and accessibility actions and real secondary context-menu actions.
+Rebase `style.rs`, `widgets/slider.rs` and `widgets/drag_value.rs` too. Run both
+shared slider styles, numeric editors, custom action cards and context menus
+through hover, secondary press/drag/release and primary/keyboard activation.

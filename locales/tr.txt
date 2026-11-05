@@ -1854,3 +1854,11 @@ help.start.undo_body=Düzenlemeler arasında adım adım ilerlemek için "Düzen
 help.start.save=Çalışmanızı kaydedin
 help.start.save_body=Belgenizi kaydetmek için "Dosya > Kaydet"'yi kullanın. Düzenlenebilir katmanları tutmak için "Farklı Kaydet"'de PFE'yi veya paylaşım için PNG ve JPEG'i seçin. Katmanları tekrar düzenlemeyi düşündüğünüzde bir PFE kopyasını saklayın.
 help.start.explore=Daha fazlasını keşfedin
+
+settings.tab.tablet=Kalem ve Grafik Tablet
+tools.tablet.windows=Windows Mürekkebi (sistem işaretçisi girişi)
+tools.tablet.system=Sistem kalemi girişi
+tools.tablet.windows_hint=Kalem basıncını almak için tablet sürücünüzde Windows Ink'i etkinleştirin. PaintFE sürücü ayarlarını değiştirmez.
+tools.tablet.test=Kalem basıncı testi
+tools.tablet.test_hint=Buraya kaleminizle çizin. Kalem basıncı çizgi kalınlığını değiştirir. Bu alan görselinizi değiştirmez.
+tools.tablet.clear=Testi temizle

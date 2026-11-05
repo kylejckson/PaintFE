@@ -1855,3 +1855,11 @@ help.start.undo_body=استخدم "تحرير > تراجع" أو "إعادة" ل
 help.start.save=احفظ عملك
 help.start.save_body=استخدم "ملف > حفظ" لحفظ المستند الخاص بك. اختر PFE في "حفظ باسم" للاحتفاظ بالطبقات القابلة للتحرير، أو PNG وJPEG للمشاركة. احتفظ بنسخة PFE عندما تتوقع تحرير الطبقات مرة أخرى.
 help.start.explore=اكتشف المزيد
+
+settings.tab.tablet=القلم واللوح الرسومي
+tools.tablet.windows=حبر Windows (إدخال مؤشر النظام)
+tools.tablet.system=إدخال قلم النظام
+tools.tablet.windows_hint=فعّل Windows Ink في برنامج تشغيل اللوح الرسومي لاستقبال ضغط القلم. لا يغيّر PaintFE إعدادات برنامج التشغيل.
+tools.tablet.test=اختبار ضغط القلم
+tools.tablet.test_hint=ارسم هنا بالقلم. يغيّر ضغط القلم سُمك الخط. لا تؤثر هذه المساحة على صورتك.
+tools.tablet.clear=مسح الاختبار

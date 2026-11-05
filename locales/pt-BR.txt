@@ -1854,3 +1854,11 @@ help.start.undo_body=Use "Editar > Desfazer" ou "Refazer" para percorrer as edi�
 help.start.save=Salve seu trabalho
 help.start.save_body=Use "Arquivo > Salvar" para salvar seu documento. Escolha PFE em "Salvar Como" para manter camadas editáveis ​​ou PNG e JPEG para compartilhamento. Mantenha uma cópia PFE quando quiser editar as camadas novamente.
 help.start.explore=Explorar mais
+
+settings.tab.tablet=Caneta e mesa digitalizadora
+tools.tablet.windows=Windows Ink (entrada do ponteiro do sistema)
+tools.tablet.system=Entrada da caneta do sistema
+tools.tablet.windows_hint=Habilite o Windows Ink no driver do tablet para receber a pressão da caneta. PaintFE não altera as configurações do driver.
+tools.tablet.test=Teste de pressão da caneta
+tools.tablet.test_hint=Desenhe aqui com sua caneta. A pressão altera a espessura do traço. Esta área não modifica sua imagem.
+tools.tablet.clear=Limpar teste

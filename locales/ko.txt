@@ -1854,3 +1854,11 @@ help.start.undo_body=편집을 단계별로 진행하려면 "편집 > 실행 취
 help.start.save=작업 저장
 help.start.save_body=문서를 저장하려면 "파일 > 저장"를 사용하세요. 편집 가능한 레이어를 유지하려면 "다른 이름으로 저장"에서 PFE를 선택하고, 공유하려면 PNG 및 JPEG를 선택하세요. 레이어를 다시 편집하려면 PFE 복사본을 보관하세요.
 help.start.explore=더 알아보기
+
+settings.tab.tablet=펜 및 그래픽 태블릿
+tools.tablet.windows=Windows Ink(시스템 포인터 입력)
+tools.tablet.system=시스템 펜 입력
+tools.tablet.windows_hint=필압을 사용하려면 그래픽 태블릿 드라이버에서 Windows Ink를 활성화하세요. PaintFE는 드라이버 설정을 변경하지 않습니다.
+tools.tablet.test=필압 테스트
+tools.tablet.test_hint=여기에 펜으로 그려 보세요. 필압에 따라 선 두께가 달라집니다. 이 영역에 그려도 이미지는 변경되지 않습니다.
+tools.tablet.clear=테스트 지우기

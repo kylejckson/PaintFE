@@ -1854,3 +1854,11 @@ help.start.undo_body=Utilisez "Édition > Annuler" ou "Rétablir" pour parcourir
 help.start.save=Enregistrez votre travail
 help.start.save_body=Utilisez "Fichier > Enregistrer" pour enregistrer votre document. Choisissez PFE dans "Enregistrer sous" pour conserver les calques modifiables, ou PNG et JPEG pour le partage. Conservez une copie PFE lorsque vous prévoyez de modifier à nouveau les calques.
 help.start.explore=Explorer davantage
+
+settings.tab.tablet=Stylet et tablette
+tools.tablet.windows=Windows Ink (entrée du pointeur système)
+tools.tablet.system=Saisie au stylet système
+tools.tablet.windows_hint=Activez Windows Ink dans le pilote de votre tablette pour recevoir la pression du stylet. PaintFE ne modifie pas les paramètres du pilote.
+tools.tablet.test=Test de pression du stylet
+tools.tablet.test_hint=Dessinez ici avec votre stylet. La pression modifie l’épaisseur du trait. Cette zone ne modifie pas votre image.
+tools.tablet.clear=Effacer le test

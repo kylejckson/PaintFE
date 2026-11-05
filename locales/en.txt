@@ -1854,3 +1854,11 @@ help.start.undo_body=Use Edit > Undo or Redo to step through edits. Undo discard
 help.start.save=Save your work
 help.start.save_body=Use File > Save to save your document. Choose PFE in Save As to keep editable layers, or PNG and JPEG for sharing. Keep a PFE copy when you expect to edit the layers again.
 help.start.explore=Explore more
+
+settings.tab.tablet=Pen & Tablet
+tools.tablet.windows=Windows Ink (system pointer input)
+tools.tablet.system=System pen input
+tools.tablet.windows_hint=Enable Windows Ink in your tablet driver to receive pen pressure. PaintFE does not change driver settings.
+tools.tablet.test=Pressure test
+tools.tablet.test_hint=Draw here with your pen. Pressure changes stroke width. This area never edits your image.
+tools.tablet.clear=Clear test

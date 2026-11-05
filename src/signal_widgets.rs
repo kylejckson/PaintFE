@@ -167,7 +167,7 @@ impl<'a> SignalButton<'a> {
                 response.id.with("button_hover"),
                 hovered && ui.is_enabled(),
             );
-            let active = response.is_pointer_button_down_on();
+            let active = response.is_primary_button_down_on();
 
             match self.style {
                 SignalButtonStyle::Primary => {

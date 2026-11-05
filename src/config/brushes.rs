@@ -15,11 +15,19 @@ pub struct CustomShapeCategory {
     pub shapes: Vec<String>,
 }
 
-/// Loaded brush tip data — normalized alpha mask + icon
+/// Bundled geometric tips bypass bitmap resampling.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BuiltinTipGeometry {
+    Square,
+    Diamond,
+}
+
+/// Loaded brush mask and its optional built-in geometric identity.
 #[allow(dead_code)]
 pub struct BrushTipData {
     pub name: String,
     pub category: String,
+    pub geometry: Option<BuiltinTipGeometry>,
     /// Alpha mask at canonical resolution, row-major, single channel (white=opaque)
     pub mask: Vec<u8>,
     pub mask_size: u32,
@@ -1129,6 +1137,15 @@ impl Assets {
 
         for &(name, category, png_data) in tips {
             self.load_brush_tip(ctx, name, category, png_data);
+            if category == "Basic"
+                && let Some(tip) = self.brush_tip_data.iter_mut().find(|tip| tip.name == name)
+            {
+                tip.geometry = match name {
+                    "Square" => Some(BuiltinTipGeometry::Square),
+                    "Diamond" => Some(BuiltinTipGeometry::Diamond),
+                    _ => None,
+                };
+            }
         }
     }
 
@@ -1700,6 +1717,7 @@ impl Assets {
                 self.brush_tip_data.push(BrushTipData {
                     name: name.to_string(),
                     category: category.to_string(),
+                    geometry: None,
                     mask,
                     mask_size: mask_size as u32,
                     icon_pixels: self.brush_tip_icon_pixels.get(name).unwrap().clone(),
@@ -2456,7 +2474,7 @@ impl Assets {
 
 /// Common brush size presets
 pub const BRUSH_SIZE_PRESETS: &[f32] = &[
-    1.0, 2.0, 4.0, 8.0, 12.0, 16.0, 24.0, 32.0, 48.0, 64.0, 96.0, 128.0,
+    1.0, 2.0, 4.0, 8.0, 12.0, 16.0, 24.0, 32.0, 48.0, 64.0, 96.0, 128.0, 256.0, 512.0,
 ];
 
 pub const TEXT_SIZE_PRESETS: &[f32] = &[

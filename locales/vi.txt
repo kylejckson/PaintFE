@@ -1854,3 +1854,11 @@ help.start.undo_body=Sử dụng "Chỉnh sửa > Hoàn tác" hoặc "Làm lại
 help.start.save=Lưu công việc của bạn
 help.start.save_body=Sử dụng "Tập tin > Lưu" để lưu tài liệu của bạn. Chọn PFE trong "Lưu dưới dạng" để giữ các lớp có thể chỉnh sửa hoặc PNG và JPEG để chia sẻ. Giữ một bản sao PFE khi bạn muốn chỉnh sửa lại các lớp.
 help.start.explore=Khám phá thêm
+
+settings.tab.tablet=Bút và bảng vẽ
+tools.tablet.windows=Windows Ink (đầu vào con trỏ hệ thống)
+tools.tablet.system=Đầu vào bút hệ thống
+tools.tablet.windows_hint=Bật Windows Ink trong trình điều khiển bảng vẽ để nhận lực nhấn bút. PaintFE không thay đổi cài đặt trình điều khiển.
+tools.tablet.test=Kiểm tra lực nhấn bút
+tools.tablet.test_hint=Vẽ thử tại đây bằng bút. Lực nhấn thay đổi độ dày nét vẽ. Vùng này không làm thay đổi ảnh của bạn.
+tools.tablet.clear=Xóa nét thử

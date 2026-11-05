@@ -1854,3 +1854,11 @@ help.start.undo_body="編集 > 元に戻す" または "やり直す" を使用�
 help.start.save=作業内容を保存する
 help.start.save_body="ファイル > 保存" を使用してドキュメントを保存します。編集可能なレイヤーを保持するには "名前を付けて保存" で PFE を選択し、共有するには PNG と JPEG を選択します。レイヤーを再度編集する予定がある場合は、PFE コピーを保存しておいてください。
 help.start.explore=もっと詳しく見る
+
+settings.tab.tablet=ペンとペンタブレット
+tools.tablet.windows=Windows Ink (システム ポインター入力)
+tools.tablet.system=システムペン入力
+tools.tablet.windows_hint=筆圧を受信するには、ペンタブレットのドライバーで Windows Ink を有効にしてください。PaintFE はドライバーの設定を変更しません。
+tools.tablet.test=筆圧テスト
+tools.tablet.test_hint=ここにペンで描いてください。筆圧に応じて線の太さが変わります。この領域で描いても画像は変更されません。
+tools.tablet.clear=テストを消去

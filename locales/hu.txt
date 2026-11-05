@@ -1854,3 +1854,11 @@ help.start.undo_body=A "Szerkesztés > Visszavonás" vagy "Újraalkalmazás" has
 help.start.save=Mentse el munkáját
 help.start.save_body=A dokumentum mentéséhez használja a "Fájl > Mentés"-t. Válassza a PFE-t a "Mentés másként"-ben a szerkeszthető rétegek megtartásához, vagy a PNG-t és a JPEG-t a megosztáshoz. Tartson meg egy PFE-másolatot, amikor ismét szerkeszteni kívánja a rétegeket.
 help.start.explore=Fedezzen fel többet
+
+settings.tab.tablet=Toll és rajztábla
+tools.tablet.windows=Windows Ink (rendszermutató bemenet)
+tools.tablet.system=Rendszer toll bemenet
+tools.tablet.windows_hint=A tollnyomás használatához engedélyezze a Windows Ink funkciót a rajztábla illesztőprogramjában. A PaintFE nem módosítja az illesztőprogram beállításait.
+tools.tablet.test=Tollnyomás tesztelése
+tools.tablet.test_hint=Rajzoljon ide a tollal. A tollnyomás a vonal vastagságát módosítja. Ez a terület nem módosítja a képet.
+tools.tablet.clear=Teszt törlése

@@ -663,7 +663,11 @@ impl Slider<'_> {
             .unwrap_or_else(|| ui.style().visuals.handle_shape);
         let position_range = self.position_range(rect, &handle_shape);
 
-        if let Some(pointer_position_2d) = response.interact_pointer_pos() {
+        if let Some(pointer_position_2d) = response.interact_pointer_pos()
+            && (response.is_primary_button_down_on()
+                || response.clicked()
+                || response.drag_stopped_by(crate::PointerButton::Primary))
+        {
             let position = self.pointer_position(pointer_position_2d);
             let new_value = if self.smart_aim {
                 let aim_radius = ui.input(|i| i.aim_radius());
