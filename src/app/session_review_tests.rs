@@ -254,6 +254,7 @@ fn tool_bar_height_is_stable_across_every_tool() {
                             egui::Color32::BLACK,
                             egui::Color32::WHITE,
                             &theme,
+                            &app.settings,
                         );
                     });
                     heights.push((tool, response.response.rect.height()));
@@ -1085,4 +1086,161 @@ fn liquify_reset_clears_deformation_retains_protection_and_is_locally_undoable()
         before
     );
     assert_eq!(app.projects[0].history.undo_count(), 0);
+}
+
+#[test]
+fn compact_brush_controls_preserve_values_and_toolbar_height() {
+    fn collect_text(shape: &egui::Shape, labels: &mut Vec<String>) {
+        match shape {
+            egui::Shape::Text(text) => labels.push(text.galley.text().to_owned()),
+            egui::Shape::Vec(shapes) => {
+                for shape in shapes {
+                    collect_text(shape, labels);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut app = app();
+    app.tools_panel.active_tool = Tool::Brush;
+    app.tools_panel.properties.opacity = 0.4;
+    app.tools_panel.properties.flow = 0.2;
+    let ctx = context();
+    let mut heights = Vec::new();
+    for show in [false, true, false] {
+        app.settings.show_advanced_brush_controls = show;
+        let mut height = 0.;
+        let output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1600., 600.),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                height = ui
+                    .horizontal(|ui| {
+                        app.tools_panel.show_context_bar(
+                            ui,
+                            &app.assets,
+                            egui::Color32::BLACK,
+                            egui::Color32::WHITE,
+                            &app.theme,
+                            &app.settings,
+                        );
+                    })
+                    .response
+                    .rect
+                    .height();
+            },
+        );
+        let mut labels = Vec::new();
+        for shape in output.shapes {
+            collect_text(&shape.shape, &mut labels);
+        }
+        for key in ["Opacity", "Flow"] {
+            assert_eq!(labels.contains(&crate::i18n::translate_english(key)), show);
+        }
+        assert_eq!(app.tools_panel.properties.opacity, 0.4);
+        assert_eq!(app.tools_panel.properties.flow, 0.2);
+        heights.push(height);
+    }
+    assert!(
+        heights
+            .iter()
+            .all(|height| (height - heights[0]).abs() < 0.1)
+    );
+}
+
+#[test]
+fn generated_paintbrush_stroke_keeps_normal_undo_and_redo() {
+    for tip in crate::brushes::PaintTip::ALL {
+        let mut app = app();
+        let ctx = context();
+        app.tools_panel.active_tool = Tool::Brush;
+        app.tools_panel.properties.size = 10.;
+        app.tools_panel.select_brush_tip(
+            crate::components::tools::BrushTip::Image(tip.name().into()),
+            &app.assets,
+        );
+        app.tools_panel.properties.blending_mode = crate::canvas::BlendMode::HardLight;
+        app.tools_panel.properties.opacity = 0.4;
+        app.tools_panel.properties.flow = 0.35;
+        app.tools_panel.properties.hardness = 1.;
+        let before = app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image();
+        for _ in 0..3 {
+            tool_frame(&mut app, &ctx, (10., 10.), vec![]);
+        }
+        let rect = app.canvas.last_image_rect.unwrap();
+        let first = egui::pos2(
+            rect.min.x + 8. * app.canvas.zoom,
+            rect.min.y + 8. * app.canvas.zoom,
+        );
+        let second = egui::pos2(
+            rect.min.x + 22. * app.canvas.zoom,
+            rect.min.y + 16. * app.canvas.zoom,
+        );
+        let button = |position, pressed| egui::Event::PointerButton {
+            pos: position,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        tool_frame(
+            &mut app,
+            &ctx,
+            (8., 8.),
+            vec![egui::Event::PointerMoved(first), button(first, true)],
+        );
+        let corner = egui::pos2(
+            rect.min.x + 22. * app.canvas.zoom,
+            rect.min.y + 8. * app.canvas.zoom,
+        );
+        tool_frame(
+            &mut app,
+            &ctx,
+            (22., 8.),
+            vec![egui::Event::PointerMoved(corner)],
+        );
+        tool_frame(
+            &mut app,
+            &ctx,
+            (22., 16.),
+            vec![egui::Event::PointerMoved(second)],
+        );
+        let full = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(32., 24.));
+        let preview = app.projects[0].canvas_state.composite_partial(full).0;
+        tool_frame(&mut app, &ctx, (22., 16.), vec![button(second, false)]);
+        let committed = app.projects[0].canvas_state.composite_partial(full).0;
+        assert!(
+            preview.pixels.iter().zip(&committed.pixels).all(|(a, b)| a
+                .to_array()
+                .iter()
+                .zip(b.to_array())
+                .all(|(a, b)| (*a as i16 - b as i16).abs() <= 1)),
+            "{} preview handover",
+            tip.name()
+        );
+        let after = app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image();
+        assert_ne!(before, after, "{} must paint", tip.name());
+        app.perform_undo();
+        assert_eq!(
+            before,
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image()
+        );
+        app.perform_redo();
+        assert_eq!(
+            after,
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image()
+        );
+    }
 }

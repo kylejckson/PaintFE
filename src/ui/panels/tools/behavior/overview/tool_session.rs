@@ -9,6 +9,11 @@ impl ToolsPanel {
     }
 
     fn reset_brush_pointer_state(&mut self) {
+        self.brush_sweeps = [None; 4];
+        self.brush_travel = [0.; 4];
+        self.brush_motion = Default::default();
+        self.brush_motion_arm = 0;
+        self.brush_dab_transform = Default::default();
         self.brush_coverage.clear();
         self.tool_state.last_pos = None;
         self.tool_state.last_precise_pos = None;
@@ -87,8 +92,13 @@ impl ToolsPanel {
         let end_f = (current.0 as f32, current.1 as f32);
         let start_mirrors = mirror.mirror_positions(start_f.0, start_f.1, mw, mh);
         let end_mirrors = mirror.mirror_positions(end_f.0, end_f.1, mw, mh);
+        self.brush_sweeps = [None; 4];
+        self.brush_travel = [0.; 4];
+        self.brush_motion = Default::default();
+        self.brush_coverage.clear();
         let mut modified_rect = Rect::NOTHING;
         for i in 0..end_mirrors.len {
+            self.brush_motion_arm = i;
             let s = start_mirrors.data[i];
             let e = end_mirrors.data[i];
             let r = if self.active_tool == Tool::Pencil {

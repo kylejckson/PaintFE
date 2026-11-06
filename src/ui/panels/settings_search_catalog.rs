@@ -1,6 +1,36 @@
 // Search catalogue: stable label keys, English fallback and owning section.
 const SEARCH_ENTRIES: &[SearchEntry] = &[
     SearchEntry {
+        tab: SettingsTab::Interface,
+        key: "tools.browser.title",
+        english: "Brush browser categories preview size spacing selection hover",
+        section: "ui.advanced_customization",
+    },
+    SearchEntry {
+        tab: SettingsTab::Editing,
+        key: "tools.brush.auto_controls",
+        english: "Show recommended controls for paintbrush presets",
+        section: "settings.editing.brush_controls",
+    },
+    SearchEntry {
+        tab: SettingsTab::Editing,
+        key: "settings.editing.brush_controls",
+        english: "Brush controls",
+        section: "settings.editing.brush_controls",
+    },
+    SearchEntry {
+        tab: SettingsTab::Editing,
+        key: "settings.editing.show_advanced_brush_controls",
+        english: "Show advanced brush controls",
+        section: "settings.editing.brush_controls",
+    },
+    SearchEntry {
+        tab: SettingsTab::Editing,
+        key: "settings.editing.advanced_brush_hint",
+        english: "Show Opacity and Flow in the tool options bar. Both remain available in Brush settings.",
+        section: "settings.editing.brush_controls",
+    },
+    SearchEntry {
         tab: SettingsTab::Tablet,
         key: "settings.tab.tablet",
         english: "Pen Tablet Windows Ink pressure",

@@ -228,6 +228,7 @@ impl PaintFEApp {
                                     ctx_primary,
                                     ctx_secondary,
                                     &self.theme,
+                                    &self.settings,
                                 );
                             }
                         });

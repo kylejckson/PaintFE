@@ -12,6 +12,7 @@
 pub mod i18n;
 pub mod app;
 pub mod assets;
+pub mod brushes;
 pub mod canvas;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod cli;

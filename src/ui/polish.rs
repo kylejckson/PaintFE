@@ -113,12 +113,23 @@ pub fn reduced_motion(ctx: &Context) -> bool {
         .unwrap_or(false)
 }
 
+// A browser owns its open state so nested selectors do not replace it.
+// The frame stamp expires if its toolbar is hidden without another render.
+fn brush_browser_blocks_input(ctx: &Context) -> bool {
+    ctx.data(|data| data.get_temp::<(u64, bool, bool)>(Id::new("brush_browser_input")))
+        .is_some_and(|(frame, open, closing)| {
+            let now = ctx.cumulative_frame_nr();
+            (open && frame.saturating_add(1) >= now) || (closing && frame == now)
+        })
+}
+
 pub fn remember_popup_input(ctx: &Context, was_open: bool) {
-    let blocked = was_open || egui::Popup::is_any_open(ctx);
+    let blocked = was_open || egui::Popup::is_any_open(ctx) || brush_browser_blocks_input(ctx);
     ctx.data_mut(|d| d.insert_temp(Id::new("paintfe_popup_input_blocked"), blocked));
 }
 pub fn popup_blocks_input(ctx: &Context) -> bool {
     egui::Popup::is_any_open(ctx)
+        || brush_browser_blocks_input(ctx)
         || ctx
             .data(|d| d.get_temp::<bool>(Id::new("paintfe_popup_input_blocked")))
             .unwrap_or(false)

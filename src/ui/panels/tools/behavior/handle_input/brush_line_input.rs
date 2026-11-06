@@ -178,6 +178,11 @@ impl ToolsPanel {
                             canvas_state.preview_texture_replaces_composite = false;
                             canvas_state.preview_stroke_bounds = None;
                             self.brush_coverage.clear();
+                            self.brush_sweeps = [None; 4];
+                            self.brush_travel = [0.; 4];
+                            self.brush_motion = Default::default();
+                            self.brush_motion_arm = 0;
+                            self.brush_speed = 0.;
                             self.tool_state.using_secondary_color =
                                 is_secondary_down || is_secondary_pressed || is_secondary_clicked;
                             let first = raw_motion_events.first().copied().unwrap_or(cf);
@@ -320,6 +325,17 @@ impl ToolsPanel {
                         let mw = canvas_state.width;
                         let mh = canvas_state.height;
 
+                        let mut last_motion = self.brush_motion[0].last;
+                        let mut distance = 0.;
+                        for &point in &smoothed_positions {
+                            if let Some(last) = last_motion {
+                                distance += (point.0 - last.0).hypot(point.1 - last.1);
+                            }
+                            last_motion = Some(point);
+                        }
+                        let elapsed = ui.input(|input| input.unstable_dt).clamp(0.001, 0.25);
+                        let speed = distance / (elapsed * self.properties.size.max(1.));
+                        self.brush_speed = (speed / (speed + 12.)).clamp(0., 1.);
                         for &pos in &smoothed_positions {
                             // Generate all positions (original + mirrored)
                             let positions_to_draw = mirror.mirror_positions(pos.0, pos.1, mw, mh);
@@ -327,7 +343,8 @@ impl ToolsPanel {
                             // Also mirror the start position for line drawing
                             let start_precise = self.tool_state.last_precise_pos;
 
-                            for &mpos in positions_to_draw.iter() {
+                            for (arm, &mpos) in positions_to_draw.iter().enumerate() {
+                                self.brush_motion_arm = arm;
                                 // CPU-only paint step: lerp from last_precise_pos -> pos
                                 let modified_rect = if movement_deposits {
                                     self.draw_circle_and_get_bounds(
@@ -456,7 +473,8 @@ impl ToolsPanel {
                                 canvas_state.height,
                             );
                             let mut bounds = Rect::NOTHING;
-                            for &pos in positions.iter() {
+                            for (arm, &pos) in positions.iter().enumerate() {
+                                self.brush_motion_arm = arm;
                                 bounds = bounds.union(self.draw_circle_and_get_bounds(
                                     canvas_state,
                                     pos,

@@ -446,7 +446,7 @@ impl ToolsPanel {
         // Increment stamp counter for random rotation seeding (for the whole line)
         self.stamp_counter = self.stamp_counter.wrapping_add(1);
 
-        let radius = self.pressure_size() / 2.0;
+        let radius = self.maximum_brush_radius();
         let width = canvas_state.width;
         let height = canvas_state.height;
 
@@ -493,6 +493,4 @@ impl ToolsPanel {
             ),
         )
     }
-
 }
-

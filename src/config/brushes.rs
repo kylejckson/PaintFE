@@ -24,10 +24,14 @@ pub enum BuiltinTipGeometry {
 
 /// Loaded brush mask and its optional built-in geometric identity.
 #[allow(dead_code)]
+#[derive(Clone)]
 pub struct BrushTipData {
     pub name: String,
     pub category: String,
     pub geometry: Option<BuiltinTipGeometry>,
+    pub paintbrush: Option<crate::brushes::PaintTip>,
+    pub builtin: bool,
+    pub revision: u64,
     /// Alpha mask at canonical resolution, row-major, single channel (white=opaque)
     pub mask: Vec<u8>,
     pub mask_size: u32,
@@ -73,6 +77,8 @@ pub struct Assets {
     brush_tip_icon_pixels: HashMap<String, Vec<u8>>,
     /// Icon sizes for brush tip icons
     brush_tip_icon_sizes: HashMap<String, [usize; 2]>,
+    brush_tip_revision: u64,
+    brush_tip_overrides: HashMap<String, (BrushTipData, TextureHandle)>,
 }
 
 impl Assets {
@@ -1136,15 +1142,45 @@ impl Assets {
             include!(concat!(env!("OUT_DIR"), "/brush_tips_embedded.rs"));
 
         for &(name, category, png_data) in tips {
-            self.load_brush_tip(ctx, name, category, png_data);
-            if category == "Basic"
-                && let Some(tip) = self.brush_tip_data.iter_mut().find(|tip| tip.name == name)
+            if self
+                .get_brush_tip_data(name)
+                .is_some_and(|tip| !tip.builtin)
             {
-                tip.geometry = match name {
-                    "Square" => Some(BuiltinTipGeometry::Square),
-                    "Diamond" => Some(BuiltinTipGeometry::Diamond),
-                    _ => None,
-                };
+                continue;
+            }
+            self.load_brush_tip_with_origin(ctx, name, category, png_data, true);
+            if let Some(tip) = self.brush_tip_data.iter_mut().find(|tip| tip.name == name) {
+                tip.builtin = true;
+                if category == "Basic" {
+                    tip.geometry = match name {
+                        "Square" => Some(BuiltinTipGeometry::Square),
+                        "Diamond" => Some(BuiltinTipGeometry::Diamond),
+                        _ => None,
+                    };
+                }
+            }
+        }
+        for paintbrush in crate::brushes::PaintTip::ALL {
+            if self
+                .get_brush_tip_data(paintbrush.name())
+                .is_some_and(|tip| !tip.builtin)
+            {
+                continue;
+            }
+            self.register_brush_tip(
+                ctx,
+                paintbrush.name(),
+                if paintbrush.has_bristles() {
+                    "Paintbrushes"
+                } else {
+                    "Basic"
+                },
+                paintbrush.mask(128, paintbrush.settings()),
+                true,
+            );
+            if let Some(tip) = self.brush_tip_data.last_mut() {
+                tip.paintbrush = Some(paintbrush);
+                tip.builtin = true;
             }
         }
     }
@@ -1637,97 +1673,125 @@ impl Assets {
         category: &str,
         png_data: &[u8],
     ) {
+        self.load_brush_tip_with_origin(ctx, name, category, png_data, false);
+    }
+
+    fn load_brush_tip_with_origin(
+        &mut self,
+        ctx: &egui::Context,
+        name: &str,
+        category: &str,
+        png_data: &[u8],
+        builtin: bool,
+    ) {
         match image::load_from_memory(png_data) {
-            Ok(img) => {
-                let gray = img.to_luma8();
-                let gw = gray.width();
-                let gh = gray.height();
-                let mask: Vec<u8> = gray.into_raw();
-
-                // Upscale icon to 2× for better visibility in the picker
-                let iw = (gw * 2) as usize;
-                let ih = (gh * 2) as usize;
-                let icon_size = [iw, ih];
-
-                // Create RGBA icon at 2× size: black shape on transparent bg
-                let mut icon_pixels = vec![0u8; iw * ih * 4];
-                for y in 0..ih {
-                    for x in 0..iw {
-                        let sx = x / 2;
-                        let sy = y / 2;
-                        let v = mask[sy * gw as usize + sx];
-                        let dst = (y * iw + x) * 4;
-                        icon_pixels[dst] = 0;
-                        icon_pixels[dst + 1] = 0;
-                        icon_pixels[dst + 2] = 0;
-                        icon_pixels[dst + 3] = v;
-                    }
-                }
-
-                // Cache icon pixels for theme inversion
-                self.brush_tip_icon_pixels
-                    .insert(name.to_string(), icon_pixels.clone());
-                self.brush_tip_icon_sizes
-                    .insert(name.to_string(), icon_size);
-
-                let display_pixels = if self.icons_inverted {
-                    Self::invert_rgb(&icon_pixels)
-                } else {
-                    icon_pixels
-                };
-
-                let color_image = ColorImage::from_rgba_unmultiplied(icon_size, &display_pixels);
-                let texture = ctx.load_texture(
-                    format!("brush_tip_{}", name),
-                    color_image,
-                    TextureOptions::LINEAR,
-                );
-                self.brush_tip_textures.insert(name.to_string(), texture);
-
-                // Normalize mask to canonical size (square)
-                let canonical = gw.max(gh) as usize;
-                let mask_size = canonical;
-                // Pad to square if needed
-                let mask = if gw as usize == canonical && gh as usize == canonical {
-                    mask
-                } else {
-                    let mut padded = vec![0u8; canonical * canonical];
-                    for y in 0..gh as usize {
-                        for x in 0..gw as usize {
-                            padded[y * canonical + x] = mask[y * gw as usize + x];
-                        }
-                    }
-                    padded
-                };
-
-                // Add to category
-                let cat_idx = self
-                    .brush_tip_categories
-                    .iter()
-                    .position(|c| c.name == category);
-                if let Some(idx) = cat_idx {
-                    self.brush_tip_categories[idx].tips.push(name.to_string());
-                } else {
-                    self.brush_tip_categories.push(BrushTipCategory {
-                        name: category.to_string(),
-                        tips: vec![name.to_string()],
-                    });
-                }
-
-                self.brush_tip_data.push(BrushTipData {
-                    name: name.to_string(),
-                    category: category.to_string(),
-                    geometry: None,
-                    mask,
-                    mask_size: mask_size as u32,
-                    icon_pixels: self.brush_tip_icon_pixels.get(name).unwrap().clone(),
-                    icon_size,
-                });
-            }
-            Err(e) => {
-                eprintln!("Failed to load brush tip '{}': {}", name, e);
-            }
+            Ok(image) => self.register_brush_tip(ctx, name, category, image.to_luma8(), builtin),
+            Err(error) => eprintln!("Failed to load brush tip '{name}': {error}"),
         }
+    }
+
+    fn register_brush_tip(
+        &mut self,
+        ctx: &egui::Context,
+        name: &str,
+        category: &str,
+        gray: image::GrayImage,
+        builtin: bool,
+    ) {
+        if let Some(index) = self.brush_tip_data.iter().position(|tip| tip.name == name) {
+            let previous = self.brush_tip_data.remove(index);
+            if previous.builtin
+                && !builtin
+                && let Some(texture) = self.brush_tip_textures.get(name).cloned()
+            {
+                self.brush_tip_overrides
+                    .entry(name.to_owned())
+                    .or_insert((previous, texture));
+            }
+            for category in &mut self.brush_tip_categories {
+                category.tips.retain(|tip| tip != name);
+            }
+            self.brush_tip_categories
+                .retain(|category| !category.tips.is_empty());
+        }
+        self.brush_tip_revision = self.brush_tip_revision.wrapping_add(1);
+        let gw = gray.width();
+        let gh = gray.height();
+        // Keep picker textures bounded even for large imported masks.
+        let thumbnail = image::imageops::thumbnail(&gray, 64, 64);
+        let mask: Vec<u8> = gray.into_raw();
+        let iw = thumbnail.width() as usize;
+        let ih = thumbnail.height() as usize;
+        let icon_size = [iw, ih];
+        let mut icon_pixels = Vec::with_capacity(iw * ih * 4);
+        for value in thumbnail.as_raw() {
+            icon_pixels.extend_from_slice(&[0, 0, 0, *value]);
+        }
+
+        // Cache icon pixels for theme inversion
+        self.brush_tip_icon_pixels
+            .insert(name.to_string(), icon_pixels.clone());
+        self.brush_tip_icon_sizes
+            .insert(name.to_string(), icon_size);
+
+        let display_pixels = if self.icons_inverted {
+            Self::invert_rgb(&icon_pixels)
+        } else {
+            icon_pixels
+        };
+
+        let color_image = ColorImage::from_rgba_unmultiplied(icon_size, &display_pixels);
+        let texture = ctx.load_texture(
+            format!("brush_tip_{}", name),
+            color_image,
+            TextureOptions::LINEAR,
+        );
+        self.brush_tip_textures.insert(name.to_string(), texture);
+
+        // Normalize mask to canonical size (square)
+        let canonical = gw.max(gh) as usize;
+        let mask_size = canonical;
+        // Pad to square if needed
+        let mask = if gw as usize == canonical && gh as usize == canonical {
+            mask
+        } else {
+            let mut padded = vec![0u8; canonical * canonical];
+            for y in 0..gh as usize {
+                for x in 0..gw as usize {
+                    let offset_x = (canonical - gw as usize) / 2;
+                    let offset_y = (canonical - gh as usize) / 2;
+                    padded[(y + offset_y) * canonical + x + offset_x] = mask[y * gw as usize + x];
+                }
+            }
+            padded
+        };
+
+        // Add to category
+        let cat_idx = self
+            .brush_tip_categories
+            .iter()
+            .position(|c| c.name == category);
+        if let Some(idx) = cat_idx {
+            self.brush_tip_categories[idx].tips.push(name.to_string());
+        } else {
+            self.brush_tip_categories.push(BrushTipCategory {
+                name: category.to_string(),
+                tips: vec![name.to_string()],
+            });
+        }
+
+        self.brush_tip_data.push(BrushTipData {
+            name: name.to_string(),
+            category: category.to_string(),
+            geometry: None,
+            paintbrush: None,
+            builtin,
+            revision: self.brush_tip_revision,
+            mask,
+            mask_size: mask_size as u32,
+            icon_pixels: self.brush_tip_icon_pixels.get(name).unwrap().clone(),
+            icon_size,
+        });
     }
 
     /// Get the picker icon texture for a brush tip by name
@@ -1747,6 +1811,9 @@ impl Assets {
     /// Remove a custom brush tip by name. Returns true if found and removed.
     /// Built-in (embedded) tips cannot be removed — only tips loaded at runtime.
     pub fn remove_brush_tip(&mut self, name: &str) -> bool {
+        if self.get_brush_tip_data(name).is_some_and(|tip| tip.builtin) {
+            return false;
+        }
         // Remove from data
         let data_idx = self.brush_tip_data.iter().position(|d| d.name == name);
         if let Some(idx) = data_idx {
@@ -1765,6 +1832,37 @@ impl Assets {
             self.brush_tip_textures.remove(name);
             self.brush_tip_icon_pixels.remove(name);
             self.brush_tip_icon_sizes.remove(name);
+            if let Some((mut original, mut texture)) = self.brush_tip_overrides.remove(name) {
+                self.brush_tip_revision = self.brush_tip_revision.wrapping_add(1);
+                original.revision = self.brush_tip_revision;
+                let pixels = if self.icons_inverted {
+                    Self::invert_rgb(&original.icon_pixels)
+                } else {
+                    original.icon_pixels.clone()
+                };
+                texture.set(
+                    ColorImage::from_rgba_unmultiplied(original.icon_size, &pixels),
+                    TextureOptions::LINEAR,
+                );
+                self.brush_tip_textures.insert(name.to_owned(), texture);
+                self.brush_tip_icon_pixels
+                    .insert(name.to_owned(), original.icon_pixels.clone());
+                self.brush_tip_icon_sizes
+                    .insert(name.to_owned(), original.icon_size);
+                if let Some(category) = self
+                    .brush_tip_categories
+                    .iter_mut()
+                    .find(|category| category.name == original.category)
+                {
+                    category.tips.push(name.to_owned());
+                } else {
+                    self.brush_tip_categories.push(BrushTipCategory {
+                        name: original.category.clone(),
+                        tips: vec![name.to_owned()],
+                    });
+                }
+                self.brush_tip_data.push(original);
+            }
             true
         } else {
             false
@@ -1782,6 +1880,16 @@ impl Assets {
 
     /// Create an icon button that uses texture if available, emoji fallback otherwise
     pub fn icon_button(&self, ui: &mut egui::Ui, icon: Icon, size: Vec2) -> egui::Response {
+        self.icon_button_with_label(ui, icon, size, &icon.tooltip())
+    }
+
+    pub fn icon_button_with_label(
+        &self,
+        ui: &mut egui::Ui,
+        icon: Icon,
+        size: Vec2,
+        label: &str,
+    ) -> egui::Response {
         let response = if let Some(texture) = self.textures.get(&icon) {
             // Use texture-based button
             let sized_texture = egui::load::SizedTexture::from_handle(texture);
@@ -1793,14 +1901,14 @@ impl Assets {
         };
 
         response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), icon.tooltip())
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
         });
         crate::ui::polish::focus(
             ui,
             &response,
             crate::theme::Theme::tool_button_rounding_for(ui),
         );
-        response.on_hover_text(icon.tooltip())
+        response.on_hover_text(label)
     }
 
     pub fn icon_texture(&self, icon: Icon) -> Option<&TextureHandle> {

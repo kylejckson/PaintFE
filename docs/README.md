@@ -8,6 +8,7 @@ include unreleased behaviour; the website marks upcoming changes separately.
 
 - [Quick start](quick-start.md)
 - [Workspace and shortcuts](workspace.md)
+- [Brush tips and paintbrush controls](brushes.md)
 - [Local background removal](local-ai.md)
 - [Warp and Liquify](warp-and-liquify.md)
 - [Saving and export settings](export-settings.md)

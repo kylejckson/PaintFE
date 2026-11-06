@@ -6,6 +6,29 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.26] - 2026-11-06
+
+- Expand the brush library with new stamps and eight paintbrush presets.
+- Add a brush browser with category navigation, Favourites and Recent.
+- Keep the toolbar compact and remember settings for each paintbrush.
+
+### Brushes
+
+- Add 31 image stamps and refresh Chalk, Charcoal and Fern, organised into the new brush categories.
+- Add Round Paint, Flat Paint, Filbert, Dense Fan, Dry Bristle, Dry Fan, Bristle Wash and Rake. Loaded brushes give fuller coverage, while dry brushes leave connected strands.
+- Add paint load, texture, density, thickness, spread, stiffness, direction smoothing and optional depletion controls, with pressure and speed response.
+- Remember settings separately for each paintbrush. Colour, size and blend mode stay shared, and each preset can be reset to its defaults.
+
+### Brush browser and interface
+
+- Replace category buttons with a sidebar, or a single selector in narrow windows. Give search its own row and keep New on the right.
+- Add saved Favourites and Recent lists, keyboard navigation and rendered paintbrush stroke previews.
+- Add theme-aware preview size, spacing, colour and corner settings.
+- Hide Opacity and Flow from the ordinary toolbar by default, while keeping them in Brush settings. Preferences can show them in the toolbar or automatically for paintbrush presets.
+- Preserve navigation through nested browser menus and keep dismissal clicks from reaching the canvas.
+- Restore the bundled brush when a custom tip with the same name is removed.
+- Add brush documentation and translated labels for the new controls.
+
 ## [1.4.25] - 2026-11-05
 
 - Improve brush previews, tip edges and pixel-grid performance.

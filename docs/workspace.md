@@ -32,8 +32,8 @@ tools or horizontal overflow change. Reset in Tool options restores that section
 ## Pen and tablet input
 
 Preferences > Pen & Tablet contains the tablet-pressure switch, a live pressure
-readout and a scratch area for testing strokes. Pressure size and opacity
-responses remain in Brush Dynamics. The test area never changes a document or
+readout and a scratch area for testing strokes. Pressure size and flow
+responses remain in Brush settings. The test area never changes a document or
 adds history entries; Clear test clears only those temporary test marks.
 
 On Windows, PaintFE receives pen pressure through Windows Ink/system pointer
@@ -41,3 +41,11 @@ input. Enable Windows Ink in the tablet driver's application settings when
 needed. PaintFE does not change driver settings or offer a WinTab backend.
 A mouse uses full pressure; a mouse-only test cannot confirm tablet-driver
 compatibility. Preferences search accepts Pen, Tablet, Windows Ink and pressure.
+
+## Compact brush controls
+
+Opacity and Flow are hidden from the tool options bar by default. Open Brush settings using its brush-controls icon to adjust them at any time. A small accent dot marks active non-default brush settings; the tooltip also shows current Opacity and Flow. These controls work with a mouse as well as a pen.
+
+Preferences > Editing > Brush controls > Show advanced brush controls puts both controls back in the bar. Eraser shows Flow only, since its strength comes from colour alpha. Changing visibility preserves the current values. Tablet pressure controls in Brush settings appear when pressure input is enabled in Preferences > Pen & Tablet. Tool options retain their reserved height when controls are shown or hidden.
+
+Show recommended controls for paintbrush presets is enabled by default. It brings strength controls into the bar for the paintbrush presets, where paint loading and gradual buildup are useful. Disable it to keep those controls inside Brush settings too. See [Brushes](brushes.md) for the browser, tips and paintbrush controls.

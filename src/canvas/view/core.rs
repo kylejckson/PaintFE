@@ -1996,6 +1996,7 @@ impl Canvas {
             Option<(Vec<u8>, u32, u64)>,
             f32,
             bool,
+            crate::brushes::DabTransform,
         )> = tools.as_ref().and_then(|t| {
             use crate::components::tools::Tool;
             match t.active_tool {
@@ -2010,7 +2011,7 @@ impl Canvas {
                     } else {
                         None
                     };
-                    let is_circle_tip = matches!(t.active_tool, Tool::Liquify | Tool::Smudge)
+                    let is_circle_tip = !matches!(t.active_tool, Tool::Brush | Tool::Eraser)
                         || t.properties.brush_tip.is_circle();
                     // For image tips, pass the mask so cursor can draw shape overlay
                     let mask_info = if !is_circle_tip && !t.brush_tip_mask.is_empty() {
@@ -2023,7 +2024,7 @@ impl Canvas {
                         None
                     };
                     // For fixed rotation, pass angle to cursor; for random, 0 (no preview)
-                    let cursor_rotation = t.active_tip_rotation_deg;
+                    let cursor_rotation = t.brush_cursor_transform().angle;
                     Some((
                         if t.active_tool == Tool::Liquify {
                             t.liquify_state.diameter
@@ -2036,6 +2037,7 @@ impl Canvas {
                         cursor_rotation,
                         t.snaps_tip_to_pixels()
                             && matches!(t.active_tool, Tool::Brush | Tool::Eraser),
+                        t.brush_cursor_transform(),
                     ))
                 }
                 _ => None,
@@ -2827,6 +2829,7 @@ impl Canvas {
                 ref mask_info,
                 cursor_rotation_deg,
                 snap_pixels,
+                cursor_shape,
             )) = brush_cursor_info
                 && cursor_visual_allowed
                 && let Some(pos) = mouse_pos
@@ -2939,7 +2942,10 @@ impl Canvas {
                         let center = Pos2::new(screen_cx, screen_cy);
 
                         // Check if we need rotated drawing
-                        let has_rotation = cursor_rotation_deg.abs() > 0.01;
+                        let has_rotation = cursor_rotation_deg.abs() > 0.01
+                            || (cursor_shape.scale_x - 1.).abs() > 0.0001
+                            || (cursor_shape.scale_y - 1.).abs() > 0.0001
+                            || cursor_shape.shear.abs() > 0.0001;
 
                         if has_rotation {
                             // Rotated cursor: draw a rotated quad using a mesh
@@ -2958,6 +2964,8 @@ impl Canvas {
                             let rotated: Vec<Pos2> = corners
                                 .iter()
                                 .map(|&(dx, dy)| {
+                                    let dx = (dx + cursor_shape.shear * dy) * cursor_shape.scale_x;
+                                    let dy = dy * cursor_shape.scale_y;
                                     Pos2::new(
                                         center.x + dx * cos_r - dy * sin_r,
                                         center.y + dx * sin_r + dy * cos_r,

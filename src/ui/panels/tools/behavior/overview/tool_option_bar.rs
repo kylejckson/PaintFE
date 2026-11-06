@@ -6,7 +6,27 @@ impl ToolsPanel {
         primary_color: Color32,
         secondary_color: Color32,
         theme: &crate::theme::Theme,
+        settings: &crate::config::settings::AppSettings,
     ) -> bool {
+        if !matches!(self.active_tool, Tool::Brush | Tool::Eraser) {
+            self.brush_browser_open = false;
+        }
+        let incoming = &settings.brush_browser;
+        let changed = ui
+            .ctx()
+            .data(|data| {
+                data.get_temp::<crate::brushes::BrowserSettings>(egui::Id::new(
+                    "brush_browser_config",
+                ))
+            })
+            .as_ref()
+            != Some(incoming);
+        if changed {
+            self.brush_browser.copy_appearance(incoming);
+            ui.ctx().data_mut(|data| {
+                data.insert_temp(egui::Id::new("brush_browser_config"), incoming.clone())
+            });
+        }
         // Reserve the tallest icon/control before any tool-specific content is laid out.
         let row_height = ui.text_style_height(&egui::TextStyle::Body).max(20.0)
             + ui.spacing().button_padding.y * 2.0
@@ -37,13 +57,13 @@ impl ToolsPanel {
 
                 match self.active_tool {
                     Tool::Brush | Tool::Pencil => {
-                        self.show_brush_options(ui, assets);
+                        self.show_brush_options(ui, assets, settings);
                     }
                     Tool::Line => {
                         self.show_line_options(ui, assets);
                     }
                     Tool::Eraser => {
-                        self.show_eraser_options(ui, assets);
+                        self.show_eraser_options(ui, assets, settings);
                     }
                     _ => {}
                 }
@@ -154,298 +174,6 @@ impl ToolsPanel {
     }
 
     /// Show brush tip picker dropdown (grid popup with categories, matching shapes tool pattern)
-    fn show_brush_tip_picker(&mut self, ui: &mut egui::Ui, assets: &Assets) {
-        ui.label(crate::t!("ui.tip"));
-
-        let popup_id = ui.make_persistent_id("brush_tip_grid_popup");
-        let display_name = if self.properties.brush_tip.is_circle() {
-            crate::t!("ui.circle")
-        } else {
-            self.properties.brush_tip.display_name().to_string()
-        };
-
-        // Button showing current tip icon + name
-        let btn_response = {
-            let galley = ui.painter().layout_no_wrap(
-                display_name.clone(),
-                egui::FontId::proportional(11.0),
-                ui.visuals().text_color(),
-            );
-            let (rect, btn) = ui.allocate_exact_size(
-                egui::vec2(
-                    6.0 + 12.0 + 3.0 + galley.size().x + 6.0,
-                    ui.spacing().interact_size.y,
-                ),
-                egui::Sense::click(),
-            );
-            let visuals = ui.style().interact(&btn);
-            ui.painter()
-                .rect_filled(rect, visuals.corner_radius, visuals.weak_bg_fill);
-            let icon_rect = egui::Rect::from_center_size(
-                egui::pos2(rect.left() + 12.0, rect.center().y),
-                egui::Vec2::splat(12.0),
-            );
-            if let BrushTip::Image(ref name) = self.properties.brush_tip {
-                if let Some(texture) = assets.get_brush_tip_texture(name) {
-                    ui.painter().image(
-                        texture.id(),
-                        icon_rect,
-                        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-                        egui::Color32::WHITE,
-                    );
-                }
-            } else {
-                ui.painter()
-                    .circle_filled(icon_rect.center(), 5.0, visuals.fg_stroke.color);
-            }
-            ui.painter().galley(
-                egui::pos2(rect.left() + 21.0, rect.center().y - galley.size().y / 2.0),
-                galley,
-                visuals.fg_stroke.color,
-            );
-            btn
-        };
-        if btn_response.clicked() {
-            egui::Popup::toggle_id(ui.ctx(), popup_id);
-        }
-
-        egui::Popup::new(
-            popup_id,
-            ui.ctx().clone(),
-            egui::PopupAnchor::from(&btn_response),
-            ui.layer_id(),
-        )
-        .open_memory(None::<egui::SetOpenCommand>)
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-        .show(|ui| {
-            ui.set_min_width(240.0);
-            ui.set_max_width(260.0);
-
-            let cols = 5;
-            let icon_size = egui::Vec2::splat(36.0);
-            let accent = ui.visuals().hyperlink_color;
-
-            // "New..." button in top-right corner
-            ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(crate::t!("menu.file.new")).clicked() {
-                        self.pending_open_add_brush_tip = true;
-                        ui.close();
-                    }
-                });
-            });
-
-            // "Basic" category header always first, with Circle as first item
-            ui.label(
-                egui::RichText::new(crate::t!("settings.ai.graph_basic"))
-                    .strong()
-                    .size(11.0),
-            );
-            egui::Grid::new("brush_tip_basic_grid")
-                .spacing(egui::Vec2::splat(2.0))
-                .show(ui, |ui| {
-                    // Circle (built-in, always first)
-                    let selected = self.properties.brush_tip.is_circle();
-                    let (rect, response) = ui.allocate_exact_size(icon_size, egui::Sense::click());
-                    if selected {
-                        ui.painter().rect_filled(
-                            rect,
-                            4.0,
-                            egui::Color32::from_rgba_premultiplied(
-                                accent.r(),
-                                accent.g(),
-                                accent.b(),
-                                60,
-                            ),
-                        );
-                    }
-                    if response.hovered() {
-                        ui.painter()
-                            .rect_filled(rect, 4.0, ui.visuals().widgets.hovered.bg_fill);
-                    }
-                    // Draw a circle icon
-                    let center = rect.center();
-                    let r = icon_size.x * 0.3;
-                    let stroke_color = ui.visuals().text_color();
-                    ui.painter().circle_filled(center, r, stroke_color);
-                    if response.clicked() {
-                        self.properties.brush_tip = BrushTip::Circle;
-                        ui.close();
-                    }
-                    response.on_hover_text(crate::t!("ui.circle"));
-
-                    // Other tips in the "Basic" category
-                    let mut col = 1;
-                    let categories = assets.brush_tip_categories();
-                    if let Some(basic_cat) = categories.iter().find(|c| c.name == "Basic") {
-                        for tip_name in &basic_cat.tips {
-                            let is_selected =
-                                self.properties.brush_tip == BrushTip::Image(tip_name.clone());
-                            let (rect, response) =
-                                ui.allocate_exact_size(icon_size, egui::Sense::click());
-                            if is_selected {
-                                ui.painter().rect_filled(
-                                    rect,
-                                    4.0,
-                                    egui::Color32::from_rgba_premultiplied(
-                                        accent.r(),
-                                        accent.g(),
-                                        accent.b(),
-                                        60,
-                                    ),
-                                );
-                            }
-                            if response.hovered() {
-                                ui.painter().rect_filled(
-                                    rect,
-                                    4.0,
-                                    ui.visuals().widgets.hovered.bg_fill,
-                                );
-                            }
-                            if let Some(tex) = assets.get_brush_tip_texture(tip_name) {
-                                let sized = egui::load::SizedTexture::from_handle(tex);
-                                let img = egui::Image::from_texture(sized)
-                                    .fit_to_exact_size(icon_size * 0.8);
-                                let inner_rect = rect.shrink(icon_size.x * 0.1);
-                                img.paint_at(ui, inner_rect);
-                            } else {
-                                ui.painter().text(
-                                    rect.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    tip_name.chars().take(2).collect::<String>(),
-                                    egui::FontId::proportional(11.0),
-                                    ui.visuals().text_color(),
-                                );
-                            }
-                            if response.clicked() {
-                                self.properties.brush_tip = BrushTip::Image(tip_name.clone());
-                                ui.close();
-                            }
-                            response.on_hover_text(tip_name);
-                            col += 1;
-                            if col % cols == 0 {
-                                ui.end_row();
-                            }
-                        }
-                    }
-                });
-
-            // Remaining categories
-            let categories = assets.brush_tip_categories();
-            for cat in categories.iter().filter(|c| c.name != "Basic") {
-                ui.add_space(4.0);
-                let category_label =
-                    if matches!(cat.name.as_str(), "Basic" | "Texture" | "Vegetation") {
-                        crate::i18n::translate_english(&cat.name)
-                    } else {
-                        cat.name.clone()
-                    };
-                ui.label(egui::RichText::new(category_label).strong().size(11.0));
-                egui::Grid::new(format!("brush_tip_{}_grid", cat.name))
-                    .spacing(egui::Vec2::splat(2.0))
-                    .show(ui, |ui| {
-                        for (i, tip_name) in cat.tips.iter().enumerate() {
-                            let is_selected =
-                                self.properties.brush_tip == BrushTip::Image(tip_name.clone());
-                            let (rect, response) =
-                                ui.allocate_exact_size(icon_size, egui::Sense::click());
-                            if is_selected {
-                                ui.painter().rect_filled(
-                                    rect,
-                                    4.0,
-                                    egui::Color32::from_rgba_premultiplied(
-                                        accent.r(),
-                                        accent.g(),
-                                        accent.b(),
-                                        60,
-                                    ),
-                                );
-                            }
-                            if response.hovered() {
-                                ui.painter().rect_filled(
-                                    rect,
-                                    4.0,
-                                    ui.visuals().widgets.hovered.bg_fill,
-                                );
-                            }
-                            if let Some(tex) = assets.get_brush_tip_texture(tip_name) {
-                                let sized = egui::load::SizedTexture::from_handle(tex);
-                                let img = egui::Image::from_texture(sized)
-                                    .fit_to_exact_size(icon_size * 0.8);
-                                let inner_rect = rect.shrink(icon_size.x * 0.1);
-                                img.paint_at(ui, inner_rect);
-                            } else {
-                                ui.painter().text(
-                                    rect.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    tip_name.chars().take(2).collect::<String>(),
-                                    egui::FontId::proportional(11.0),
-                                    ui.visuals().text_color(),
-                                );
-                            }
-                            if response.clicked() {
-                                self.properties.brush_tip = BrushTip::Image(tip_name.clone());
-                                ui.close();
-                            }
-                            // Right-click opens context menu (only non-default tips)
-                            let is_default_cat = cat.name == "Basic"
-                                || cat.name == "Texture"
-                                || cat.name == "Vegetation";
-                            if response.secondary_clicked()
-                                && !is_default_cat
-                                && let Some(pos) = ui.input(|i| i.pointer.latest_pos())
-                            {
-                                self.brush_tip_context_menu =
-                                    Some((tip_name.clone(), pos.x, pos.y));
-                            }
-                            response.on_hover_text(tip_name);
-                            if (i + 1) % cols == 0 {
-                                ui.end_row();
-                            }
-                        }
-                    });
-            }
-
-            // Show right-click context menu if active
-            self.cursor_blocking_rect = None;
-            if let Some((ref ctx_tip, cx, cy)) = self.brush_tip_context_menu.clone() {
-                let ctx_id = ui.make_persistent_id("brush_tip_ctx_menu");
-                let ctx_rect =
-                    egui::Rect::from_min_size(egui::pos2(cx, cy), egui::vec2(120.0, 0.0));
-                let menu = egui::Area::new(ctx_id)
-                    .fixed_pos(ctx_rect.min)
-                    .order(egui::Order::Foreground)
-                    .show(ui.ctx(), |ui| {
-                        let frame = egui::Frame::popup(ui.style());
-                        frame.show(ui, |ui| {
-                            ui.set_min_width(120.0);
-                            if ui.button(crate::t!("common.delete")).clicked() {
-                                self.pending_delete_brush_tip = Some(ctx_tip.clone());
-                                self.brush_tip_context_menu = None;
-                                ui.close();
-                            }
-                        });
-                    });
-                let menu_rect = menu.response.rect;
-                self.cursor_blocking_rect = Some(menu_rect);
-                if ui.ctx().input(|i| {
-                    i.pointer
-                        .hover_pos()
-                        .is_some_and(|pos| menu_rect.contains(pos))
-                }) {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
-                }
-                // Close context menu on any click outside
-                if ui.input(|i| i.pointer.any_click())
-                    && let Some(pointer_pos) = ui.input(|i| i.pointer.latest_pos())
-                    && !menu_rect.contains(pointer_pos)
-                {
-                    self.brush_tip_context_menu = None;
-                }
-            }
-        });
-    }
-
     /// Size widget with +/- buttons, drag value, and preset dropdown.
     /// The DragValue and dropdown arrow are merged into a single bordered control.
     fn show_size_widget(&mut self, ui: &mut egui::Ui, combo_id: &str, assets: &Assets) {
@@ -655,7 +383,12 @@ impl ToolsPanel {
 
     /// Show brush-specific options (size, hardness, blend mode)
     /// For Pencil tool, skip size and hardness since it always paints single pixels
-    fn show_brush_options(&mut self, ui: &mut egui::Ui, assets: &Assets) {
+    fn show_brush_options(
+        &mut self,
+        ui: &mut egui::Ui,
+        assets: &Assets,
+        settings: &crate::config::settings::AppSettings,
+    ) {
         // Brush tip picker (skip for Pencil ÔÇö always pixel)
         if self.active_tool != Tool::Pencil {
             self.show_brush_tip_picker(ui, assets);
@@ -689,29 +422,10 @@ impl ToolsPanel {
             ui.separator();
         }
 
-        for (key, value) in [
-            ("Opacity", &mut self.properties.opacity),
-            ("Flow", &mut self.properties.flow),
-        ] {
-            ui.label(crate::i18n::translate_english(key));
-            let mut percent = *value * 100.;
-            if ui
-                .add(
-                    crate::ui::controls::Numeric::percentage(&mut percent)
-                        .id_salt(("brush_main", key))
-                        .width_for("100.0%"),
-                )
-                .on_hover_text(crate::i18n::translate(if key == "Opacity" {
-                    "tools.brush.opacity_help"
-                } else {
-                    "tools.brush.flow_help"
-                }))
-                .changed()
-            {
-                *value = percent / 100.;
-            }
+        if self.show_inline_brush_controls(settings) {
+            self.show_brush_strength_controls(ui, true);
+            ui.separator();
         }
-        ui.separator();
         // Blend Mode
         ui.label(t!("ctx.blend"));
         crate::ui::blend_mode::picker(
@@ -764,12 +478,29 @@ impl ToolsPanel {
         let dyn_active = self.properties.scatter > 0.01
             || self.properties.hue_jitter > 0.01
             || self.properties.brightness_jitter > 0.01
-            || self.properties.pressure_size
-            || self.properties.pressure_opacity
+            || (settings.tablet_pressure_enabled
+                && (self.properties.pressure_size || self.properties.pressure_opacity))
             || self.properties.opacity < 1.0
-            || self.properties.flow < 1.0;
+            || self.properties.flow < 1.0
+            || self.properties.brush_engine
+                != self
+                    .brush_paintbrush
+                    .map_or_else(Default::default, |tip| tip.settings());
         let dyn_popup_id = ui.make_persistent_id("brush_dyn_popup");
-        let dyn_resp = assets.icon_button(ui, Icon::UiBrushDynamics, egui::Vec2::splat(20.0));
+        let label = format!(
+            "{}\n{}: {:.0}%\n{}: {:.0}%",
+            crate::t!("tools.brush.settings"),
+            crate::i18n::translate_english("Opacity"),
+            self.properties.opacity * 100.,
+            crate::t!("ui.flow"),
+            self.properties.flow * 100.
+        );
+        let dyn_resp = assets.icon_button_with_label(
+            ui,
+            Icon::UiBrushDynamics,
+            egui::Vec2::splat(20.0),
+            &label,
+        );
         if dyn_active {
             let dot = egui::pos2(dyn_resp.rect.max.x - 3.5, dyn_resp.rect.min.y + 3.5);
             ui.painter()
@@ -787,103 +518,81 @@ impl ToolsPanel {
         .open_memory(None::<egui::SetOpenCommand>)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
-            ui.set_min_width(220.0);
-            egui::Grid::new("brush_dynamics_popup")
-                .num_columns(2)
-                .spacing([8.0, 4.0])
-                .show(ui, |ui| {
-                    ui.label(crate::t!("ui.scatter"));
-                    let mut scatter_pct = (self.properties.scatter * 200.0).round();
-                    if ui
-                        .add(
-                            crate::ui::controls::Slider::new(&mut scatter_pct, 0.0..=200.0)
-                                .double_click_reset_to(0.0)
-                                .suffix("%")
-                                .max_decimals(0),
-                        )
-                        .changed()
-                    {
-                        self.properties.scatter = scatter_pct / 200.0;
-                    }
-                    ui.end_row();
-                    ui.label(crate::t!("ui.hue_jitter"));
-                    let mut hj_pct = (self.properties.hue_jitter * 100.0).round();
-                    if ui
-                        .add(
-                            crate::ui::controls::Slider::new(&mut hj_pct, 0.0..=100.0)
-                                .double_click_reset_to(0.0)
-                                .suffix("%")
-                                .max_decimals(0),
-                        )
-                        .changed()
-                    {
-                        self.properties.hue_jitter = hj_pct / 100.0;
-                    }
-                    ui.end_row();
-                    ui.label(crate::t!("ui.brightness"));
-                    let mut bj_pct = (self.properties.brightness_jitter * 100.0).round();
-                    if ui
-                        .add(
-                            crate::ui::controls::Slider::new(&mut bj_pct, 0.0..=100.0)
-                                .double_click_reset_to(0.0)
-                                .suffix("%")
-                                .max_decimals(0),
-                        )
-                        .changed()
-                    {
-                        self.properties.brightness_jitter = bj_pct / 100.0;
-                    }
-                    ui.end_row();
+            crate::ui::controls::without_wheel_adjustment(ui, |ui| {
+                ui.set_min_width(260.0);
+                egui::ScrollArea::vertical()
+                    .id_salt("brush_settings_scroll")
+                    .max_height((ui.ctx().content_rect().height() * 0.75).max(120.))
+                    .show(ui, |ui| {
+                        ui.label(crate::ui::dialogs::title_text(
+                            ui.ctx(),
+                            &crate::ui::dialogs::DialogColors::from_ctx(ui.ctx()),
+                            &crate::t!("tools.brush.settings"),
+                        ));
+                        egui::Grid::new("brush_strength_popup")
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                self.show_brush_strength_controls(ui, false);
+                            });
+                        self.show_brush_engine_controls(ui, settings.tablet_pressure_enabled);
+                        ui.separator();
+                        egui::Grid::new("brush_dynamics_popup")
+                            .num_columns(2)
+                            .spacing([8.0, 4.0])
+                            .show(ui, |ui| {
+                                ui.label(crate::t!("ui.scatter"));
+                                let mut scatter_pct = (self.properties.scatter * 200.0).round();
+                                if ui
+                                    .add(
+                                        crate::ui::controls::Slider::new(
+                                            &mut scatter_pct,
+                                            0.0..=200.0,
+                                        )
+                                        .double_click_reset_to(0.0)
+                                        .suffix("%")
+                                        .max_decimals(0),
+                                    )
+                                    .changed()
+                                {
+                                    self.properties.scatter = scatter_pct / 200.0;
+                                }
+                                ui.end_row();
+                                ui.label(crate::t!("ui.hue_jitter"));
+                                let mut hj_pct = (self.properties.hue_jitter * 100.0).round();
+                                if ui
+                                    .add(
+                                        crate::ui::controls::Slider::new(&mut hj_pct, 0.0..=100.0)
+                                            .double_click_reset_to(0.0)
+                                            .suffix("%")
+                                            .max_decimals(0),
+                                    )
+                                    .changed()
+                                {
+                                    self.properties.hue_jitter = hj_pct / 100.0;
+                                }
+                                ui.end_row();
+                                ui.label(crate::t!("ui.brightness"));
+                                let mut bj_pct =
+                                    (self.properties.brightness_jitter * 100.0).round();
+                                if ui
+                                    .add(
+                                        crate::ui::controls::Slider::new(&mut bj_pct, 0.0..=100.0)
+                                            .double_click_reset_to(0.0)
+                                            .suffix("%")
+                                            .max_decimals(0),
+                                    )
+                                    .changed()
+                                {
+                                    self.properties.brightness_jitter = bj_pct / 100.0;
+                                }
+                                ui.end_row();
 
-                    // Pen pressure sensitivity
-                    ui.separator();
-                    ui.separator();
-                    ui.end_row();
-
-                    ui.label(crate::t!("ui.pen_pressure"));
-                    ui.label("");
-                    ui.end_row();
-
-                    ui.checkbox(&mut self.properties.pressure_size, crate::t!("ui.size"))
-                        .on_hover_text(crate::t!("ui.pen_pressure_controls_brush_size"));
-                    let mut min_size_pct = (self.properties.pressure_min_size * 100.0).round();
-                    if ui
-                        .add_enabled(
-                            self.properties.pressure_size,
-                            crate::ui::controls::Slider::new(&mut min_size_pct, 1.0..=100.0)
-                                .double_click_reset_to(10.0)
-                                .suffix("% min")
-                                .max_decimals(0),
-                        )
-                        .on_hover_text(crate::t!("ui.minimum_brush_size_at_zero_pressure"))
-                        .changed()
-                    {
-                        self.properties.pressure_min_size = min_size_pct / 100.0;
-                    }
-                    ui.end_row();
-
-                    ui.checkbox(
-                        &mut self.properties.pressure_opacity,
-                        crate::t!("settings.interface.resize_grip_opacity"),
-                    )
-                    .on_hover_text(crate::t!("ui.pen_pressure_controls_brush_opacity"));
-                    let mut min_opacity_pct =
-                        (self.properties.pressure_min_opacity * 100.0).round();
-                    if ui
-                        .add_enabled(
-                            self.properties.pressure_opacity,
-                            crate::ui::controls::Slider::new(&mut min_opacity_pct, 1.0..=100.0)
-                                .double_click_reset_to(10.0)
-                                .suffix("% min")
-                                .max_decimals(0),
-                        )
-                        .on_hover_text(crate::t!("ui.minimum_opacity_at_zero_pressure"))
-                        .changed()
-                    {
-                        self.properties.pressure_min_opacity = min_opacity_pct / 100.0;
-                    }
-                    ui.end_row();
-                });
+                                if settings.tablet_pressure_enabled {
+                                    self.show_brush_pressure_rows(ui);
+                                }
+                            });
+                    });
+            });
         });
 
         // Spacing slider (only for image tips, not circle)
@@ -906,6 +615,103 @@ impl ToolsPanel {
 
             // Rotation controls
             self.show_tip_rotation_controls(ui);
+        }
+    }
+
+    fn show_brush_pressure_rows(&mut self, ui: &mut egui::Ui) {
+        // Pen pressure sensitivity
+        ui.separator();
+        ui.separator();
+        ui.end_row();
+
+        ui.label(crate::t!("ui.pen_pressure"));
+        ui.label("");
+        ui.end_row();
+
+        ui.checkbox(&mut self.properties.pressure_size, crate::t!("ui.size"))
+            .on_hover_text(crate::t!("ui.pen_pressure_controls_brush_size"));
+        let mut min_size_pct = (self.properties.pressure_min_size * 100.0).round();
+        if ui
+            .add_enabled(
+                self.properties.pressure_size,
+                crate::ui::controls::Slider::new(&mut min_size_pct, 1.0..=100.0)
+                    .double_click_reset_to(10.0)
+                    .suffix("% min")
+                    .max_decimals(0),
+            )
+            .on_hover_text(crate::t!("ui.minimum_brush_size_at_zero_pressure"))
+            .changed()
+        {
+            self.properties.pressure_min_size = min_size_pct / 100.0;
+        }
+        ui.end_row();
+
+        ui.checkbox(&mut self.properties.pressure_opacity, crate::t!("ui.flow"))
+            .on_hover_text(crate::t!("tools.brush.flow_help"));
+        let mut min_opacity_pct = (self.properties.pressure_min_opacity * 100.0).round();
+        if ui
+            .add_enabled(
+                self.properties.pressure_opacity,
+                crate::ui::controls::Slider::new(&mut min_opacity_pct, 1.0..=100.0)
+                    .double_click_reset_to(10.0)
+                    .suffix("% min")
+                    .max_decimals(0),
+            )
+            .on_hover_text(crate::t!("ui.minimum_opacity_at_zero_pressure"))
+            .changed()
+        {
+            self.properties.pressure_min_opacity = min_opacity_pct / 100.0;
+        }
+        ui.end_row();
+    }
+
+    fn show_brush_strength_controls(&mut self, ui: &mut egui::Ui, compact: bool) {
+        if !matches!(self.active_tool, Tool::Brush | Tool::Eraser) {
+            return;
+        }
+        let eraser = self.active_tool == Tool::Eraser;
+        let flow_default = self.brush_paintbrush.map_or(100., |tip| tip.flow() * 100.);
+        for (key, value, help) in [
+            (
+                "Opacity",
+                &mut self.properties.opacity,
+                "tools.brush.opacity_help",
+            ),
+            ("Flow", &mut self.properties.flow, "tools.brush.flow_help"),
+        ] {
+            if eraser && key == "Opacity" {
+                continue;
+            }
+            ui.label(crate::i18n::translate_english(key));
+            let mut percent = *value * 100.;
+            let response = if compact {
+                ui.add(
+                    crate::ui::controls::Numeric::percentage(&mut percent)
+                        .id_salt(("brush_strength", compact, key))
+                        .width_for("100.0%"),
+                )
+            } else {
+                ui.add(
+                    crate::ui::controls::Slider::new(&mut percent, 0.0..=100.0)
+                        .id_salt(("brush_strength", compact, key))
+                        .double_click_reset_to(if key == "Flow" { flow_default } else { 100. })
+                        .suffix("%")
+                        .max_decimals(1),
+                )
+            };
+            if response
+                .on_hover_text(crate::i18n::translate(if eraser {
+                    "tools.brush.eraser_flow_help"
+                } else {
+                    help
+                }))
+                .changed()
+            {
+                *value = percent / 100.;
+            }
+            if !compact {
+                ui.end_row();
+            }
         }
     }
 
@@ -1002,7 +808,9 @@ impl ToolsPanel {
                     .suffix(" deg"),
             )
             .on_hover_text(t!("ctx.rotation_tooltip"));
-            self.active_tip_rotation_deg = self.properties.tip_rotation;
+            if !self.properties.brush_engine.follow_direction {
+                self.active_tip_rotation_deg = self.properties.tip_rotation;
+            }
         }
 
         // Random checkbox ÔÇö to the right of the angle controls
@@ -1109,7 +917,12 @@ impl ToolsPanel {
     }
 
     /// Show eraser-specific options (size, hardness - opacity from color alpha)
-    fn show_eraser_options(&mut self, ui: &mut egui::Ui, assets: &Assets) {
+    fn show_eraser_options(
+        &mut self,
+        ui: &mut egui::Ui,
+        assets: &Assets,
+        settings: &crate::config::settings::AppSettings,
+    ) {
         // Brush tip picker
         self.show_brush_tip_picker(ui, assets);
         ui.separator();
@@ -1144,11 +957,26 @@ impl ToolsPanel {
         }
         aa_resp.on_hover_text(t!("ctx.anti_alias_tooltip"));
 
+        if self.show_inline_brush_controls(settings) {
+            self.show_brush_strength_controls(ui, true);
+            ui.separator();
+        }
+
         // Dynamics popup for eraser: Scatter only
         ui.separator();
-        let dyn_active_eraser = self.properties.scatter > 0.01;
+        let dyn_active_eraser = self.properties.scatter > 0.01
+            || self.properties.flow < 1.
+            || self.properties.brush_engine
+                != self
+                    .brush_paintbrush
+                    .map_or_else(Default::default, |tip| tip.settings());
         let dyn_popup_id_e = ui.make_persistent_id("eraser_dyn_popup");
-        let dyn_resp_e = assets.icon_button(ui, Icon::UiBrushDynamics, egui::Vec2::splat(20.0));
+        let dyn_resp_e = assets.icon_button_with_label(
+            ui,
+            Icon::UiBrushDynamics,
+            egui::Vec2::splat(20.0),
+            &crate::t!("tools.brush.settings"),
+        );
         if dyn_active_eraser {
             let dot_e = egui::pos2(dyn_resp_e.rect.max.x - 3.5, dyn_resp_e.rect.min.y + 3.5);
             ui.painter()
@@ -1166,26 +994,48 @@ impl ToolsPanel {
         .open_memory(None::<egui::SetOpenCommand>)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
-            ui.set_min_width(180.0);
-            egui::Grid::new("eraser_dynamics_popup")
-                .num_columns(2)
-                .spacing([8.0, 4.0])
-                .show(ui, |ui| {
-                    ui.label(crate::t!("ui.scatter"));
-                    let mut scatter_pct = (self.properties.scatter * 200.0).round();
-                    if ui
-                        .add(
-                            crate::ui::controls::Slider::new(&mut scatter_pct, 0.0..=200.0)
-                                .double_click_reset_to(0.0)
-                                .suffix("%")
-                                .max_decimals(0),
-                        )
-                        .changed()
-                    {
-                        self.properties.scatter = scatter_pct / 200.0;
-                    }
-                    ui.end_row();
-                });
+            crate::ui::controls::without_wheel_adjustment(ui, |ui| {
+                ui.set_min_width(260.0);
+                egui::ScrollArea::vertical()
+                    .id_salt("eraser_settings_scroll")
+                    .max_height((ui.ctx().content_rect().height() * 0.75).max(120.))
+                    .show(ui, |ui| {
+                        ui.label(crate::ui::dialogs::title_text(
+                            ui.ctx(),
+                            &crate::ui::dialogs::DialogColors::from_ctx(ui.ctx()),
+                            &crate::t!("tools.brush.settings"),
+                        ));
+                        egui::Grid::new("eraser_strength_popup")
+                            .num_columns(2)
+                            .show(ui, |ui| self.show_brush_strength_controls(ui, false));
+                        self.show_brush_engine_controls(ui, settings.tablet_pressure_enabled);
+                        egui::Grid::new("eraser_dynamics_popup")
+                            .num_columns(2)
+                            .spacing([8.0, 4.0])
+                            .show(ui, |ui| {
+                                ui.label(crate::t!("ui.scatter"));
+                                let mut scatter_pct = (self.properties.scatter * 200.0).round();
+                                if ui
+                                    .add(
+                                        crate::ui::controls::Slider::new(
+                                            &mut scatter_pct,
+                                            0.0..=200.0,
+                                        )
+                                        .double_click_reset_to(0.0)
+                                        .suffix("%")
+                                        .max_decimals(0),
+                                    )
+                                    .changed()
+                                {
+                                    self.properties.scatter = scatter_pct / 200.0;
+                                }
+                                ui.end_row();
+                                if settings.tablet_pressure_enabled {
+                                    self.show_brush_pressure_rows(ui);
+                                }
+                            });
+                    });
+            });
         });
 
         ui.separator();

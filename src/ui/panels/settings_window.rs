@@ -1063,6 +1063,19 @@ impl SettingsWindow {
 
     // -- General Tab -------------------------------------------
     fn show_editing_tab(&mut self, ui: &mut egui::Ui, settings: &mut AppSettings) {
+        Self::section_header(ui, &t!("settings.editing.brush_controls"));
+        ui.checkbox(
+            &mut settings.show_advanced_brush_controls,
+            t!("settings.editing.show_advanced_brush_controls"),
+        )
+        .search_target(ui, "settings.editing.show_advanced_brush_controls");
+        ui.checkbox(
+            &mut settings.brush_preset_controls,
+            t!("tools.brush.auto_controls"),
+        )
+        .search_target(ui, "tools.brush.auto_controls");
+        ui.weak(t!("settings.editing.advanced_brush_hint"))
+            .search_target(ui, "settings.editing.advanced_brush_hint");
         Self::section_header(ui, &t!("settings.editing.clipboard"));
         ui.checkbox(
             &mut settings.paste_at_source_position,
@@ -2842,6 +2855,71 @@ impl SettingsWindow {
                     }
                     ui.add_space(6.0);
 
+                    egui::CollapsingHeader::new(crate::t!("tools.browser.title"))
+                        .id_salt("brush_browser_theme")
+                        .show(ui, |ui| {
+                            self.dirty |= ui
+                                .checkbox(
+                                    &mut settings.brush_browser.compact,
+                                    crate::t!("tools.browser.compact"),
+                                )
+                                .changed();
+                            egui::Grid::new("brush_browser_appearance")
+                                .num_columns(2)
+                                .show(ui, |ui| {
+                                    for (key, value, default, range) in [
+                                        (
+                                            "tools.browser.preview_size",
+                                            &mut settings.brush_browser.preview_size,
+                                            24.,
+                                            18.0..=48.0,
+                                        ),
+                                        (
+                                            "tools.browser.spacing",
+                                            &mut settings.brush_browser.spacing,
+                                            4.,
+                                            0.0..=12.0,
+                                        ),
+                                    ] {
+                                        ui.label(crate::i18n::translate(key));
+                                        self.dirty |= ui
+                                            .add(
+                                                crate::ui::controls::Slider::new(value, range)
+                                                    .id_salt(key)
+                                                    .double_click_reset_to(default)
+                                                    .suffix("px"),
+                                            )
+                                            .changed();
+                                        ui.end_row();
+                                    }
+                                });
+                            Self::opt_color_row(
+                                ui,
+                                &crate::t!("ui.background"),
+                                &mut settings.brush_browser.background,
+                                &mut self.dirty,
+                            );
+                            Self::opt_color_row(
+                                ui,
+                                &crate::t!("tools.browser.selection"),
+                                &mut settings.brush_browser.selection,
+                                &mut self.dirty,
+                            );
+                            Self::opt_color_row(
+                                ui,
+                                &crate::t!("tools.browser.hover"),
+                                &mut settings.brush_browser.hover,
+                                &mut self.dirty,
+                            );
+                            Self::opt_f32_row(
+                                ui,
+                                &crate::t!("ui.widget_cornerradius"),
+                                &mut settings.brush_browser.rounding,
+                                0.,
+                                24.,
+                                &mut self.dirty,
+                            );
+                        });
                     // UI Density
                     egui::Grid::new("advanced_density_grid")
                         .num_columns(2)

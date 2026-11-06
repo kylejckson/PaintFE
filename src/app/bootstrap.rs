@@ -994,6 +994,8 @@ impl PaintFEApp {
             _ => tools::BrushMode::Normal,
         };
 
+        self.tools_panel.restore_brush_browser(&self.settings);
+        self.tools_panel.properties.brush_engine = self.settings.persisted_brush_engine.sanitized();
         self.tools_panel.properties.brush_tip = if self.settings.persisted_brush_tip.is_empty() {
             tools::BrushTip::Circle
         } else {
@@ -1368,6 +1370,8 @@ impl PaintFEApp {
             tools::BrushMode::Sponge => "sponge",
         }
         .to_string();
+        self.tools_panel.store_brush_browser(&mut self.settings);
+        self.settings.persisted_brush_engine = self.tools_panel.properties.brush_engine.sanitized();
         self.settings.persisted_brush_tip = match &self.tools_panel.properties.brush_tip {
             tools::BrushTip::Circle => String::new(),
             tools::BrushTip::Image(name) => name.clone(),

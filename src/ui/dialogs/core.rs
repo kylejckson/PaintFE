@@ -312,10 +312,7 @@ fn paint_dialog_header_impl(
             ),
             egui::Align2::LEFT_CENTER,
             title,
-            egui::FontId::new(
-                13.0 * crate::ui::polish::settings(ui.ctx()).text_scale,
-                egui::FontFamily::Name("WidgetTitle".into()),
-            ),
+            title_font(ui.ctx()),
             colors.accent_strong,
         );
     } else {
@@ -323,10 +320,7 @@ fn paint_dialog_header_impl(
             text_pos,
             egui::Align2::LEFT_CENTER,
             format!("{icon} {title}"),
-            egui::FontId::new(
-                13.0 * crate::ui::polish::settings(ui.ctx()).text_scale,
-                egui::FontFamily::Name("WidgetTitle".into()),
-            ),
+            title_font(ui.ctx()),
             colors.accent_strong,
         );
     }
@@ -368,6 +362,19 @@ fn paint_dialog_header_impl(
 }
 
 /// Shared section typography for dialogs and Preferences.
+pub(crate) fn title_font(ctx: &egui::Context) -> egui::FontId {
+    egui::FontId::new(
+        13.0 * crate::ui::polish::settings(ctx).text_scale,
+        egui::FontFamily::Name("WidgetTitle".into()),
+    )
+}
+
+pub(crate) fn title_text(ctx: &egui::Context, colors: &DialogColors, text: &str) -> egui::RichText {
+    egui::RichText::new(text)
+        .font(title_font(ctx))
+        .color(colors.accent_strong)
+}
+
 pub(crate) fn section_label_text(
     ctx: &egui::Context,
     colors: &DialogColors,

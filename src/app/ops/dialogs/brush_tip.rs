@@ -22,6 +22,9 @@ impl PaintFEApp {
                         use base64::Engine;
                         let b64 =
                             base64::engine::general_purpose::STANDARD.encode(&result.png_data);
+                        self.settings
+                            .custom_brush_tips
+                            .retain(|(name, _, _)| name != &result.name);
                         self.settings.custom_brush_tips.push((
                             result.name.clone(),
                             result.category.clone(),

@@ -203,6 +203,7 @@ pub struct ToolProperties {
     pub brightness_jitter: f32,
     /// Painting mode: Normal, Dodge, Burn, or Sponge.
     pub brush_mode: BrushMode,
+    pub brush_engine: crate::brushes::BrushEngineSettings,
 }
 
 impl Default for ToolProperties {
@@ -228,6 +229,7 @@ impl Default for ToolProperties {
             hue_jitter: 0.0,
             brightness_jitter: 0.0,
             brush_mode: BrushMode::Normal,
+            brush_engine: Default::default(),
         }
     }
 }
@@ -2046,7 +2048,26 @@ pub struct ToolsPanel {
     pub(crate) brush_tip_mask_size: u32,
     pub(crate) brush_tip_mask_revision: u64,
     /// Cache key includes AA so changing the edge policy rebuilds the mask.
-    brush_tip_cache_key: (String, u32, u32, bool),
+    brush_tip_cache_key: (String, u32, u32, bool, u64, u64),
+    brush_paintbrush: Option<crate::brushes::PaintTip>,
+    brush_fibers: Vec<crate::brushes::Fiber>,
+    brush_sweeps: [Option<((f32, f32), f32)>; 4],
+    brush_travel: [f32; 4],
+    brush_browser: crate::brushes::BrowserSettings,
+    brush_browser_compact_request: Option<bool>,
+    brush_browser_open: bool,
+    brush_browser_scroll_focus: Option<egui::Id>,
+    brush_saved_presets: std::collections::BTreeMap<String, crate::brushes::SavedPreset>,
+    brush_preview_cache: std::collections::HashMap<String, egui::TextureHandle>,
+    #[cfg(test)]
+    bristle_bitmap_probe: bool,
+    brush_before_paintbrush: Option<Box<ToolProperties>>,
+    brush_motion: [crate::brushes::BrushMotion; 4],
+    brush_motion_arm: usize,
+    brush_speed: f32,
+    brush_dab_transform: crate::brushes::DabTransform,
+    brush_tip_picker_category: String,
+    brush_tip_picker_search: String,
     brush_tip_geometry: Option<crate::config::brushes::BuiltinTipGeometry>,
     /// Monotonic stamp counter, used to seed per-stamp random rotation.
     stamp_counter: u32,
@@ -2131,7 +2152,26 @@ impl Default for ToolsPanel {
             brush_tip_mask: Vec::new(),
             brush_tip_mask_size: 0,
             brush_tip_mask_revision: 0,
-            brush_tip_cache_key: (String::new(), 0, 0, true),
+            brush_tip_cache_key: (String::new(), 0, 0, true, 0, 0),
+            brush_paintbrush: None,
+            brush_fibers: Vec::new(),
+            brush_sweeps: [None; 4],
+            brush_travel: [0.; 4],
+            brush_browser: Default::default(),
+            brush_browser_compact_request: None,
+            brush_browser_open: false,
+            brush_browser_scroll_focus: None,
+            brush_saved_presets: Default::default(),
+            brush_preview_cache: Default::default(),
+            #[cfg(test)]
+            bristle_bitmap_probe: false,
+            brush_before_paintbrush: None,
+            brush_motion: Default::default(),
+            brush_motion_arm: 0,
+            brush_speed: 0.,
+            brush_dab_transform: Default::default(),
+            brush_tip_picker_category: "All".into(),
+            brush_tip_picker_search: String::new(),
             brush_tip_geometry: None,
             stamp_counter: 0,
             active_tip_rotation_deg: 0.0,

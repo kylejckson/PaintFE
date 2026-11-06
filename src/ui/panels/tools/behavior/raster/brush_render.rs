@@ -1,7 +1,10 @@
 impl ToolsPanel {
     pub fn pressure_size(&self) -> f32 {
         let size = if self.properties.pressure_size {
-            let p = self.tool_state.current_pressure;
+            let p = self
+                .properties
+                .brush_engine
+                .pressure(self.tool_state.current_pressure);
             let min = self.properties.pressure_min_size;
             self.properties.size * (min + (1.0 - min) * p)
         } else {
@@ -16,7 +19,9 @@ impl ToolsPanel {
 
     pub fn snaps_tip_to_pixels(&self) -> bool {
         !self.properties.anti_aliased
-            && (self.properties.brush_tip.is_circle() || self.brush_tip_geometry.is_some())
+            && (self.properties.brush_tip.is_circle()
+                || self.brush_tip_geometry.is_some()
+                || self.brush_paintbrush.is_some_and(|tip| !tip.has_bristles()))
             && matches!(
                 self.active_tool,
                 Tool::Brush | Tool::Eraser | Tool::Line | Tool::Pencil
@@ -27,7 +32,10 @@ impl ToolsPanel {
     /// Returns `self.properties.flow` scaled by pressure when pressure_opacity is enabled.
     fn pressure_flow(&self) -> f32 {
         if self.properties.pressure_opacity {
-            let p = self.tool_state.current_pressure;
+            let p = self
+                .properties
+                .brush_engine
+                .pressure(self.tool_state.current_pressure);
             let min = self.properties.pressure_min_opacity;
             self.properties.flow * (min + (1.0 - min) * p)
         } else {
@@ -414,6 +422,7 @@ impl ToolsPanel {
     ) {
         // Dispatch to image tip path if active
         if !self.properties.brush_tip.is_circle() {
+            self.prepare_brush_dab(pos);
             // Compute rotation angle for this stamp
             let rotation_deg = if self.properties.tip_random_rotation {
                 // Hash position to get a deterministic-but-random angle
@@ -429,6 +438,8 @@ impl ToolsPanel {
             } else {
                 self.properties.tip_rotation
             };
+            let rotation_deg = rotation_deg + self.brush_dab_transform.angle;
+            self.active_tip_rotation_deg = rotation_deg;
             self.draw_image_tip_no_dirty(
                 target_image,
                 width,
@@ -775,6 +786,8 @@ impl ToolsPanel {
     /// Only rebuilds if tip or size changed. Called alongside rebuild_brush_lut.
     fn rebuild_tip_mask(&mut self, assets: &Assets) {
         if self.properties.brush_tip.is_circle() {
+            self.brush_paintbrush = None;
+            self.brush_tip_geometry = None;
             return;
         }
         let tip_name = match &self.properties.brush_tip {
@@ -784,7 +797,13 @@ impl ToolsPanel {
         let geometry = assets
             .get_brush_tip_data(&tip_name)
             .and_then(|tip| tip.geometry);
-        let target_size = if geometry.is_some() && !self.properties.anti_aliased {
+        self.brush_paintbrush = assets
+            .get_brush_tip_data(&tip_name)
+            .and_then(|tip| tip.paintbrush);
+        let target_size = if (geometry.is_some()
+            || self.brush_paintbrush.is_some_and(|tip| !tip.has_bristles()))
+            && !self.properties.anti_aliased
+        {
             self.properties.size.round().max(1.) as u32
         } else {
             (self.properties.size.ceil() as u32).max(1)
@@ -795,6 +814,14 @@ impl ToolsPanel {
             target_size,
             hardness_key,
             self.properties.anti_aliased,
+            if self.brush_paintbrush.is_some() {
+                self.properties.brush_engine.mask_key()
+            } else {
+                0
+            },
+            assets
+                .get_brush_tip_data(&tip_name)
+                .map_or(0, |tip| tip.revision),
         );
         if key == self.brush_tip_cache_key {
             return;
@@ -802,10 +829,19 @@ impl ToolsPanel {
         self.brush_tip_cache_key = key;
         self.brush_tip_mask_revision = self.brush_tip_mask_revision.wrapping_add(1);
         self.brush_tip_geometry = geometry;
+        self.brush_fibers = self
+            .brush_paintbrush
+            .map_or_else(Vec::new, |tip| tip.fibers(self.properties.brush_engine));
 
         if let Some(data) = assets.get_brush_tip_data(&tip_name) {
-            let src = &data.mask;
-            let src_size = data.mask_size;
+            let generated = self
+                .brush_paintbrush
+                .map(|tip| tip.mask(128, self.properties.brush_engine));
+            let (src, src_size) = generated
+                .as_ref()
+                .map_or((&data.mask[..], data.mask_size), |image| {
+                    (&image.as_raw()[..], image.width())
+                });
             if src_size == 0 {
                 return;
             }
@@ -834,102 +870,30 @@ impl ToolsPanel {
                 return;
             }
 
-            // Bilinear interpolation from source mask to target size
-            let scale = src_size as f32 / dst_size as f32;
-            for dy in 0..dst_size {
-                for dx in 0..dst_size {
-                    let sx = dx as f32 * scale;
-                    let sy = dy as f32 * scale;
-                    let sx0 = sx.floor() as u32;
-                    let sy0 = sy.floor() as u32;
-                    let sx1 = (sx0 + 1).min(src_size - 1);
-                    let sy1 = (sy0 + 1).min(src_size - 1);
-                    let fx = sx - sx0 as f32;
-                    let fy = sy - sy0 as f32;
-
-                    let v00 = src[(sy0 * src_size + sx0) as usize] as f32;
-                    let v10 = src[(sy0 * src_size + sx1) as usize] as f32;
-                    let v01 = src[(sy1 * src_size + sx0) as usize] as f32;
-                    let v11 = src[(sy1 * src_size + sx1) as usize] as f32;
-
-                    let top = v00 * (1.0 - fx) + v10 * fx;
-                    let bot = v01 * (1.0 - fx) + v11 * fx;
-                    let val = if self.properties.anti_aliased {
-                        top * (1.0 - fy) + bot * fy
-                    } else {
-                        let nx = sx.round().min((src_size - 1) as f32) as u32;
-                        let ny = sy.round().min((src_size - 1) as f32) as u32;
-                        src[(ny * src_size + nx) as usize] as f32
-                    };
-                    self.brush_tip_mask[(dy * dst_size + dx) as usize] =
-                        val.round().min(255.0) as u8;
+            let source =
+                image::ImageBuffer::<image::Luma<u8>, _>::from_raw(src_size, src_size, src)
+                    .unwrap();
+            let filter = if self.properties.anti_aliased {
+                image::imageops::FilterType::Triangle
+            } else {
+                image::imageops::FilterType::Nearest
+            };
+            self.brush_tip_mask =
+                image::imageops::resize(&source, dst_size, dst_size, filter).into_raw();
+            let hardness = self.properties.hardness.clamp(0., 1.);
+            if hardness < 0.99 {
+                let threshold = (1. - hardness) * 0.6;
+                for value in &mut self.brush_tip_mask {
+                    *value = (((*value as f32 / 255. - threshold) / (1. - threshold)).clamp(0., 1.)
+                        * 255.)
+                        .round() as u8;
                 }
             }
-
-            // Apply hardness as contrast modifier:
-            // hardness 1.0 → use as-is
-            // hardness 0.0 → heavily feathered (only brightest survive)
-            let h = self.properties.hardness;
-            if h < 0.99 {
-                let threshold = (1.0 - h) * 0.6; // 0..0.6 range
-                let range = 1.0 - threshold;
-                for v in self.brush_tip_mask.iter_mut() {
-                    let norm = *v as f32 / 255.0;
-                    let adj = ((norm - threshold) / range).clamp(0.0, 1.0);
-                    *v = (adj * 255.0).round() as u8;
-                }
-            }
-
-            // Anti-alias pass: when downscaling significantly (src >> dst),
-            // bilinear alone can't capture enough of the source detail and edges
-            // look blocky. Apply a small box blur whose radius scales with the
-            // downscale ratio. This smooths staircased edges while preserving shape.
-            if self.properties.anti_aliased && dst_size < src_size && dst_size >= 3 {
-                let ratio = src_size as f32 / dst_size as f32;
-                // blur radius: 1 pass at 2-4× downscale, 2 at higher ratios
-                let passes: usize = if ratio > 4.0 {
-                    2
-                } else if ratio > 1.5 {
-                    1
-                } else {
-                    0
-                };
-                for _ in 0..passes {
-                    // Horizontal pass
-                    let mut tmp = self.brush_tip_mask.clone();
-                    for y in 0..dst_size {
-                        for x in 0..dst_size {
-                            let idx = (y * dst_size + x) as usize;
-                            let mut sum = self.brush_tip_mask[idx] as u32;
-                            let mut count = 1u32;
-                            if x > 0 {
-                                sum += self.brush_tip_mask[(y * dst_size + x - 1) as usize] as u32;
-                                count += 1;
-                            }
-                            if x + 1 < dst_size {
-                                sum += self.brush_tip_mask[(y * dst_size + x + 1) as usize] as u32;
-                                count += 1;
-                            }
-                            tmp[idx] = (sum / count) as u8;
-                        }
-                    }
-                    // Vertical pass
-                    for y in 0..dst_size {
-                        for x in 0..dst_size {
-                            let idx = (y * dst_size + x) as usize;
-                            let mut sum = tmp[idx] as u32;
-                            let mut count = 1u32;
-                            if y > 0 {
-                                sum += tmp[((y - 1) * dst_size + x) as usize] as u32;
-                                count += 1;
-                            }
-                            if y + 1 < dst_size {
-                                sum += tmp[((y + 1) * dst_size + x) as usize] as u32;
-                                count += 1;
-                            }
-                            self.brush_tip_mask[idx] = (sum / count) as u8;
-                        }
-                    }
+            if !self.properties.anti_aliased
+                && self.brush_paintbrush.is_some_and(|tip| !tip.has_bristles())
+            {
+                for value in &mut self.brush_tip_mask {
+                    *value = if *value >= 128 { 255 } else { 0 };
                 }
             }
         } else {
@@ -983,23 +947,32 @@ impl ToolsPanel {
         let (cx, cy) = crate::ui::panels::tools::pixel_aligned_brush_center(
             (cx, cy),
             half * 2.,
-            geometry.is_some() && !self.properties.anti_aliased,
+            (geometry.is_some() || self.brush_paintbrush.is_some_and(|tip| !tip.has_bristles()))
+                && !self.properties.anti_aliased,
         );
 
         // When rotated, the bounding box of the stamp expands.
         // The diagonal of the original square mask is half*sqrt(2) from center.
-        let rotated = rotation_deg.abs() > 0.01;
+        let transform = self.brush_dab_transform;
+        let spread_extent = transform
+            .scale_y
+            .max(transform.scale_x * (1. + transform.shear.abs()));
+        let rotated = rotation_deg.abs() > 0.01
+            || (transform.scale_x - 1.).abs() > 0.0001
+            || (transform.scale_y - 1.).abs() > 0.0001
+            || transform.shear.abs() > 0.0001;
         let (cos_a, sin_a) = if rotated {
             let rad = -rotation_deg.to_radians(); // negative = inverse rotation for sampling
             (rad.cos(), rad.sin())
         } else {
             (1.0, 0.0)
         };
-        let effective_half = if rotated {
-            half * std::f32::consts::SQRT_2
-        } else {
-            half
-        };
+        let effective_half = spread_extent
+            * if rotated {
+                half * std::f32::consts::SQRT_2
+            } else {
+                half
+            };
 
         // Bounding box of the stamp in canvas coordinates
         let stamp_min_x = (cx - effective_half).max(0.0) as u32;
@@ -1051,6 +1024,25 @@ impl ToolsPanel {
             } else {
                 (base_r8, base_g8, base_b8)
             };
+
+        #[cfg(test)]
+        let sparse_bristles = !self.bristle_bitmap_probe;
+        #[cfg(not(test))]
+        let sparse_bristles = true;
+        if sparse_bristles && self.brush_paintbrush.is_some_and(|tip| tip.has_bristles()) {
+            self.draw_bristle_dab(
+                target_image,
+                width,
+                height,
+                (cx, cy),
+                rotation_deg,
+                [src_r8, src_g8, src_b8],
+                src_a,
+                is_eraser,
+                selection_mask,
+            );
+            return;
+        }
 
         let cs = crate::canvas::CHUNK_SIZE;
         let writer = self.brush_pixel_writer();
@@ -1126,8 +1118,11 @@ impl ToolsPanel {
                                 .round() as u8
                         } else if rotated {
                             // Inverse-rotate to find source mask position
-                            let rot_x = rel_x * cos_a - rel_y * sin_a + half;
-                            let rot_y = rel_x * sin_a + rel_y * cos_a + half;
+                            let local_y = (rel_x * sin_a + rel_y * cos_a) / transform.scale_y;
+                            let local_x = (rel_x * cos_a - rel_y * sin_a) / transform.scale_x
+                                - transform.shear * local_y;
+                            let rot_x = local_x + half;
+                            let rot_y = local_y + half;
                             // Bilinear sample from the unrotated mask
                             if rot_x < -0.5
                                 || rot_y < -0.5
@@ -1330,11 +1325,27 @@ impl ToolsPanel {
         self.stamp_counter = self.stamp_counter.wrapping_add(1);
 
         let (cx, cy) = pos;
-        let radius = self.pressure_size() / 2.0;
-        let radius = if !self.properties.brush_tip.is_circle()
-            && (self.properties.tip_random_rotation || self.properties.tip_rotation.abs() > 0.01)
+        self.prepare_brush_dab(pos);
+        let radius = if !self.properties.brush_tip.is_circle() && self.brush_tip_geometry.is_none()
         {
-            radius * std::f32::consts::SQRT_2
+            self.brush_tip_mask_size as f32 / 2.
+        } else {
+            self.pressure_size() / 2.
+        };
+        let radius = if !self.properties.brush_tip.is_circle() {
+            let transform = self.brush_dab_transform;
+            radius
+                * transform
+                    .scale_y
+                    .max(transform.scale_x * (1. + transform.shear.abs()))
+                * if self.properties.tip_random_rotation
+                    || self.properties.tip_rotation.abs() > 0.01
+                    || transform.angle.abs() > 0.01
+                {
+                    std::f32::consts::SQRT_2
+                } else {
+                    1.
+                }
         } else {
             radius
         };

@@ -362,6 +362,7 @@ pub struct AppSettings {
     pub persisted_pressure_min_opacity: f32,
     pub persisted_brush_mode: String,
     pub persisted_brush_tip: String,
+    pub persisted_brush_engine: crate::brushes::BrushEngineSettings,
     /// Custom brush tips persisted across restarts: (name, category, base64_png_data)
     pub custom_brush_tips: Vec<(String, String, String)>,
     /// Custom vector shapes persisted across restarts: (name, category, base64_svg_path_data)
@@ -428,6 +429,10 @@ pub struct AppSettings {
     pub enter_deselect: bool,
     pub undo_tool_adjustments: bool,
     pub tablet_pressure_enabled: bool,
+    pub show_advanced_brush_controls: bool,
+    pub brush_preset_controls: bool,
+    pub brush_browser: crate::brushes::BrowserSettings,
+    pub brush_saved_presets: std::collections::BTreeMap<String, crate::brushes::SavedPreset>,
     pub paste_at_source_position: bool,
     pub paste_keep_visible: bool,
     pub legacy_clipboard_shortcuts: bool,
@@ -597,6 +602,7 @@ impl Default for AppSettings {
             persisted_pressure_min_opacity: 0.1,
             persisted_brush_mode: "normal".to_string(),
             persisted_brush_tip: String::new(),
+            persisted_brush_engine: Default::default(),
             custom_brush_tips: Vec::new(),
             custom_shapes: Vec::new(),
             persisted_fill_tolerance: 5.0,
@@ -642,6 +648,10 @@ impl Default for AppSettings {
             enter_deselect: false,
             undo_tool_adjustments: false,
             tablet_pressure_enabled: true,
+            show_advanced_brush_controls: false,
+            brush_preset_controls: true,
+            brush_browser: Default::default(),
+            brush_saved_presets: Default::default(),
             paste_at_source_position: true,
             paste_keep_visible: true,
             legacy_clipboard_shortcuts: true,
@@ -938,6 +948,12 @@ impl AppSettings {
                 content.push_str(&format!("{}={}\n", key, Self::color_to_str(*c)));
             }
         }
+        let mut browser = crate::brushes::BrowserSettings::default();
+        browser.copy_appearance(&self.brush_browser);
+        content.push_str(&format!(
+            "brush_browser_appearance={}\n",
+            serde_json::to_string(&browser).unwrap()
+        ));
         content
     }
 
@@ -953,6 +969,11 @@ impl AppSettings {
             if let Some((key, val)) = line.split_once('=') {
                 map.insert(key.trim().to_string(), val.trim().to_string());
             }
+        }
+        if let Some(value) = map.get("brush_browser_appearance")
+            && let Ok(browser) = serde_json::from_str::<crate::brushes::BrowserSettings>(value)
+        {
+            self.brush_browser.copy_appearance(&browser);
         }
         if let Some(value) = map.get("ui_polish") {
             if let Ok(mut polish) = serde_json::from_str::<crate::ui::polish::PolishSettings>(value)
@@ -1387,6 +1408,26 @@ impl AppSettings {
         content.push_str(&format!(
             "undo_tool_adjustments={}\n",
             self.undo_tool_adjustments
+        ));
+        content.push_str(&format!(
+            "brush_browser={}\n",
+            serde_json::to_string(&self.brush_browser).unwrap()
+        ));
+        content.push_str(&format!(
+            "brush_saved_presets={}\n",
+            serde_json::to_string(&self.brush_saved_presets).unwrap()
+        ));
+        content.push_str(&format!(
+            "brush_preset_controls={}\n",
+            self.brush_preset_controls
+        ));
+        content.push_str(&format!(
+            "persisted_brush_engine={}\n",
+            serde_json::to_string(&self.persisted_brush_engine.sanitized()).unwrap()
+        ));
+        content.push_str(&format!(
+            "show_advanced_brush_controls={}\n",
+            self.show_advanced_brush_controls
         ));
         content.push_str(&format!(
             "tablet_pressure_enabled={}\n",
@@ -2327,6 +2368,25 @@ impl AppSettings {
                 "enter_deselect" => s.enter_deselect = val == "true",
                 "undo_tool_adjustments" => s.undo_tool_adjustments = val == "true",
                 "tablet_pressure_enabled" => s.tablet_pressure_enabled = val == "true",
+                "brush_browser" => {
+                    if let Ok(value) = serde_json::from_str(val) {
+                        s.brush_browser = value;
+                    }
+                }
+                "brush_saved_presets" => {
+                    if let Ok(value) = serde_json::from_str(val) {
+                        s.brush_saved_presets = value;
+                    }
+                }
+                "brush_preset_controls" => s.brush_preset_controls = val == "true",
+                "persisted_brush_engine" => {
+                    if let Ok(engine) =
+                        serde_json::from_str::<crate::brushes::BrushEngineSettings>(val)
+                    {
+                        s.persisted_brush_engine = engine.sanitized();
+                    }
+                }
+                "show_advanced_brush_controls" => s.show_advanced_brush_controls = val == "true",
                 "paste_at_source_position" => s.paste_at_source_position = val == "true",
                 "paste_keep_visible" => s.paste_keep_visible = val == "true",
                 "legacy_clipboard_shortcuts" => s.legacy_clipboard_shortcuts = val == "true",
@@ -2533,6 +2593,21 @@ mod refinement_tests {
         let settings = AppSettings {
             undo_tool_adjustments: true,
             tablet_pressure_enabled: false,
+            brush_browser: crate::brushes::BrowserSettings {
+                compact: false,
+                preview_size: 36.,
+                selection: Some(Color32::from_rgba_premultiplied(12, 20, 30, 80)),
+                favourites: vec!["Round Paint".into()],
+                category: "Favourites".into(),
+                ..Default::default()
+            },
+            show_advanced_brush_controls: true,
+            brush_preset_controls: false,
+            persisted_brush_engine: crate::brushes::BrushEngineSettings {
+                smoothing: 0.7,
+                density: 0.9,
+                ..Default::default()
+            },
             ruler: RulerSettings {
                 monospace: false,
                 font_size: 18.0,
@@ -2619,6 +2694,13 @@ mod refinement_tests {
         assert_eq!(restored.export_options, settings.export_options);
         assert!(restored.undo_tool_adjustments);
         assert!(!restored.tablet_pressure_enabled);
+        assert_eq!(restored.brush_browser, settings.brush_browser);
+        assert!(restored.show_advanced_brush_controls);
+        assert!(!restored.brush_preset_controls);
+        assert_eq!(
+            restored.persisted_brush_engine,
+            settings.persisted_brush_engine
+        );
         assert_eq!(restored.recent_files, ["first.png", "second.pfe"]);
         assert_eq!(restored.persist_colors_panel_size, Some((150.0, 210.0)));
         assert_eq!(restored.persist_tools_panel_size, Some((420.0, 170.0)));
