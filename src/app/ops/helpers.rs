@@ -46,6 +46,7 @@ impl PaintFEApp {
                 return;
             }
         }
+        self.finish_pending_paint_stroke();
         self.commit_pending_tool_history();
         self.cancel_straighten();
         if self.paste_overlay.is_some() {
@@ -407,6 +408,7 @@ impl PaintFEApp {
     }
 
     fn cut_selection_with_history(&mut self, transparent_cutout: bool) -> bool {
+        self.finish_pending_paint_stroke();
         let Some(project) = self.active_project_mut() else {
             return false;
         };
@@ -520,7 +522,18 @@ impl PaintFEApp {
         }
     }
 
+    fn finish_pending_paint_stroke(&mut self) {
+        self.commit_pending_tool_history();
+        let primary = self.colors_panel.get_primary_color_f32();
+        let secondary = self.colors_panel.get_secondary_color_f32();
+        if let Some(project) = self.projects.get_mut(self.active_project_index) {
+            self.tools_panel
+                .finish_paint_for_action(&mut project.canvas_state, primary, secondary);
+        }
+        self.commit_pending_tool_history();
+    }
     fn finish_pending_line_edit(&mut self) {
+        self.finish_pending_paint_stroke();
         if let Some(project) = self.projects.get_mut(self.active_project_index) {
             self.tools_panel
                 .commit_pending_line_edit(&mut project.canvas_state);
@@ -605,6 +618,7 @@ impl PaintFEApp {
     }
 
     fn select_all_canvas(&mut self) {
+        self.finish_pending_paint_stroke();
         let secondary = self.colors_panel.get_secondary_color_f32();
         let project_idx = self.active_project_index;
 

@@ -437,12 +437,14 @@ impl ToolsPanel {
 
         ui.separator();
 
-        // Anti-aliasing toggle (compact "AA" matching Text tool)
-        let aa_resp = ui.selectable_label(self.properties.anti_aliased, t!("ctx.anti_alias"));
-        if aa_resp.clicked() {
-            self.properties.anti_aliased = !self.properties.anti_aliased;
+        if self.active_tool != Tool::Pencil {
+            // Anti-aliasing toggle (compact "AA" matching Text tool)
+            let aa_resp = ui.selectable_label(self.properties.anti_aliased, t!("ctx.anti_alias"));
+            if aa_resp.clicked() {
+                self.properties.anti_aliased = !self.properties.anti_aliased;
+            }
+            aa_resp.on_hover_text(t!("ctx.anti_alias_tooltip"));
         }
-        aa_resp.on_hover_text(t!("ctx.anti_alias_tooltip"));
 
         // Brush Mode (Normal/Dodge/Burn/Sponge) - only for Brush tool (disabled for now)
         if self.active_tool == Tool::Brush {
@@ -473,6 +475,9 @@ impl ToolsPanel {
                 ));
         }
 
+        if self.active_tool == Tool::Pencil {
+            return;
+        }
         // Dynamics popup: Scatter, Color Jitter
         ui.separator();
         let dyn_active = self.properties.scatter > 0.01

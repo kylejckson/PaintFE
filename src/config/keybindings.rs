@@ -159,6 +159,7 @@ impl KeyCombo {
 /// All bindable actions in the application
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BindableAction {
+    Menu(crate::config::commands::MenuCommand),
     // File
     NewFile,
     OpenFile,
@@ -269,6 +270,7 @@ impl BindableAction {
     /// Human-readable name for display
     pub fn display_name(&self) -> String {
         match self {
+            Self::Menu(command) => command.label(),
             Self::NewFile => t!("keybind.new_file"),
             Self::OpenFile => t!("keybind.open_file"),
             Self::CloseProject => t!("keybind.close_file"),
@@ -367,16 +369,19 @@ impl BindableAction {
     }
 
     /// Category for grouping in UI
-    pub fn category(&self) -> String {
+    pub fn category_key(&self) -> &'static str {
         match self {
+            Self::Menu(_) => {
+                crate::config::commands::command_spec(*self)
+                    .expect("registered menu command")
+                    .category_key
+            }
             Self::NewFile
             | Self::OpenFile
             | Self::CloseProject
             | Self::Save
             | Self::SaveAll
-            | Self::SaveAs => {
-                t!("keybind_category.file")
-            }
+            | Self::SaveAs => "keybind_category.file",
             Self::Undo
             | Self::Redo
             | Self::Copy
@@ -386,10 +391,10 @@ impl BindableAction {
             | Self::Deselect
             | Self::ClearSelectedPixels
             | Self::FillSelectedPixels
-            | Self::FlattenLayers => t!("keybind_category.edit"),
-            Self::ResizeImage | Self::ResizeCanvas => t!("keybind_category.canvas"),
+            | Self::FlattenLayers => "keybind_category.edit",
+            Self::ResizeImage | Self::ResizeCanvas => "keybind_category.canvas",
             Self::ViewZoomIn | Self::ViewZoomOut | Self::ViewFitToWindow | Self::ViewZoom100 => {
-                t!("keybind_category.view")
+                "keybind_category.view"
             }
             Self::ToolBrush
             | Self::ToolEraser
@@ -409,9 +414,9 @@ impl BindableAction {
             | Self::ToolLasso
             | Self::ToolColorRemover
             | Self::ToolMeshWarp
-            | Self::SelectionPreserveAspectModifier => t!("keybind_category.tools"),
+            | Self::SelectionPreserveAspectModifier => "keybind_category.tools",
             Self::BrushResizeDragModifier | Self::BrushSizeDecrease | Self::BrushSizeIncrease => {
-                t!("keybind_category.brush")
+                "keybind_category.brush"
             }
             Self::ColorAutoLevels
             | Self::ColorDesaturate
@@ -430,7 +435,7 @@ impl BindableAction {
             | Self::ColorPosterize
             | Self::ColorBalance
             | Self::ColorGradientMap
-            | Self::ColorBlackAndWhite => t!("keybind_category.color"),
+            | Self::ColorBlackAndWhite => "keybind_category.color",
             Self::FilterGaussianBlur
             | Self::FilterBokehBlur
             | Self::FilterMotionBlur
@@ -453,111 +458,144 @@ impl BindableAction {
             | Self::FilterColorFilter
             | Self::FilterPixelDrag
             | Self::FilterRgbDisplace
-            | Self::FilterRemoveBackground => t!("keybind_category.filter"),
+            | Self::FilterRemoveBackground => "keybind_category.filter",
             Self::GenerateGrid
             | Self::GenerateDropShadow
             | Self::GenerateOutline
-            | Self::GenerateContours => t!("keybind_category.generate"),
+            | Self::GenerateContours => "keybind_category.generate",
         }
+    }
+
+    pub fn category(&self) -> String {
+        crate::i18n::translate(self.category_key())
+    }
+
+    /// Group display rows without changing the stable serialisation order.
+    pub fn preference_order() -> Vec<Self> {
+        let mut groups: Vec<(&str, Vec<Self>)> = Vec::new();
+        for &action in Self::all() {
+            let key = action.category_key();
+            if let Some((_, items)) = groups.iter_mut().find(|(category, _)| *category == key) {
+                items.push(action);
+            } else {
+                groups.push((key, vec![action]));
+            }
+        }
+        groups
+            .into_iter()
+            .flat_map(|(_, actions)| actions)
+            .collect()
     }
 
     /// All actions in display order
     pub fn all() -> &'static [BindableAction] {
         use BindableAction::*;
-        &[
-            NewFile,
-            OpenFile,
-            CloseProject,
-            Save,
-            SaveAll,
-            SaveAs,
-            Undo,
-            Redo,
-            Copy,
-            Cut,
-            Paste,
-            SelectAll,
-            Deselect,
-            ClearSelectedPixels,
-            FillSelectedPixels,
-            FlattenLayers,
-            ResizeImage,
-            ResizeCanvas,
-            ViewZoomIn,
-            ViewZoomOut,
-            ViewFitToWindow,
-            ViewZoom100,
-            ToolBrush,
-            ToolEraser,
-            ToolPencil,
-            ToolLine,
-            ToolGradient,
-            ToolFill,
-            ToolMagicWand,
-            ToolColorPicker,
-            ToolMovePixels,
-            ToolRectSelect,
-            ToolText,
-            ToolZoom,
-            ToolPan,
-            ToolCloneStamp,
-            ToolShapes,
-            ToolLasso,
-            ToolColorRemover,
-            ToolMeshWarp,
-            BrushResizeDragModifier,
-            SelectionPreserveAspectModifier,
-            BrushSizeDecrease,
-            BrushSizeIncrease,
-            // Color
-            ColorAutoLevels,
-            ColorDesaturate,
-            ColorInvertColors,
-            ColorInvertAlpha,
-            ColorSepiaTone,
-            ColorBrightnessContrast,
-            ColorCurves,
-            ColorExposure,
-            ColorHighlightsShadows,
-            ColorHueSaturation,
-            ColorLevels,
-            ColorTemperatureTint,
-            ColorVibrance,
-            ColorThreshold,
-            ColorPosterize,
-            ColorBalance,
-            ColorGradientMap,
-            ColorBlackAndWhite,
-            // Filter
-            FilterGaussianBlur,
-            FilterBokehBlur,
-            FilterMotionBlur,
-            FilterBoxBlur,
-            FilterZoomBlur,
-            FilterSharpen,
-            FilterReduceNoise,
-            FilterAddNoise,
-            FilterMedian,
-            FilterCrystallize,
-            FilterDents,
-            FilterPixelate,
-            FilterBulge,
-            FilterTwist,
-            FilterGlow,
-            FilterVignette,
-            FilterHalftone,
-            FilterInk,
-            FilterOilPainting,
-            FilterColorFilter,
-            FilterPixelDrag,
-            FilterRgbDisplace,
-            FilterRemoveBackground,
-            // Generate
-            GenerateGrid,
-            GenerateDropShadow,
-            GenerateOutline,
-            GenerateContours,
-        ]
+        static ACTIONS: std::sync::OnceLock<Vec<BindableAction>> = std::sync::OnceLock::new();
+        ACTIONS
+            .get_or_init(|| {
+                let mut actions = vec![
+                    NewFile,
+                    OpenFile,
+                    CloseProject,
+                    Save,
+                    SaveAll,
+                    SaveAs,
+                    Undo,
+                    Redo,
+                    Copy,
+                    Cut,
+                    Paste,
+                    SelectAll,
+                    Deselect,
+                    ClearSelectedPixels,
+                    FillSelectedPixels,
+                    FlattenLayers,
+                    ResizeImage,
+                    ResizeCanvas,
+                    ViewZoomIn,
+                    ViewZoomOut,
+                    ViewFitToWindow,
+                    ViewZoom100,
+                    ToolBrush,
+                    ToolEraser,
+                    ToolPencil,
+                    ToolLine,
+                    ToolGradient,
+                    ToolFill,
+                    ToolMagicWand,
+                    ToolColorPicker,
+                    ToolMovePixels,
+                    ToolRectSelect,
+                    ToolText,
+                    ToolZoom,
+                    ToolPan,
+                    ToolCloneStamp,
+                    ToolShapes,
+                    ToolLasso,
+                    ToolColorRemover,
+                    ToolMeshWarp,
+                    BrushResizeDragModifier,
+                    SelectionPreserveAspectModifier,
+                    BrushSizeDecrease,
+                    BrushSizeIncrease,
+                    // Color
+                    ColorAutoLevels,
+                    ColorDesaturate,
+                    ColorInvertColors,
+                    ColorInvertAlpha,
+                    ColorSepiaTone,
+                    ColorBrightnessContrast,
+                    ColorCurves,
+                    ColorExposure,
+                    ColorHighlightsShadows,
+                    ColorHueSaturation,
+                    ColorLevels,
+                    ColorTemperatureTint,
+                    ColorVibrance,
+                    ColorThreshold,
+                    ColorPosterize,
+                    ColorBalance,
+                    ColorGradientMap,
+                    ColorBlackAndWhite,
+                    // Filter
+                    FilterGaussianBlur,
+                    FilterBokehBlur,
+                    FilterMotionBlur,
+                    FilterBoxBlur,
+                    FilterZoomBlur,
+                    FilterSharpen,
+                    FilterReduceNoise,
+                    FilterAddNoise,
+                    FilterMedian,
+                    FilterCrystallize,
+                    FilterDents,
+                    FilterPixelate,
+                    FilterBulge,
+                    FilterTwist,
+                    FilterGlow,
+                    FilterVignette,
+                    FilterHalftone,
+                    FilterInk,
+                    FilterOilPainting,
+                    FilterColorFilter,
+                    FilterPixelDrag,
+                    FilterRgbDisplace,
+                    FilterRemoveBackground,
+                    // Generate
+                    GenerateGrid,
+                    GenerateDropShadow,
+                    GenerateOutline,
+                    GenerateContours,
+                ];
+                actions.extend(
+                    crate::config::commands::MenuCommand::ALL
+                        .iter()
+                        .copied()
+                        .map(Self::Menu),
+                );
+                actions
+            })
+            .as_slice()
     }
 }
 
@@ -627,6 +665,18 @@ impl Default for KeyBindings {
         map.insert(ToolLasso, KeyCombo::key(Key::J));
         map.insert(ToolColorRemover, KeyCombo::key(Key::R));
         map.insert(ToolMeshWarp, KeyCombo::key(Key::Q));
+        map.insert(
+            Menu(crate::config::commands::MenuCommand::CanvasCropToSelection),
+            KeyCombo::ctrl_shift_key(Key::X),
+        );
+        map.insert(
+            Menu(crate::config::commands::MenuCommand::CanvasRotate90Cw),
+            KeyCombo::ctrl_key(Key::H),
+        );
+        map.insert(
+            Menu(crate::config::commands::MenuCommand::CanvasRotate90Ccw),
+            KeyCombo::ctrl_key(Key::G),
+        );
         // Brush size
         map.insert(
             BrushResizeDragModifier,
@@ -663,6 +713,17 @@ impl KeyBindings {
             self.bindings.remove(&action);
             self.unbound.insert(action);
         } else {
+            // New defaults must not steal an explicitly saved shortcut.
+            for default in [
+                BindableAction::Menu(crate::config::commands::MenuCommand::CanvasCropToSelection),
+                BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Cw),
+                BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Ccw),
+            ] {
+                if default != action && self.bindings.get(&default) == Some(&combo) {
+                    self.bindings.remove(&default);
+                    self.unbound.insert(default);
+                }
+            }
             self.unbound.remove(&action);
             self.bindings.insert(action, combo);
         }
@@ -684,100 +745,102 @@ impl KeyBindings {
     /// Load a single keybind line from config.
     /// If combo_str is "none", the binding is removed (unbound).
     pub fn load_config_line(&mut self, action_name: &str, combo_str: &str) {
-        let action = match action_name {
-            "NewFile" => Some(BindableAction::NewFile),
-            "OpenFile" => Some(BindableAction::OpenFile),
-            "CloseProject" => Some(BindableAction::CloseProject),
-            "Save" => Some(BindableAction::Save),
-            "SaveAll" => Some(BindableAction::SaveAll),
-            "SaveAs" => Some(BindableAction::SaveAs),
-            "Undo" => Some(BindableAction::Undo),
-            "Redo" => Some(BindableAction::Redo),
-            "Copy" => Some(BindableAction::Copy),
-            "Cut" => Some(BindableAction::Cut),
-            "Paste" => Some(BindableAction::Paste),
-            "SelectAll" => Some(BindableAction::SelectAll),
-            "Deselect" => Some(BindableAction::Deselect),
-            "ClearSelectedPixels" => Some(BindableAction::ClearSelectedPixels),
-            "FillSelectedPixels" => Some(BindableAction::FillSelectedPixels),
-            "FlattenLayers" => Some(BindableAction::FlattenLayers),
-            "ResizeImage" => Some(BindableAction::ResizeImage),
-            "ResizeCanvas" => Some(BindableAction::ResizeCanvas),
-            "ViewZoomIn" => Some(BindableAction::ViewZoomIn),
-            "ViewZoomOut" => Some(BindableAction::ViewZoomOut),
-            "ViewFitToWindow" => Some(BindableAction::ViewFitToWindow),
-            "ViewZoom100" => Some(BindableAction::ViewZoom100),
-            "ToolBrush" => Some(BindableAction::ToolBrush),
-            "ToolEraser" => Some(BindableAction::ToolEraser),
-            "ToolPencil" => Some(BindableAction::ToolPencil),
-            "ToolLine" => Some(BindableAction::ToolLine),
-            "ToolGradient" => Some(BindableAction::ToolGradient),
-            "ToolFill" => Some(BindableAction::ToolFill),
-            "ToolMagicWand" => Some(BindableAction::ToolMagicWand),
-            "ToolColorPicker" => Some(BindableAction::ToolColorPicker),
-            "ToolMovePixels" => Some(BindableAction::ToolMovePixels),
-            "ToolRectSelect" => Some(BindableAction::ToolRectSelect),
-            "ToolText" => Some(BindableAction::ToolText),
-            "ToolZoom" => Some(BindableAction::ToolZoom),
-            "ToolPan" => Some(BindableAction::ToolPan),
-            "ToolCloneStamp" => Some(BindableAction::ToolCloneStamp),
-            "ToolShapes" => Some(BindableAction::ToolShapes),
-            "ToolLasso" => Some(BindableAction::ToolLasso),
-            "ToolColorRemover" => Some(BindableAction::ToolColorRemover),
-            "ToolMeshWarp" => Some(BindableAction::ToolMeshWarp),
-            "BrushResizeDragModifier" => Some(BindableAction::BrushResizeDragModifier),
-            "SelectionPreserveAspectModifier" => {
-                Some(BindableAction::SelectionPreserveAspectModifier)
-            }
-            "BrushSizeDecrease" => Some(BindableAction::BrushSizeDecrease),
-            "BrushSizeIncrease" => Some(BindableAction::BrushSizeIncrease),
-            "ColorAutoLevels" => Some(BindableAction::ColorAutoLevels),
-            "ColorDesaturate" => Some(BindableAction::ColorDesaturate),
-            "ColorInvertColors" => Some(BindableAction::ColorInvertColors),
-            "ColorInvertAlpha" => Some(BindableAction::ColorInvertAlpha),
-            "ColorSepiaTone" => Some(BindableAction::ColorSepiaTone),
-            "ColorBrightnessContrast" => Some(BindableAction::ColorBrightnessContrast),
-            "ColorCurves" => Some(BindableAction::ColorCurves),
-            "ColorExposure" => Some(BindableAction::ColorExposure),
-            "ColorHighlightsShadows" => Some(BindableAction::ColorHighlightsShadows),
-            "ColorHueSaturation" => Some(BindableAction::ColorHueSaturation),
-            "ColorLevels" => Some(BindableAction::ColorLevels),
-            "ColorTemperatureTint" => Some(BindableAction::ColorTemperatureTint),
-            "ColorVibrance" => Some(BindableAction::ColorVibrance),
-            "ColorThreshold" => Some(BindableAction::ColorThreshold),
-            "ColorPosterize" => Some(BindableAction::ColorPosterize),
-            "ColorBalance" => Some(BindableAction::ColorBalance),
-            "ColorGradientMap" => Some(BindableAction::ColorGradientMap),
-            "ColorBlackAndWhite" => Some(BindableAction::ColorBlackAndWhite),
-            "FilterGaussianBlur" => Some(BindableAction::FilterGaussianBlur),
-            "FilterBokehBlur" => Some(BindableAction::FilterBokehBlur),
-            "FilterMotionBlur" => Some(BindableAction::FilterMotionBlur),
-            "FilterBoxBlur" => Some(BindableAction::FilterBoxBlur),
-            "FilterZoomBlur" => Some(BindableAction::FilterZoomBlur),
-            "FilterSharpen" => Some(BindableAction::FilterSharpen),
-            "FilterReduceNoise" => Some(BindableAction::FilterReduceNoise),
-            "FilterAddNoise" => Some(BindableAction::FilterAddNoise),
-            "FilterMedian" => Some(BindableAction::FilterMedian),
-            "FilterCrystallize" => Some(BindableAction::FilterCrystallize),
-            "FilterDents" => Some(BindableAction::FilterDents),
-            "FilterPixelate" => Some(BindableAction::FilterPixelate),
-            "FilterBulge" => Some(BindableAction::FilterBulge),
-            "FilterTwist" => Some(BindableAction::FilterTwist),
-            "FilterGlow" => Some(BindableAction::FilterGlow),
-            "FilterVignette" => Some(BindableAction::FilterVignette),
-            "FilterHalftone" => Some(BindableAction::FilterHalftone),
-            "FilterInk" => Some(BindableAction::FilterInk),
-            "FilterOilPainting" => Some(BindableAction::FilterOilPainting),
-            "FilterColorFilter" => Some(BindableAction::FilterColorFilter),
-            "FilterPixelDrag" => Some(BindableAction::FilterPixelDrag),
-            "FilterRgbDisplace" => Some(BindableAction::FilterRgbDisplace),
-            "FilterRemoveBackground" => Some(BindableAction::FilterRemoveBackground),
-            "GenerateGrid" => Some(BindableAction::GenerateGrid),
-            "GenerateDropShadow" => Some(BindableAction::GenerateDropShadow),
-            "GenerateOutline" => Some(BindableAction::GenerateOutline),
-            "GenerateContours" => Some(BindableAction::GenerateContours),
-            _ => None,
-        };
+        let action = crate::config::commands::MenuCommand::from_config_name(action_name)
+            .map(BindableAction::Menu)
+            .or(match action_name {
+                "NewFile" => Some(BindableAction::NewFile),
+                "OpenFile" => Some(BindableAction::OpenFile),
+                "CloseProject" => Some(BindableAction::CloseProject),
+                "Save" => Some(BindableAction::Save),
+                "SaveAll" => Some(BindableAction::SaveAll),
+                "SaveAs" => Some(BindableAction::SaveAs),
+                "Undo" => Some(BindableAction::Undo),
+                "Redo" => Some(BindableAction::Redo),
+                "Copy" => Some(BindableAction::Copy),
+                "Cut" => Some(BindableAction::Cut),
+                "Paste" => Some(BindableAction::Paste),
+                "SelectAll" => Some(BindableAction::SelectAll),
+                "Deselect" => Some(BindableAction::Deselect),
+                "ClearSelectedPixels" => Some(BindableAction::ClearSelectedPixels),
+                "FillSelectedPixels" => Some(BindableAction::FillSelectedPixels),
+                "FlattenLayers" => Some(BindableAction::FlattenLayers),
+                "ResizeImage" => Some(BindableAction::ResizeImage),
+                "ResizeCanvas" => Some(BindableAction::ResizeCanvas),
+                "ViewZoomIn" => Some(BindableAction::ViewZoomIn),
+                "ViewZoomOut" => Some(BindableAction::ViewZoomOut),
+                "ViewFitToWindow" => Some(BindableAction::ViewFitToWindow),
+                "ViewZoom100" => Some(BindableAction::ViewZoom100),
+                "ToolBrush" => Some(BindableAction::ToolBrush),
+                "ToolEraser" => Some(BindableAction::ToolEraser),
+                "ToolPencil" => Some(BindableAction::ToolPencil),
+                "ToolLine" => Some(BindableAction::ToolLine),
+                "ToolGradient" => Some(BindableAction::ToolGradient),
+                "ToolFill" => Some(BindableAction::ToolFill),
+                "ToolMagicWand" => Some(BindableAction::ToolMagicWand),
+                "ToolColorPicker" => Some(BindableAction::ToolColorPicker),
+                "ToolMovePixels" => Some(BindableAction::ToolMovePixels),
+                "ToolRectSelect" => Some(BindableAction::ToolRectSelect),
+                "ToolText" => Some(BindableAction::ToolText),
+                "ToolZoom" => Some(BindableAction::ToolZoom),
+                "ToolPan" => Some(BindableAction::ToolPan),
+                "ToolCloneStamp" => Some(BindableAction::ToolCloneStamp),
+                "ToolShapes" => Some(BindableAction::ToolShapes),
+                "ToolLasso" => Some(BindableAction::ToolLasso),
+                "ToolColorRemover" => Some(BindableAction::ToolColorRemover),
+                "ToolMeshWarp" => Some(BindableAction::ToolMeshWarp),
+                "BrushResizeDragModifier" => Some(BindableAction::BrushResizeDragModifier),
+                "SelectionPreserveAspectModifier" => {
+                    Some(BindableAction::SelectionPreserveAspectModifier)
+                }
+                "BrushSizeDecrease" => Some(BindableAction::BrushSizeDecrease),
+                "BrushSizeIncrease" => Some(BindableAction::BrushSizeIncrease),
+                "ColorAutoLevels" => Some(BindableAction::ColorAutoLevels),
+                "ColorDesaturate" => Some(BindableAction::ColorDesaturate),
+                "ColorInvertColors" => Some(BindableAction::ColorInvertColors),
+                "ColorInvertAlpha" => Some(BindableAction::ColorInvertAlpha),
+                "ColorSepiaTone" => Some(BindableAction::ColorSepiaTone),
+                "ColorBrightnessContrast" => Some(BindableAction::ColorBrightnessContrast),
+                "ColorCurves" => Some(BindableAction::ColorCurves),
+                "ColorExposure" => Some(BindableAction::ColorExposure),
+                "ColorHighlightsShadows" => Some(BindableAction::ColorHighlightsShadows),
+                "ColorHueSaturation" => Some(BindableAction::ColorHueSaturation),
+                "ColorLevels" => Some(BindableAction::ColorLevels),
+                "ColorTemperatureTint" => Some(BindableAction::ColorTemperatureTint),
+                "ColorVibrance" => Some(BindableAction::ColorVibrance),
+                "ColorThreshold" => Some(BindableAction::ColorThreshold),
+                "ColorPosterize" => Some(BindableAction::ColorPosterize),
+                "ColorBalance" => Some(BindableAction::ColorBalance),
+                "ColorGradientMap" => Some(BindableAction::ColorGradientMap),
+                "ColorBlackAndWhite" => Some(BindableAction::ColorBlackAndWhite),
+                "FilterGaussianBlur" => Some(BindableAction::FilterGaussianBlur),
+                "FilterBokehBlur" => Some(BindableAction::FilterBokehBlur),
+                "FilterMotionBlur" => Some(BindableAction::FilterMotionBlur),
+                "FilterBoxBlur" => Some(BindableAction::FilterBoxBlur),
+                "FilterZoomBlur" => Some(BindableAction::FilterZoomBlur),
+                "FilterSharpen" => Some(BindableAction::FilterSharpen),
+                "FilterReduceNoise" => Some(BindableAction::FilterReduceNoise),
+                "FilterAddNoise" => Some(BindableAction::FilterAddNoise),
+                "FilterMedian" => Some(BindableAction::FilterMedian),
+                "FilterCrystallize" => Some(BindableAction::FilterCrystallize),
+                "FilterDents" => Some(BindableAction::FilterDents),
+                "FilterPixelate" => Some(BindableAction::FilterPixelate),
+                "FilterBulge" => Some(BindableAction::FilterBulge),
+                "FilterTwist" => Some(BindableAction::FilterTwist),
+                "FilterGlow" => Some(BindableAction::FilterGlow),
+                "FilterVignette" => Some(BindableAction::FilterVignette),
+                "FilterHalftone" => Some(BindableAction::FilterHalftone),
+                "FilterInk" => Some(BindableAction::FilterInk),
+                "FilterOilPainting" => Some(BindableAction::FilterOilPainting),
+                "FilterColorFilter" => Some(BindableAction::FilterColorFilter),
+                "FilterPixelDrag" => Some(BindableAction::FilterPixelDrag),
+                "FilterRgbDisplace" => Some(BindableAction::FilterRgbDisplace),
+                "FilterRemoveBackground" => Some(BindableAction::FilterRemoveBackground),
+                "GenerateGrid" => Some(BindableAction::GenerateGrid),
+                "GenerateDropShadow" => Some(BindableAction::GenerateDropShadow),
+                "GenerateOutline" => Some(BindableAction::GenerateOutline),
+                "GenerateContours" => Some(BindableAction::GenerateContours),
+                _ => None,
+            });
         let Some(action) = action else {
             return;
         };
@@ -786,8 +849,7 @@ impl KeyBindings {
             self.bindings.remove(&action);
             self.unbound.insert(action);
         } else if let Some(combo) = KeyCombo::from_config_string(combo_str) {
-            self.unbound.remove(&action);
-            self.bindings.insert(action, combo);
+            self.set(action, combo);
         }
     }
 
@@ -1191,6 +1253,90 @@ mod selection_binding_tests {
         assert_eq!(
             loaded.bindings[&BindableAction::Deselect],
             KeyCombo::ctrl_key(egui::Key::D)
+        );
+    }
+}
+
+#[cfg(test)]
+mod command_binding_tests {
+    use super::*;
+    #[test]
+    fn every_builtin_command_roundtrips_custom_bindings_and_unbinding() {
+        for &command in crate::config::commands::MenuCommand::ALL {
+            let action = BindableAction::Menu(command);
+            let mut bindings = KeyBindings::default();
+            bindings.set(action, KeyCombo::ctrl_shift_key(egui::Key::F12));
+            let mut loaded = KeyBindings::default();
+            for line in bindings.to_config_lines() {
+                let (name, combo) = line
+                    .strip_prefix("keybind.")
+                    .unwrap()
+                    .split_once('=')
+                    .unwrap();
+                loaded.load_config_line(name, combo);
+            }
+            assert_eq!(
+                loaded.get(action),
+                Some(&KeyCombo::ctrl_shift_key(egui::Key::F12)),
+                "{command:?}"
+            );
+            loaded.load_config_line(&format!("Menu({command:?})"), "none");
+            assert_eq!(loaded.get(action), None);
+        }
+    }
+}
+
+#[cfg(test)]
+mod command_migration_tests {
+    use super::*;
+    #[test]
+    fn explicitly_saved_bindings_take_priority_over_new_defaults() {
+        let mut loaded = KeyBindings::default();
+        loaded.load_config_line("ToolBrush", "ctrl+key:H");
+        assert_eq!(
+            loaded.get(BindableAction::ToolBrush),
+            Some(&KeyCombo::ctrl_key(egui::Key::H))
+        );
+        assert_eq!(
+            loaded.get(BindableAction::Menu(
+                crate::config::commands::MenuCommand::CanvasRotate90Cw
+            )),
+            None
+        );
+    }
+}
+
+#[cfg(test)]
+mod preference_order_tests {
+    use super::*;
+    #[test]
+    fn every_command_appears_once_under_one_stable_category() {
+        let actions = BindableAction::preference_order();
+        assert_eq!(actions.len(), BindableAction::all().len());
+        let mut seen = std::collections::HashSet::new();
+        let mut categories = std::collections::HashSet::new();
+        let mut last = "";
+        for action in &actions {
+            assert!(seen.insert(*action));
+            let category = action.category_key();
+            if category != last {
+                assert!(categories.insert(category), "duplicate heading {category}");
+                last = category;
+            }
+        }
+        let info = actions
+            .iter()
+            .position(|a| {
+                *a == BindableAction::Menu(crate::config::commands::MenuCommand::FileInfo)
+            })
+            .unwrap();
+        let edit = actions
+            .iter()
+            .position(|a| *a == BindableAction::Undo)
+            .unwrap();
+        assert!(
+            info < edit,
+            "new File commands belong beside existing File commands"
         );
     }
 }

@@ -607,7 +607,7 @@ impl ToolsPanel {
 }
 
 #[cfg(test)]
-mod brush_picker_tests {
+pub(crate) mod brush_picker_tests {
     use super::*;
 
     #[test]
@@ -1322,7 +1322,7 @@ mod brush_picker_tests {
         }
     }
 
-    fn save_ui_capture(
+    pub(crate) fn save_ui_capture(
         gpu: &crate::gpu::context::GpuContext,
         ctx: &egui::Context,
         output: egui::FullOutput,

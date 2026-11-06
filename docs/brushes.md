@@ -81,3 +81,20 @@ Custom tips can be removed from their context menu. Bundled tips cannot be
 deleted. A custom tip with an existing bundled name temporarily overrides it;
 deleting that custom tip restores the bundled version. Custom image stamps do
 not inherit a generated paintbrush's engine just because their names match.
+
+## Tool-specific settings
+
+Brush, Pencil and Eraser remember their own settings, including their selected
+size, tip, blend mode and painting parameters. Switching tools restores those
+settings, and they are saved across restarts. Brush and Eraser paintbrush presets
+are independent too. The active colour still comes from the shared Colours panel.
+
+Pencil always draws single-pixel, aliased marks. Its options bar offers blend mode,
+without size, hardness, antialiasing, Opacity, Flow or brush dynamics controls.
+Use colour alpha to change Pencil transparency. Enabling tablet controls or advanced
+brush controls does not add these ignored settings to Pencil.
+
+Changing tools during a paint gesture waits for release, so the original tool
+finishes one stroke and one undo entry. Undo during a gesture completes and undoes
+that stroke, then waits for release before accepting another paint gesture.
+Selection, clipboard and save boundaries also finish pending paint first.

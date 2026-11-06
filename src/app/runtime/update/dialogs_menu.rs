@@ -8,6 +8,12 @@ impl PaintFEApp {
 
         // --- Top Menu Bar ---
         let menu_kb = self.settings.keybindings.clone();
+        ctx.data_mut(|data| {
+            data.insert_temp(
+                egui::Id::new("paintfe_command_keybindings"),
+                std::sync::Arc::new(menu_kb.clone()),
+            )
+        });
         let has_project = !self.projects.is_empty();
         #[allow(deprecated)]
         let menu_resp = egui::Panel::top("menu_bar")
@@ -17,37 +23,8 @@ impl PaintFEApp {
                 if modal_open { ui.disable(); }
                 egui::MenuBar::new().config(crate::ui::menus::config()).ui(ui, |ui| {
                     ui.menu_button(t!("menu.file"), |ui| {
-                        if self
-                            .assets
-                            .menu_item_shortcut(
-                                ui,
-                                Icon::MenuFileNew,
-                                &t!("menu.file.new"),
-                                &menu_kb,
-                                BindableAction::NewFile,
-                            )
-                            .clicked()
-                        {
-                            self.new_file_dialog.load_clipboard_dimensions();
-                            self.new_file_dialog
-                                .set_lock_aspect_ratio(self.settings.persist_new_file_lock_aspect);
-                            self.new_file_dialog.open_dialog();
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_shortcut(
-                                ui,
-                                Icon::MenuFileOpen,
-                                &t!("menu.file.open"),
-                                &menu_kb,
-                                BindableAction::OpenFile,
-                            )
-                            .clicked()
-                        {
-                            self.handle_open_file(ctx.input(|i| i.time));
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_enabled(ui, Icon::MenuFileNew, &t!("menu.file.new"), true, &menu_kb, crate::config::keybindings::BindableAction::NewFile).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::NewFile); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, Icon::MenuFileOpen, &t!("menu.file.open"), true, &menu_kb, crate::config::keybindings::BindableAction::OpenFile).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::OpenFile); ui.close(); }
                         ui.menu_button(crate::t!("ui.recent_files"), |ui| {
                             let recent = self.settings.recent_files.clone();
                             let cap = (ctx.content_rect().width() * 0.5).clamp(1.0, 700.0);
@@ -69,156 +46,33 @@ impl PaintFEApp {
                                     ui.close();
                                 }
                             }
-                            if ui.button(crate::t!("ui.clear_recent_files")).clicked() {
-                                self.settings.recent_files.clear();
-                                self.settings.save();
-                                ui.close();
-                            }
+                            if self.show_command_button(ui,ctx,crate::config::commands::MenuCommand::FileClearRecent) { ui.close(); }
                         });
                         ui.separator();
-                        if self
-                            .assets
-                            .menu_item_shortcut_enabled(
-                                ui,
-                                Icon::MenuFileSave,
-                                &t!("menu.file.save"),
-                                has_project,
-                                &menu_kb,
-                                BindableAction::Save,
-                            )
-                            .clicked()
-                        {
-                            self.handle_save(ctx.input(|i| i.time));
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_shortcut_enabled(
-                                ui,
-                                Icon::MenuFileSaveAs,
-                                &t!("menu.file.save_as"),
-                                has_project,
-                                &menu_kb,
-                                BindableAction::SaveAs,
-                            )
-                            .clicked()
-                        {
-                            self.open_save_as_for_project(self.active_project_index);
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_enabled(ui, Icon::MenuFileSave, &t!("menu.file.save"), has_project, &menu_kb, crate::config::keybindings::BindableAction::Save).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Save); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, Icon::MenuFileSaveAs, &t!("menu.file.save_as"), has_project, &menu_kb, crate::config::keybindings::BindableAction::SaveAs).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::SaveAs); ui.close(); }
                         {
                             let any_dirty =
                                 self.projects.iter().any(Project::needs_save);
-                            if self
-                                .assets
-                                .menu_item_shortcut_enabled(
-                                    ui,
-                                    Icon::MenuFileSaveAll,
-                                    &t!("menu.file.save_all"),
-                                    any_dirty,
-                                    &menu_kb,
-                                    BindableAction::SaveAll,
-                                )
-                                .clicked()
-                            {
-                                self.handle_save_all(ctx.input(|i| i.time));
-                                ui.close();
-                            }
+                            if self.assets.menu_item_shortcut_enabled(ui, Icon::MenuFileSaveAll, &t!("menu.file.save_all"), any_dirty, &menu_kb, crate::config::keybindings::BindableAction::SaveAll).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::SaveAll); ui.close(); }
                         }
                         ui.separator();
-                        if self.assets.menu_item_enabled(
-                            ui, Icon::MenuFileInfo, &t!("menu.file.info"), has_project,
-                        ).clicked() {
-                            if let Some(project) = self.active_project() {
-                                ctx.data_mut(|d| d.insert_temp(egui::Id::new("document_info"), project.id));
-                            }
-                            ui.close();
-                        }
-                        if self.assets.menu_item_enabled(
-                            ui, Icon::Duplicate, &t!("menu.file.duplicate"), has_project,
-                        ).clicked() {
-                            if let Some(project) = self.active_project() {
-                                self.duplicate_project(project.id);
-                            }
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_enabled(ui, Icon::MenuFileInfo, &t!("menu.file.info"), has_project, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::FileInfo)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::FileInfo)); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, Icon::Duplicate, &t!("menu.file.duplicate"), has_project, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::FileDuplicate)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::FileDuplicate)); ui.close(); }
                         ui.separator();
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                Icon::MenuFilePrint,
-                                &t!("menu.file.print"),
-                                has_project,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project_mut() {
-                                project.canvas_state.ensure_all_text_layers_rasterized();
-                                let composite = project.canvas_state.composite();
-                                if let Err(e) = crate::ops::print::print_image(&composite) {
-                                    eprintln!("Print error: {}", e);
-                                }
-                            }
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_enabled(ui, Icon::MenuFilePrint, &t!("menu.file.print"), has_project, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::FilePrint)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::FilePrint)); ui.close(); }
                         ui.separator();
-                        if self.assets.menu_item_shortcut_enabled(ui, Icon::Close,
-                            &t!("ui.close"), has_project, &menu_kb, BindableAction::CloseProject).clicked() {
-                            self.close_project(self.active_project_index);
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_enabled(ui, Icon::Close, &t!("ui.close"), has_project, &menu_kb, crate::config::keybindings::BindableAction::CloseProject).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::CloseProject); ui.close(); }
                         ui.separator();
-                        if self
-                            .assets
-                            .menu_item(ui, Icon::MenuFileQuit, &t!("menu.file.quit"))
-                            .clicked()
-                        {
-                            ui.close();
-                            self.finish_pending_line_edit();
-                            let dirty_count = self.projects.iter().filter(|p| p.is_dirty).count();
-                            if self.settings.confirm_on_exit && dirty_count > 0 {
-                                self.pending_exit = true;
-                            } else {
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                            }
-                        }
+                        if self.assets.menu_item_shortcut_enabled(ui, Icon::MenuFileQuit, &t!("menu.file.quit"), true, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::FileQuit)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::FileQuit)); ui.close(); }
                     });
 
                     ui.menu_button(t!("menu.edit"), |ui| {
                         let can_undo = self.can_undo_action();
                         let can_redo = self.can_redo_action();
 
-                        if self
-                            .assets
-                            .menu_item_shortcut_enabled(
-                                ui,
-                                Icon::MenuEditUndo,
-                                &t!("menu.edit.undo"),
-                                can_undo,
-                                &menu_kb,
-                                BindableAction::Undo,
-                            )
-                            .clicked()
-                        {
-                            self.perform_undo();
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_shortcut_enabled(
-                                ui,
-                                Icon::MenuEditRedo,
-                                &t!("menu.edit.redo"),
-                                can_redo,
-                                &menu_kb,
-                                BindableAction::Redo,
-                            )
-                            .clicked()
-                        {
-                            self.perform_redo();
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_enabled(ui, Icon::MenuEditUndo, &t!("menu.edit.undo"), can_undo, &menu_kb, crate::config::keybindings::BindableAction::Undo).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Undo); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, Icon::MenuEditRedo, &t!("menu.edit.redo"), can_redo, &menu_kb, crate::config::keybindings::BindableAction::Redo).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Redo); ui.close(); }
 
                         ui.separator();
 
@@ -228,182 +82,23 @@ impl PaintFEApp {
                         let can_copy = has_sel || self.paste_overlay.is_some();
                         let has_clip = crate::ops::clipboard::has_clipboard_image(ctx);
 
-                        if self
-                            .assets
-                            .menu_item_shortcut_enabled(
-                                ui,
-                                HistoryAction::Cut.icon(),
-                                &t!("menu.edit.cut"),
-                                has_sel,
-                                &menu_kb,
-                                BindableAction::Cut,
-                            )
-                            .clicked()
-                        {
-                            let transparent_cutout =
-                                self.settings.clipboard_copy_transparent_cutout;
-                            self.cut_selection_with_history(transparent_cutout);
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_shortcut_enabled(
-                                ui,
-                                Icon::MenuEditCopy,
-                                &t!("menu.edit.copy"),
-                                can_copy,
-                                &menu_kb,
-                                BindableAction::Copy,
-                            )
-                            .clicked()
-                        {
-                            self.copy_active_selection_or_overlay();
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_shortcut_enabled(
-                                ui,
-                                HistoryAction::Paste.icon(),
-                                &t!("menu.edit.paste"),
-                                has_project && has_clip,
-                                &menu_kb,
-                                BindableAction::Paste,
-                            )
-                            .clicked()
-                        {
-                            let cursor_canvas = if self.active_project_index < self.projects.len() {
-                                ctx.input(|i| i.pointer.latest_pos()).and_then(|pp| {
-                                    self.canvas.last_canvas_rect.and_then(|rect| {
-                                        let state =
-                                            &self.projects[self.active_project_index].canvas_state;
-                                        self.canvas.screen_to_canvas_f32_pub(pp, rect, state)
-                                    })
-                                })
-                            } else {
-                                None
-                            };
-                            self.queue_paste_from_clipboard(ui.ctx(), cursor_canvas);
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::PasteLayer.icon(),
-                                &t!("menu.edit.paste_as_layer"),
-                                has_project && has_clip,
-                            )
-                            .clicked()
-                        {
-                            // Paste clipboard contents as a new layer
-                            let img = crate::ops::clipboard::get_from_system_clipboard()
-                                .or_else(crate::ops::clipboard::get_clipboard_image_pub);
-                            if let Some(src) = img {
-                                self.do_snapshot_op(HistoryAction::PasteLayer.label("Paste as New Layer"), |s| {
-                                    crate::ops::adjustments::import_layer_from_image(
-                                        s,
-                                        &src,
-                                        "Pasted Layer",
-                                    );
-                                });
-                            }
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Cut.icon(), &t!("menu.edit.cut"), has_sel, &menu_kb, crate::config::keybindings::BindableAction::Cut).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Cut); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, Icon::MenuEditCopy, &t!("menu.edit.copy"), can_copy, &menu_kb, crate::config::keybindings::BindableAction::Copy).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Copy); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Paste.icon(), &t!("menu.edit.paste"), has_project && has_clip, &menu_kb, crate::config::keybindings::BindableAction::Paste).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Paste); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::PasteLayer.icon(), &t!("menu.edit.paste_as_layer"), has_project && has_clip, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::EditPasteAsLayer)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::EditPasteAsLayer)); ui.close(); }
 
                         ui.separator();
 
                         // Selection operations
-                        if self
-                            .assets
-                            .menu_item_shortcut_enabled(
-                                ui,
-                                HistoryAction::SelectAll.icon(),
-                                &t!("menu.edit.select_all"),
-                                has_project,
-                                &menu_kb,
-                                BindableAction::SelectAll,
-                            )
-                            .clicked()
-                        {
-                            self.select_all_canvas();
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_shortcut_enabled(
-                                ui,
-                                HistoryAction::Deselect.icon(),
-                                &t!("menu.edit.deselect"),
-                                has_sel,
-                                &menu_kb,
-                                BindableAction::Deselect,
-                            )
-                            .clicked()
-                        {
-                            self.clear_selection_with_history();
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::InvertSelection.icon(),
-                                &t!("menu.edit.invert_selection"),
-                                has_sel,
-                            )
-                            .clicked()
-                        {
-                            self.invert_selection_with_history();
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::ColorRange.icon(),
-                                &format!("{}...", crate::t!("ui.select_color_range")),
-                                has_project,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project_mut() {
-                                let dlg = crate::ops::dialogs::ColorRangeDialog::new(
-                                    &project.canvas_state,
-                                );
-                                self.active_dialog =
-                                    crate::ops::dialogs::ActiveDialog::ColorRange(dlg);
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::SelectAll.icon(),
-                                &t!("menu.edit.select_content_bounds"),
-                                has_project,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project_mut() {
-                                crate::ops::adjustments::select_layer_content_bounds(
-                                    &mut project.canvas_state,
-                                );
-                            }
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::SelectAll.icon(), &t!("menu.edit.select_all"), has_project, &menu_kb, crate::config::keybindings::BindableAction::SelectAll).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::SelectAll); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Deselect.icon(), &t!("menu.edit.deselect"), has_sel, &menu_kb, crate::config::keybindings::BindableAction::Deselect).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Deselect); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::InvertSelection.icon(), &t!("menu.edit.invert_selection"), has_sel, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::EditInvertSelection)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::EditInvertSelection)); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::ColorRange.icon(), &format!("{}...", crate::t!("ui.select_color_range")), has_project, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::SelectColorRange)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::SelectColorRange)); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::SelectAll.icon(), &t!("menu.edit.select_content_bounds"), has_project, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::EditSelectContentBounds)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::EditSelectContentBounds)); ui.close(); }
 
                         ui.separator();
 
-                        if self
-                            .assets
-                            .menu_item(ui, Icon::MenuEditPreferences, &t!("menu.edit.preferences"))
-                            .clicked()
-                        {
-                            self.settings_window.open = true;
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_enabled(ui, Icon::MenuEditPreferences, &t!("menu.edit.preferences"), true, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::EditPreferences)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::EditPreferences)); ui.close(); }
                     });
 
                     // ==================== CANVAS MENU (was: Image) ====================
@@ -412,81 +107,14 @@ impl PaintFEApp {
                         if !has_project {
                             ui.disable();
                         }
-                        if self
-                            .assets
-                            .menu_item_shortcut_below_enabled(
-                                ui,
-                                HistoryAction::ResizeImage.icon(),
-                                &t!("menu.canvas.resize_image"),
-                                no_dialog,
-                                &menu_kb,
-                                BindableAction::ResizeImage,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                let mut dlg = crate::ops::dialogs::ResizeImageDialog::new(
-                                    &project.canvas_state,
-                                );
-                                dlg.lock_aspect = self.settings.persist_resize_lock_aspect;
-                                self.active_dialog = ActiveDialog::ResizeImage(dlg);
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_shortcut_below_enabled(
-                                ui,
-                                HistoryAction::ResizeCanvas.icon(),
-                                &t!("menu.canvas.resize_canvas"),
-                                no_dialog,
-                                &menu_kb,
-                                BindableAction::ResizeCanvas,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                let mut dlg = crate::ops::dialogs::ResizeCanvasDialog::new(
-                                    &project.canvas_state,
-                                );
-                                dlg.lock_aspect = self.settings.persist_resize_lock_aspect;
-                                self.active_dialog = ActiveDialog::ResizeCanvas(dlg);
-                            }
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_below_enabled(ui, HistoryAction::ResizeImage.icon(), &t!("menu.canvas.resize_image"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ResizeImage).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ResizeImage); ui.close(); }
+                        if self.assets.menu_item_shortcut_below_enabled(ui, HistoryAction::ResizeCanvas.icon(), &t!("menu.canvas.resize_canvas"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ResizeCanvas).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ResizeCanvas); ui.close(); }
                         let has_sel = self
                             .active_project()
                             .is_some_and(|p| p.canvas_state.has_selection());
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::Crop.icon(),
-                                &t!("menu.canvas.crop_to_selection"),
-                                has_sel,
-                            )
-                            .clicked()
-                        {
-                            self.do_snapshot_op(HistoryAction::Crop.label("Crop to Selection"), |s| {
-                                crate::ops::adjustments::crop_to_selection(s);
-                            });
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Crop.icon(), &t!("menu.canvas.crop_to_selection"), has_sel, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasCropToSelection)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasCropToSelection)); ui.close(); }
                         ui.separator();
-                        if self
-                            .assets
-                            .menu_item(ui, Icon::Rename, &t!("menu.canvas.new_text_layer"))
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project_mut() {
-                                crate::ops::canvas_ops::add_text_layer(
-                                    &mut project.canvas_state,
-                                    &mut project.history,
-                                );
-                                self.canvas.gpu_clear_layers();
-                            }
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_enabled(ui, Icon::Rename, &t!("menu.canvas.new_text_layer"), true, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasNewTextLayer)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasNewTextLayer)); ui.close(); }
                         ui.separator();
                         let align_enabled = no_dialog
                             && self.active_project().is_some_and(|p| {
@@ -506,116 +134,24 @@ impl PaintFEApp {
                                 .clone()
                                 .on_disabled_hover_text(crate::t!("ui.align_works_only_on_raster_layers"));
                         }
-                        if align_resp.clicked() {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::AlignLayer(
-                                    crate::ops::dialogs::AlignLayerDialog::new(
-                                        &project.canvas_state,
-                                    ),
-                                );
-                            }
-                            ui.close();
-                        }
+                        if align_resp.clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasAlign)); ui.close(); }
 
                         ui.separator();
                         ui.menu_button(t!("menu.canvas.flip_canvas"), |ui| {
                             ui.set_min_width(ui.min_rect().width().max(160.0));
-                            if self
-                                .assets
-                                .menu_item(
-                                    ui,
-                                    HistoryAction::FlipHorizontal.icon(),
-                                    &t!("menu.canvas.flip_horizontal"),
-                                )
-                                .clicked()
-                            {
-                                self.do_snapshot_op(HistoryAction::FlipHorizontal.label("Flip Horizontal"), |s| {
-                                    crate::ops::transform::flip_canvas_horizontal(s);
-                                });
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item(
-                                    ui,
-                                    HistoryAction::FlipVertical.icon(),
-                                    &t!("menu.canvas.flip_vertical"),
-                                )
-                                .clicked()
-                            {
-                                self.do_snapshot_op(HistoryAction::FlipVertical.label("Flip Vertical"), |s| {
-                                    crate::ops::transform::flip_canvas_vertical(s);
-                                });
-                                ui.close();
-                            }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::FlipHorizontal.icon(), &t!("menu.canvas.flip_horizontal"), true, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasFlipHorizontal)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasFlipHorizontal)); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::FlipVertical.icon(), &t!("menu.canvas.flip_vertical"), true, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasFlipVertical)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasFlipVertical)); ui.close(); }
                         });
                         ui.menu_button(t!("menu.canvas.rotate_canvas"), |ui| {
                             ui.set_min_width(ui.min_rect().width().max(160.0));
-                            if ui.button(t!("ui.straighten")).clicked() {
-                                self.start_straighten();
-                                ui.close();
-                            }
+                            if self.show_command_button(ui,ctx,crate::config::commands::MenuCommand::CanvasStraighten) { ui.close(); }
                             ui.separator();
-                            if self
-                                .assets
-                                .menu_item(
-                                    ui,
-                                    HistoryAction::RotateCw.icon(),
-                                    &t!("menu.canvas.rotate_90cw"),
-                                )
-                                .clicked()
-                            {
-                                self.do_snapshot_op(HistoryAction::RotateCw.label("Rotate 90 deg CW"), |s| {
-                                    crate::ops::transform::rotate_canvas_90cw(s);
-                                });
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item(
-                                    ui,
-                                    HistoryAction::RotateCcw.icon(),
-                                    &t!("menu.canvas.rotate_90ccw"),
-                                )
-                                .clicked()
-                            {
-                                self.do_snapshot_op(HistoryAction::RotateCcw.label("Rotate 90 deg CCW"), |s| {
-                                    crate::ops::transform::rotate_canvas_90ccw(s);
-                                });
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item(
-                                    ui,
-                                    HistoryAction::Rotate180.icon(),
-                                    &t!("menu.canvas.rotate_180"),
-                                )
-                                .clicked()
-                            {
-                                self.do_snapshot_op(HistoryAction::Rotate180.label("Rotate 180 deg"), |s| {
-                                    crate::ops::transform::rotate_canvas_180(s);
-                                });
-                                ui.close();
-                            }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::RotateCw.icon(), &t!("menu.canvas.rotate_90cw"), true, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Cw)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Cw)); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::RotateCcw.icon(), &t!("menu.canvas.rotate_90ccw"), true, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Ccw)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Ccw)); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Rotate180.icon(), &t!("menu.canvas.rotate_180"), true, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate180)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate180)); ui.close(); }
                         });
                         ui.separator();
-                        if self
-                            .assets
-                            .menu_item_shortcut_below(
-                                ui,
-                                HistoryAction::Flatten.icon(),
-                                &t!("menu.canvas.flatten_all_layers"),
-                                &menu_kb,
-                                BindableAction::FlattenLayers,
-                            )
-                            .clicked()
-                        {
-                            self.do_snapshot_op(HistoryAction::Flatten.label("Flatten All Layers"), |s| {
-                                crate::ops::transform::flatten_image(s);
-                            });
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_below_enabled(ui, HistoryAction::Flatten.icon(), &t!("menu.canvas.flatten_all_layers"), true, &menu_kb, crate::config::keybindings::BindableAction::FlattenLayers).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FlattenLayers); ui.close(); }
                     }));
 
                     // (Layers menu removed -- layer operations are now in the Layers Panel context menu)
@@ -626,350 +162,30 @@ impl PaintFEApp {
                             ui.disable();
                         }
                         // --- Instant adjustments (no dialog) ---
-                        if self
-                            .assets
-                            .menu_item(ui, HistoryAction::AutoLevels.icon(), &t!("menu.color.auto_levels"))
-                            .clicked()
-                        {
-                            self.do_layer_snapshot_op(HistoryAction::AutoLevels.label("Auto Levels"), |s| {
-                                let idx = s.active_layer_index;
-                                crate::ops::adjustments::auto_levels(s, idx);
-                            });
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item(ui, HistoryAction::Desaturate.icon(), &t!("menu.color.desaturate"))
-                            .clicked()
-                        {
-                            self.do_layer_snapshot_op(HistoryAction::Desaturate.label("Desaturate"), |s| {
-                                let idx = s.active_layer_index;
-                                crate::ops::filters::desaturate_layer(s, idx);
-                            });
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item(ui, HistoryAction::InvertColors.icon(), &t!("menu.color.invert_colors"))
-                            .clicked()
-                        {
-                            self.do_gpu_snapshot_op(HistoryAction::InvertColors.label("Invert Colors"), |s, gpu| {
-                                let idx = s.active_layer_index;
-                                crate::ops::adjustments::invert_colors_gpu(s, idx, gpu);
-                            });
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item(
-                                ui,
-                                HistoryAction::InvertAlpha.icon(),
-                                &t!("menu.color.invert_alpha"),
-                            )
-                            .clicked()
-                        {
-                            self.do_layer_snapshot_op(HistoryAction::InvertAlpha.label("Invert Alpha"), |s| {
-                                let idx = s.active_layer_index;
-                                crate::ops::adjustments::invert_alpha(s, idx);
-                            });
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::ColorToAlpha.icon(),
-                                &t!("menu.color.color_to_alpha"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            let target = self.colors_panel.get_primary_color();
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::ColorToAlpha(
-                                    crate::ops::effect_dialogs::ColorToAlphaDialog::new_with_target(
-                                        &project.canvas_state,
-                                        target,
-                                    ),
-                                );
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::RecoverTransparency.icon(),
-                                &t!("menu.color.recover_transparency"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            let target = self.colors_panel.get_primary_color();
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::RecoverTransparency(
-                                    crate::ops::effect_dialogs::RecoverTransparencyDialog::new_with_target(
-                                        &project.canvas_state,
-                                        target,
-                                    ),
-                                );
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item(ui, HistoryAction::Sepia.icon(), &t!("menu.color.sepia_tone"))
-                            .clicked()
-                        {
-                            self.do_layer_snapshot_op(HistoryAction::Sepia.label("Sepia Tone"), |s| {
-                                let idx = s.active_layer_index;
-                                crate::ops::adjustments::sepia(s, idx);
-                            });
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::AutoLevels.icon(), &t!("menu.color.auto_levels"), true, &menu_kb, crate::config::keybindings::BindableAction::ColorAutoLevels).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorAutoLevels); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Desaturate.icon(), &t!("menu.color.desaturate"), true, &menu_kb, crate::config::keybindings::BindableAction::ColorDesaturate).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorDesaturate); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::InvertColors.icon(), &t!("menu.color.invert_colors"), true, &menu_kb, crate::config::keybindings::BindableAction::ColorInvertColors).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorInvertColors); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::InvertAlpha.icon(), &t!("menu.color.invert_alpha"), true, &menu_kb, crate::config::keybindings::BindableAction::ColorInvertAlpha).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorInvertAlpha); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::ColorToAlpha.icon(), &t!("menu.color.color_to_alpha"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::ColorColorToAlpha)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::ColorColorToAlpha)); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::RecoverTransparency.icon(), &t!("menu.color.recover_transparency"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::ColorRecoverTransparency)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::ColorRecoverTransparency)); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Sepia.icon(), &t!("menu.color.sepia_tone"), true, &menu_kb, crate::config::keybindings::BindableAction::ColorSepiaTone).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorSepiaTone); ui.close(); }
                         ui.separator();
                         // --- Parameterized adjustments (with dialog) ---
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::BrightnessContrast.icon(),
-                                &t!("menu.color.brightness_contrast"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::BrightnessContrast(
-                                    crate::ops::dialogs::BrightnessContrastDialog::new(
-                                        &project.canvas_state,
-                                    ),
-                                );
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::Curves.icon(),
-                                &t!("menu.color.curves"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::Curves(
-                                    crate::ops::dialogs::CurvesDialog::new(&project.canvas_state),
-                                );
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::Exposure.icon(),
-                                &t!("menu.color.exposure"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::Exposure(
-                                    crate::ops::dialogs::ExposureDialog::new(&project.canvas_state),
-                                );
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::HighlightsShadows.icon(),
-                                &t!("menu.color.highlights_shadows"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::HighlightsShadows(
-                                    crate::ops::dialogs::HighlightsShadowsDialog::new(
-                                        &project.canvas_state,
-                                    ),
-                                );
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::HueSaturation.icon(),
-                                &t!("menu.color.hue_saturation"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::HueSaturation(
-                                    crate::ops::dialogs::HueSaturationDialog::new(
-                                        &project.canvas_state,
-                                    ),
-                                );
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::Levels.icon(),
-                                &t!("menu.color.levels"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::Levels(
-                                    crate::ops::dialogs::LevelsDialog::new(&project.canvas_state),
-                                );
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::TemperatureTint.icon(),
-                                &t!("menu.color.temperature_tint"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::TemperatureTint(
-                                    crate::ops::dialogs::TemperatureTintDialog::new(
-                                        &project.canvas_state,
-                                    ),
-                                );
-                            }
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::BrightnessContrast.icon(), &t!("menu.color.brightness_contrast"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ColorBrightnessContrast).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorBrightnessContrast); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Curves.icon(), &t!("menu.color.curves"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ColorCurves).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorCurves); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Exposure.icon(), &t!("menu.color.exposure"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ColorExposure).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorExposure); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::HighlightsShadows.icon(), &t!("menu.color.highlights_shadows"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ColorHighlightsShadows).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorHighlightsShadows); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::HueSaturation.icon(), &t!("menu.color.hue_saturation"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ColorHueSaturation).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorHueSaturation); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Levels.icon(), &t!("menu.color.levels"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ColorLevels).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorLevels); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::TemperatureTint.icon(), &t!("menu.color.temperature_tint"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ColorTemperatureTint).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorTemperatureTint); ui.close(); }
                         ui.separator();
                         // --- Additional color adjustments ---
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::Vibrance.icon(),
-                                &t!("menu.color.vibrance"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::Vibrance(
-                                    crate::ops::dialogs::VibranceDialog::new(&project.canvas_state),
-                                );
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::Threshold.icon(),
-                                &t!("menu.color.threshold"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::Threshold(
-                                    crate::ops::dialogs::ThresholdDialog::new(
-                                        &project.canvas_state,
-                                    ),
-                                );
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::Posterize.icon(),
-                                &t!("menu.color.posterize"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::Posterize(
-                                    crate::ops::dialogs::PosterizeDialog::new(
-                                        &project.canvas_state,
-                                    ),
-                                );
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::ColorBalance.icon(),
-                                &t!("menu.color.color_balance"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::ColorBalance(
-                                    crate::ops::dialogs::ColorBalanceDialog::new(
-                                        &project.canvas_state,
-                                    ),
-                                );
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::GradientMap.icon(),
-                                &t!("menu.color.gradient_map"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::GradientMap(
-                                    crate::ops::dialogs::GradientMapDialog::new(
-                                        &project.canvas_state,
-                                    ),
-                                );
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::BlackAndWhite.icon(),
-                                &t!("menu.color.black_and_white"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::BlackAndWhite(
-                                    crate::ops::dialogs::BlackAndWhiteDialog::new(
-                                        &project.canvas_state,
-                                    ),
-                                );
-                            }
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Vibrance.icon(), &t!("menu.color.vibrance"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ColorVibrance).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorVibrance); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Threshold.icon(), &t!("menu.color.threshold"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ColorThreshold).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorThreshold); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Posterize.icon(), &t!("menu.color.posterize"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ColorPosterize).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorPosterize); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::ColorBalance.icon(), &t!("menu.color.color_balance"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ColorBalance).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorBalance); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::GradientMap.icon(), &t!("menu.color.gradient_map"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ColorGradientMap).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorGradientMap); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::BlackAndWhite.icon(), &t!("menu.color.black_and_white"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ColorBlackAndWhite).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ColorBlackAndWhite); ui.close(); }
                     }));
 
                     // ==================== FILTER MENU (was: Effects) ====================
@@ -979,440 +195,44 @@ impl PaintFEApp {
                         }
                         // -- Blur submenu --
                         ui.menu_button(t!("menu.filter.blur"), |ui| {
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::GaussianBlur.icon(),
-                                    &t!("menu.filter.blur.gaussian"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::GaussianBlur(
-                                        crate::ops::dialogs::GaussianBlurDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::BokehBlur.icon(),
-                                    &t!("menu.filter.blur.bokeh"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::BokehBlur(
-                                        crate::ops::effect_dialogs::BokehBlurDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::MotionBlur.icon(),
-                                    &t!("menu.filter.blur.motion"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::MotionBlur(
-                                        crate::ops::effect_dialogs::MotionBlurDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::BoxBlur.icon(),
-                                    &t!("menu.filter.blur.box"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::BoxBlur(
-                                        crate::ops::effect_dialogs::BoxBlurDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::ZoomBlur.icon(),
-                                    &t!("menu.filter.blur.zoom"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::ZoomBlur(
-                                        crate::ops::effect_dialogs::ZoomBlurDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::GaussianBlur.icon(), &t!("menu.filter.blur.gaussian"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterGaussianBlur).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterGaussianBlur); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::BokehBlur.icon(), &t!("menu.filter.blur.bokeh"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterBokehBlur).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterBokehBlur); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::MotionBlur.icon(), &t!("menu.filter.blur.motion"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterMotionBlur).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterMotionBlur); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::BoxBlur.icon(), &t!("menu.filter.blur.box"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterBoxBlur).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterBoxBlur); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::ZoomBlur.icon(), &t!("menu.filter.blur.zoom"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterZoomBlur).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterZoomBlur); ui.close(); }
                         });
 
                         // -- Sharpen submenu (was in Stylize + Noise) --
                         ui.menu_button(t!("menu.filter.sharpen"), |ui| {
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::Sharpen.icon(),
-                                    &t!("menu.filter.sharpen.sharpen"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::Sharpen(
-                                        crate::ops::effect_dialogs::SharpenDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::ReduceNoise.icon(),
-                                    &t!("menu.filter.sharpen.reduce_noise"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::ReduceNoise(
-                                        crate::ops::effect_dialogs::ReduceNoiseDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Sharpen.icon(), &t!("menu.filter.sharpen.sharpen"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterSharpen).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterSharpen); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::ReduceNoise.icon(), &t!("menu.filter.sharpen.reduce_noise"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterReduceNoise).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterReduceNoise); ui.close(); }
                         });
 
                         // -- Distort submenu --
                         ui.menu_button(t!("menu.filter.distort"), |ui| {
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::Crystallize.icon(),
-                                    &t!("menu.filter.distort.crystallize"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::Crystallize(
-                                        crate::ops::effect_dialogs::CrystallizeDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::Dents.icon(),
-                                    &t!("menu.filter.distort.dents"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::Dents(
-                                        crate::ops::effect_dialogs::DentsDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::Pixelate.icon(),
-                                    &t!("menu.filter.distort.pixelate"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::Pixelate(
-                                        crate::ops::effect_dialogs::PixelateDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::Bulge.icon(),
-                                    &t!("menu.filter.distort.bulge_pinch"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::Bulge(
-                                        crate::ops::effect_dialogs::BulgeDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::Twist.icon(),
-                                    &t!("menu.filter.distort.twist"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::Twist(
-                                        crate::ops::effect_dialogs::TwistDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Crystallize.icon(), &t!("menu.filter.distort.crystallize"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterCrystallize).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterCrystallize); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Dents.icon(), &t!("menu.filter.distort.dents"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterDents).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterDents); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Pixelate.icon(), &t!("menu.filter.distort.pixelate"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterPixelate).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterPixelate); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Bulge.icon(), &t!("menu.filter.distort.bulge_pinch"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterBulge).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterBulge); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Twist.icon(), &t!("menu.filter.distort.twist"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterTwist).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterTwist); ui.close(); }
                         });
 
                         // -- Noise submenu --
                         ui.menu_button(t!("menu.filter.noise"), |ui| {
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::AddNoise.icon(),
-                                    &t!("menu.filter.noise.add_noise"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::AddNoise(
-                                        crate::ops::effect_dialogs::AddNoiseDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::Median.icon(),
-                                    &t!("menu.filter.noise.median"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::Median(
-                                        crate::ops::effect_dialogs::MedianDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::AddNoise.icon(), &t!("menu.filter.noise.add_noise"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterAddNoise).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterAddNoise); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Median.icon(), &t!("menu.filter.noise.median"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterMedian).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterMedian); ui.close(); }
                         });
 
                         // -- Stylize submenu (absorbs old Artistic) --
                         ui.menu_button(t!("menu.filter.stylize"), |ui| {
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::Glow.icon(),
-                                    &t!("menu.filter.stylize.glow"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::Glow(
-                                        crate::ops::effect_dialogs::GlowDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::Vignette.icon(),
-                                    &t!("menu.filter.stylize.vignette"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::Vignette(
-                                        crate::ops::effect_dialogs::VignetteDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::Halftone.icon(),
-                                    &t!("menu.filter.stylize.halftone"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::Halftone(
-                                        crate::ops::effect_dialogs::HalftoneDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::Ink.icon(),
-                                    &t!("menu.filter.stylize.ink"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::Ink(
-                                        crate::ops::effect_dialogs::InkDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::OilPainting.icon(),
-                                    &t!("menu.filter.stylize.oil_painting"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::OilPainting(
-                                        crate::ops::effect_dialogs::OilPaintingDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::ColorFilter.icon(),
-                                    &t!("menu.filter.stylize.color_filter"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::ColorFilter(
-                                        crate::ops::effect_dialogs::ColorFilterDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::CanvasBorder.icon(),
-                                    &t!("menu.filter.stylize.canvas_border"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::CanvasBorder(
-                                        crate::ops::effect_dialogs::CanvasBorderDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::SeamlessTexture.icon(),
-                                    &t!("menu.filter.stylize.seamless"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::SeamlessTexture(
-                                        crate::ops::effect_dialogs::SeamlessTextureDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Glow.icon(), &t!("menu.filter.stylize.glow"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterGlow).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterGlow); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Vignette.icon(), &t!("menu.filter.stylize.vignette"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterVignette).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterVignette); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Halftone.icon(), &t!("menu.filter.stylize.halftone"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterHalftone).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterHalftone); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Ink.icon(), &t!("menu.filter.stylize.ink"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterInk).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterInk); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::OilPainting.icon(), &t!("menu.filter.stylize.oil_painting"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterOilPainting).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterOilPainting); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::ColorFilter.icon(), &t!("menu.filter.stylize.color_filter"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterColorFilter).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterColorFilter); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::CanvasBorder.icon(), &t!("menu.filter.stylize.canvas_border"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::FilterStylizeCanvasBorder)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::FilterStylizeCanvasBorder)); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::SeamlessTexture.icon(), &t!("menu.filter.stylize.seamless"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::FilterStylizeSeamless)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::FilterStylizeSeamless)); ui.close(); }
                             #[cfg(not(target_arch = "wasm32"))]
                             if self.settings.paintdotnet_plugins_enabled {
                                 let plugins: Vec<_> = crate::paintdotnet_plugins::PluginManager::load()
@@ -1478,44 +298,8 @@ impl PaintFEApp {
 
                         // -- Glitch submenu --
                         ui.menu_button(t!("menu.filter.glitch"), |ui| {
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::PixelDrag.icon(),
-                                    &t!("menu.filter.glitch.pixel_drag"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::PixelDrag(
-                                        crate::ops::effect_dialogs::PixelDragDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if self
-                                .assets
-                                .menu_item_enabled(
-                                    ui,
-                                    HistoryAction::RgbDisplace.icon(),
-                                    &t!("menu.filter.glitch.rgb_displace"),
-                                    no_dialog,
-                                )
-                                .clicked()
-                            {
-                                if let Some(project) = self.active_project() {
-                                    self.active_dialog = ActiveDialog::RgbDisplace(
-                                        crate::ops::effect_dialogs::RgbDisplaceDialog::new(
-                                            &project.canvas_state,
-                                        ),
-                                    );
-                                }
-                                ui.close();
-                            }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::PixelDrag.icon(), &t!("menu.filter.glitch.pixel_drag"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterPixelDrag).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterPixelDrag); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::RgbDisplace.icon(), &t!("menu.filter.glitch.rgb_displace"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::FilterRgbDisplace).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterRgbDisplace); ui.close(); }
                         });
 
                         // -- AI submenu --
@@ -1531,16 +315,7 @@ impl PaintFEApp {
                                 crate::t!("menu.filter.remove_background.disabled_hint"),
                             );
                         }
-                        if remove_bg_resp.clicked() {
-                            if !self.onnx_available {
-                                self.settings_window.open_ai_settings(&self.settings);
-                            } else {
-                            self.active_dialog = ActiveDialog::RemoveBackground(
-                                crate::ops::effect_dialogs::RemoveBackgroundDialog::new(),
-                            );
-                            }
-                            ui.close();
-                        }
+                        if remove_bg_resp.clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::FilterRemoveBackground); ui.close(); }
 
                         // -- Custom Scripts submenu (only shown if scripts exist) --
                         if !self.custom_scripts.is_empty() {
@@ -1616,183 +391,41 @@ impl PaintFEApp {
                         if !has_project {
                             ui.disable();
                         }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::Grid.icon(),
-                                &t!("menu.generate.grid"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::Grid(
-                                    crate::ops::effect_dialogs::GridDialog::new(
-                                        &project.canvas_state,
-                                    ),
-                                );
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::DropShadow.icon(),
-                                &t!("menu.generate.drop_shadow"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::DropShadow(
-                                    crate::ops::effect_dialogs::DropShadowDialog::new(
-                                        &project.canvas_state,
-                                    ),
-                                );
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::Outline.icon(),
-                                &t!("menu.generate.outline"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::Outline(
-                                    crate::ops::effect_dialogs::OutlineDialog::new(
-                                        &project.canvas_state,
-                                    ),
-                                );
-                            }
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_enabled(
-                                ui,
-                                HistoryAction::Contours.icon(),
-                                &t!("menu.generate.contours"),
-                                no_dialog,
-                            )
-                            .clicked()
-                        {
-                            if let Some(project) = self.active_project() {
-                                self.active_dialog = ActiveDialog::Contours(
-                                    crate::ops::effect_dialogs::ContoursDialog::new(
-                                        &project.canvas_state,
-                                    ),
-                                );
-                            }
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Grid.icon(), &t!("menu.generate.grid"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::GenerateGrid).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::GenerateGrid); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::DropShadow.icon(), &t!("menu.generate.drop_shadow"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::GenerateDropShadow).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::GenerateDropShadow); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Outline.icon(), &t!("menu.generate.outline"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::GenerateOutline).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::GenerateOutline); ui.close(); }
+                        if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Contours.icon(), &t!("menu.generate.contours"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::GenerateContours).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::GenerateContours); ui.close(); }
                     }));
 
                     let view_menu = ui.menu_button(t!("menu.view"), |ui| {
                         // Panel toggles
                         ui.label(egui::RichText::new(crate::t!("menu.view.panels_heading")).strong().size(11.0));
-                        ui.checkbox(
-                            &mut self.window_visibility.tools,
-                            t!("menu.view.tools_panel"),
-                        );
-                        ui.checkbox(
-                            &mut self.window_visibility.layers,
-                            t!("menu.view.layers_panel"),
-                        );
-                        ui.checkbox(
-                            &mut self.window_visibility.history,
-                            t!("menu.view.history_panel"),
-                        );
-                        ui.checkbox(
-                            &mut self.window_visibility.colors,
-                            t!("menu.view.colors_panel"),
-                        );
-                        ui.checkbox(&mut self.window_visibility.palette, crate::t!("ui.palette_panel"));
+                        self.show_command_toggle(ui,ctx,crate::config::commands::MenuCommand::ViewTools,self.window_visibility.tools);
+                        self.show_command_toggle(ui,ctx,crate::config::commands::MenuCommand::ViewLayers,self.window_visibility.layers);
+                        self.show_command_toggle(ui,ctx,crate::config::commands::MenuCommand::ViewHistory,self.window_visibility.history);
+                        self.show_command_toggle(ui,ctx,crate::config::commands::MenuCommand::ViewColors,self.window_visibility.colors);
+                        self.show_command_toggle(ui,ctx,crate::config::commands::MenuCommand::ViewPalette,self.window_visibility.palette);
                         // Script Editor needs a native file picker to load .rhai
                         // scripts from disk — not available on web, so don't
                         // offer the menu entry at all there.
                         #[cfg(not(target_arch = "wasm32"))]
-                        ui.checkbox(
-                            &mut self.window_visibility.script_editor,
-                            t!("menu.view.script_editor"),
-                        );
+                        self.show_command_toggle(ui,ctx,crate::config::commands::MenuCommand::ViewScriptEditor,self.window_visibility.script_editor);
 
                         ui.separator();
 
                         ui.add_enabled_ui(has_project, |ui| {
-                        // Pixel grid toggle
-                        let show_grid = self
-                            .active_project()
-                            .map(|p| p.canvas_state.show_pixel_grid)
-                            .unwrap_or(false);
-                        let mut grid_checked = show_grid;
-                        if ui
-                            .checkbox(&mut grid_checked, t!("menu.view.toggle_pixel_grid"))
-                            .changed()
-                            && let Some(project) = self.active_project_mut()
-                        {
-                            project.canvas_state.show_pixel_grid = grid_checked;
-                        }
-
+                        self.show_command_toggle(ui,ctx,crate::config::commands::MenuCommand::ViewPixelGrid,self.active_project().is_some_and(|p|p.canvas_state.show_pixel_grid));
                         if let Some(project) = self.active_project_mut() {
                             ui.menu_button(t!("guides.menu"), |ui| crate::ui::guides::menu(ui, project));
                         }
 
-                        // CMYK soft proof toggle
-                        let cmyk_on = self
-                            .active_project()
-                            .map(|p| p.canvas_state.cmyk_preview)
-                            .unwrap_or(false);
-                        let mut cmyk_checked = cmyk_on;
-                        if ui
-                            .checkbox(&mut cmyk_checked, t!("menu.view.cmyk_preview"))
-                            .on_hover_text(t!("menu.view.cmyk_preview.tooltip"))
-                            .changed()
-                            && let Some(project) = self.active_project_mut()
-                        {
-                            project.canvas_state.cmyk_preview = cmyk_checked;
-                            // Force full re-upload so the proof is applied immediately
-                            project.canvas_state.composite_cache = None;
-                            project.canvas_state.mark_dirty(None);
-                        }
+                        self.show_command_toggle(ui,ctx,crate::config::commands::MenuCommand::ViewCmyk,self.active_project().is_some_and(|p|p.canvas_state.cmyk_preview));
 
                         ui.separator();
 
                         // Zoom controls
-                        if self
-                            .assets
-                            .menu_item_shortcut_below(
-                                ui,
-                                Icon::MenuViewZoomIn,
-                                &t!("menu.view.zoom_in"),
-                                &menu_kb,
-                                BindableAction::ViewZoomIn,
-                            )
-                            .clicked()
-                        {
-                            self.canvas.zoom_in();
-                            ui.close();
-                        }
-                        if self
-                            .assets
-                            .menu_item_shortcut_below(
-                                ui,
-                                Icon::MenuViewZoomOut,
-                                &t!("menu.view.zoom_out"),
-                                &menu_kb,
-                                BindableAction::ViewZoomOut,
-                            )
-                            .clicked()
-                        {
-                            self.canvas.zoom_out();
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_below_enabled(ui, Icon::MenuViewZoomIn, &t!("menu.view.zoom_in"), true, &menu_kb, crate::config::keybindings::BindableAction::ViewZoomIn).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ViewZoomIn); ui.close(); }
+                        if self.assets.menu_item_shortcut_below_enabled(ui, Icon::MenuViewZoomOut, &t!("menu.view.zoom_out"), true, &menu_kb, crate::config::keybindings::BindableAction::ViewZoomOut).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ViewZoomOut); ui.close(); }
                         let fit_menu = self
                             .assets
                             .menu_item_shortcut_below(
@@ -1805,23 +438,10 @@ impl PaintFEApp {
                         #[cfg(test)]
                         ctx.data_mut(|d|d.insert_temp(egui::Id::new("menu_fit_test_rect"),fit_menu.rect));
                         if fit_menu.clicked() {
-                            self.fit_active_document();
+                            self.execute_menu_command(ctx, BindableAction::ViewFitToWindow);
                             ui.close();
                         }
-                        if self
-                            .assets
-                            .menu_item_shortcut_below(
-                                ui,
-                                Icon::MenuViewZoomIn,
-                                &t!("menu.view.zoom_100"),
-                                &menu_kb,
-                                BindableAction::ViewZoom100,
-                            )
-                            .clicked()
-                        {
-                            self.canvas.reset_zoom();
-                            ui.close();
-                        }
+                        if self.assets.menu_item_shortcut_below_enabled(ui, Icon::MenuViewZoomIn, &t!("menu.view.zoom_100"), true, &menu_kb, crate::config::keybindings::BindableAction::ViewZoom100).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ViewZoom100); ui.close(); }
 
                         });
                         ui.separator();
@@ -1832,39 +452,17 @@ impl PaintFEApp {
                             let is_light =
                                 matches!(self.theme.mode, crate::theme::ThemeMode::Light);
                             let is_dark = matches!(self.theme.mode, crate::theme::ThemeMode::Dark);
-                            if ui.radio(is_light, t!("menu.view.theme.light")).clicked() {
-                                if !is_light {
-                                    self.theme.toggle();
-                                    self.theme.apply(ctx);
-                                    self.settings.theme_mode = self.theme.mode;
-                                    self.settings.save();
-                                }
-                                ui.close();
-                            }
-                            if ui.radio(is_dark, t!("menu.view.theme.dark")).clicked() {
-                                if !is_dark {
-                                    self.theme.toggle();
-                                    self.theme.apply(ctx);
-                                    self.settings.theme_mode = self.theme.mode;
-                                    self.settings.save();
-                                }
-                                ui.close();
-                            }
+                            if ui.radio(is_light,t!("menu.view.theme.light")).clicked() {self.execute_menu_command(ctx,crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::ViewLight));ui.close();}
+                            if ui.radio(is_dark,t!("menu.view.theme.dark")).clicked() {self.execute_menu_command(ctx,crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::ViewDark));ui.close();}
                         });
                     });
                     #[cfg(test)]
                     ctx.data_mut(|d|d.insert_temp(egui::Id::new("view_menu_test_rect"),view_menu.response.rect));
                     let _=view_menu;
                     ui.menu_button(t!("help.title"), |ui| {
-                        if ui.button(t!("help.quick_start")).clicked() {
-                            crate::ui::help::open(ctx);
-                            ui.close();
-                        }
-                        if ui.button(t!("help.ai_setup")).clicked() {
-                            self.settings_window.open_ai_settings(&self.settings);
-                            ui.close();
-                        }
-                        ui.hyperlink_to(t!("help.documentation"), crate::ui::help::DOCUMENTATION_URL);
+                        if self.show_command_button(ui,ctx,crate::config::commands::MenuCommand::HelpQuickStart) { ui.close(); }
+                        if self.show_command_button(ui,ctx,crate::config::commands::MenuCommand::HelpAiSetup) { ui.close(); }
+                        self.show_command_button(ui,ctx,crate::config::commands::MenuCommand::HelpDocumentation);
                     });
                     if let Some(response) = crate::ui::help::show(ctx) {
                         self.remember_ui_cursor_rect(response.rect);
@@ -1970,7 +568,7 @@ impl PaintFEApp {
                         d.insert_temp(egui::Id::new("toolbar_fit_test_rect"), fit_button.rect)
                     });
                     if fit_button.clicked() {
-                        self.fit_active_document();
+                        self.execute_menu_command(ctx, BindableAction::ViewFitToWindow);
                     }
 
                     ui.separator();

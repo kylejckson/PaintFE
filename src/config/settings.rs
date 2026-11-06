@@ -433,6 +433,8 @@ pub struct AppSettings {
     pub brush_preset_controls: bool,
     pub brush_browser: crate::brushes::BrowserSettings,
     pub brush_saved_presets: std::collections::BTreeMap<String, crate::brushes::SavedPreset>,
+    pub painting_tool_settings:
+        std::collections::BTreeMap<String, crate::brushes::PaintingToolSettings>,
     pub paste_at_source_position: bool,
     pub paste_keep_visible: bool,
     pub legacy_clipboard_shortcuts: bool,
@@ -652,6 +654,7 @@ impl Default for AppSettings {
             brush_preset_controls: true,
             brush_browser: Default::default(),
             brush_saved_presets: Default::default(),
+            painting_tool_settings: Default::default(),
             paste_at_source_position: true,
             paste_keep_visible: true,
             legacy_clipboard_shortcuts: true,
@@ -1412,6 +1415,10 @@ impl AppSettings {
         content.push_str(&format!(
             "brush_browser={}\n",
             serde_json::to_string(&self.brush_browser).unwrap()
+        ));
+        content.push_str(&format!(
+            "painting_tool_settings={}\n",
+            serde_json::to_string(&self.painting_tool_settings).unwrap()
         ));
         content.push_str(&format!(
             "brush_saved_presets={}\n",
@@ -2371,6 +2378,11 @@ impl AppSettings {
                 "brush_browser" => {
                     if let Ok(value) = serde_json::from_str(val) {
                         s.brush_browser = value;
+                    }
+                }
+                "painting_tool_settings" => {
+                    if let Ok(value) = serde_json::from_str(val) {
+                        s.painting_tool_settings = value;
                     }
                 }
                 "brush_saved_presets" => {

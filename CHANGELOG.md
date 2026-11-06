@@ -6,6 +6,30 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.27] - 2026-11-06
+
+- Keep in-progress paint strokes intact when changing tools or using Undo.
+- Remember separate settings for Brush, Pencil and Eraser.
+- Add more configurable shortcuts and improve docked toolbar transparency.
+
+### Painting and tool settings
+
+- Keep each stroke attached to the tool and layer that started it. Finish pending paint before save, clipboard and selection actions, and wait for release after Undo or cancellation to prevent another mark. Related to issues 224 and 231.
+- Remember Brush, Pencil and Eraser settings separately across restarts. Selected colours stay shared. Related to issue 232.
+- Remove Opacity, Flow, AA and brush dynamics from Pencil. Use colour alpha to control its transparency. Related to issue 232.
+
+### Shortcuts
+
+- Make built-in menu commands, remaining tools and guide actions available in Preferences > Keybinds. Use the same command handling from menus and keyboard shortcuts. Related to issue 233.
+- Add Ctrl+Shift+X for Crop to Selection, Ctrl+H for clockwise canvas rotation and Ctrl+G for anticlockwise rotation. Preserve existing custom bindings.
+- Show current bindings in toolbar hints and keep commands together under one heading per category.
+
+### Interface and language
+
+- Draw the workspace behind the docked tool options bar so Background opacity has a visible effect, while keeping the canvas position steady. Related to issue 223.
+- Use consistent Australian spelling in English and separate native language names from their codes in the picker, including Arabic. Keep saved language choices and personal labels working. Related to issue 230.
+- Update the brush and shortcut documentation.
+
 ## [1.4.26] - 2026-11-06
 
 - Expand the brush library with new stamps and eight paintbrush presets.

@@ -1244,3 +1244,535 @@ fn generated_paintbrush_stroke_keeps_normal_undo_and_redo() {
         );
     }
 }
+
+#[test]
+fn held_paint_tool_switch_finishes_once_and_undo_redo_restore_exact_pixels() {
+    for original in [Tool::Brush, Tool::Pencil, Tool::Eraser] {
+        for next in [Tool::Fill, Tool::Eraser, Tool::Brush] {
+            let mut app = app();
+            let ctx = context();
+            app.tools_panel.change_tool(original);
+            app.tools_panel.properties.size = 7.;
+            app.tools_panel.properties.pressure_size = false;
+            app.tools_panel.properties.pressure_opacity = false;
+            let before = app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image();
+            let pos = (10., 10.);
+            tool_frame(&mut app, &ctx, pos, vec![brush_pointer(pos, true)]);
+            app.tools_panel.change_tool(next);
+            assert_eq!(app.tools_panel.active_tool, original);
+            tool_frame(&mut app, &ctx, pos, vec![]);
+            assert_eq!(app.projects[0].history.undo_count(), 0);
+            tool_frame(&mut app, &ctx, pos, vec![brush_pointer(pos, false)]);
+            assert_eq!(app.tools_panel.active_tool, next);
+            assert_eq!(app.projects[0].history.undo_count(), 1);
+            let after = app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image();
+            assert_ne!(before, after, "{original:?}");
+            app.perform_undo();
+            assert_eq!(
+                app.projects[0].canvas_state.layers[0]
+                    .pixels
+                    .to_rgba_image(),
+                before
+            );
+            app.perform_redo();
+            assert_eq!(
+                app.projects[0].canvas_state.layers[0]
+                    .pixels
+                    .to_rgba_image(),
+                after
+            );
+        }
+    }
+}
+
+#[test]
+fn undo_during_held_paint_undoes_that_stroke_without_restarting_until_release() {
+    for tool in [Tool::Brush, Tool::Pencil, Tool::Eraser] {
+        let mut app = app();
+        let ctx = context();
+        app.tools_panel.change_tool(tool);
+        app.tools_panel.properties.size = 6.;
+        app.tools_panel.properties.pressure_size = false;
+        let before = app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image();
+        let pos = (12., 10.);
+        tool_frame(&mut app, &ctx, pos, vec![brush_pointer(pos, true)]);
+        app.perform_undo();
+        assert_eq!(
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image(),
+            before
+        );
+        assert_eq!(app.projects[0].history.undo_count(), 0);
+        tool_frame(&mut app, &ctx, pos, vec![]);
+        tool_frame(&mut app, &ctx, pos, vec![brush_pointer(pos, false)]);
+        assert_eq!(
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image(),
+            before
+        );
+        app.perform_redo();
+        assert_ne!(
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image(),
+            before
+        );
+    }
+}
+
+#[test]
+fn painting_tool_settings_are_independent_and_survive_restart() {
+    let mut tools = crate::ui::panels::tools::ToolsPanel::default();
+    tools.properties.size = 31.;
+    tools.properties.flow = 0.42;
+    tools.properties.opacity = 0.63;
+    tools.change_tool(Tool::Pencil);
+    tools.properties.size = 2.;
+    tools.change_tool(Tool::Eraser);
+    tools.properties.size = 77.;
+    tools.properties.flow = 0.8;
+    tools.change_tool(Tool::Brush);
+    assert_eq!(tools.properties.size, 31.);
+    assert_eq!(tools.properties.flow, 0.42);
+    assert_eq!(tools.properties.opacity, 0.63);
+    let mut settings = crate::config::settings::AppSettings::default();
+    tools.store_brush_browser(&mut settings);
+    settings.painting_tool_settings =
+        serde_json::from_str(&serde_json::to_string(&settings.painting_tool_settings).unwrap())
+            .unwrap();
+    let mut restored = crate::ui::panels::tools::ToolsPanel::default();
+    restored.restore_brush_browser(&settings);
+    assert_eq!(restored.properties.size, 31.);
+    restored.change_tool(Tool::Pencil);
+    assert_eq!(restored.properties.size, 2.);
+    restored.change_tool(Tool::Eraser);
+    assert_eq!(restored.properties.size, 77.);
+    assert_eq!(restored.properties.flow, 0.8);
+    restored.change_tool(Tool::Brush);
+    assert_eq!(restored.properties.flow, 0.42);
+}
+
+#[test]
+fn command_catalogue_has_unique_bindable_localised_entries_and_safe_document_gates() {
+    use crate::config::{
+        commands::{COMMANDS, MenuCommand},
+        keybindings::{BindableAction, KeyBindings, KeyCombo},
+    };
+    let mut app = app();
+    let ctx = context();
+    let mut seen = std::collections::HashSet::new();
+    for spec in COMMANDS {
+        assert!(seen.insert(spec.action), "duplicate {:?}", spec.action);
+        assert!(
+            BindableAction::all().contains(&spec.action),
+            "missing {:?}",
+            spec.action
+        );
+        assert_ne!(
+            crate::i18n::translate(spec.label_key),
+            spec.label_key,
+            "{}",
+            spec.label_key
+        );
+        assert_ne!(
+            crate::i18n::translate(spec.category_key),
+            spec.category_key,
+            "{}",
+            spec.category_key
+        );
+    }
+    let bindings = KeyBindings::default();
+    for (command, key) in [
+        (MenuCommand::CanvasRotate90Cw, egui::Key::H),
+        (MenuCommand::CanvasRotate90Ccw, egui::Key::G),
+    ] {
+        assert_eq!(
+            bindings.get(BindableAction::Menu(command)),
+            Some(&KeyCombo::ctrl_key(key))
+        );
+    }
+    assert_eq!(
+        bindings.get(BindableAction::Menu(MenuCommand::CanvasCropToSelection)),
+        Some(&KeyCombo::ctrl_shift_key(egui::Key::X))
+    );
+    app.projects.clear();
+    for spec in COMMANDS.iter().filter(|spec| spec.needs_document) {
+        assert!(
+            !app.menu_command_enabled(&ctx, spec.action),
+            "{:?}",
+            spec.action
+        );
+    }
+    assert!(app.menu_command_enabled(&ctx, BindableAction::Menu(MenuCommand::EditPreferences)));
+}
+
+#[test]
+fn menu_commands_rotate_and_history_restore_exact_pixels() {
+    use crate::config::{commands::MenuCommand, keybindings::BindableAction};
+    for command in [
+        MenuCommand::CanvasRotate90Cw,
+        MenuCommand::CanvasRotate90Ccw,
+    ] {
+        let mut app = app();
+        let ctx = context();
+        let before = app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image();
+        app.execute_menu_command(&ctx, BindableAction::Menu(command));
+        assert_eq!(
+            (
+                app.projects[0].canvas_state.width,
+                app.projects[0].canvas_state.height
+            ),
+            (24, 32)
+        );
+        let expected = if command == MenuCommand::CanvasRotate90Cw {
+            image::imageops::rotate90(&before)
+        } else {
+            image::imageops::rotate270(&before)
+        };
+        assert_eq!(
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image(),
+            expected
+        );
+        app.perform_undo();
+        assert_eq!(
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image(),
+            before
+        );
+    }
+}
+
+#[test]
+fn selection_during_held_paint_commits_before_clipboard_reads_and_waits_for_release() {
+    let mut app = app();
+    let ctx = context();
+    app.tools_panel.properties.pressure_size = false;
+    let before = app.projects[0].canvas_state.layers[0]
+        .pixels
+        .to_rgba_image();
+    let pos = (12., 10.);
+    tool_frame(&mut app, &ctx, pos, vec![brush_pointer(pos, true)]);
+    app.select_all_canvas();
+    assert_eq!(app.projects[0].history.undo_count(), 2);
+    let after = app.projects[0].canvas_state.layers[0]
+        .pixels
+        .to_rgba_image();
+    assert_ne!(after, before);
+    assert!(app.projects[0].canvas_state.has_selection());
+    tool_frame(&mut app, &ctx, pos, vec![]);
+    tool_frame(&mut app, &ctx, pos, vec![brush_pointer(pos, false)]);
+    assert_eq!(app.projects[0].history.undo_count(), 2);
+    assert_eq!(
+        app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image(),
+        after
+    );
+}
+
+#[test]
+fn pencil_context_bar_never_exposes_ignored_controls_in_either_theme() {
+    fn text(shape: &egui::Shape, labels: &mut Vec<String>) {
+        match shape {
+            egui::Shape::Text(t) => labels.push(t.galley.text().into()),
+            egui::Shape::Vec(children) => {
+                for child in children {
+                    text(child, labels)
+                }
+            }
+            _ => {}
+        }
+    }
+    for dark in [false, true] {
+        for scale in [1., 1.4] {
+            let mut app = app();
+            let ctx = context();
+            app.theme = if dark {
+                crate::theme::Theme::dark()
+            } else {
+                crate::theme::Theme::light()
+            };
+            app.theme.polish.text_scale = scale;
+            app.theme.apply(&ctx);
+            app.settings.show_advanced_brush_controls = true;
+            app.settings.tablet_pressure_enabled = true;
+            app.tools_panel.change_tool(Tool::Pencil);
+            let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.horizontal(|ui| {
+                    app.tools_panel.show_context_bar(
+                        ui,
+                        &app.assets,
+                        egui::Color32::BLACK,
+                        egui::Color32::WHITE,
+                        &app.theme,
+                        &app.settings,
+                    )
+                });
+            });
+            let mut labels = Vec::new();
+            for shape in output.shapes {
+                text(&shape.shape, &mut labels)
+            }
+            for key in ["Opacity", "Flow", "AA", "Hardness:", "Size:"] {
+                assert!(
+                    !labels.contains(&crate::i18n::translate_english(key)),
+                    "{key}: {labels:?}"
+                );
+            }
+            assert!(labels.contains(&crate::i18n::translate("ctx.blend")));
+        }
+    }
+}
+
+#[test]
+fn new_command_shortcuts_respect_canvas_text_editing_and_use_the_same_execution_path() {
+    for editing in [false, true] {
+        let mut app = app();
+        let ctx = context();
+        app.tools_panel.active_tool = if editing { Tool::Text } else { Tool::Brush };
+        app.tools_panel.text_state.is_editing = editing;
+        let _ = ctx.run_ui(
+            egui::RawInput {
+                modifiers: egui::Modifiers::CTRL,
+                events: vec![egui::Event::Key {
+                    key: egui::Key::H,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::CTRL,
+                }],
+                ..Default::default()
+            },
+            |_| {
+                app.update_runtime_input(&ctx);
+            },
+        );
+        assert_eq!(
+            (
+                app.projects[0].canvas_state.width,
+                app.projects[0].canvas_state.height
+            ),
+            if editing { (32, 24) } else { (24, 32) }
+        );
+    }
+}
+
+#[test]
+#[ignore = "manual issue review screenshots and rendered opacity comparison"]
+fn render_issue_review_screenshots() {
+    let gpu = crate::gpu::context::GpuContext::new("").expect("GPU for screenshot review");
+    let output_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/issue-pass-230-233/screenshots");
+    for dark in [false, true] {
+        let mut samples = Vec::new();
+        for opacity in [0., 0.25, 0.5, 1.] {
+            let mut app = app();
+            let ctx = context();
+            app.theme = if dark {
+                crate::theme::Theme::dark()
+            } else {
+                crate::theme::Theme::light()
+            };
+            app.theme.apply(&ctx);
+            app.settings.tool_shelf.docked = true;
+            app.settings.tool_shelf.opacity = Some(opacity);
+            app.tools_panel.change_tool(Tool::Pencil);
+            let mut delta = egui::TexturesDelta::default();
+            let mut output = None;
+            for _ in 0..3 {
+                let mut frame = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(1000., 700.),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| app.show_runtime_canvas_tail(&ctx, ui, false),
+                );
+                delta.append(std::mem::take(&mut frame.textures_delta));
+                output = Some(frame);
+            }
+            let mut output = output.unwrap();
+            output.textures_delta = delta;
+            let path = output_dir.join(format!(
+                "docked-{}-{}.png",
+                if dark { "dark" } else { "light" },
+                (opacity * 100.) as u32
+            ));
+            crate::ui::panels::tools::brush_picker_tests::save_ui_capture(
+                &gpu,
+                &ctx,
+                output,
+                [1000, 700],
+                &path,
+            );
+            let image = image::open(&path).unwrap().to_rgba8();
+            samples.push(*image.get_pixel(850, 25));
+        }
+        assert_ne!(
+            samples[0], samples[3],
+            "docked opacity must change rendered pixels"
+        );
+        assert_ne!(
+            samples[1], samples[2],
+            "partial opacity must change rendered pixels"
+        );
+    }
+}
+
+#[test]
+fn held_paint_tracks_originating_layer_through_reorder_and_deletion() {
+    for delete in [false, true] {
+        let mut app = app();
+        let ctx = context();
+        let extra =
+            crate::canvas::Layer::new("Other".into(), 32, 24, image::Rgba([12, 34, 56, 255]));
+        let untouched = extra.pixels.to_rgba_image();
+        app.projects[0].canvas_state.layers.push(extra);
+        app.tools_panel.properties.pressure_size = false;
+        let original = app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image();
+        let pos = (12., 10.);
+        tool_frame(&mut app, &ctx, pos, vec![brush_pointer(pos, true)]);
+        if delete {
+            app.projects[0].canvas_state.layers.remove(0);
+        } else {
+            app.projects[0].canvas_state.layers.swap(0, 1);
+        }
+        app.projects[0].canvas_state.active_layer_index = 0;
+        tool_frame(&mut app, &ctx, pos, vec![]);
+        tool_frame(&mut app, &ctx, pos, vec![brush_pointer(pos, false)]);
+        assert_eq!(
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image(),
+            untouched
+        );
+        assert_eq!(app.projects[0].history.undo_count(), usize::from(!delete));
+        if !delete {
+            assert_ne!(
+                app.projects[0].canvas_state.layers[1]
+                    .pixels
+                    .to_rgba_image(),
+                original
+            );
+            app.perform_undo();
+            assert_eq!(
+                app.projects[0].canvas_state.layers[1]
+                    .pixels
+                    .to_rgba_image(),
+                original
+            );
+        }
+    }
+}
+
+#[test]
+fn actual_fill_shortcut_during_held_brush_defers_switch_until_release() {
+    let mut app = app();
+    let ctx = context();
+    app.tools_panel.properties.pressure_size = false;
+    let pos = (12., 10.);
+    tool_frame(&mut app, &ctx, pos, vec![brush_pointer(pos, true)]);
+    let id = egui::Id::new("issue231_canvas_focus");
+    app.canvas.canvas_widget_id = Some(id);
+    let _ = ctx.run_ui(
+        egui::RawInput {
+            events: vec![egui::Event::Key {
+                key: egui::Key::F,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        },
+        |_| {
+            ctx.memory_mut(|m| m.request_focus(id));
+            app.update_runtime_input(&ctx);
+        },
+    );
+    assert_eq!(app.tools_panel.active_tool, Tool::Brush);
+    tool_frame(&mut app, &ctx, pos, vec![brush_pointer(pos, false)]);
+    assert_eq!(app.tools_panel.active_tool, Tool::Fill);
+    assert_eq!(app.projects[0].history.undo_count(), 1);
+}
+
+#[test]
+fn release_over_blocking_ui_does_not_swallow_the_next_canvas_gesture() {
+    let mut app = app();
+    let ctx = context();
+    let pos = (12., 10.);
+    app.tools_panel.properties.pressure_size = false;
+    tool_frame(&mut app, &ctx, pos, vec![brush_pointer(pos, true)]);
+    app.finish_pending_paint_stroke();
+    assert_eq!(app.projects[0].history.undo_count(), 1);
+    // Modal UI receives the release, so the canvas tool does not run in this frame.
+    let _ = ctx.run_ui(
+        egui::RawInput {
+            events: vec![brush_pointer(pos, false)],
+            ..Default::default()
+        },
+        |_| {},
+    );
+    let next = (20., 15.);
+    tool_frame(&mut app, &ctx, next, vec![brush_pointer(next, true)]);
+    tool_frame(&mut app, &ctx, next, vec![brush_pointer(next, false)]);
+    assert_eq!(app.projects[0].history.undo_count(), 2);
+}
+
+#[test]
+fn another_button_cannot_restart_paint_while_the_original_contact_is_held() {
+    for secondary in [false, true] {
+        let mut app = app();
+        let ctx = context();
+        let pos = (12., 10.);
+        app.tools_panel.properties.pressure_size = false;
+        let button = |which, down| egui::Event::PointerButton {
+            pos: egui::pos2(148., 140.),
+            button: which,
+            pressed: down,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let original = if secondary {
+            egui::PointerButton::Secondary
+        } else {
+            egui::PointerButton::Primary
+        };
+        let other = if secondary {
+            egui::PointerButton::Primary
+        } else {
+            egui::PointerButton::Secondary
+        };
+        tool_frame(&mut app, &ctx, pos, vec![button(original, true)]);
+        app.finish_pending_paint_stroke();
+        let committed = app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image();
+        tool_frame(&mut app, &ctx, pos, vec![button(other, true)]);
+        tool_frame(&mut app, &ctx, pos, vec![button(other, false)]);
+        tool_frame(&mut app, &ctx, pos, vec![button(original, false)]);
+        assert_eq!(app.projects[0].history.undo_count(), 1);
+        assert_eq!(
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image(),
+            committed
+        );
+    }
+}

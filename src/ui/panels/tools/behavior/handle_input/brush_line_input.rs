@@ -190,6 +190,10 @@ impl ToolsPanel {
                             self.tool_state.distance_remainder = 0.0;
                             self.tool_state.smooth_pos = Some(Pos2::new(first.0, first.1));
 
+                            self.paint_target = canvas_state
+                                .layers
+                                .get(canvas_state.active_layer_index)
+                                .map(|layer| (layer.runtime_id, editing_mask));
                             // Start stroke tracking for Undo/Redo
                             let is_eraser = self.active_tool == Tool::Eraser;
                             if editing_mask {
@@ -454,69 +458,12 @@ impl ToolsPanel {
                 }
                 if !is_primary_down && !is_secondary_down {
                     // Mouse released - commit and reset state
-                    if self.tool_state.last_pos.is_some() {
-                        let is_eraser = self.active_tool == Tool::Eraser;
-
-                        // Finish the short tail left after the last distance-spaced deposit.
-                        if self.active_tool == Tool::Brush
-                            && matches!(
-                                self.properties.brush_mode,
-                                BrushMode::Normal | BrushMode::BuildUp
-                            )
-                            && self.tool_state.distance_remainder > 1e-5
-                            && let Some(end) = self.tool_state.last_precise_pos
-                        {
-                            let positions = canvas_state.mirror_mode.mirror_positions(
-                                end.x,
-                                end.y,
-                                canvas_state.width,
-                                canvas_state.height,
-                            );
-                            let mut bounds = Rect::NOTHING;
-                            for (arm, &pos) in positions.iter().enumerate() {
-                                self.brush_motion_arm = arm;
-                                bounds = bounds.union(self.draw_circle_and_get_bounds(
-                                    canvas_state,
-                                    pos,
-                                    false,
-                                    self.tool_state.using_secondary_color,
-                                    primary_color_f32,
-                                    secondary_color_f32,
-                                ));
-                            }
-                            self.stroke_tracker.expand_bounds(bounds);
-                            if bounds.is_positive() {
-                                canvas_state.mark_preview_changed_rect(bounds);
-                            }
-                        }
-
-                        // Capture "before" NOW (layer still unchanged), then commit
-                        // Finish stroke tracking BEFORE commit - this captures "before" from unchanged layer
-                        *stroke_event = self.stroke_tracker.finish(canvas_state);
-
-                        if editing_mask {
-                            // Commit mask once at stroke end for smooth interactive dragging.
-                            self.commit_preview_to_layer_mask(canvas_state, is_eraser);
-                            canvas_state.defer_preview_clear();
-                        } else if is_eraser {
-                            // Commit the eraser mask to the active layer
-                            self.commit_eraser_to_layer(canvas_state);
-                        } else {
-                            // Commit the preview layer to the active layer (Brush/Pencil)
-                            self.commit_bezier_to_layer(canvas_state, primary_color_f32);
-                        }
-                        // Clear preview layer
-                        canvas_state.defer_preview_clear();
-                        // Mark only stroke bounds dirty (not full canvas)
-                        if let Some(ev) = stroke_event.as_ref() {
-                            let dirty = ev.bounds.expand(12.0);
-                            canvas_state.request_commit_composite_flush(dirty);
-                            canvas_state.mark_dirty(Some(dirty));
-                        } else {
-                            self.mark_full_dirty(canvas_state);
-                        }
-                    }
-
+                    *stroke_event = self.finish_paint_stroke(
+                        canvas_state,
+                        primary_color_f32,
+                        secondary_color_f32,
+                        false,
+                    );
                     self.reset_brush_pointer_state();
                 }
             }

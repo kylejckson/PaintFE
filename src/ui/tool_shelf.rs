@@ -54,6 +54,23 @@ impl ShelfStyle {
     }
 }
 
+/// Paint the workspace behind translucent shelves without changing layout.
+pub(crate) fn paint_workspace_background(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    top: Color32,
+    bottom: Color32,
+) {
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(rect.left_top(), top);
+    mesh.colored_vertex(rect.right_top(), top);
+    mesh.colored_vertex(rect.left_bottom(), bottom);
+    mesh.colored_vertex(rect.right_bottom(), bottom);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(1, 2, 3);
+    painter.add(egui::Shape::mesh(mesh));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

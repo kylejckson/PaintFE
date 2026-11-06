@@ -1,7 +1,7 @@
 //! Small generated paintbrush masks and distance-based dab dynamics.
 use serde::{Deserialize, Serialize};
 mod browser;
-pub use browser::{BrowserSettings, SavedPreset};
+pub use browser::{BrowserSettings, PaintingToolSettings, SavedPreset};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PaintTip {

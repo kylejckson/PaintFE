@@ -163,6 +163,21 @@ impl ToolsPanel {
                 canvas_state.clear_preview_state();
             }
         }
+        if self.paint_target.is_some_and(|(id, mask)| {
+            canvas_state
+                .layers
+                .get(canvas_state.active_layer_index)
+                .is_none_or(|layer| layer.runtime_id != id)
+                || mask != canvas_state.edit_layer_mask
+        }) {
+            self.pending_stroke_event = self.finish_paint_stroke(
+                canvas_state,
+                primary_color_f32,
+                secondary_color_f32,
+                true,
+            );
+            return;
+        }
         let prev_layer_index = self.last_tracked_layer_index;
         let layer_changed = canvas_state.active_layer_index != self.last_tracked_layer_index
             || canvas_state.layers.len() != self.last_tracked_layer_count;
@@ -454,6 +469,22 @@ impl ToolsPanel {
             ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary));
         let mut is_secondary_released = ui.input(|i| i.pointer.secondary_released());
         let mut is_secondary_clicked = ui.input(|i| i.pointer.secondary_clicked());
+        if self.paint_requires_release {
+            let fresh_press = (is_primary_pressed && !is_secondary_down)
+                || (is_secondary_pressed && !is_primary_down);
+            if (is_primary_down || is_secondary_down) && !fresh_press {
+                return;
+            }
+            // A fresh press proves the old contact ended while tool input was blocked.
+            self.paint_requires_release = false;
+            self.canvas_pointer_active = false;
+            if let Some(tool) = self.queued_tool.take() {
+                self.change_tool(tool);
+            }
+            if !fresh_press {
+                return;
+            }
+        }
         let pointer_over_canvas = ui.input(|i| {
             i.pointer
                 .hover_pos()
@@ -722,6 +753,11 @@ impl ToolsPanel {
         if is_primary_released || is_secondary_released || (!is_primary_down && !is_secondary_down)
         {
             self.canvas_pointer_active = false;
+            if !self.is_stroke_active()
+                && let Some(tool) = self.queued_tool.take()
+            {
+                self.change_tool(tool);
+            }
         }
     }
 }

@@ -1748,11 +1748,14 @@ impl SettingsWindow {
                     }
                     for &(code, name) in crate::i18n::LANGUAGES {
                         if ui
-                            .selectable_label(
-                                current_code.as_str() == code,
-                                format!("{} ({})", name, code),
-                            )
-                            .clicked()
+                            .push_id(code, |ui| {
+                                ui.add(
+                                    egui::Button::selectable(current_code.as_str() == code, name)
+                                        .right_text(format!("({code})")),
+                                )
+                                .clicked()
+                            })
+                            .inner
                         {
                             #[cfg(not(target_arch = "wasm32"))]
                             if !super::optional_features::select_language(ui.ctx(), code, false) {
@@ -4592,7 +4595,7 @@ impl SettingsWindow {
         // Keybinds table — rendered inline without a nested ScrollArea
         // (the outer ScrollArea in show() handles scrolling the tab content)
         let mut current_category = String::new();
-        for action in BindableAction::all() {
+        for action in &BindableAction::preference_order() {
             let cat = action.category();
             if cat != current_category {
                 if !current_category.is_empty() {
@@ -4603,32 +4606,34 @@ impl SettingsWindow {
                 current_category = cat;
             }
 
-            ui.horizontal(|ui| {
-                let name = action.display_name();
-                let response = ui.label(egui::RichText::new(&name).size(12.0));
-                Self::search_mark(ui, &name, &response);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if matches!(
-                        action,
-                        BindableAction::BrushResizeDragModifier
-                            | BindableAction::SelectionPreserveAspectModifier
-                    ) {
-                        let mut current = self
-                            .staged_keybindings
-                            .get(*action)
-                            .cloned()
-                            .unwrap_or_else(|| {
-                                if *action == BindableAction::SelectionPreserveAspectModifier {
-                                    KeyCombo::modifiers_only(false, false, true)
-                                } else {
-                                    KeyCombo::modifiers_only(false, true, false)
-                                }
-                            });
-                        egui::ComboBox::from_id_salt(format!("modifier_binding_{action:?}"))
-                            .selected_text(current.display())
-                            .show_ui(ui, |ui| {
-                                let options: Vec<(&str, KeyCombo)> =
+            ui.push_id(*action, |ui| {
+                ui.horizontal(|ui| {
+                    let name = action.display_name();
+                    let response = ui.label(egui::RichText::new(&name).size(12.0));
+                    Self::search_mark(ui, &name, &response);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if matches!(
+                            action,
+                            BindableAction::BrushResizeDragModifier
+                                | BindableAction::SelectionPreserveAspectModifier
+                        ) {
+                            let mut current = self
+                                .staged_keybindings
+                                .get(*action)
+                                .cloned()
+                                .unwrap_or_else(|| {
                                     if *action == BindableAction::SelectionPreserveAspectModifier {
+                                        KeyCombo::modifiers_only(false, false, true)
+                                    } else {
+                                        KeyCombo::modifiers_only(false, true, false)
+                                    }
+                                });
+                            egui::ComboBox::from_id_salt(format!("modifier_binding_{action:?}"))
+                                .selected_text(current.display())
+                                .show_ui(ui, |ui| {
+                                    let options: Vec<(&str, KeyCombo)> = if *action
+                                        == BindableAction::SelectionPreserveAspectModifier
+                                    {
                                         vec![
                                             ("Alt", KeyCombo::modifiers_only(false, false, true)),
                                             ("Ctrl", KeyCombo::modifiers_only(true, false, false)),
@@ -4640,158 +4645,167 @@ impl SettingsWindow {
                                             ("Alt", KeyCombo::modifiers_only(false, false, true)),
                                         ]
                                     };
-                                for (label, combo) in options {
-                                    ui.selectable_value(&mut current, combo, label);
-                                }
-                            });
-                        self.staged_keybindings.set(*action, current);
-                    } else {
-                        let is_rebinding = self.rebinding_action == Some(*action);
-
-                        // Clear button to unbind (if keybind is set)
-                        if let Some(combo) = self.staged_keybindings.get(*action)
-                            && (combo.key.is_some()
-                                || combo.text_char.is_some()
-                                || combo.ctrl
-                                || combo.shift
-                                || combo.alt)
-                        {
-                            let unbind_btn = ui.button("x");
-                            if unbind_btn.clicked() {
-                                self.staged_keybindings
-                                    .set(*action, KeyCombo::modifiers_only(false, false, false));
-                                self.rebinding_action = None;
-                            }
-                            unbind_btn.on_hover_text(t!("settings.keybinds.clear_keybind"));
-                        }
-
-                        // Modifier prefix toggle buttons (Ctrl / Shift / Alt)
-                        // Manual toggle since automatic modifier detection from
-                        // keyboard events is unreliable on Windows.
-                        let mod_btn_size = egui::vec2(30.0, 20.0);
-                        let ctrl_active = self
-                            .staged_keybindings
-                            .get(*action)
-                            .map(|c| c.ctrl)
-                            .unwrap_or(false);
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    egui::RichText::new(crate::t!("ui.ctrl")).size(9.0).color(
-                                        if ctrl_active {
-                                            Color32::WHITE
-                                        } else {
-                                            Color32::GRAY
-                                        },
-                                    ),
-                                )
-                                .min_size(mod_btn_size)
-                                .fill(if ctrl_active {
-                                    ui.visuals().selection.bg_fill
-                                } else {
-                                    ui.visuals().widgets.inactive.bg_fill
-                                }),
-                            )
-                            .clicked()
-                        {
-                            let mut c = self
-                                .staged_keybindings
-                                .get(*action)
-                                .cloned()
-                                .unwrap_or_else(|| KeyCombo::modifiers_only(false, false, false));
-                            c.ctrl = !c.ctrl;
-                            self.staged_keybindings.set(*action, c);
-                        }
-                        let shift_active = self
-                            .staged_keybindings
-                            .get(*action)
-                            .map(|c| c.shift)
-                            .unwrap_or(false);
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    egui::RichText::new(crate::t!("ui.shft")).size(9.0).color(
-                                        if shift_active {
-                                            Color32::WHITE
-                                        } else {
-                                            Color32::GRAY
-                                        },
-                                    ),
-                                )
-                                .min_size(mod_btn_size)
-                                .fill(if shift_active {
-                                    ui.visuals().selection.bg_fill
-                                } else {
-                                    ui.visuals().widgets.inactive.bg_fill
-                                }),
-                            )
-                            .clicked()
-                        {
-                            let mut c = self
-                                .staged_keybindings
-                                .get(*action)
-                                .cloned()
-                                .unwrap_or_else(|| KeyCombo::modifiers_only(false, false, false));
-                            c.shift = !c.shift;
-                            self.staged_keybindings.set(*action, c);
-                        }
-                        let alt_active = self
-                            .staged_keybindings
-                            .get(*action)
-                            .map(|c| c.alt)
-                            .unwrap_or(false);
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    egui::RichText::new(crate::t!("ui.alt")).size(9.0).color(
-                                        if alt_active {
-                                            Color32::WHITE
-                                        } else {
-                                            Color32::GRAY
-                                        },
-                                    ),
-                                )
-                                .min_size(mod_btn_size)
-                                .fill(if alt_active {
-                                    ui.visuals().selection.bg_fill
-                                } else {
-                                    ui.visuals().widgets.inactive.bg_fill
-                                }),
-                            )
-                            .clicked()
-                        {
-                            let mut c = self
-                                .staged_keybindings
-                                .get(*action)
-                                .cloned()
-                                .unwrap_or_else(|| KeyCombo::modifiers_only(false, false, false));
-                            c.alt = !c.alt;
-                            self.staged_keybindings.set(*action, c);
-                        }
-
-                        let btn_text = if is_rebinding {
-                            egui::RichText::new(t!("settings.keybinds.press_key"))
-                                .italics()
-                                .color(if ui.visuals().dark_mode {
-                                    Color32::from_rgb(100, 200, 255)
-                                } else {
-                                    Color32::from_rgb(0, 100, 200)
-                                })
+                                    for (label, combo) in options {
+                                        ui.selectable_value(&mut current, combo, label);
+                                    }
+                                });
+                            self.staged_keybindings.set(*action, current);
                         } else {
-                            let combo_text = self
+                            let is_rebinding = self.rebinding_action == Some(*action);
+
+                            // Clear button to unbind (if keybind is set)
+                            if let Some(combo) = self.staged_keybindings.get(*action)
+                                && (combo.key.is_some()
+                                    || combo.text_char.is_some()
+                                    || combo.ctrl
+                                    || combo.shift
+                                    || combo.alt)
+                            {
+                                let unbind_btn = ui.button("x");
+                                if unbind_btn.clicked() {
+                                    self.staged_keybindings.set(
+                                        *action,
+                                        KeyCombo::modifiers_only(false, false, false),
+                                    );
+                                    self.rebinding_action = None;
+                                }
+                                unbind_btn.on_hover_text(t!("settings.keybinds.clear_keybind"));
+                            }
+
+                            // Modifier prefix toggle buttons (Ctrl / Shift / Alt)
+                            // Manual toggle since automatic modifier detection from
+                            // keyboard events is unreliable on Windows.
+                            let mod_btn_size = egui::vec2(30.0, 20.0);
+                            let ctrl_active = self
                                 .staged_keybindings
                                 .get(*action)
-                                .map(|c| c.display())
-                                .unwrap_or_else(|| "—".to_string());
-                            egui::RichText::new(combo_text).monospace()
-                        };
-                        let btn =
-                            ui.add(egui::Button::new(btn_text).min_size(egui::vec2(100.0, 20.0)));
-                        if btn.clicked() && !is_rebinding {
-                            self.rebinding_action = Some(*action);
+                                .map(|c| c.ctrl)
+                                .unwrap_or(false);
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        egui::RichText::new(crate::t!("ui.ctrl")).size(9.0).color(
+                                            if ctrl_active {
+                                                Color32::WHITE
+                                            } else {
+                                                Color32::GRAY
+                                            },
+                                        ),
+                                    )
+                                    .min_size(mod_btn_size)
+                                    .fill(if ctrl_active {
+                                        ui.visuals().selection.bg_fill
+                                    } else {
+                                        ui.visuals().widgets.inactive.bg_fill
+                                    }),
+                                )
+                                .clicked()
+                            {
+                                let mut c = self
+                                    .staged_keybindings
+                                    .get(*action)
+                                    .cloned()
+                                    .unwrap_or_else(|| {
+                                        KeyCombo::modifiers_only(false, false, false)
+                                    });
+                                c.ctrl = !c.ctrl;
+                                self.staged_keybindings.set(*action, c);
+                            }
+                            let shift_active = self
+                                .staged_keybindings
+                                .get(*action)
+                                .map(|c| c.shift)
+                                .unwrap_or(false);
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        egui::RichText::new(crate::t!("ui.shft")).size(9.0).color(
+                                            if shift_active {
+                                                Color32::WHITE
+                                            } else {
+                                                Color32::GRAY
+                                            },
+                                        ),
+                                    )
+                                    .min_size(mod_btn_size)
+                                    .fill(if shift_active {
+                                        ui.visuals().selection.bg_fill
+                                    } else {
+                                        ui.visuals().widgets.inactive.bg_fill
+                                    }),
+                                )
+                                .clicked()
+                            {
+                                let mut c = self
+                                    .staged_keybindings
+                                    .get(*action)
+                                    .cloned()
+                                    .unwrap_or_else(|| {
+                                        KeyCombo::modifiers_only(false, false, false)
+                                    });
+                                c.shift = !c.shift;
+                                self.staged_keybindings.set(*action, c);
+                            }
+                            let alt_active = self
+                                .staged_keybindings
+                                .get(*action)
+                                .map(|c| c.alt)
+                                .unwrap_or(false);
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        egui::RichText::new(crate::t!("ui.alt")).size(9.0).color(
+                                            if alt_active {
+                                                Color32::WHITE
+                                            } else {
+                                                Color32::GRAY
+                                            },
+                                        ),
+                                    )
+                                    .min_size(mod_btn_size)
+                                    .fill(if alt_active {
+                                        ui.visuals().selection.bg_fill
+                                    } else {
+                                        ui.visuals().widgets.inactive.bg_fill
+                                    }),
+                                )
+                                .clicked()
+                            {
+                                let mut c = self
+                                    .staged_keybindings
+                                    .get(*action)
+                                    .cloned()
+                                    .unwrap_or_else(|| {
+                                        KeyCombo::modifiers_only(false, false, false)
+                                    });
+                                c.alt = !c.alt;
+                                self.staged_keybindings.set(*action, c);
+                            }
+
+                            let btn_text = if is_rebinding {
+                                egui::RichText::new(t!("settings.keybinds.press_key"))
+                                    .italics()
+                                    .color(if ui.visuals().dark_mode {
+                                        Color32::from_rgb(100, 200, 255)
+                                    } else {
+                                        Color32::from_rgb(0, 100, 200)
+                                    })
+                            } else {
+                                let combo_text = self
+                                    .staged_keybindings
+                                    .get(*action)
+                                    .map(|c| c.display())
+                                    .unwrap_or_else(|| "—".to_string());
+                                egui::RichText::new(combo_text).monospace()
+                            };
+                            let btn = ui
+                                .add(egui::Button::new(btn_text).min_size(egui::vec2(100.0, 20.0)));
+                            if btn.clicked() && !is_rebinding {
+                                self.rebinding_action = Some(*action);
+                            }
                         }
-                    }
-                });
+                    });
+                })
             });
         }
 
@@ -5445,6 +5459,157 @@ mod preference_consistency_tests {
             .find(|entry| entry.key == "settings.interface.bar_padding_x")
             .unwrap();
         assert!(add.rank("add") < padding.rank("add"));
+    }
+
+    #[test]
+    fn language_picker_separates_arabic_name_and_ltr_code_in_both_themes() {
+        crate::i18n::init();
+        crate::i18n::set_language("en");
+        for dark in [false, true] {
+            for large in [false, true] {
+                let ctx = context();
+                let mut fonts = egui::FontDefinitions::default();
+                fonts.font_data.insert(
+                    "review_arabic".into(),
+                    egui::FontData::from_static(include_bytes!(
+                        "../../../assets/fonts/NotoSansArabic.ttf"
+                    ))
+                    .into(),
+                );
+                fonts
+                    .families
+                    .get_mut(&egui::FontFamily::Proportional)
+                    .unwrap()
+                    .push("review_arabic".into());
+                fonts.families.insert(
+                    egui::FontFamily::Name("WidgetTitle".into()),
+                    fonts.families[&egui::FontFamily::Proportional].clone(),
+                );
+                ctx.set_fonts(fonts);
+                let mut theme = if dark {
+                    crate::theme::Theme::dark()
+                } else {
+                    crate::theme::Theme::light()
+                };
+                theme.polish.text_scale = if large { 1.4 } else { 1. };
+                theme.apply(&ctx);
+                let mut window = SettingsWindow::default();
+                let mut settings = AppSettings {
+                    language: "en".into(),
+                    ..Default::default()
+                };
+                let mut delta = egui::TexturesDelta::default();
+                let mut capture_time = 0.;
+                let mut frame = |events| {
+                    capture_time += 0.1;
+                    let mut output = ctx.run_ui(
+                        egui::RawInput {
+                            time: Some(capture_time),
+                            screen_rect: Some(egui::Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                egui::vec2(900., 700.),
+                            )),
+                            events,
+                            ..Default::default()
+                        },
+                        |ui| {
+                            ui.painter().rect_filled(ui.max_rect(), 0., theme.window_bg);
+                            window.show_language_section(ui, &mut settings);
+                        },
+                    );
+                    delta.append(std::mem::take(&mut output.textures_delta));
+                    output
+                };
+                let _ = frame(vec![]);
+                let output = frame(vec![]);
+                let point = labelled_rects(&output, "English")[0].center();
+                for pressed in [true, false] {
+                    let _ = frame(vec![
+                        egui::Event::PointerMoved(point),
+                        egui::Event::PointerButton {
+                            pos: point,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ]);
+                }
+                let _ = frame(vec![]);
+                let mut output = frame(vec![]);
+                let native = labelled_rects(&output, "العربية");
+                let code = labelled_rects(&output, "(ar)");
+                assert_eq!(native.len(), 1);
+                assert_eq!(code.len(), 1);
+                assert!(
+                    code[0].left() >= native[0].right(),
+                    "Arabic name and code must not overlap"
+                );
+                assert!(labelled_rects(&output, ")ar)").is_empty());
+                if std::env::var_os("PAINTFE_REVIEW_CAPTURE").is_some() {
+                    output.textures_delta = delta;
+                    let gpu = crate::gpu::context::GpuContext::new("").unwrap();
+                    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+                        "target/issue-pass-230-233/screenshots/language-{}-{}.png",
+                        if dark { "dark" } else { "light" },
+                        if large { "large" } else { "normal" }
+                    ));
+                    crate::ui::panels::tools::brush_picker_tests::save_ui_capture(
+                        &gpu,
+                        &ctx,
+                        output,
+                        [900, 700],
+                        &path,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn command_preferences_render_one_heading_per_category_in_both_themes() {
+        crate::i18n::init();
+        crate::i18n::set_language("en");
+        for dark in [false, true] {
+            let ctx = context();
+            let theme = if dark {
+                crate::theme::Theme::dark()
+            } else {
+                crate::theme::Theme::light()
+            };
+            theme.apply(&ctx);
+            let mut window = SettingsWindow::default();
+            let mut settings = AppSettings::default();
+            let assets = Assets::new();
+            let output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1200., 20000.),
+                    )),
+                    ..Default::default()
+                },
+                |ui| window.show_keybinds_tab(ui, &mut settings, &assets),
+            );
+            for key in [
+                "keybind_category.file",
+                "keybind_category.edit",
+                "keybind_category.canvas",
+                "keybind_category.view",
+                "keybind_category.tools",
+                "keybind_category.color",
+                "keybind_category.filter",
+                "keybind_category.generate",
+            ] {
+                assert_eq!(
+                    labelled_rects(&output, &crate::i18n::translate(key)).len(),
+                    1,
+                    "{key}"
+                );
+            }
+            let file = labelled_rects(&output, &crate::i18n::translate("menu.file.info"))[0];
+            let edit = labelled_rects(&output, &crate::i18n::translate("keybind_category.edit"))[0];
+            assert!(file.top() < edit.top());
+        }
     }
 
     fn context() -> egui::Context {

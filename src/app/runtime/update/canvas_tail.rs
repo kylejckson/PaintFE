@@ -63,6 +63,14 @@ impl PaintFEApp {
                 (viewport_rect.width() - left - right).max(0.0)
             };
             ui.set_width(bar_w);
+            if docked {
+                crate::ui::tool_shelf::paint_workspace_background(
+                    ui.painter(),
+                    egui::Rect::from_min_size(ui.cursor().min, egui::vec2(bar_w, shelf_style.height())),
+                    self.theme.canvas_bg_top,
+                    self.theme.canvas_bg_bottom,
+                );
+            }
             let shelf_frame = shelf_style.frame;
             let content_w = (bar_w - shelf_frame.total_margin().sum().x).max(0.0);
             let shelf_inner = shelf_frame.show(ui, |ui| {
@@ -368,18 +376,7 @@ impl PaintFEApp {
                 let rect = ui.max_rect();
                 let painter = ui.painter();
 
-                // Vertical gradient from top to bottom
-                let mesh = {
-                    let mut mesh = egui::Mesh::default();
-                    mesh.colored_vertex(rect.left_top(), canvas_bg_top);
-                    mesh.colored_vertex(rect.right_top(), canvas_bg_top);
-                    mesh.colored_vertex(rect.left_bottom(), canvas_bg_bottom);
-                    mesh.colored_vertex(rect.right_bottom(), canvas_bg_bottom);
-                    mesh.add_triangle(0, 1, 2);
-                    mesh.add_triangle(1, 2, 3);
-                    mesh
-                };
-                painter.add(egui::Shape::mesh(mesh));
+                crate::ui::tool_shelf::paint_workspace_background(painter, rect, canvas_bg_top, canvas_bg_bottom);
 
                 let ui_blocks_canvas_input = self.update_ui_pointer_capture(ctx);
                 let pointer_over_blocking_ui = self.pointer_over_cursor_blocking_ui(ctx);

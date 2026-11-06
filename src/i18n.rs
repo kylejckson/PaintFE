@@ -102,6 +102,369 @@ pub fn init() {
             .entry(value.to_lowercase())
             .or_insert_with(|| key.clone());
     }
+    // Retain lookup aliases for stable English display values after spelling changes.
+    english_keys.insert("Color".into(), "gradient_mode.color".into());
+    english_keys.insert("color".into(), "gradient_mode.color".into());
+    english_keys.insert("Invert Colors".into(), "menu.color.invert_colors".into());
+    english_keys.insert("invert colors".into(), "menu.color.invert_colors".into());
+    english_keys.insert(
+        "Color to Alpha...".into(),
+        "menu.color.color_to_alpha".into(),
+    );
+    english_keys.insert(
+        "color to alpha...".into(),
+        "menu.color.color_to_alpha".into(),
+    );
+    english_keys.insert("Color Balance...".into(), "menu.color.color_balance".into());
+    english_keys.insert("color balance...".into(), "menu.color.color_balance".into());
+    english_keys.insert(
+        "Color Filter...".into(),
+        "menu.filter.stylize.color_filter".into(),
+    );
+    english_keys.insert(
+        "color filter...".into(),
+        "menu.filter.stylize.color_filter".into(),
+    );
+    english_keys.insert("Colors Panel".into(), "menu.view.colors_panel".into());
+    english_keys.insert("colors panel".into(), "menu.view.colors_panel".into());
+    english_keys.insert("Color Picker".into(), "keybind.tool_color_picker".into());
+    english_keys.insert("color picker".into(), "keybind.tool_color_picker".into());
+    english_keys.insert("Color Remover".into(), "keybind.tool_color_remover".into());
+    english_keys.insert("color remover".into(), "keybind.tool_color_remover".into());
+    english_keys.insert(
+        "Color matching tolerance (0% = exact color, 100% = all colors)".into(),
+        "ctx.tolerance_tooltip".into(),
+    );
+    english_keys.insert(
+        "color matching tolerance (0% = exact color, 100% = all colors)".into(),
+        "ctx.tolerance_tooltip".into(),
+    );
+    english_keys.insert(
+        "Eraser strength — controlled by the primary color's alpha value".into(),
+        "ctx.eraser_opacity_tooltip".into(),
+    );
+    english_keys.insert(
+        "eraser strength — controlled by the primary color's alpha value".into(),
+        "ctx.eraser_opacity_tooltip".into(),
+    );
+    english_keys.insert(
+        "Pick color in Color panel → Apply Primary".into(),
+        "ctx.gradient.color_hint".into(),
+    );
+    english_keys.insert(
+        "pick color in color panel → apply primary".into(),
+        "ctx.gradient.color_hint".into(),
+    );
+    english_keys.insert(
+        "Color:".into(),
+        "ctx.text.effects.inner_shadow.color".into(),
+    );
+    english_keys.insert(
+        "color:".into(),
+        "ctx.text.effects.inner_shadow.color".into(),
+    );
+    english_keys.insert("Center".into(), "ctx.text.effects.outline.center".into());
+    english_keys.insert("center".into(), "ctx.text.effects.outline.center".into());
+    english_keys.insert("Color Balance".into(), "dialog.color_balance".into());
+    english_keys.insert("color balance".into(), "dialog.color_balance".into());
+    english_keys.insert("Color Filter".into(), "dialog.color_filter".into());
+    english_keys.insert("color filter".into(), "dialog.color_filter".into());
+    english_keys.insert("Color to Alpha".into(), "dialog.color_to_alpha".into());
+    english_keys.insert("color to alpha".into(), "dialog.color_to_alpha".into());
+    english_keys.insert(
+        "(Uses secondary color)".into(),
+        "dialog.resize_canvas.uses_secondary_color".into(),
+    );
+    english_keys.insert(
+        "(uses secondary color)".into(),
+        "dialog.resize_canvas.uses_secondary_color".into(),
+    );
+    english_keys.insert(
+        "Accent-colored shadows in dark theme".into(),
+        "settings.general.neon_hint".into(),
+    );
+    english_keys.insert(
+        "accent-colored shadows in dark theme".into(),
+        "settings.general.neon_hint".into(),
+    );
+    english_keys.insert(
+        "Follow theme color".into(),
+        "settings.interface.resize_grip_auto".into(),
+    );
+    english_keys.insert(
+        "follow theme color".into(),
+        "settings.interface.resize_grip_auto".into(),
+    );
+    english_keys.insert(
+        "Accent Color".into(),
+        "settings.interface.accent_color".into(),
+    );
+    english_keys.insert(
+        "accent color".into(),
+        "settings.interface.accent_color".into(),
+    );
+    english_keys.insert(
+        "Light Mode Colors".into(),
+        "settings.interface.light_mode_colors".into(),
+    );
+    english_keys.insert(
+        "light mode colors".into(),
+        "settings.interface.light_mode_colors".into(),
+    );
+    english_keys.insert(
+        "Dark Mode Colors".into(),
+        "settings.interface.dark_mode_colors".into(),
+    );
+    english_keys.insert(
+        "dark mode colors".into(),
+        "settings.interface.dark_mode_colors".into(),
+    );
+    english_keys.insert("Color Burn".into(), "blend.color_burn".into());
+    english_keys.insert("color burn".into(), "blend.color_burn".into());
+    english_keys.insert("Color Dodge".into(), "blend.color_dodge".into());
+    english_keys.insert("color dodge".into(), "blend.color_dodge".into());
+    english_keys.insert("Nearest Neighbor".into(), "interpolation.nearest".into());
+    english_keys.insert("nearest neighbor".into(), "interpolation.nearest".into());
+    english_keys.insert(
+        "Graph optimization".into(),
+        "settings.ai.graph_optimization".into(),
+    );
+    english_keys.insert(
+        "graph optimization".into(),
+        "settings.ai.graph_optimization".into(),
+    );
+    english_keys.insert("Colors".into(), "ui.colors".into());
+    english_keys.insert("colors".into(), "ui.colors".into());
+    english_keys.insert("Hex color".into(), "ui.hex_color".into());
+    english_keys.insert("hex color".into(), "ui.hex_color".into());
+    english_keys.insert(
+        "Edit or copy hex color".into(),
+        "ui.edit_or_copy_hex_color".into(),
+    );
+    english_keys.insert(
+        "edit or copy hex color".into(),
+        "ui.edit_or_copy_hex_color".into(),
+    );
+    english_keys.insert(
+        "Add selected color to this collection".into(),
+        "ui.add_selected_color_to_this_collection".into(),
+    );
+    english_keys.insert(
+        "add selected color to this collection".into(),
+        "ui.add_selected_color_to_this_collection".into(),
+    );
+    english_keys.insert(
+        "Colors appear here after painting.".into(),
+        "ui.colors_appear_here_after_painting".into(),
+    );
+    english_keys.insert(
+        "colors appear here after painting.".into(),
+        "ui.colors_appear_here_after_painting".into(),
+    );
+    english_keys.insert(
+        "Add a color with + to start.".into(),
+        "ui.add_a_color_with_to_start".into(),
+    );
+    english_keys.insert(
+        "add a color with + to start.".into(),
+        "ui.add_a_color_with_to_start".into(),
+    );
+    english_keys.insert("Add to Favorites".into(), "ui.add_to_favorites".into());
+    english_keys.insert("add to favorites".into(), "ui.add_to_favorites".into());
+    english_keys.insert("Remove color".into(), "ui.remove_color".into());
+    english_keys.insert("remove color".into(), "ui.remove_color".into());
+    english_keys.insert("Center Anchor".into(), "ui.center_anchor".into());
+    english_keys.insert("center anchor".into(), "ui.center_anchor".into());
+    english_keys.insert("Pixel grid outline/center colors control the dual-stroke grid visibility on any background.".into(), "ui.pixel_grid_outline_center_colors_control_the_dual_stroke_grid_visibili".into());
+    english_keys.insert("pixel grid outline/center colors control the dual-stroke grid visibility on any background.".into(), "ui.pixel_grid_outline_center_colors_control_the_dual_stroke_grid_visibili".into());
+    english_keys.insert(
+        "Layer Folder Colors".into(),
+        "ui.layer_folder_colors".into(),
+    );
+    english_keys.insert(
+        "layer folder colors".into(),
+        "ui.layer_folder_colors".into(),
+    );
+    english_keys.insert(
+        "Reset Folder Colors".into(),
+        "ui.reset_folder_colors".into(),
+    );
+    english_keys.insert(
+        "reset folder colors".into(),
+        "ui.reset_folder_colors".into(),
+    );
+    english_keys.insert(
+        "Advanced Customization".into(),
+        "ui.advanced_customization".into(),
+    );
+    english_keys.insert(
+        "advanced customization".into(),
+        "ui.advanced_customization".into(),
+    );
+    english_keys.insert("Fine-tune individual colors, geometry, and effects. Overrides apply on top of the selected preset.".into(), "ui.fine_tune_individual_colors_geometry_and_effects_overrides_apply_on_to".into());
+    english_keys.insert("fine-tune individual colors, geometry, and effects. overrides apply on top of the selected preset.".into(), "ui.fine_tune_individual_colors_geometry_and_effects_overrides_apply_on_to".into());
+    english_keys.insert(
+        "Click to open Colors".into(),
+        "ui.click_to_open_colors".into(),
+    );
+    english_keys.insert(
+        "click to open colors".into(),
+        "ui.click_to_open_colors".into(),
+    );
+    english_keys.insert(
+        "Preserve source colors".into(),
+        "ui.preserve_source_colors".into(),
+    );
+    english_keys.insert(
+        "preserve source colors".into(),
+        "ui.preserve_source_colors".into(),
+    );
+    english_keys.insert(
+        "Optimize automatically".into(),
+        "ui.optimize_automatically".into(),
+    );
+    english_keys.insert(
+        "optimize automatically".into(),
+        "ui.optimize_automatically".into(),
+    );
+    english_keys.insert("Select Color Range".into(), "ui.select_color_range".into());
+    english_keys.insert("select color range".into(), "ui.select_color_range".into());
+    english_keys.insert("Hue Center".into(), "ui.hue_center".into());
+    english_keys.insert("hue center".into(), "ui.hue_center".into());
+    english_keys.insert("TARGET COLOR".into(), "ui.target_color".into());
+    english_keys.insert("target color".into(), "ui.target_color".into());
+    english_keys.insert(
+        "Recover alpha and edge colors from artwork flattened over a noisy solid background."
+            .into(),
+        "ui.recover_alpha_and_edge_colors_from_artwork_flattened_over_a_noisy_soli".into(),
+    );
+    english_keys.insert(
+        "recover alpha and edge colors from artwork flattened over a noisy solid background."
+            .into(),
+        "ui.recover_alpha_and_edge_colors_from_artwork_flattened_over_a_noisy_soli".into(),
+    );
+    english_keys.insert("Color Preservation".into(), "ui.color_preservation".into());
+    english_keys.insert("color preservation".into(), "ui.color_preservation".into());
+    english_keys.insert("Line Color".into(), "ui.line_color".into());
+    english_keys.insert("line color".into(), "ui.line_color".into());
+    english_keys.insert("Center X".into(), "ui.center_x".into());
+    english_keys.insert("center x".into(), "ui.center_x".into());
+    english_keys.insert("Center Y".into(), "ui.center_y".into());
+    english_keys.insert("center y".into(), "ui.center_y".into());
+    english_keys.insert("COLOR TINT".into(), "ui.color_tint".into());
+    english_keys.insert("color tint".into(), "ui.color_tint".into());
+    english_keys.insert(
+        "Radial color tint at origin".into(),
+        "ui.radial_color_tint_at_origin".into(),
+    );
+    english_keys.insert(
+        "radial color tint at origin".into(),
+        "ui.radial_color_tint_at_origin".into(),
+    );
+    english_keys.insert("Tint Color".into(), "ui.tint_color".into());
+    english_keys.insert("tint color".into(), "ui.tint_color".into());
+    english_keys.insert("Uses Primary Color".into(), "ui.uses_primary_color".into());
+    english_keys.insert("uses primary color".into(), "ui.uses_primary_color".into());
+    english_keys.insert("Folder color".into(), "ui.folder_color".into());
+    english_keys.insert("folder color".into(), "ui.folder_color".into());
+    english_keys.insert("4-neighbor".into(), "ui.4_neighbor".into());
+    english_keys.insert("8-neighbor".into(), "ui.8_neighbor".into());
+    english_keys.insert("Color {0}".into(), "ui.color_0".into());
+    english_keys.insert("color {0}".into(), "ui.color_0".into());
+    english_keys.insert("COLORS".into(), "ui.colors_2".into());
+    english_keys.insert("colors".into(), "ui.colors".into());
+    english_keys.insert("Favorites".into(), "ui.favorites".into());
+    english_keys.insert("favorites".into(), "ui.favorites".into());
+    english_keys.insert("Swap Colors".into(), "icon.swap_colors".into());
+    english_keys.insert("swap colors".into(), "icon.swap_colors".into());
+    english_keys.insert(
+        "Apply Primary Color".into(),
+        "icon.apply_primary_color".into(),
+    );
+    english_keys.insert(
+        "apply primary color".into(),
+        "icon.apply_primary_color".into(),
+    );
+    english_keys.insert(
+        "Brush Dynamics (Pressure, Scatter, Color Jitter)".into(),
+        "icon.brush_dynamics_flow_scatter_color_jitter".into(),
+    );
+    english_keys.insert(
+        "brush dynamics (pressure, scatter, color jitter)".into(),
+        "icon.brush_dynamics_flow_scatter_color_jitter".into(),
+    );
+    english_keys.insert("Surface Colors".into(), "ui.surface_colors".into());
+    english_keys.insert("surface colors".into(), "ui.surface_colors".into());
+    english_keys.insert(
+        "Retarget is designed for reduction; enlargement uses nearest-neighbor pixels.".into(),
+        "ui.retarget_is_designed_for_reduction_enlargement_uses_nearest_neighbor_p".into(),
+    );
+    english_keys.insert(
+        "retarget is designed for reduction; enlargement uses nearest-neighbor pixels.".into(),
+        "ui.retarget_is_designed_for_reduction_enlargement_uses_nearest_neighbor_p".into(),
+    );
+    english_keys.insert("Customize interface labels...".into(), "labels.edit".into());
+    english_keys.insert("customize interface labels...".into(), "labels.edit".into());
+    english_keys.insert("Customize interface labels".into(), "labels.title".into());
+    english_keys.insert("customize interface labels".into(), "labels.title".into());
+    english_keys.insert(
+        "Select a label to customize its wording.".into(),
+        "labels.select_label".into(),
+    );
+    english_keys.insert(
+        "select a label to customize its wording.".into(),
+        "labels.select_label".into(),
+    );
+    english_keys.insert("Text color".into(), "ruler.text_color".into());
+    english_keys.insert("text color".into(), "ruler.text_color".into());
+    english_keys.insert("Tick color".into(), "ruler.tick_color".into());
+    english_keys.insert("tick color".into(), "ruler.tick_color".into());
+    english_keys.insert("Background color".into(), "ruler.background_color".into());
+    english_keys.insert("background color".into(), "ruler.background_color".into());
+    english_keys.insert(
+        "Grayscale without transparency".into(),
+        "export.gray".into(),
+    );
+    english_keys.insert(
+        "grayscale without transparency".into(),
+        "export.gray".into(),
+    );
+    english_keys.insert(
+        "Grayscale with transparency".into(),
+        "export.gray_alpha".into(),
+    );
+    english_keys.insert(
+        "grayscale with transparency".into(),
+        "export.gray_alpha".into(),
+    );
+    english_keys.insert(
+        "Saving as grayscale removes colour information.".into(),
+        "export.loss_color".into(),
+    );
+    english_keys.insert(
+        "saving as grayscale removes colour information.".into(),
+        "export.loss_color".into(),
+    );
+    english_keys.insert("Grayscale".into(), "export.advanced.gray".into());
+    english_keys.insert("grayscale".into(), "export.advanced.gray".into());
+    english_keys.insert(
+        "Uses Color Burn for dark brush colours and Color Dodge for light colours.".into(),
+        "blend_help.21".into(),
+    );
+    english_keys.insert(
+        "uses color burn for dark brush colours and color dodge for light colours.".into(),
+        "blend_help.21".into(),
+    );
+    english_keys.insert(
+        "Adds or subtracts light depending on whether the brush colour is above mid-gray.".into(),
+        "blend_help.22".into(),
+    );
+    english_keys.insert(
+        "adds or subtracts light depending on whether the brush colour is above mid-gray.".into(),
+        "blend_help.22".into(),
+    );
+    english_keys.insert("Choose a tool, then adjust its options above the image. Pick colours in the Color panel. Zoom in to inspect detail and pan to move the view. Hold Space to pan temporarily.".into(), "help.start.navigate_body".into());
+    english_keys.insert("choose a tool, then adjust its options above the image. pick colours in the color panel. zoom in to inspect detail and pan to move the view. hold space to pan temporarily.".into(), "help.start.navigate_body".into());
     let state = I18nState {
         current_lang: "en".to_string(),
         translations,
@@ -441,5 +804,29 @@ mod locale_tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod spelling_alias_tests {
+    #[test]
+    fn australian_spelling_preserves_legacy_label_identities() {
+        super::init();
+        let guard = super::I18N.lock().unwrap();
+        let state = guard.as_ref().unwrap();
+        for (label, key) in [
+            ("Color", "gradient_mode.color"),
+            ("color", "gradient_mode.color"),
+            ("Center", "ctx.text.effects.outline.center"),
+            ("center", "ctx.text.effects.outline.center"),
+            ("colors", "ui.colors"),
+        ] {
+            assert_eq!(state.english_keys.get(label).map(String::as_str), Some(key));
+        }
+        assert_eq!(state.translations["en"]["menu.color"], "Colour");
+        assert_eq!(
+            state.translations["en"]["tool.color_picker"],
+            "Colour Picker"
+        );
     }
 }

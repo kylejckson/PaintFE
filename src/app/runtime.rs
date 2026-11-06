@@ -166,3 +166,5 @@ impl Drop for PaintFEApp {
         }
     }
 }
+
+include!("commands.rs");

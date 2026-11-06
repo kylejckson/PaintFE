@@ -74,43 +74,68 @@ pub fn drain(ctx: &Context, p: &mut Project) {
         }
     }
 }
-pub fn menu(ui: &mut Ui, p: &mut Project) {
-    begin(ui.ctx(), p.id);
+pub fn run_menu_command(
+    ctx: &Context,
+    p: &mut Project,
+    command: crate::config::commands::MenuCommand,
+) {
+    use crate::config::commands::MenuCommand;
+    begin(ctx, p.id);
     let before = p.canvas_state.guides.clone();
     let g = &mut p.canvas_state.guides;
-    ui.checkbox(&mut g.rulers, crate::t!("guides.rulers"));
-    ui.checkbox(&mut g.visible, crate::t!("guides.visible"));
-    ui.checkbox(&mut g.locked, crate::t!("guides.locked"));
-    ui.checkbox(&mut g.snap, crate::t!("guides.snap"));
-    ui.separator();
-    if ui
-        .add_enabled(!g.locked, egui::Button::new(crate::t!("guides.new")))
-        .clicked()
-    {
-        ui.ctx().data_mut(|d| {
-            d.insert_temp(
-                Id::new("new_guide_dialog"),
-                NewGuide {
-                    project: p.id,
-                    axis: Axis::Horizontal,
-                    position: 50.0,
-                    percent: true,
-                },
-            )
-        });
-        ui.close();
-    }
-    if ui
-        .add_enabled(
-            !g.locked && !g.items.is_empty(),
-            egui::Button::new(crate::t!("guides.clear")),
-        )
-        .clicked()
-    {
-        g.items.clear();
+    match command {
+        MenuCommand::GuidesRulers => g.rulers = !g.rulers,
+        MenuCommand::GuidesVisible => g.visible = !g.visible,
+        MenuCommand::GuidesLocked => g.locked = !g.locked,
+        MenuCommand::GuidesSnap => g.snap = !g.snap,
+        MenuCommand::GuidesNew if !g.locked => {
+            ctx.data_mut(|d| {
+                d.insert_temp(
+                    Id::new("new_guide_dialog"),
+                    NewGuide {
+                        project: p.id,
+                        axis: Axis::Horizontal,
+                        position: 50.,
+                        percent: true,
+                    },
+                )
+            });
+        }
+        MenuCommand::GuidesClear if !g.locked => g.items.clear(),
+        _ => {}
     }
     if before.items != g.items {
-        queue(ui.ctx(), before, g.clone());
+        queue(ctx, before, g.clone());
+    }
+}
+pub fn menu(ui: &mut Ui, p: &mut Project) {
+    use crate::config::commands::MenuCommand;
+    for (command, value) in [
+        (MenuCommand::GuidesRulers, p.canvas_state.guides.rulers),
+        (MenuCommand::GuidesVisible, p.canvas_state.guides.visible),
+        (MenuCommand::GuidesLocked, p.canvas_state.guides.locked),
+        (MenuCommand::GuidesSnap, p.canvas_state.guides.snap),
+    ] {
+        let mut checked = value;
+        if ui
+            .push_id(command, |ui| ui.checkbox(&mut checked, command.label()))
+            .inner
+            .changed()
+        {
+            run_menu_command(ui.ctx(), p, command);
+        }
+    }
+    ui.separator();
+    for command in [MenuCommand::GuidesNew, MenuCommand::GuidesClear] {
+        let enabled = !p.canvas_state.guides.locked
+            && (command != MenuCommand::GuidesClear || !p.canvas_state.guides.items.is_empty());
+        if ui
+            .add_enabled(enabled, egui::Button::new(command.label()))
+            .clicked()
+        {
+            run_menu_command(ui.ctx(), p, command);
+            ui.close();
+        }
     }
 }
 pub fn dialog(ctx: &Context, p: &mut Project) {

@@ -4,3 +4,5 @@ pub mod icons;
 pub mod keybindings;
 pub(crate) mod persistence;
 pub mod settings;
+
+pub mod commands;

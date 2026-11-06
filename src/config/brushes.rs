@@ -1945,7 +1945,9 @@ impl Assets {
             &response,
             crate::theme::Theme::tool_button_rounding_for(ui),
         );
-        response.on_hover_text(icon.tooltip()).clicked()
+        response
+            .on_hover_text(icon.tooltip_for_context(ui.ctx()))
+            .clicked()
     }
 
     /// Create a selectable icon (for tool selection) with default size
@@ -1982,7 +1984,7 @@ impl Assets {
             &response,
             crate::theme::Theme::tool_button_rounding_for(ui),
         );
-        response.on_hover_text(icon.tooltip())
+        response.on_hover_text(icon.tooltip_for_context(ui.ctx()))
     }
 
     /// Create a small icon button with no background frame (transparent).
@@ -2002,7 +2004,7 @@ impl Assets {
             &response,
             crate::theme::Theme::tool_button_rounding_for(ui),
         );
-        response.on_hover_text(icon.tooltip())
+        response.on_hover_text(icon.tooltip_for_context(ui.ctx()))
     }
 
     /// Create an enabled/disabled icon button.
@@ -2058,7 +2060,7 @@ impl Assets {
             &response,
             crate::theme::Theme::tool_button_rounding_for(ui),
         );
-        response.on_hover_text(icon.tooltip())
+        response.on_hover_text(icon.tooltip_for_context(ui.ctx()))
     }
 
     /// Paint an icon image into a specific rect, returning a click-sense response.

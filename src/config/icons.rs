@@ -715,6 +715,33 @@ impl Icon {
     /// Map a tool icon to its BindableAction (for dynamic tooltip keybind lookup)
     pub fn bindable_action(&self) -> Option<BindableAction> {
         match self {
+            Icon::GridOn | Icon::GridOff => Some(BindableAction::Menu(
+                crate::config::commands::MenuCommand::ViewPixelGrid,
+            )),
+            Icon::New | Icon::MenuFileNew => Some(BindableAction::NewFile),
+            Icon::Open | Icon::MenuFileOpen => Some(BindableAction::OpenFile),
+            Icon::Save | Icon::MenuFileSave => Some(BindableAction::Save),
+            Icon::ZoomIn | Icon::MenuViewZoomIn => Some(BindableAction::ViewZoomIn),
+            Icon::ZoomOut | Icon::MenuViewZoomOut => Some(BindableAction::ViewZoomOut),
+            Icon::ResetZoom | Icon::MenuViewFitWindow => Some(BindableAction::ViewFitToWindow),
+            Icon::EllipseSelect => Some(BindableAction::Menu(
+                crate::config::commands::MenuCommand::ToolEllipseSelect,
+            )),
+            Icon::MoveSelection => Some(BindableAction::Menu(
+                crate::config::commands::MenuCommand::ToolMoveSelection,
+            )),
+            Icon::ContentAwareBrush => Some(BindableAction::Menu(
+                crate::config::commands::MenuCommand::ToolContentAwareBrush,
+            )),
+            Icon::Liquify => Some(BindableAction::Menu(
+                crate::config::commands::MenuCommand::ToolLiquify,
+            )),
+            Icon::Smudge => Some(BindableAction::Menu(
+                crate::config::commands::MenuCommand::ToolSmudge,
+            )),
+            Icon::PerspectiveCrop => Some(BindableAction::Menu(
+                crate::config::commands::MenuCommand::ToolPerspectiveCrop,
+            )),
             Icon::Brush => Some(BindableAction::ToolBrush),
             Icon::Eraser => Some(BindableAction::ToolEraser),
             Icon::Pencil => Some(BindableAction::ToolPencil),
@@ -751,5 +778,54 @@ impl Icon {
             return format!("{} ({})", base, combo.display());
         }
         base.to_string()
+    }
+}
+
+impl Icon {
+    pub fn tooltip_for_context(&self, ctx: &egui::Context) -> String {
+        ctx.data(|data| {
+            data.get_temp::<std::sync::Arc<KeyBindings>>(egui::Id::new(
+                "paintfe_command_keybindings",
+            ))
+        })
+        .map_or_else(
+            || self.tooltip(),
+            |bindings| self.tooltip_with_keybind(&bindings),
+        )
+    }
+}
+
+#[cfg(test)]
+mod shortcut_hint_tests {
+    use super::*;
+    #[test]
+    fn toolbar_hints_follow_rebound_and_unbound_commands() {
+        crate::i18n::init();
+        for icon in [
+            Icon::New,
+            Icon::Open,
+            Icon::Save,
+            Icon::Undo,
+            Icon::Redo,
+            Icon::ZoomIn,
+            Icon::ZoomOut,
+            Icon::ResetZoom,
+            Icon::GridOn,
+            Icon::GridOff,
+        ] {
+            let action = icon.bindable_action().unwrap();
+            let mut bindings = KeyBindings::default();
+            let combo = crate::config::keybindings::KeyCombo::ctrl_shift_key(egui::Key::F12);
+            bindings.set(action, combo.clone());
+            assert!(
+                icon.tooltip_with_keybind(&bindings)
+                    .ends_with(&format!("({})", combo.display()))
+            );
+            bindings.set(
+                action,
+                crate::config::keybindings::KeyCombo::modifiers_only(false, false, false),
+            );
+            assert_eq!(icon.tooltip_with_keybind(&bindings), icon.tooltip());
+        }
     }
 }

@@ -9,6 +9,7 @@ impl ToolsPanel {
     }
 
     fn reset_brush_pointer_state(&mut self) {
+        self.paint_target = None;
         self.brush_sweeps = [None; 4];
         self.brush_travel = [0.; 4];
         self.brush_motion = Default::default();
@@ -278,11 +279,10 @@ impl ToolsPanel {
                 if self.stroke_tracker.is_active || self.tool_state.last_pos.is_some() =>
             {
                 self.stroke_tracker.cancel();
-                self.tool_state.last_pos = None;
-                self.tool_state.last_precise_pos = None;
-                self.tool_state.smooth_pos = None;
+                self.reset_brush_pointer_state();
+                self.paint_requires_release = true;
                 canvas_state.clear_preview_state();
-                canvas_state.mark_dirty(None);
+                canvas_state.mark_render_dirty(None);
                 true
             }
             Tool::Brush | Tool::Pencil | Tool::Eraser => false,
@@ -376,6 +376,13 @@ impl ToolsPanel {
         secondary_color_f32: [f32; 4],
     ) -> bool {
         match self.active_tool {
+            Tool::Brush | Tool::Pencil | Tool::Eraser if self.is_stroke_active() => {
+                let rgba = self.properties.color.to_srgba_unmultiplied();
+                let primary = rgba.map(|value| value as f32 / 255.);
+                self.pending_stroke_event =
+                    self.finish_paint_stroke(canvas_state, primary, secondary_color_f32, true);
+                true
+            }
             Tool::Line if self.line_state.line_tool.stage == LineStage::Editing => {
                 let line_editing_mask = canvas_state.edit_layer_mask
                     && canvas_state

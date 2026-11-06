@@ -162,3 +162,22 @@ mod tests {
         assert_eq!(browser.favourites, ["Rake"]);
     }
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PaintingToolSettings {
+    pub size: f32,
+    pub tip: String,
+    pub blend: String,
+    pub preset: SavedPreset,
+}
+impl Default for PaintingToolSettings {
+    fn default() -> Self {
+        Self {
+            size: 10.,
+            tip: "Circle".into(),
+            blend: "Normal".into(),
+            preset: SavedPreset::default(),
+        }
+    }
+}

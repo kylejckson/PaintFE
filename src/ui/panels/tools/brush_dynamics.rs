@@ -34,7 +34,7 @@ impl ToolsPanel {
         if paintbrush.is_some()
             && let Some(saved) = self
                 .brush_saved_presets
-                .get(self.properties.brush_tip.display_name())
+                .get(&self.paint_preset_key())
                 .cloned()
         {
             self.apply_paintbrush(&saved);
@@ -57,12 +57,16 @@ impl ToolsPanel {
         self.brush_browser = settings.brush_browser.clone();
         self.brush_tip_picker_category = self.brush_browser.category.clone();
         self.brush_saved_presets = settings.brush_saved_presets.clone();
+        self.painting_tool_settings = settings.painting_tool_settings.clone();
+        self.restore_painting_tool(self.active_tool);
     }
     pub(crate) fn store_brush_browser(
         &mut self,
         settings: &mut crate::config::settings::AppSettings,
     ) {
         self.remember_paintbrush();
+        self.remember_painting_tool();
+        settings.painting_tool_settings = self.painting_tool_settings.clone();
         self.brush_browser.category = self.brush_tip_picker_category.clone();
         settings.brush_browser.category = self.brush_browser.category.clone();
         settings.brush_browser.favourites = self.brush_browser.favourites.clone();
@@ -76,35 +80,35 @@ impl ToolsPanel {
         let Some(tip) = self.brush_paintbrush else {
             return;
         };
-        self.brush_saved_presets
-            .remove(self.properties.brush_tip.display_name());
+        self.brush_saved_presets.remove(&self.paint_preset_key());
         self.apply_paintbrush(&crate::brushes::SavedPreset::for_tip(tip));
         self.brush_preview_cache.clear();
     }
+    fn capture_paint_preset(&self) -> crate::brushes::SavedPreset {
+        crate::brushes::SavedPreset {
+            engine: self.properties.brush_engine.sanitized(),
+            flow: self.properties.flow,
+            opacity: self.properties.opacity,
+            spacing: self.properties.spacing,
+            hardness: self.properties.hardness,
+            rotation: self.properties.tip_rotation,
+            random_rotation: self.properties.tip_random_rotation,
+            mode: self.properties.brush_mode as u8,
+            pressure_size: self.properties.pressure_size,
+            pressure_flow: self.properties.pressure_opacity,
+            minimum_size: self.properties.pressure_min_size,
+            minimum_flow: self.properties.pressure_min_opacity,
+            anti_aliased: self.properties.anti_aliased,
+            scatter: self.properties.scatter,
+            hue_jitter: self.properties.hue_jitter,
+            brightness_jitter: self.properties.brightness_jitter,
+            rotation_range: self.properties.tip_rotation_range,
+        }
+    }
     fn remember_paintbrush(&mut self) {
         if self.brush_paintbrush.is_some() {
-            self.brush_saved_presets.insert(
-                self.properties.brush_tip.display_name().to_owned(),
-                crate::brushes::SavedPreset {
-                    engine: self.properties.brush_engine.sanitized(),
-                    flow: self.properties.flow,
-                    opacity: self.properties.opacity,
-                    spacing: self.properties.spacing,
-                    hardness: self.properties.hardness,
-                    rotation: self.properties.tip_rotation,
-                    random_rotation: self.properties.tip_random_rotation,
-                    mode: self.properties.brush_mode as u8,
-                    pressure_size: self.properties.pressure_size,
-                    pressure_flow: self.properties.pressure_opacity,
-                    minimum_size: self.properties.pressure_min_size,
-                    minimum_flow: self.properties.pressure_min_opacity,
-                    anti_aliased: self.properties.anti_aliased,
-                    scatter: self.properties.scatter,
-                    hue_jitter: self.properties.hue_jitter,
-                    brightness_jitter: self.properties.brightness_jitter,
-                    rotation_range: self.properties.tip_rotation_range,
-                },
-            );
+            self.brush_saved_presets
+                .insert(self.paint_preset_key(), self.capture_paint_preset());
         }
     }
     fn apply_paintbrush(&mut self, saved: &crate::brushes::SavedPreset) {
@@ -193,6 +197,8 @@ impl ToolsPanel {
     fn show_inline_brush_controls(&self, settings: &crate::config::settings::AppSettings) -> bool {
         matches!(self.active_tool, Tool::Brush | Tool::Eraser)
             && (settings.show_advanced_brush_controls
+                || (settings.tablet_pressure_enabled
+                    && (self.properties.pressure_size || self.properties.pressure_opacity))
                 || (settings.brush_preset_controls
                     && self.brush_paintbrush.is_some_and(|tip| tip.has_bristles())))
     }
@@ -977,5 +983,69 @@ mod paintbrush_tests {
                 );
             }
         }
+    }
+}
+
+impl ToolsPanel {
+    fn painting_tool_key(tool: Tool) -> Option<&'static str> {
+        match tool {
+            Tool::Brush => Some("Brush"),
+            Tool::Pencil => Some("Pencil"),
+            Tool::Eraser => Some("Eraser"),
+            _ => None,
+        }
+    }
+    fn paint_preset_key(&self) -> String {
+        let name = self.properties.brush_tip.display_name();
+        if self.active_tool == Tool::Eraser {
+            format!("eraser:{name}")
+        } else {
+            name.into()
+        }
+    }
+    fn remember_painting_tool(&mut self) {
+        if let Some(key) = Self::painting_tool_key(self.active_tool) {
+            self.painting_tool_settings.insert(
+                key.into(),
+                crate::brushes::PaintingToolSettings {
+                    size: self.properties.size,
+                    tip: self.properties.brush_tip.display_name().into(),
+                    blend: format!("{:?}", self.properties.blending_mode),
+                    preset: self.capture_paint_preset(),
+                },
+            );
+            self.painting_tool_backups
+                .insert(key.into(), self.brush_before_paintbrush.clone());
+        }
+    }
+    fn restore_painting_tool(&mut self, tool: Tool) {
+        let Some(key) = Self::painting_tool_key(tool) else {
+            return;
+        };
+        if let Some(saved) = self.painting_tool_settings.get(key).cloned() {
+            self.apply_paintbrush(&saved.preset);
+            self.properties.size = if saved.size.is_finite() {
+                saved.size.clamp(1., 999.)
+            } else {
+                10.
+            };
+            self.properties.brush_tip = if saved.tip == "Circle" {
+                BrushTip::Circle
+            } else {
+                BrushTip::Image(saved.tip)
+            };
+            self.properties.blending_mode = BlendMode::all()
+                .iter()
+                .copied()
+                .find(|blend| format!("{blend:?}") == saved.blend)
+                .unwrap_or(BlendMode::Normal);
+        } else if tool != Tool::Brush {
+            let colour = self.properties.color;
+            self.properties = ToolProperties::default();
+            self.properties.color = colour;
+        }
+        self.brush_before_paintbrush = self.painting_tool_backups.remove(key).flatten();
+        self.brush_paintbrush = None;
+        self.brush_tip_cache_key.0.clear();
     }
 }

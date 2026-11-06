@@ -23,6 +23,7 @@ include unreleased behaviour; the website marks upcoming changes separately.
 ## Developer documentation
 
 - [Shared UI controls](ui-controls.md)
+- [Built-in commands and shortcuts](commands.md)
 - [Save safety](save-safety.md)
 - [Codec architecture](codec-experiments.md)
 - [Large-image rendering](large-images.md)

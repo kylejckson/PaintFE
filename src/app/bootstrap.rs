@@ -564,7 +564,8 @@ impl PaintFEApp {
         self.restore_active_project_view();
     }
 
-    fn copy_active_selection_or_overlay(&self) -> bool {
+    fn copy_active_selection_or_overlay(&mut self) -> bool {
+        self.finish_pending_paint_stroke();
         if let Some(overlay) = self.paste_overlay.as_ref() {
             crate::ops::clipboard::copy_overlay(overlay)
         } else if let Some(project) = self.active_project() {
