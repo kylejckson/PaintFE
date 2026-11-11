@@ -3,9 +3,8 @@ impl ToolsPanel {
         &mut self,
         canvas: &mut CanvasState,
         primary: [f32; 4],
-        secondary: [f32; 4],
     ) -> bool {
-        if let Some(event) = self.finish_paint_stroke(canvas, primary, secondary, true) {
+        if let Some(event) = self.finish_paint_stroke(canvas, primary, true) {
             self.pending_stroke_event = Some(event);
             true
         } else {
@@ -18,7 +17,6 @@ impl ToolsPanel {
         &mut self,
         canvas_state: &mut CanvasState,
         primary_color_f32: [f32; 4],
-        secondary_color_f32: [f32; 4],
         require_release: bool,
     ) -> Option<StrokeEvent> {
         if !matches!(self.active_tool, Tool::Brush | Tool::Pencil | Tool::Eraser)
@@ -60,39 +58,6 @@ impl ToolsPanel {
         self.stroke_tracker.layer_index = index;
         canvas_state.edit_layer_mask = editing_mask;
         let is_eraser = self.active_tool == Tool::Eraser;
-
-        // Finish the short tail left after the last distance-spaced deposit.
-        if self.active_tool == Tool::Brush
-            && matches!(
-                self.properties.brush_mode,
-                BrushMode::Normal | BrushMode::BuildUp
-            )
-            && self.tool_state.distance_remainder > 1e-5
-            && let Some(end) = self.tool_state.last_precise_pos
-        {
-            let positions = canvas_state.mirror_mode.mirror_positions(
-                end.x,
-                end.y,
-                canvas_state.width,
-                canvas_state.height,
-            );
-            let mut bounds = Rect::NOTHING;
-            for (arm, &pos) in positions.iter().enumerate() {
-                self.brush_motion_arm = arm;
-                bounds = bounds.union(self.draw_circle_and_get_bounds(
-                    canvas_state,
-                    pos,
-                    false,
-                    self.tool_state.using_secondary_color,
-                    primary_color_f32,
-                    secondary_color_f32,
-                ));
-            }
-            self.stroke_tracker.expand_bounds(bounds);
-            if bounds.is_positive() {
-                canvas_state.mark_preview_changed_rect(bounds);
-            }
-        }
 
         // Capture "before" NOW (layer still unchanged), then commit
         // Finish stroke tracking BEFORE commit - this captures "before" from unchanged layer

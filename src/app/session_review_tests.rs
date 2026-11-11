@@ -641,6 +641,15 @@ fn holding_and_releasing_a_stationary_brush_does_not_add_a_second_deposit() {
 
 #[test]
 fn actual_canvas_frames_keep_stationary_release_identical_to_the_held_stroke() {
+    check_paint_release(false);
+}
+
+#[test]
+fn actual_canvas_frames_keep_moving_soft_brush_release_identical_and_undoable() {
+    check_paint_release(true);
+}
+
+fn check_paint_release(moving: bool) {
     for blend in [
         crate::canvas::BlendMode::Normal,
         crate::canvas::BlendMode::HardLight,
@@ -690,6 +699,17 @@ fn actual_canvas_frames_keep_stationary_release_identical_to_the_held_stroke() {
                 &mut app,
                 vec![egui::Event::PointerMoved(point), button(true)],
             );
+            let before = app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image();
+            let release = if moving {
+                point + egui::vec2(5.3, 1.1)
+            } else {
+                point
+            };
+            if moving {
+                let _ = frame(&mut app, vec![egui::Event::PointerMoved(release)]);
+            }
             let bounds = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(32., 24.));
             let expected = app.projects[0].canvas_state.composite_partial(bounds).0;
             for _ in 0..3 {
@@ -704,7 +724,15 @@ fn actual_canvas_frames_keep_stationary_release_identical_to_the_held_stroke() {
                 expected.pixels,
                 "{blend:?} {mode:?} hold"
             );
-            let _ = frame(&mut app, vec![button(false)]);
+            let _ = frame(
+                &mut app,
+                vec![egui::Event::PointerButton {
+                    pos: release,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
             let state = &app.projects[0].canvas_state;
             assert_eq!(
                 state.composite_committed_downscaled(bounds, 1).0.pixels,
@@ -730,6 +758,13 @@ fn actual_canvas_frames_keep_stationary_release_identical_to_the_held_stroke() {
                     .0
                     .pixels,
                 expected.pixels
+            );
+            app.perform_undo();
+            assert_eq!(
+                app.projects[0].canvas_state.layers[0]
+                    .pixels
+                    .to_rgba_image(),
+                before
             );
         }
     }
@@ -1774,5 +1809,501 @@ fn another_button_cannot_restart_paint_while_the_original_contact_is_held() {
                 .to_rgba_image(),
             committed
         );
+    }
+}
+
+#[test]
+fn crop_keeps_view_anchor_through_undo_and_redo_and_crops_layer_mask() {
+    let mut app = app();
+    let state = &mut app.projects[0].canvas_state;
+    let mut selection = image::GrayImage::new(32, 24);
+    for y in 3..9 {
+        for x in 4..12 {
+            selection.put_pixel(x, y, image::Luma([255]));
+        }
+    }
+    state.selection_mask = Some(selection);
+    state.layers[0].ensure_mask();
+    state.layers[0]
+        .mask
+        .as_mut()
+        .unwrap()
+        .put_pixel(4, 3, image::Rgba([0, 0, 0, 255]));
+    let pan = egui::vec2(20., 10.);
+    app.canvas.set_view_state(2., pan);
+    app.crop_to_selection_in_place();
+    let cropped_pan = pan + egui::vec2(-16., -12.);
+    assert_eq!(app.canvas.view_state(), (2., cropped_pan));
+    let state = &app.projects[0].canvas_state;
+    assert_eq!((state.width, state.height), (8, 6));
+    let mask = state.layers[0].mask.as_ref().unwrap();
+    assert_eq!((mask.width(), mask.height()), (8, 6));
+    assert_eq!(mask.get_pixel(0, 0).0, [0, 0, 0, 255]);
+    app.perform_undo();
+    assert_eq!(app.canvas.view_state(), (2., pan));
+    assert_eq!(app.projects[0].canvas_state.width, 32);
+    app.perform_redo();
+    assert_eq!(app.canvas.view_state(), (2., cropped_pan));
+    assert_eq!(app.projects[0].canvas_state.width, 8);
+}
+
+#[test]
+fn rotate_selection_command_can_cancel_reject_clipping_and_apply_once() {
+    use crate::config::{commands::MenuCommand, keybindings::BindableAction};
+    let mut app = app();
+    let ctx = context();
+    let state = &mut app.projects[0].canvas_state;
+    let mut selection = image::GrayImage::new(32, 24);
+    for y in 7..12 {
+        for x in 8..15 {
+            selection.put_pixel(x, y, image::Luma([255]));
+        }
+    }
+    state.selection_mask = Some(selection.clone());
+    let before = state.layers[0].pixels.to_rgba_image();
+    let action = BindableAction::Menu(MenuCommand::CanvasRotateSelection);
+    assert!(app.execute_menu_command(&ctx, action));
+    {
+        let overlay = app.paste_overlay.as_mut().unwrap();
+        assert!(overlay.selection_rotation);
+        overlay.rotation = 0.6;
+        overlay.center = egui::Pos2::ZERO;
+    }
+    app.commit_paste_overlay(true);
+    assert!(app.paste_overlay.is_some());
+    assert_eq!(app.projects[0].history.undo_count(), 0);
+    app.cancel_paste_overlay();
+    assert_eq!(
+        app.projects[0].canvas_state.selection_mask.as_ref(),
+        Some(&selection)
+    );
+    assert_eq!(
+        app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image(),
+        before
+    );
+
+    assert!(app.execute_menu_command(&ctx, action));
+    app.paste_overlay.as_mut().unwrap().rotation = 0.6;
+    app.finish_pending_line_edit(); // Same preflight used by Save and Save As.
+    assert!(app.paste_overlay.is_none());
+    assert_eq!(app.projects[0].history.undo_count(), 1);
+    assert_ne!(
+        app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image(),
+        before
+    );
+    app.perform_undo();
+    assert_eq!(
+        app.projects[0].canvas_state.selection_mask.as_ref(),
+        Some(&selection)
+    );
+    assert_eq!(
+        app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image(),
+        before
+    );
+}
+
+#[test]
+fn straighten_commits_with_enter_on_the_runtime_input_path() {
+    let mut app = app();
+    let ctx = context();
+    app.start_straighten();
+    app.straighten_session.as_mut().unwrap().angle_degrees = 15.;
+    let _ = ctx.run_ui(
+        egui::RawInput {
+            events: vec![egui::Event::Key {
+                key: egui::Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        },
+        |ui| {
+            app.update_runtime_input(ui.ctx());
+        },
+    );
+    assert!(app.straighten_session.is_none());
+    assert_eq!(
+        app.projects[0].history.presentation_history()[0].action,
+        HistoryAction::Straighten
+    );
+}
+
+#[test]
+fn eraser_resize_drag_does_not_paint_or_change_brush_size() {
+    let mut app = app();
+    let ctx = context();
+    app.tools_panel.change_tool(Tool::Brush);
+    app.tools_panel.properties.size = 19.;
+    app.tools_panel.change_tool(Tool::Eraser);
+    app.tools_panel.properties.size = 10.;
+    let before = app.projects[0].canvas_state.layers[0]
+        .pixels
+        .to_rgba_image();
+    let shift = egui::Modifiers::SHIFT;
+    let frame = |app: &mut PaintFEApp, events| {
+        let _ = ctx.run_ui(
+            egui::RawInput {
+                events,
+                modifiers: shift,
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(900., 700.),
+                )),
+                ..Default::default()
+            },
+            |ui| app.show_runtime_canvas_tail(&ctx, ui, false),
+        );
+    };
+    for _ in 0..3 {
+        frame(&mut app, vec![]);
+    }
+    let start = app.canvas.last_image_rect.unwrap().center();
+    let end = start + egui::vec2(12., 0.);
+    let button = |pos, pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: shift,
+    };
+    frame(
+        &mut app,
+        vec![egui::Event::PointerMoved(start), button(start, true)],
+    );
+    frame(&mut app, vec![egui::Event::PointerMoved(end)]);
+    frame(&mut app, vec![button(end, false)]);
+    assert!(app.tools_panel.properties.size > 10.);
+    assert_eq!(app.projects[0].history.undo_count(), 0);
+    assert_eq!(
+        app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image(),
+        before
+    );
+    app.tools_panel.change_tool(Tool::Brush);
+    assert_eq!(app.tools_panel.properties.size, 19.);
+}
+
+#[test]
+fn temporary_picker_samples_without_editing_and_does_not_paint_when_ctrl_is_released_first() {
+    for secondary in [false, true] {
+        let mut app = app();
+        let ctx = context();
+        let before = app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image();
+        let frame = |app: &mut PaintFEApp, modifiers, events| {
+            let _ = ctx.run_ui(
+                egui::RawInput {
+                    modifiers,
+                    events,
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900., 700.),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    app.update_runtime_input(ui.ctx());
+                    app.show_runtime_canvas_tail(&ctx, ui, false);
+                },
+            );
+        };
+        for _ in 0..3 {
+            frame(&mut app, egui::Modifiers::NONE, vec![]);
+        }
+        let rect = app.canvas.last_image_rect.unwrap();
+        let point = rect.min + egui::vec2(4.5, 5.5) * app.canvas.view_state().0;
+        let button = if secondary {
+            egui::PointerButton::Secondary
+        } else {
+            egui::PointerButton::Primary
+        };
+        let control = if secondary {
+            egui::Key::ControlRight
+        } else {
+            egui::Key::ControlLeft
+        };
+        frame(
+            &mut app,
+            egui::Modifiers::CTRL,
+            vec![egui::Event::Key {
+                key: control,
+                physical_key: Some(control),
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::CTRL,
+            }],
+        );
+        assert_eq!(app.tools_panel.active_tool, Tool::ColorPicker);
+        frame(
+            &mut app,
+            egui::Modifiers::CTRL,
+            vec![
+                egui::Event::PointerMoved(point),
+                egui::Event::PointerButton {
+                    pos: point,
+                    button,
+                    pressed: true,
+                    modifiers: egui::Modifiers::CTRL,
+                },
+            ],
+        );
+        assert_eq!(app.tools_panel.active_tool, Tool::ColorPicker);
+        let (colour, picked_secondary) = app
+            .tools_panel
+            .last_picked_color
+            .take()
+            .expect("sampled colour");
+        assert_eq!(colour.to_srgba_unmultiplied(), before.get_pixel(4, 5).0);
+        assert_eq!(picked_secondary, secondary);
+        frame(
+            &mut app,
+            egui::Modifiers::NONE,
+            vec![
+                egui::Event::Key {
+                    key: control,
+                    physical_key: Some(control),
+                    pressed: false,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                },
+                egui::Event::PointerMoved(point + egui::vec2(2., 0.)),
+            ],
+        );
+        assert_eq!(app.tools_panel.active_tool, Tool::Brush);
+        frame(
+            &mut app,
+            egui::Modifiers::NONE,
+            vec![egui::Event::PointerButton {
+                pos: point,
+                button,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        assert_eq!(
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image(),
+            before
+        );
+        assert_eq!(app.projects[0].history.undo_count(), 0);
+    }
+}
+
+#[test]
+fn eraser_shortcut_toggles_once_honours_rebinding_and_leaves_text_alone() {
+    use crate::config::keybindings::{BindableAction, KeyCombo};
+    for editing in [false, true] {
+        let mut app = app();
+        let ctx = context();
+        app.tools_panel.change_tool(Tool::Pencil);
+        let focus_id = egui::Id::new("eraser_shortcut_canvas");
+        let frame = |app: &mut PaintFEApp, key, repeat, pressed| {
+            let _ = ctx.run_ui(
+                egui::RawInput {
+                    events: vec![egui::Event::Key {
+                        key,
+                        physical_key: None,
+                        pressed,
+                        repeat,
+                        modifiers: egui::Modifiers::NONE,
+                    }],
+                    ..Default::default()
+                },
+                |ui| {
+                    let response = ui.interact(ui.max_rect(), focus_id, egui::Sense::click());
+                    response.request_focus();
+                    app.canvas.canvas_widget_id = Some(focus_id);
+                    if editing {
+                        let mut text = String::new();
+                        ui.add(egui::TextEdit::singleline(&mut text).id_salt("eraser_test_text"))
+                            .request_focus();
+                    }
+                    app.update_runtime_input(ui.ctx());
+                },
+            );
+        };
+        frame(&mut app, egui::Key::E, false, true);
+        if editing {
+            assert_eq!(app.tools_panel.active_tool, Tool::Pencil);
+            continue;
+        }
+        assert_eq!(app.tools_panel.active_tool, Tool::Eraser);
+        frame(&mut app, egui::Key::E, true, true);
+        assert_eq!(app.tools_panel.active_tool, Tool::Eraser);
+        frame(&mut app, egui::Key::E, false, false);
+        frame(&mut app, egui::Key::E, false, true);
+        assert_eq!(app.tools_panel.active_tool, Tool::Pencil);
+        app.settings
+            .keybindings
+            .set(BindableAction::ToolEraser, KeyCombo::key(egui::Key::Q));
+        frame(&mut app, egui::Key::E, false, false);
+        frame(&mut app, egui::Key::E, false, true);
+        assert_eq!(app.tools_panel.active_tool, Tool::Pencil);
+        frame(&mut app, egui::Key::Q, false, true);
+        assert_eq!(app.tools_panel.active_tool, Tool::Eraser);
+    }
+}
+
+#[test]
+fn eraser_toggle_and_temporary_picker_preserve_an_in_progress_stroke() {
+    use crate::config::keybindings::KeyCombo;
+    for toggle_count in [1, 2] {
+        let mut app = app();
+        let ctx = context();
+        app.tools_panel.properties.size = 6.;
+        app.tools_panel.properties.pressure_size = false;
+        let before = app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image();
+        let position = (12., 10.);
+        tool_frame(
+            &mut app,
+            &ctx,
+            position,
+            vec![brush_pointer(position, true)],
+        );
+        assert!(app.tools_panel.is_stroke_active());
+        let ctrl = KeyCombo::modifiers_only(true, false, false);
+        let _ = ctx.run_ui(
+            egui::RawInput {
+                modifiers: egui::Modifiers::CTRL,
+                ..Default::default()
+            },
+            |_| {
+                app.tools_panel
+                    .update_temporary_colour_picker(&ctx, Some(&ctrl), None, true);
+            },
+        );
+        assert_eq!(app.tools_panel.active_tool, Tool::Brush);
+        for _ in 0..toggle_count {
+            app.tools_panel.toggle_eraser();
+        }
+        assert_eq!(app.tools_panel.active_tool, Tool::Brush);
+        tool_frame(
+            &mut app,
+            &ctx,
+            position,
+            vec![brush_pointer(position, false)],
+        );
+        assert_eq!(
+            app.tools_panel.active_tool,
+            if toggle_count == 1 {
+                Tool::Eraser
+            } else {
+                Tool::Brush
+            }
+        );
+        assert_eq!(app.projects[0].history.undo_count(), 1);
+        assert_ne!(
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image(),
+            before
+        );
+        app.perform_undo();
+        assert_eq!(
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image(),
+            before
+        );
+    }
+}
+
+#[test]
+#[ignore = "manual palette and layer thumbnail screenshot review"]
+fn render_palette_and_thumbnail_review() {
+    let gpu = crate::gpu::context::GpuContext::new("").expect("screenshot GPU");
+    for dark in [false, true] {
+        for (width, height) in [(320, 200), (160, 320), (120, 120)] {
+            let mut app = app();
+            let ctx = context();
+            app.theme = if dark {
+                crate::theme::Theme::dark()
+            } else {
+                crate::theme::Theme::light()
+            };
+            app.theme.apply(&ctx);
+            app.assets.init(&ctx);
+            app.assets.update_theme(&ctx, dark);
+            app.window_visibility.palette = true;
+            app.window_visibility.layers = true;
+            app.palette_panel_pos = Some((30., 40.));
+            app.palette_startup_target_pos = None;
+            app.palette_reposition_settle_frames = 0;
+            app.palette_panel_size = Some((360., 180.));
+            app.layers_panel_right_offset = Some((200., 40.));
+            app.layers_panel_size = Some((350., 260.));
+            app.projects[0].canvas_state = CanvasState::new(width, height);
+            let state = &mut app.projects[0].canvas_state;
+            let image = RgbaImage::from_fn(width, height, |x, y| {
+                image::Rgba([
+                    30,
+                    115,
+                    195,
+                    if x > width / 2 && y > height / 2 {
+                        0
+                    } else {
+                        255
+                    },
+                ])
+            });
+            state.layers[0].pixels = TiledImage::from_rgba_image(&image);
+            state.layers[0].name = "Transparent cut-out".into();
+            state.layers.push(crate::canvas::Layer::new(
+                "Opaque image".into(),
+                width,
+                height,
+                image::Rgba([225, 110, 45, 255]),
+            ));
+            let mut delta = egui::TexturesDelta::default();
+            let mut output = None;
+            for tick in 0..4 {
+                let mut frame = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(900., 400.),
+                        )),
+                        time: Some(tick as f64 * 0.1),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        ui.painter()
+                            .rect_filled(ui.max_rect(), 0., app.theme.window_bg);
+                        app.layers_panel_right_offset = Some((400., 40.));
+                        app.show_floating_palette_panel(&ctx, false);
+                        app.show_floating_layers_panel(&ctx, false);
+                    },
+                );
+                delta.append(std::mem::take(&mut frame.textures_delta));
+                output = Some(frame);
+            }
+            let mut output = output.unwrap();
+            output.textures_delta = delta;
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+                "target/visual-refinement/screenshots/panels-{}-{}x{}.png",
+                if dark { "dark" } else { "light" },
+                width,
+                height,
+            ));
+            crate::ui::panels::tools::brush_picker_tests::save_ui_capture(
+                &gpu,
+                &ctx,
+                output,
+                [900, 400],
+                &path,
+            );
+        }
     }
 }

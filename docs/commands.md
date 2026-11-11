@@ -32,3 +32,16 @@ translation keys remain unchanged. Legacy English display labels used by enums
 continue to resolve through aliases, including personal label overrides. Language
 picker entries draw the native name and parenthesised language code separately to
 avoid joining Arabic and Latin text into one ambiguous bidirectional run.
+
+Hold Ctrl with Brush, Pencil, Eraser, Fill or Smudge to sample a colour temporarily.
+Left-click samples the primary colour and right-click samples the secondary colour.
+Release the modifier to return to the previous tool. Preferences > Keybinds > Tools
+includes Temporary colour picker modifier, with Ctrl, Alt and Disabled choices.
+The configured Brush/Eraser resize modifier takes priority when both modifiers match.
+Other shortcuts, text fields, dialogs and Clone Stamp source placement keep their
+existing input. A held paint stroke finishes before temporary sampling can start.
+
+The Eraser shortcut (E by default) toggles between Eraser and the previous tool.
+Toolbar tool selection still selects a tool directly. Rebinding or disabling the
+Eraser shortcut applies to the toggle too. A toggle during painting waits for the
+stroke to finish, and repeated key events do not toggle again.

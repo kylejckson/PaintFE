@@ -264,6 +264,7 @@ pub enum BindableAction {
     GenerateDropShadow,
     GenerateOutline,
     GenerateContours,
+    TemporaryColorPickerModifier,
 }
 
 impl BindableAction {
@@ -294,7 +295,8 @@ impl BindableAction {
             Self::ViewFitToWindow => t!("keybind.view_fit_to_window"),
             Self::ViewZoom100 => t!("keybind.view_zoom_100"),
             Self::ToolBrush => t!("keybind.tool_brush"),
-            Self::ToolEraser => t!("keybind.tool_eraser"),
+            Self::ToolEraser => t!("keybind.toggle_eraser"),
+            Self::TemporaryColorPickerModifier => t!("keybind.temporary_colour_picker"),
             Self::ToolPencil => t!("keybind.tool_pencil"),
             Self::ToolLine => t!("keybind.tool_line"),
             Self::ToolGradient => t!("keybind.tool_gradient"),
@@ -414,7 +416,8 @@ impl BindableAction {
             | Self::ToolLasso
             | Self::ToolColorRemover
             | Self::ToolMeshWarp
-            | Self::SelectionPreserveAspectModifier => "keybind_category.tools",
+            | Self::SelectionPreserveAspectModifier
+            | Self::TemporaryColorPickerModifier => "keybind_category.tools",
             Self::BrushResizeDragModifier | Self::BrushSizeDecrease | Self::BrushSizeIncrease => {
                 "keybind_category.brush"
             }
@@ -524,6 +527,7 @@ impl BindableAction {
                     ToolFill,
                     ToolMagicWand,
                     ToolColorPicker,
+                    TemporaryColorPickerModifier,
                     ToolMovePixels,
                     ToolRectSelect,
                     ToolText,
@@ -686,6 +690,10 @@ impl Default for KeyBindings {
             SelectionPreserveAspectModifier,
             KeyCombo::modifiers_only(false, false, true),
         );
+        map.insert(
+            TemporaryColorPickerModifier,
+            KeyCombo::modifiers_only(true, false, false),
+        );
         map.insert(BrushSizeDecrease, KeyCombo::text("["));
         map.insert(BrushSizeIncrease, KeyCombo::text("]"));
 
@@ -772,6 +780,9 @@ impl KeyBindings {
                 "ViewZoom100" => Some(BindableAction::ViewZoom100),
                 "ToolBrush" => Some(BindableAction::ToolBrush),
                 "ToolEraser" => Some(BindableAction::ToolEraser),
+                "TemporaryColorPickerModifier" => {
+                    Some(BindableAction::TemporaryColorPickerModifier)
+                }
                 "ToolPencil" => Some(BindableAction::ToolPencil),
                 "ToolLine" => Some(BindableAction::ToolLine),
                 "ToolGradient" => Some(BindableAction::ToolGradient),

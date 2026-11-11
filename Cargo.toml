@@ -1,6 +1,6 @@
 [package]
 name = "PaintFE"
-version = "1.4.27"
+version = "1.4.28"
 edition = "2024"
 
 [lib]
@@ -45,6 +45,7 @@ winapi = { version = "0.3", features = ["winuser", "windef", "shellapi", "dwmapi
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11-dl = "2.21"
+ttf-parser = "0.25"
 
 # Native-only: no wasm32 equivalent (native file dialogs, system font
 # enumeration, dynamic library loading, RAW demosaicing needing a C toolchain,

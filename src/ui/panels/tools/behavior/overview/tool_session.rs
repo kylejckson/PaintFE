@@ -380,7 +380,7 @@ impl ToolsPanel {
                 let rgba = self.properties.color.to_srgba_unmultiplied();
                 let primary = rgba.map(|value| value as f32 / 255.);
                 self.pending_stroke_event =
-                    self.finish_paint_stroke(canvas_state, primary, secondary_color_f32, true);
+                    self.finish_paint_stroke(canvas_state, primary, true);
                 true
             }
             Tool::Line if self.line_state.line_tool.stage == LineStage::Editing => {

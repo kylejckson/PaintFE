@@ -291,6 +291,13 @@ fn try_transform_selected_region(
 
     let region_w = max_x - min_x + 1;
     let region_h = max_y - min_y + 1;
+    if matches!(
+        transform,
+        SelectionCanvasTransform::Rotate90Cw | SelectionCanvasTransform::Rotate90Ccw
+    ) && !selected_quarter_turn_fits(state)
+    {
+        return true;
+    }
     let mut region_mask = GrayImage::new(region_w, region_h);
     for y in 0..region_h {
         for x in 0..region_w {
@@ -375,6 +382,9 @@ fn try_transform_selected_region(
 }
 
 fn selection_covers_full_canvas(state: &CanvasState) -> bool {
+    if state.selection_all {
+        return true;
+    }
     let Some(mask) = state.selection_mask.as_ref() else {
         return false;
     };
@@ -390,6 +400,18 @@ fn selection_covers_full_canvas(state: &CanvasState) -> bool {
     mask.pixels().all(|px| px[0] > 0)
 }
 
+pub(crate) fn selected_quarter_turn_fits(state: &CanvasState) -> bool {
+    let Some((x0, y0, x1, y1)) = state.selection_mask_bounds() else {
+        return true;
+    };
+    if selection_covers_full_canvas(state) {
+        return true;
+    }
+    let (w, h) = (x1 - x0 + 1, y1 - y0 + 1);
+    let (x, y) = centered_region_origin(x0 as i32, y0 as i32, w, h, h, w);
+    x >= 0 && y >= 0 && x as u32 + h <= state.width && y as u32 + w <= state.height
+}
+
 fn centered_region_origin(
     min_x: i32,
     min_y: i32,
@@ -398,9 +420,12 @@ fn centered_region_origin(
     dst_w: u32,
     dst_h: u32,
 ) -> (i32, i32) {
+    // For mixed parity, choose opposite rounding when the dimensions swap.
+    // That keeps the same discrete pivot on the next quarter-turn.
+    let direction = if src_w > dst_w { -1 } else { 1 };
     (
-        min_x + floor_div2(src_w as i32 - dst_w as i32),
-        min_y + floor_div2(src_h as i32 - dst_h as i32),
+        min_x + direction * floor_div2(direction * (src_w as i32 - dst_w as i32)),
+        min_y + direction * floor_div2(direction * (src_h as i32 - dst_h as i32)),
     )
 }
 
@@ -2387,6 +2412,42 @@ mod tests {
         assert_eq!(*mask.get_pixel(1, 1), Luma([255]));
         assert_eq!(*mask.get_pixel(1, 2), Luma([255]));
         assert_eq!(*mask.get_pixel(0, 2), Luma([0]));
+    }
+
+    #[test]
+    fn mixed_parity_selection_keeps_its_pivot_and_rejects_clipping() {
+        let mut state = transparent_state(9, 8, 1);
+        let mut mask = GrayImage::new(9, 8);
+        for y in 2..6 {
+            for x in 3..6 {
+                mask.put_pixel(x, y, Luma([255]));
+                state.layers[0]
+                    .pixels
+                    .put_pixel(x, y, Rgba([x as u8, y as u8, 0, 255]));
+            }
+        }
+        state.selection_mask = Some(mask.clone());
+        let pixels = state.layers[0].pixels.to_rgba_image();
+        rotate_canvas_90cw(&mut state);
+        rotate_canvas_90ccw(&mut state);
+        assert_eq!(state.selection_mask.as_ref(), Some(&mask));
+        assert_eq!(state.layers[0].pixels.to_rgba_image(), pixels);
+        for _ in 0..4 {
+            rotate_canvas_90cw(&mut state);
+        }
+        assert_eq!(state.selection_mask.as_ref(), Some(&mask));
+        assert_eq!(state.layers[0].pixels.to_rgba_image(), pixels);
+
+        let mut edge = GrayImage::new(9, 8);
+        for y in 0..6 {
+            edge.put_pixel(0, y, Luma([255]));
+        }
+        state.selection_mask = Some(edge.clone());
+        assert!(!selected_quarter_turn_fits(&state));
+        rotate_canvas_90cw(&mut state);
+        assert_eq!(state.selection_mask.as_ref(), Some(&edge));
+        assert_eq!(state.layers[0].pixels.to_rgba_image(), pixels);
+        assert_eq!((state.width, state.height), (9, 8));
     }
 
     #[test]

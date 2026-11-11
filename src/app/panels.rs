@@ -471,13 +471,17 @@ impl PaintFEApp {
 
             if let Some(project) = self.projects.get_mut(self.active_project_index) {
                 self.layers_panel.set_thumbnail_project(project.id);
-                self.layers_panel.show(
-                    ui,
-                    &mut project.canvas_state,
-                    &mut self.assets,
-                    &self.settings,
-                    &mut project.history,
-                );
+                let rotating_selection = self.paste_overlay.as_ref()
+                    .is_some_and(|overlay| overlay.selection_rotation);
+                ui.add_enabled_ui(!rotating_selection, |ui| {
+                    self.layers_panel.show(
+                        ui,
+                        &mut project.canvas_state,
+                        &mut self.assets,
+                        &self.settings,
+                        &mut project.history,
+                    );
+                });
 
                 // If the layer being text-edited was rasterized inside show()
                 // (e.g. via right-click → "Rasterize Text Layer"), cancel any
@@ -685,7 +689,9 @@ impl PaintFEApp {
             if let Some(project) = self.projects.get_mut(self.active_project_index) {
                 self.tools_panel
                     .cancel_active_tool(&mut project.canvas_state);
+                let offset = project.history.undo_view_offset(index);
                 project.history.undo_to(index, &mut project.canvas_state);
+                self.offset_canvas_view(offset);
             }
         }
         if let Some(inner_resp) = resp {

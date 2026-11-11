@@ -56,11 +56,11 @@ impl ToolsPanel {
                         .layers
                         .get(canvas_state.active_layer_index)
                         .is_some_and(|l| l.has_live_mask());
-                let resize_modifier_held =
-                    self.active_tool == Tool::Brush && self.brush_resize_drag_modifier_held(ui);
+                let supports_resize_drag = matches!(self.active_tool, Tool::Brush | Tool::Eraser);
+                let resize_modifier_held = supports_resize_drag && self.brush_resize_drag_modifier_held(ui);
                 let resize_drag_threshold = 4.0;
 
-                if self.active_tool == Tool::Brush
+                if supports_resize_drag
                     && is_primary_pressed
                     && resize_modifier_held
                     && let Some((x, y)) = canvas_pos_unclamped
@@ -74,7 +74,7 @@ impl ToolsPanel {
                     return;
                 }
 
-                if self.active_tool == Tool::Brush
+                if supports_resize_drag
                     && let Some(origin) = self.tool_state.brush_resize_drag_origin
                 {
                     let current_drag_pos = canvas_pos_unclamped
@@ -458,12 +458,7 @@ impl ToolsPanel {
                 }
                 if !is_primary_down && !is_secondary_down {
                     // Mouse released - commit and reset state
-                    *stroke_event = self.finish_paint_stroke(
-                        canvas_state,
-                        primary_color_f32,
-                        secondary_color_f32,
-                        false,
-                    );
+                    *stroke_event = self.finish_paint_stroke(canvas_state, primary_color_f32, false);
                     self.reset_brush_pointer_state();
                 }
             }

@@ -795,6 +795,11 @@ pub fn crop_to_selection(state: &mut CanvasState) {
         let flat = layer.pixels.to_rgba_image();
         let cropped = image::imageops::crop_imm(&flat, min_x, min_y, new_w, new_h).to_image();
         layer.pixels = TiledImage::from_rgba_image(&cropped);
+        if let Some(mask) = &layer.mask {
+            let flat = mask.to_rgba_image();
+            let cropped = image::imageops::crop_imm(&flat, min_x, min_y, new_w, new_h).to_image();
+            layer.mask = Some(TiledImage::from_rgba_image(&cropped));
+        }
     }
 
     state

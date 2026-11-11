@@ -740,7 +740,10 @@ pub fn cut_selection(state: &mut CanvasState, transparent_cutout: bool) -> bool 
 /// positioned at their original location. Blanks the source area.
 /// If no selection exists, extracts the entire active layer contents.
 /// Returns None only if the layer is empty / fully transparent.
-pub fn extract_to_overlay(state: &mut CanvasState) -> Option<PasteOverlay> {
+pub fn extract_to_overlay(
+    state: &mut CanvasState,
+    selection_rotation: bool,
+) -> Option<PasteOverlay> {
     let idx = state.active_layer_index;
     if idx >= state.layers.len() {
         return None;
@@ -783,8 +786,13 @@ pub fn extract_to_overlay(state: &mut CanvasState) -> Option<PasteOverlay> {
         for y in min_y..=max_y {
             let mask_row = y as usize * mw as usize;
             for x in min_x..=max_x {
-                if mask_raw[mask_row + x as usize] > 0 {
-                    clip.put_pixel(x - min_x, y - min_y, *layer.pixels.get_pixel(x, y));
+                let coverage = mask_raw[mask_row + x as usize];
+                if coverage > 0 {
+                    let mut pixel = *layer.pixels.get_pixel(x, y);
+                    if selection_rotation {
+                        pixel[3] = ((u16::from(pixel[3]) * u16::from(coverage) + 127) / 255) as u8;
+                    }
+                    clip.put_pixel(x - min_x, y - min_y, pixel);
                     overwrite_mask.put_pixel(x - min_x, y - min_y, Luma([255]));
                 }
             }
@@ -803,6 +811,7 @@ pub fn extract_to_overlay(state: &mut CanvasState) -> Option<PasteOverlay> {
         overlay.overwrite_mask = Some(overwrite_mask);
         // Move Pixels: the extracted selection is moved as-is — no cropping.
         overlay.allow_crop = false;
+        overlay.selection_rotation = selection_rotation;
         Some(overlay)
     } else {
         // -- No selection: extract entire active layer --
@@ -823,6 +832,8 @@ pub fn extract_to_overlay(state: &mut CanvasState) -> Option<PasteOverlay> {
         overlay.center = Pos2::new(cw as f32 / 2.0, ch as f32 / 2.0);
         // Move Pixels: the extracted layer is moved as-is — no cropping.
         overlay.allow_crop = false;
+        overlay.selection_rotation = selection_rotation;
+        state.clear_selection();
         Some(overlay)
     }
 }
@@ -862,6 +873,7 @@ pub struct PasteOverlay {
     pub crop_rect: (u32, u32, u32, u32),
     /// Crop handles are only offered for paste overlays, not Move Pixels.
     pub allow_crop: bool,
+    pub(crate) selection_rotation: bool,
 
     // --- Interaction state ---
     /// Which handle is being dragged, if any.
@@ -966,6 +978,7 @@ impl PasteOverlay {
             overwrite_mask: None,
             crop_rect,
             allow_crop: true,
+            selection_rotation: false,
             active_handle: None,
             drag_start_mouse: None,
             drag_start_center: Pos2::ZERO,
@@ -1069,6 +1082,17 @@ impl PasteOverlay {
     pub fn reset_crop(&mut self) {
         let (w, h) = (self.source.width(), self.source.height());
         self.set_crop_rect((0, 0, w, h));
+    }
+
+    pub(crate) fn selection_rotation_would_clip(&self, width: u32, height: u32) -> bool {
+        self.selection_rotation
+            && self.corners_canvas().iter().any(|point| {
+                const EPSILON: f32 = 0.001;
+                point.x < -EPSILON
+                    || point.y < -EPSILON
+                    || point.x > width as f32 + EPSILON
+                    || point.y > height as f32 + EPSILON
+            })
     }
 
     pub fn transformed_bounds(&self, cw: u32, ch: u32) -> Option<(u32, u32, u32, u32)> {

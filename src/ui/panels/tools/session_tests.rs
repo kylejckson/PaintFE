@@ -231,3 +231,331 @@ fn mesh_reset_preserves_the_reference_layout_and_can_be_undone() {
     assert_eq!(state.undo_layouts, vec![before]);
     assert!(!state.commit_pending);
 }
+
+fn picker_frame(
+    tools: &mut ToolsPanel,
+    ctx: &egui::Context,
+    input: egui::RawInput,
+    binding: Option<&KeyCombo>,
+    resize: Option<&KeyCombo>,
+    enabled: bool,
+) {
+    let _ = ctx.run_ui(input, |_| {
+        tools.update_temporary_colour_picker(ctx, binding, resize, enabled);
+    });
+}
+
+#[test]
+fn temporary_picker_restores_painting_tools_and_keeps_their_settings() {
+    let ctrl = KeyCombo::modifiers_only(true, false, false);
+    for tool in [
+        Tool::Brush,
+        Tool::Pencil,
+        Tool::Eraser,
+        Tool::Fill,
+        Tool::Smudge,
+    ] {
+        let ctx = egui::Context::default();
+        let mut tools = ToolsPanel::default();
+        tools.change_tool(tool);
+        tools.properties.size = 71.;
+        tools.properties.hardness = 0.32;
+        picker_frame(
+            &mut tools,
+            &ctx,
+            egui::RawInput {
+                modifiers: egui::Modifiers::CTRL,
+                ..Default::default()
+            },
+            Some(&ctrl),
+            None,
+            true,
+        );
+        assert_eq!(tools.active_tool, Tool::ColorPicker, "{tool:?}");
+        picker_frame(
+            &mut tools,
+            &ctx,
+            egui::RawInput::default(),
+            Some(&ctrl),
+            None,
+            true,
+        );
+        assert_eq!(tools.active_tool, tool);
+        assert_eq!(tools.properties.size, 71.);
+        assert_eq!(tools.properties.hardness, 0.32);
+        assert!(tools.temporary_picker_return.is_none());
+    }
+}
+
+#[test]
+fn temporary_picker_preserves_shortcuts_and_waits_for_modifier_release() {
+    use crate::config::keybindings::{BindableAction, KeyBindings};
+    let ctx = egui::Context::default();
+    let mut tools = ToolsPanel::default();
+    let binding = KeyCombo::modifiers_only(true, false, false);
+    picker_frame(
+        &mut tools,
+        &ctx,
+        egui::RawInput {
+            modifiers: egui::Modifiers::CTRL,
+            ..Default::default()
+        },
+        Some(&binding),
+        None,
+        true,
+    );
+    assert_eq!(tools.active_tool, Tool::ColorPicker);
+    let key = |pressed| egui::Event::Key {
+        key: egui::Key::Z,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: egui::Modifiers::CTRL,
+    };
+    let _ = ctx.run_ui(
+        egui::RawInput {
+            modifiers: egui::Modifiers::CTRL,
+            events: vec![key(true)],
+            ..Default::default()
+        },
+        |_| {
+            tools.update_temporary_colour_picker(&ctx, Some(&binding), None, true);
+            assert_eq!(tools.active_tool, Tool::Brush);
+            assert!(KeyBindings::default().is_pressed(&ctx, BindableAction::Undo));
+        },
+    );
+    picker_frame(
+        &mut tools,
+        &ctx,
+        egui::RawInput {
+            modifiers: egui::Modifiers::CTRL,
+            events: vec![key(false)],
+            ..Default::default()
+        },
+        Some(&binding),
+        None,
+        true,
+    );
+    assert_eq!(tools.active_tool, Tool::Brush);
+    picker_frame(
+        &mut tools,
+        &ctx,
+        egui::RawInput::default(),
+        Some(&binding),
+        None,
+        true,
+    );
+    picker_frame(
+        &mut tools,
+        &ctx,
+        egui::RawInput {
+            modifiers: egui::Modifiers::CTRL,
+            ..Default::default()
+        },
+        Some(&binding),
+        None,
+        true,
+    );
+    assert_eq!(tools.active_tool, Tool::ColorPicker);
+}
+
+#[test]
+fn temporary_picker_respects_tool_gestures_focus_modal_blocks_and_unbinding() {
+    let ctrl = KeyCombo::modifiers_only(true, false, false);
+    for tool in [
+        Tool::CloneStamp,
+        Tool::RectangleSelect,
+        Tool::MovePixels,
+        Tool::Text,
+        Tool::MeshWarp,
+    ] {
+        let ctx = egui::Context::default();
+        let mut tools = ToolsPanel::default();
+        tools.change_tool(tool);
+        picker_frame(
+            &mut tools,
+            &ctx,
+            egui::RawInput {
+                modifiers: egui::Modifiers::CTRL,
+                ..Default::default()
+            },
+            Some(&ctrl),
+            None,
+            true,
+        );
+        assert_eq!(tools.active_tool, tool);
+    }
+    for (enabled, focused, binding, conflict) in [
+        (false, true, Some(&ctrl), None),
+        (true, false, Some(&ctrl), None),
+        (true, true, None, None),
+        (true, true, Some(&ctrl), Some(&ctrl)),
+    ] {
+        let ctx = egui::Context::default();
+        let mut tools = ToolsPanel::default();
+        picker_frame(
+            &mut tools,
+            &ctx,
+            egui::RawInput {
+                modifiers: egui::Modifiers::CTRL,
+                focused,
+                ..Default::default()
+            },
+            binding,
+            conflict,
+            enabled,
+        );
+        assert_eq!(tools.active_tool, Tool::Brush);
+    }
+    let alt = KeyCombo::modifiers_only(false, false, true);
+    let ctx = egui::Context::default();
+    let mut tools = ToolsPanel::default();
+    picker_frame(
+        &mut tools,
+        &ctx,
+        egui::RawInput {
+            modifiers: egui::Modifiers::ALT,
+            ..Default::default()
+        },
+        Some(&alt),
+        None,
+        true,
+    );
+    assert_eq!(tools.active_tool, Tool::ColorPicker);
+}
+
+#[test]
+fn releasing_picker_modifier_during_a_contact_requires_a_fresh_paint_press() {
+    let ctrl = KeyCombo::modifiers_only(true, false, false);
+    let ctx = egui::Context::default();
+    let mut tools = ToolsPanel::default();
+    picker_frame(
+        &mut tools,
+        &ctx,
+        egui::RawInput {
+            modifiers: egui::Modifiers::CTRL,
+            ..Default::default()
+        },
+        Some(&ctrl),
+        None,
+        true,
+    );
+    let point = egui::pos2(20., 20.);
+    picker_frame(
+        &mut tools,
+        &ctx,
+        egui::RawInput {
+            modifiers: egui::Modifiers::CTRL,
+            events: vec![egui::Event::PointerButton {
+                pos: point,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::CTRL,
+            }],
+            ..Default::default()
+        },
+        Some(&ctrl),
+        None,
+        true,
+    );
+    picker_frame(
+        &mut tools,
+        &ctx,
+        egui::RawInput::default(),
+        Some(&ctrl),
+        None,
+        true,
+    );
+    assert_eq!(tools.active_tool, Tool::Brush);
+    assert!(tools.paint_requires_release);
+    assert!(!tools.is_stroke_active());
+}
+
+#[test]
+fn eraser_toggle_returns_to_the_last_tool_and_retains_independent_parameters() {
+    let mut tools = ToolsPanel::default();
+    for tool in [Tool::Brush, Tool::Pencil, Tool::Fill, Tool::ColorPicker] {
+        tools.change_tool(tool);
+        tools.toggle_eraser();
+        assert_eq!(tools.active_tool, Tool::Eraser);
+        tools.properties.size = 91.;
+        tools.toggle_eraser();
+        assert_eq!(tools.active_tool, tool);
+        tools.toggle_eraser();
+        assert_eq!(tools.properties.size, 91.);
+        tools.toggle_eraser();
+        assert_eq!(tools.active_tool, tool);
+    }
+}
+
+#[test]
+fn physical_modifier_events_do_not_block_temporary_sampling_or_hide_shortcuts() {
+    use crate::config::keybindings::{BindableAction, KeyBindings};
+    for key in [
+        egui::Key::ControlLeft,
+        egui::Key::ControlRight,
+        egui::Key::AltLeft,
+        egui::Key::AltRight,
+    ] {
+        let alt = matches!(key, egui::Key::AltLeft | egui::Key::AltRight);
+        let modifiers = if alt {
+            egui::Modifiers::ALT
+        } else {
+            egui::Modifiers::CTRL
+        };
+        let binding = KeyCombo::modifiers_only(!alt, false, alt);
+        let ctx = egui::Context::default();
+        let mut tools = ToolsPanel::default();
+        picker_frame(
+            &mut tools,
+            &ctx,
+            egui::RawInput {
+                modifiers,
+                events: vec![egui::Event::Key {
+                    key,
+                    physical_key: Some(key),
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                }],
+                ..Default::default()
+            },
+            Some(&binding),
+            None,
+            true,
+        );
+        assert_eq!(tools.active_tool, Tool::ColorPicker, "{key:?}");
+        picker_frame(
+            &mut tools,
+            &ctx,
+            egui::RawInput {
+                modifiers,
+                ..Default::default()
+            },
+            Some(&binding),
+            None,
+            true,
+        );
+        assert_eq!(tools.active_tool, Tool::ColorPicker, "held {key:?}");
+        if !alt {
+            let _ = ctx.run_ui(
+                egui::RawInput {
+                    modifiers,
+                    events: vec![egui::Event::Key {
+                        key: egui::Key::Z,
+                        physical_key: Some(egui::Key::Z),
+                        pressed: true,
+                        repeat: false,
+                        modifiers,
+                    }],
+                    ..Default::default()
+                },
+                |_| {
+                    tools.update_temporary_colour_picker(&ctx, Some(&binding), None, true);
+                    assert_eq!(tools.active_tool, Tool::Brush);
+                    assert!(KeyBindings::default().is_pressed(&ctx, BindableAction::Undo));
+                },
+            );
+        }
+    }
+}

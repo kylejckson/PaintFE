@@ -92,33 +92,61 @@ impl PalettePanel {
             primary
         };
         ui.spacing_mut().item_spacing = egui::vec2(5.0, 5.0);
-        ui.horizontal(|ui| {
-            ui.allocate_ui(egui::vec2(ui.available_width() - 29.0, 24.0), |ui| {
-                cw::tabs(
-                    ui,
-                    "palette_tabs",
-                    &["Swatches", "Recently Used", "Favorites"],
-                    &mut self.tab,
+        let count = match self.tab {
+            1 => self.recent.len(),
+            2 => self.favorites.len(),
+            _ => self.palette.len(),
+        };
+        let width = ui.available_width();
+        let grid_height = (ui.available_height() - 31.0).max(23.0);
+        let needs_scroll = count.div_ceil(columns(width)) as f32 * 28.0 - 5.0 > grid_height;
+        let content_width = (width
+            - if needs_scroll {
+                ui.spacing().scroll.allocated_width()
+            } else {
+                0.0
+            })
+        .max(23.0);
+        let header = ui.allocate_ui_with_layout(
+            egui::vec2(content_width, 24.0),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.allocate_ui(egui::vec2((content_width - 29.0).max(0.0), 24.0), |ui| {
+                    cw::tabs(
+                        ui,
+                        "palette_tabs",
+                        &["Swatches", "Recently Used", "Favorites"],
+                        &mut self.tab,
+                    );
+                });
+                let response = ui.add_enabled(
+                    self.tab != 1,
+                    egui::Button::new("+").min_size(egui::vec2(24.0, 24.0)),
                 );
-            });
-            let response = ui.add_enabled(
-                self.tab != 1,
-                egui::Button::new("+").min_size(egui::vec2(24.0, 24.0)),
-            );
-            if response
-                .on_hover_text(crate::t!("ui.add_selected_color_to_this_collection"))
-                .clicked()
-            {
-                let list = if self.tab == 2 {
-                    &mut self.favorites
-                } else {
-                    &mut self.palette
-                };
-                if !list.contains(&active) && list.len() < MAX_COLORS {
-                    list.push(active);
+                #[cfg(test)]
+                ui.ctx().data_mut(|data| {
+                    data.insert_temp(egui::Id::new("palette_add_rect"), response.rect)
+                });
+                if response
+                    .on_hover_text(crate::t!("ui.add_selected_color_to_this_collection"))
+                    .clicked()
+                {
+                    let list = if self.tab == 2 {
+                        &mut self.favorites
+                    } else {
+                        &mut self.palette
+                    };
+                    if !list.contains(&active) && list.len() < MAX_COLORS {
+                        list.push(active);
+                    }
                 }
-            }
+            },
+        );
+        #[cfg(test)]
+        ui.ctx().data_mut(|data| {
+            data.insert_temp(egui::Id::new("palette_header_rect"), header.response.rect)
         });
+        let _ = header;
         ui.add_space(2.0);
         let mut action = None;
         let mut favorite = None;
@@ -130,10 +158,20 @@ impl PalettePanel {
         };
         egui::ScrollArea::vertical()
             .id_salt("palette_collection")
+            .scroll_bar_visibility(if needs_scroll {
+                egui::scroll_area::ScrollBarVisibility::AlwaysVisible
+            } else {
+                egui::scroll_area::ScrollBarVisibility::AlwaysHidden
+            })
             .auto_shrink([false, false])
             .max_height(ui.available_height().max(23.0))
             .show_viewport(ui, |ui, viewport| {
-                let column_count = columns(ui.available_width());
+                ui.set_width(content_width);
+                let column_count = columns(content_width);
+                if column_count > 1 {
+                    ui.spacing_mut().item_spacing.x =
+                        (content_width - column_count as f32 * 23.0) / (column_count - 1) as f32;
+                }
                 let row_count = list.len().div_ceil(column_count);
                 let row_height = 23.0 + ui.spacing().item_spacing.y;
                 ui.set_min_height(
@@ -168,6 +206,19 @@ impl PalettePanel {
                                 23.0,
                                 *color == active,
                             );
+                            #[cfg(test)]
+                            if row == 0 {
+                                ui.ctx().data_mut(|data| {
+                                    let id = egui::Id::new("palette_first_row");
+                                    let mut rects = if column == 0 {
+                                        Vec::new()
+                                    } else {
+                                        data.get_temp::<Vec<egui::Rect>>(id).unwrap_or_default()
+                                    };
+                                    rects.push(response.rect);
+                                    data.insert_temp(id, rects);
+                                });
+                            }
                             if response.clicked() {
                                 action = Some((*color, editing_secondary));
                             }
@@ -323,6 +374,70 @@ fn default_palette() -> Vec<Color32> {
 #[cfg(test)]
 mod redesign_tests {
     use super::*;
+    #[test]
+    fn palette_header_and_swatches_align_across_widths_themes_and_overflow() {
+        crate::i18n::init();
+        for dark in [false, true] {
+            for (width, height, count) in [
+                (252., 140., 20),
+                (284., 140., 20),
+                (308., 70., 96),
+                (560., 180., 96),
+            ] {
+                let ctx = egui::Context::default();
+                ctx.set_visuals(if dark {
+                    egui::Visuals::dark()
+                } else {
+                    egui::Visuals::light()
+                });
+                let mut panel = PalettePanel {
+                    palette: vec![Color32::RED; count],
+                    ..Default::default()
+                };
+                let assets = Assets::new();
+                for _ in 0..4 {
+                    let _ = ctx.run_ui(
+                        egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                egui::vec2(900., 700.),
+                            )),
+                            ..Default::default()
+                        },
+                        |ui| {
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(width, height),
+                                egui::Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    ui.set_width(width);
+                                    panel.show(ui, &assets, Color32::BLACK, Color32::WHITE, false);
+                                },
+                            );
+                        },
+                    );
+                }
+                let get = |name| {
+                    ctx.data(|data| data.get_temp::<egui::Rect>(egui::Id::new(name)))
+                        .unwrap()
+                };
+                let header = get("palette_header_rect");
+                let add = get("palette_add_rect");
+                let swatches = ctx
+                    .data(|data| {
+                        data.get_temp::<Vec<egui::Rect>>(egui::Id::new("palette_first_row"))
+                    })
+                    .unwrap();
+                assert!((header.left() - swatches[0].left()).abs() < 0.1);
+                assert!(
+                    (add.right() - swatches.last().unwrap().right()).abs() <= 0.5,
+                    "width {width}, count {count}: add={add:?}, swatches={swatches:?}"
+                );
+                assert!((header.right() - add.right()).abs() < 0.1);
+                assert_eq!(panel.palette.len(), count);
+            }
+        }
+    }
+
     #[test]
     fn responsive_columns_keep_all_saved_colors() {
         assert_eq!(default_palette().len(), 20);

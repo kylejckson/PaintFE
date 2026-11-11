@@ -22,6 +22,9 @@ pub trait Command: Send + Sync {
     fn description(&self) -> String;
     fn memory_size(&self) -> usize;
     fn action(&self) -> HistoryAction;
+    fn view_offset(&self) -> egui::Vec2 {
+        egui::Vec2::ZERO
+    }
     /// Optional display metadata; commands without it retain their original descriptions.
     fn presentation(&self) -> Option<HistoryPresentation> {
         Some(HistoryPresentation::for_command(self))
@@ -830,6 +833,21 @@ impl HistoryManager {
         }
     }
 
+    pub(crate) fn undo_view_offset(&self, count: usize) -> egui::Vec2 {
+        -self
+            .undo_stack
+            .iter()
+            .rev()
+            .take(count)
+            .fold(egui::Vec2::ZERO, |sum, command| sum + command.view_offset())
+    }
+
+    pub(crate) fn redo_view_offset(&self) -> egui::Vec2 {
+        self.redo_stack
+            .back()
+            .map_or(egui::Vec2::ZERO, |command| command.view_offset())
+    }
+
     pub fn can_undo(&self) -> bool {
         !self.undo_stack.is_empty()
     }
@@ -931,6 +949,7 @@ pub struct SnapshotCommand {
     description: HistoryLabel,
     before: CanvasSnapshot,
     after: Option<CanvasSnapshot>,
+    view_offset: egui::Vec2,
 }
 
 /// A lightweight snapshot of the canvas state (layers + dimensions).
@@ -1058,6 +1077,7 @@ impl SnapshotCommand {
             description,
             before: CanvasSnapshot::capture(state),
             after: None,
+            view_offset: egui::Vec2::ZERO,
         }
     }
 
@@ -1075,11 +1095,21 @@ impl SnapshotCommand {
             description,
             before,
             after: Some(after),
+            view_offset: egui::Vec2::ZERO,
         }
+    }
+
+    pub(crate) fn with_view_offset(mut self, offset: egui::Vec2) -> Self {
+        self.view_offset = offset;
+        self
     }
 }
 
 impl Command for SnapshotCommand {
+    fn view_offset(&self) -> egui::Vec2 {
+        self.view_offset
+    }
+
     fn action(&self) -> HistoryAction {
         self.description.action
     }

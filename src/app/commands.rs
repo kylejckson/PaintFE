@@ -142,6 +142,9 @@ impl PaintFEApp {
             BindableAction::ViewZoomOut => true,
             BindableAction::ViewZoom100 => true,
             BindableAction::Menu(crate::config::commands::MenuCommand::FileClearRecent) => true,
+            BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotateSelection) => {
+                self.can_rotate_selection()
+            }
             BindableAction::Menu(crate::config::commands::MenuCommand::CanvasStraighten) => true,
             BindableAction::Menu(crate::config::commands::MenuCommand::ViewTools) => true,
             BindableAction::Menu(crate::config::commands::MenuCommand::ViewLayers) => true,
@@ -319,9 +322,7 @@ impl PaintFEApp {
                 }
             }
             BindableAction::Menu(crate::config::commands::MenuCommand::CanvasCropToSelection) => {
-                self.do_snapshot_op(HistoryAction::Crop.label("Crop to Selection"), |s| {
-                    crate::ops::adjustments::crop_to_selection(s);
-                });
+                self.crop_to_selection_in_place();
             }
             BindableAction::Menu(crate::config::commands::MenuCommand::CanvasNewTextLayer) => {
                 if let Some(project) = self.active_project_mut() {
@@ -346,11 +347,21 @@ impl PaintFEApp {
                 });
             }
             BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Cw) => {
+                if !self.active_project().is_some_and(|project| {
+                    crate::ops::transform::selected_quarter_turn_fits(&project.canvas_state)
+                }) {
+                    return false;
+                }
                 self.do_snapshot_op(HistoryAction::RotateCw.label("Rotate 90 deg CW"), |s| {
                     crate::ops::transform::rotate_canvas_90cw(s);
                 });
             }
             BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Ccw) => {
+                if !self.active_project().is_some_and(|project| {
+                    crate::ops::transform::selected_quarter_turn_fits(&project.canvas_state)
+                }) {
+                    return false;
+                }
                 self.do_snapshot_op(HistoryAction::RotateCcw.label("Rotate 90 deg CCW"), |s| {
                     crate::ops::transform::rotate_canvas_90ccw(s);
                 });
@@ -728,6 +739,9 @@ impl PaintFEApp {
             }
             BindableAction::Menu(crate::config::commands::MenuCommand::CanvasStraighten) => {
                 self.start_straighten();
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotateSelection) => {
+                return self.begin_move_pixels_overlay(true);
             }
             BindableAction::Menu(crate::config::commands::MenuCommand::ViewTools) => {
                 self.window_visibility.tools = !self.window_visibility.tools;

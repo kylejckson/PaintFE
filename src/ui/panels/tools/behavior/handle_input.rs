@@ -170,12 +170,7 @@ impl ToolsPanel {
                 .is_none_or(|layer| layer.runtime_id != id)
                 || mask != canvas_state.edit_layer_mask
         }) {
-            self.pending_stroke_event = self.finish_paint_stroke(
-                canvas_state,
-                primary_color_f32,
-                secondary_color_f32,
-                true,
-            );
+            self.pending_stroke_event = self.finish_paint_stroke(canvas_state, primary_color_f32, true);
             return;
         }
         let prev_layer_index = self.last_tracked_layer_index;

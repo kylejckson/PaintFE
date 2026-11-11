@@ -1618,6 +1618,15 @@ impl SettingsWindow {
                 }
                 ui.add(slider.reset_to(default)).changed()
             });
+        #[cfg(test)]
+        if let Some(track) = ui
+            .ctx()
+            .data(|data| data.get_temp::<egui::Response>(egui::Id::new("control_test_track")))
+        {
+            ui.ctx().data_mut(|data| {
+                data.insert_temp(egui::Id::new(("tool_shelf_test_track", label)), track.rect);
+            });
+        }
         Self::search_mark(ui, label, &row.label);
         row.inner
     }
@@ -2009,7 +2018,9 @@ impl SettingsWindow {
             }
             if inherit_opacity {
                 settings.tool_shelf.opacity = None;
+                layout_changed = true;
             }
+            ui.weak(t!("settings.interface.bar_opacity_help"));
             let mut inherit_rounding = false;
             let mut rounding =
                 settings
@@ -4616,13 +4627,18 @@ impl SettingsWindow {
                             action,
                             BindableAction::BrushResizeDragModifier
                                 | BindableAction::SelectionPreserveAspectModifier
+                                | BindableAction::TemporaryColorPickerModifier
                         ) {
                             let mut current = self
                                 .staged_keybindings
                                 .get(*action)
                                 .cloned()
                                 .unwrap_or_else(|| {
-                                    if *action == BindableAction::SelectionPreserveAspectModifier {
+                                    if *action == BindableAction::TemporaryColorPickerModifier {
+                                        KeyCombo::modifiers_only(false, false, false)
+                                    } else if *action
+                                        == BindableAction::SelectionPreserveAspectModifier
+                                    {
                                         KeyCombo::modifiers_only(false, false, true)
                                     } else {
                                         KeyCombo::modifiers_only(false, true, false)
@@ -4631,7 +4647,19 @@ impl SettingsWindow {
                             egui::ComboBox::from_id_salt(format!("modifier_binding_{action:?}"))
                                 .selected_text(current.display())
                                 .show_ui(ui, |ui| {
+                                    let disabled_label = t!("keybind.disabled");
                                     let options: Vec<(&str, KeyCombo)> = if *action
+                                        == BindableAction::TemporaryColorPickerModifier
+                                    {
+                                        vec![
+                                            ("Ctrl", KeyCombo::modifiers_only(true, false, false)),
+                                            ("Alt", KeyCombo::modifiers_only(false, false, true)),
+                                            (
+                                                disabled_label.as_str(),
+                                                KeyCombo::modifiers_only(false, false, false),
+                                            ),
+                                        ]
+                                    } else if *action
                                         == BindableAction::SelectionPreserveAspectModifier
                                     {
                                         vec![
@@ -4649,7 +4677,9 @@ impl SettingsWindow {
                                         ui.selectable_value(&mut current, combo, label);
                                     }
                                 });
-                            self.staged_keybindings.set(*action, current);
+                            if self.staged_keybindings.get(*action) != Some(&current) {
+                                self.staged_keybindings.set(*action, current);
+                            }
                         } else {
                             let is_rebinding = self.rebinding_action == Some(*action);
 
@@ -4850,6 +4880,87 @@ mod preference_consistency_tests {
         }
         rects
     }
+    #[test]
+    fn docked_opacity_changes_through_preferences_independently_of_separator_and_persists() {
+        crate::i18n::init();
+        crate::i18n::set_language("en");
+        for dark in [false, true] {
+            let ctx = context();
+            let mut theme = if dark {
+                crate::theme::Theme::dark()
+            } else {
+                crate::theme::Theme::light()
+            };
+            theme.apply(&ctx);
+            let mut settings = AppSettings::default();
+            settings.tool_shelf.docked = true;
+            settings.tool_shelf.separator_opacity = 0.23;
+            let mut assets = Assets::new();
+            assets.init(&ctx);
+            let mut window = SettingsWindow::default();
+            window.sync_from_settings(&settings);
+            let mut ticks = 0;
+            let mut frame = |events, settings: &mut AppSettings| {
+                ticks += 1;
+                ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(1200., 3000.),
+                        )),
+                        time: Some(ticks as f64 * 0.1),
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| {
+                        ui.set_width(800.);
+                        window.show_interface_tab(ui, &ctx, settings, &mut theme, &assets);
+                    },
+                )
+            };
+            for _ in 0..3 {
+                let _ = frame(vec![], &mut settings);
+            }
+            let key = egui::Id::new((
+                "tool_shelf_test_track",
+                crate::t!("settings.interface.bar_opacity"),
+            ));
+            for fraction in [0., 0.5, 1.] {
+                let rect = ctx
+                    .data(|data| data.get_temp::<egui::Rect>(key))
+                    .expect("opacity track");
+                let point = egui::pos2(
+                    egui::lerp((rect.left() + 1.0)..=(rect.right() - 1.0), fraction),
+                    rect.center().y,
+                );
+                for pressed in [true, false] {
+                    let _ = frame(
+                        vec![
+                            egui::Event::PointerMoved(point),
+                            egui::Event::PointerButton {
+                                pos: point,
+                                button: egui::PointerButton::Primary,
+                                pressed,
+                                modifiers: egui::Modifiers::NONE,
+                            },
+                        ],
+                        &mut settings,
+                    );
+                }
+                assert!(
+                    (settings.tool_shelf.effective_opacity() - fraction).abs() < 0.05,
+                    "expected {fraction}, got {:?}",
+                    settings.tool_shelf.opacity
+                );
+                assert_eq!(settings.tool_shelf.separator_opacity, 0.23);
+            }
+            crate::config::persistence::drain().expect("save Preferences before restart check");
+            let restored = AppSettings::load();
+            assert_eq!(restored.tool_shelf.opacity, settings.tool_shelf.opacity);
+            assert_eq!(restored.tool_shelf.separator_opacity, 0.23);
+        }
+    }
+
     #[test]
     fn issue_204_visible_navigation_label_has_no_duplicate_tooltip() {
         crate::i18n::init();

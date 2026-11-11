@@ -280,8 +280,10 @@ impl SaveFileDialog {
         show_anim_controls: bool,
         size: egui::Vec2,
     ) {
-        let preview_size = size;
+        let preview_size = fitted_export_preview_size(size, self.source_dimensions);
         let (rect, response) = ui.allocate_exact_size(preview_size, egui::Sense::click_and_drag());
+        #[cfg(test)]
+        ctx.data_mut(|data| data.insert_temp(egui::Id::new("save_as_preview_rect"), rect));
 
         // Choose texture filter based on zoom level
         let use_nearest = self.preview_zoom > 2.0;
@@ -397,22 +399,7 @@ impl SaveFileDialog {
                 .clamp((0.0_f32).min(ts.y - vis_h), (ts.y - vis_h).max(0.0));
         }
 
-        // Checkerboard background
         let painter = ui.painter_at(rect);
-        let grid_size = 8.0;
-        let light = Color32::from_gray(200);
-        let dark = Color32::from_gray(160);
-        for row in 0..((rect.height() / grid_size).ceil() as i32) {
-            for col in 0..((rect.width() / grid_size).ceil() as i32) {
-                let color = if (col + row) % 2 == 0 { light } else { dark };
-                let cell_rect = egui::Rect::from_min_size(
-                    rect.min + egui::vec2(col as f32 * grid_size, row as f32 * grid_size),
-                    egui::vec2(grid_size, grid_size),
-                )
-                .intersect(rect);
-                painter.rect_filled(cell_rect, 0.0, color);
-            }
-        }
 
         // Draw only the texture-backed portion of the viewport. At
         // auto-fit, one source axis extends beyond the image to
@@ -428,6 +415,25 @@ impl SaveFileDialog {
                 egui::pos2(self.preview_pan.x, self.preview_pan.y),
                 egui::vec2(vis_w, vis_h),
             ) {
+                // Checkerboarding belongs to image pixels, never viewport padding.
+                let checker = painter.with_clip_rect(destination);
+                let grid_size = 8.0;
+                let first_col = ((destination.left() - rect.left()) / grid_size).floor() as i32;
+                let last_col = ((destination.right() - rect.left()) / grid_size).ceil() as i32;
+                let first_row = ((destination.top() - rect.top()) / grid_size).floor() as i32;
+                let last_row = ((destination.bottom() - rect.top()) / grid_size).ceil() as i32;
+                for row in first_row..last_row {
+                    for col in first_col..last_col {
+                        let color =
+                            Color32::from_gray(if (col + row) % 2 == 0 { 200 } else { 160 });
+                        let cell = egui::Rect::from_min_size(
+                            rect.min + egui::vec2(col as f32 * grid_size, row as f32 * grid_size),
+                            egui::vec2(grid_size, grid_size),
+                        )
+                        .intersect(destination);
+                        checker.rect_filled(cell, 0.0, color);
+                    }
+                }
                 painter.image(texture.id(), destination, uv, Color32::WHITE);
             }
 
@@ -803,6 +809,201 @@ impl SaveFileDialog {
             );
 
             ui.checkbox(&mut self.gif_dither, crate::t!("ui.dither"));
+        }
+    }
+}
+
+fn fitted_export_preview_size(bounds: egui::Vec2, dimensions: (u32, u32)) -> egui::Vec2 {
+    if dimensions.0 == 0 || dimensions.1 == 0 {
+        return bounds;
+    }
+    let source = egui::vec2(dimensions.0 as f32, dimensions.1 as f32);
+    let scale = (bounds.x / source.x).min(bounds.y / source.y);
+    source * scale
+}
+
+#[cfg(test)]
+mod aspect_preview_tests {
+    use super::*;
+
+    #[test]
+    fn preview_viewports_follow_source_aspect_in_wide_and_stacked_dialogs() {
+        crate::i18n::init();
+        let capture = std::env::var_os("PAINTFE_REVIEW_CAPTURE").is_some();
+        let gpu =
+            capture.then(|| crate::gpu::context::GpuContext::new("").expect("screenshot GPU"));
+        for dark in [false, true] {
+            for (width, height, image_width, image_height) in [
+                (1000., 720., 320, 200),
+                (1000., 720., 160, 320),
+                (460., 700., 320, 64),
+                (460., 700., 80, 320),
+            ] {
+                let ctx = egui::Context::default();
+                let mut fonts = egui::FontDefinitions::default();
+                fonts.families.insert(
+                    egui::FontFamily::Name("WidgetTitle".into()),
+                    fonts.families[&egui::FontFamily::Proportional].clone(),
+                );
+                ctx.set_fonts(fonts);
+                let theme = if dark {
+                    crate::theme::Theme::dark()
+                } else {
+                    crate::theme::Theme::light()
+                };
+                theme.apply(&ctx);
+                let mut dialog = SaveFileDialog {
+                    open: true,
+                    ..Default::default()
+                };
+                dialog.set_source_image(&image::RgbaImage::from_fn(
+                    image_width,
+                    image_height,
+                    |x, y| {
+                        image::Rgba([
+                            40,
+                            125,
+                            195,
+                            if x > image_width / 2 && y > image_height / 2 {
+                                0
+                            } else {
+                                255
+                            },
+                        ])
+                    },
+                ));
+                let mut delta = egui::TexturesDelta::default();
+                let mut output = None;
+                for tick in 0..6 {
+                    let mut frame = ctx.run_ui(
+                        egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                egui::vec2(width, height),
+                            )),
+                            time: Some(tick as f64 * 0.1),
+                            ..Default::default()
+                        },
+                        |_| {
+                            dialog.show(&ctx);
+                        },
+                    );
+                    delta.append(std::mem::take(&mut frame.textures_delta));
+                    output = Some(frame);
+                }
+                let rect = ctx
+                    .data(|data| data.get_temp::<egui::Rect>(egui::Id::new("save_as_preview_rect")))
+                    .unwrap();
+                assert!(
+                    (rect.aspect_ratio() - image_width as f32 / image_height as f32).abs() < 0.001,
+                    "{rect:?} for {image_width}x{image_height}"
+                );
+                assert!(dialog.preview_zoom > 0. && dialog.preview_zoom.is_finite());
+                if let Some(gpu) = &gpu {
+                    let mut output = output.unwrap();
+                    output.textures_delta = delta;
+                    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+                        "target/visual-refinement/screenshots/save-{}-{}x{}-{}.png",
+                        if dark { "dark" } else { "light" },
+                        image_width,
+                        image_height,
+                        width as u32,
+                    ));
+                    crate::ui::panels::tools::brush_picker_tests::save_ui_capture(
+                        gpu,
+                        &ctx,
+                        output,
+                        [width as u32, height as u32],
+                        &path,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn aspect_preview_keeps_pan_and_double_click_fit_interactive() {
+        crate::i18n::init();
+        let ctx = egui::Context::default();
+        let mut fonts = egui::FontDefinitions::default();
+        fonts.families.insert(
+            egui::FontFamily::Name("WidgetTitle".into()),
+            fonts.families[&egui::FontFamily::Proportional].clone(),
+        );
+        ctx.set_fonts(fonts);
+        let mut dialog = SaveFileDialog {
+            open: true,
+            ..Default::default()
+        };
+        dialog.set_source_image(&image::RgbaImage::from_pixel(
+            320,
+            200,
+            image::Rgba([40, 125, 195, 255]),
+        ));
+        let frame = |dialog: &mut SaveFileDialog, time, events| {
+            let _ = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1000., 720.),
+                    )),
+                    time: Some(time),
+                    events,
+                    ..Default::default()
+                },
+                |_| {
+                    dialog.show(&ctx);
+                },
+            );
+        };
+        for tick in 0..6 {
+            frame(&mut dialog, tick as f64 * 0.1, vec![]);
+        }
+        let rect = ctx
+            .data(|data| data.get_temp::<egui::Rect>(egui::Id::new("save_as_preview_rect")))
+            .unwrap();
+        let fit = dialog.preview_zoom;
+        dialog.preview_zoom *= 2.;
+        let start = rect.center();
+        let end = start - egui::vec2(30., 20.);
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(
+            &mut dialog,
+            1.,
+            vec![egui::Event::PointerMoved(start), button(start, true)],
+        );
+        let before = dialog.preview_pan;
+        frame(&mut dialog, 1.1, vec![egui::Event::PointerMoved(end)]);
+        assert!(
+            (dialog.preview_pan - before).length() > 1.,
+            "preview drag must pan the image"
+        );
+        frame(&mut dialog, 1.2, vec![button(end, false)]);
+        for (time, pressed) in [(2., true), (2.03, false), (2.1, true), (2.13, false)] {
+            frame(
+                &mut dialog,
+                time,
+                vec![egui::Event::PointerMoved(start), button(start, pressed)],
+            );
+        }
+        assert!(
+            (dialog.preview_zoom - fit).abs() < 0.001,
+            "double-click must restore the aspect-fitted image"
+        );
+    }
+
+    #[test]
+    fn extreme_aspects_are_fitted_without_an_artificial_square_or_ratio_limit() {
+        for dims in [(20000, 1), (1, 20000), (1, 1), (1402, 1122)] {
+            let size = fitted_export_preview_size(egui::vec2(400., 300.), dims);
+            assert!(size.x <= 400.001 && size.y <= 300.001);
+            assert!(size.x > 0. && size.y > 0.);
+            assert!((size.x / size.y - dims.0 as f32 / dims.1 as f32).abs() < 0.01);
         }
     }
 }

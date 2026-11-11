@@ -311,12 +311,12 @@ impl ToolsPanel {
                     let delta = i.pointer.delta();
                     delta.x.abs() >= 1.0 || delta.y.abs() >= 1.0
                 });
-                if (is_primary_clicked || (is_primary_down && pointer_moved_at_least_one_pixel))
+                if (is_primary_pressed || is_primary_clicked || (is_primary_down && pointer_moved_at_least_one_pixel))
                     && let Some(pos) = canvas_pos
                 {
                     self.pick_color_at_position(canvas_state, pos, false);
                 }
-                if (is_secondary_clicked || (is_secondary_down && pointer_moved_at_least_one_pixel))
+                if (is_secondary_pressed || is_secondary_clicked || (is_secondary_down && pointer_moved_at_least_one_pixel))
                     && let Some(pos) = canvas_pos
                 {
                     self.pick_color_at_position(canvas_state, pos, true);

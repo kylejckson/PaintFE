@@ -1400,12 +1400,14 @@ impl LayersPanel {
             let eye_rect = Rect::from_center_size(Pos2::new(x + 10.0, center_y), Vec2::splat(20.0));
             x += 24.0;
 
-            let thumb_size = 36.0;
+            let thumb_height = 36.0_f32.min((row_height - 8.0).max(1.0));
+            let aspect = canvas_state.width as f32 / canvas_state.height.max(1) as f32;
+            let thumb_width = thumb_height * aspect.clamp(2.0 / 3.0, 1.5);
             let thumb_rect = Rect::from_min_size(
-                Pos2::new(x + 2.0, center_y - thumb_size / 2.0),
-                Vec2::splat(thumb_size),
+                Pos2::new(x + 2.0, center_y - thumb_height / 2.0),
+                Vec2::new(thumb_width, thumb_height),
             );
-            x += thumb_size + 8.0;
+            x += thumb_width + 8.0;
 
             let is_text_layer = matches!(
                 canvas_state.layers[layer_idx].content,
@@ -2021,7 +2023,7 @@ impl LayersPanel {
         (action, context_action)
     }
 
-    /// Draw layer thumbnail with checkerboard background
+    /// Alpha blends the bounded cached image directly over the layer row.
     fn draw_thumbnail(
         &mut self,
         ui: &mut egui::Ui,
@@ -2030,64 +2032,22 @@ impl LayersPanel {
         canvas_state: &CanvasState,
         alpha: f32,
     ) {
-        // Get or create cached thumbnail texture first (requires mutable ui borrow)
-        let texture = self.get_or_create_thumbnail(ui, layer_idx, canvas_state);
-
-        // Now get painter for drawing (immutable borrow)
-        let painter = ui.painter();
-
-        // Draw checkerboard background for transparency
-        let is_dark = ui.visuals().dark_mode;
-        let grid_size = 6.0;
-        let (light, dark) = if is_dark {
-            (Color32::from_gray(60), Color32::from_gray(40))
-        } else {
-            (Color32::from_gray(240), Color32::from_gray(200))
-        };
-
-        let mut y = rect.top();
-        let mut row = 0;
-        while y < rect.bottom() {
-            let mut x = rect.left();
-            let mut col = 0;
-            while x < rect.right() {
-                let cell_rect = Rect::from_min_size(
-                    Pos2::new(x, y),
-                    Vec2::new(
-                        (rect.right() - x).min(grid_size),
-                        (rect.bottom() - y).min(grid_size),
-                    ),
-                );
-                let color = if (row + col) % 2 == 0 { light } else { dark };
-                painter.rect_filled(cell_rect, 0.0, color);
-                x += grid_size;
-                col += 1;
-            }
-            y += grid_size;
-            row += 1;
-        }
-
-        // Draw border
-        let border_color = if is_dark {
-            Color32::from_gray(80)
-        } else {
-            Color32::from_gray(180)
-        };
-        painter.rect_stroke(
-            rect,
-            2.0,
-            egui::Stroke::new(1.0, border_color),
-            egui::StrokeKind::Middle,
-        );
-
-        // Draw cached thumbnail texture
-        if let Some(texture) = texture {
-            let tint = Color32::from_rgba_unmultiplied(255, 255, 255, (alpha * 255.0) as u8);
-            painter.image(
+        if let Some(texture) = self.get_or_create_thumbnail(ui, layer_idx, canvas_state) {
+            let size = texture.size_vec2();
+            let scale = (rect.width() / size.x).min(rect.height() / size.y);
+            let image_rect = Rect::from_center_size(rect.center(), size * scale);
+            let tint = Color32::from_white_alpha((alpha.clamp(0.0, 1.0) * 255.0).round() as u8);
+            ui.painter().image(
                 texture.id(),
-                rect.shrink(1.0),
+                image_rect,
                 Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
                 tint,
+            );
+            ui.painter().rect_stroke(
+                image_rect,
+                2.0,
+                egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
+                egui::StrokeKind::Inside,
             );
         }
     }
@@ -2121,28 +2081,28 @@ impl LayersPanel {
         // Generate new thumbnail
         let layer = &canvas_state.layers[layer_idx];
 
-        // Include preview layer if this is the active layer and preview exists
-        let is_active = layer_idx == canvas_state.active_layer_index;
-        let thumbnail_image = if is_active && canvas_state.preview_layer.is_some() {
-            self.generate_thumbnail_with_preview(
-                &layer.pixels,
-                canvas_state.preview_layer.as_ref().unwrap(),
-                canvas_state.preview_blend_mode,
-            )
+        let preview = (layer_idx == canvas_state.active_layer_index
+            && !canvas_state.preview_clear_pending)
+            .then_some(canvas_state.preview_layer.as_ref())
+            .flatten();
+        let color_image =
+            self.generate_thumbnail(&layer.pixels, preview, canvas_state.preview_blend_mode);
+
+        // Reuse the GPU allocation and texture identity across refreshes.
+        let texture = if let Some(mut texture) = self
+            .thumbnail_cache
+            .get(&layer_idx)
+            .and_then(|cache| cache.texture.clone())
+        {
+            texture.set(color_image, TextureOptions::LINEAR);
+            texture
         } else {
-            self.generate_thumbnail(&layer.pixels)
+            ui.ctx().load_texture(
+                format!("layer_thumb_{layer_idx}"),
+                color_image,
+                TextureOptions::LINEAR,
+            )
         };
-
-        let color_image = ColorImage::from_rgba_unmultiplied(
-            [THUMBNAIL_SIZE as usize, THUMBNAIL_SIZE as usize],
-            &thumbnail_image,
-        );
-
-        let texture = ui.ctx().load_texture(
-            format!("layer_thumb_{}", layer_idx),
-            color_image,
-            TextureOptions::LINEAR,
-        );
 
         // Cache it
         self.thumbnail_cache.insert(
@@ -2157,102 +2117,34 @@ impl LayersPanel {
         Some(texture)
     }
 
-    /// Generate a downscaled thumbnail from full-size layer.
-    /// Uses uniform scaling to preserve aspect ratio (letterbox/pillarbox).
-    fn generate_thumbnail(&self, source: &TiledImage) -> Vec<u8> {
-        let src_w = source.width() as f32;
-        let src_h = source.height() as f32;
-        let dst_size = THUMBNAIL_SIZE as f32;
-
-        // Uniform scale: fit the largest dimension into THUMBNAIL_SIZE
-        let scale = dst_size / src_w.max(src_h);
-        let fit_w = (src_w * scale).round() as u32;
-        let fit_h = (src_h * scale).round() as u32;
-        // Offset to center the image within the square thumbnail
-        let off_x = (THUMBNAIL_SIZE.saturating_sub(fit_w)) / 2;
-        let off_y = (THUMBNAIL_SIZE.saturating_sub(fit_h)) / 2;
-
-        let mut result = vec![0u8; (THUMBNAIL_SIZE * THUMBNAIL_SIZE * 4) as usize];
-
-        for y in 0..THUMBNAIL_SIZE {
-            for x in 0..THUMBNAIL_SIZE {
-                // Only sample within the fitted region
-                if x >= off_x && x < off_x + fit_w && y >= off_y && y < off_y + fit_h {
-                    let local_x = x - off_x;
-                    let local_y = y - off_y;
-                    let src_x = ((local_x as f32 / fit_w as f32) * src_w) as u32;
-                    let src_y = ((local_y as f32 / fit_h as f32) * src_h) as u32;
-
-                    let src_x = src_x.min(source.width() - 1);
-                    let src_y = src_y.min(source.height() - 1);
-
-                    let pixel = source.get_pixel(src_x, src_y);
-                    let idx = ((y * THUMBNAIL_SIZE + x) * 4) as usize;
-                    result[idx] = pixel[0];
-                    result[idx + 1] = pixel[1];
-                    result[idx + 2] = pixel[2];
-                    result[idx + 3] = pixel[3];
-                }
-                // Outside fitted region: stays transparent (0,0,0,0)
-            }
-        }
-
-        result
-    }
-
-    /// Generate a thumbnail with preview layer composited on top
-    /// Used for showing fill/brush previews in the active layer thumbnail
-    fn generate_thumbnail_with_preview(
+    /// Sample a bounded image without flattening the full-resolution layer.
+    fn generate_thumbnail(
         &self,
-        base_layer: &TiledImage,
-        preview_layer: &TiledImage,
+        source: &TiledImage,
+        preview: Option<&TiledImage>,
         blend_mode: BlendMode,
-    ) -> Vec<u8> {
-        let src_w = base_layer.width() as f32;
-        let src_h = base_layer.height() as f32;
-        let dst_size = THUMBNAIL_SIZE as f32;
-
-        // Uniform scale: fit the largest dimension into THUMBNAIL_SIZE
-        let scale = dst_size / src_w.max(src_h);
-        let fit_w = (src_w * scale).round() as u32;
-        let fit_h = (src_h * scale).round() as u32;
-        // Offset to center the image within the square thumbnail
-        let off_x = (THUMBNAIL_SIZE.saturating_sub(fit_w)) / 2;
-        let off_y = (THUMBNAIL_SIZE.saturating_sub(fit_h)) / 2;
-
-        let mut result = vec![0u8; (THUMBNAIL_SIZE * THUMBNAIL_SIZE * 4) as usize];
-
-        for y in 0..THUMBNAIL_SIZE {
-            for x in 0..THUMBNAIL_SIZE {
-                // Only sample within the fitted region
-                if x >= off_x && x < off_x + fit_w && y >= off_y && y < off_y + fit_h {
-                    let local_x = x - off_x;
-                    let local_y = y - off_y;
-                    let src_x = ((local_x as f32 / fit_w as f32) * src_w) as u32;
-                    let src_y = ((local_y as f32 / fit_h as f32) * src_h) as u32;
-
-                    let src_x = src_x.min(base_layer.width() - 1);
-                    let src_y = src_y.min(base_layer.height() - 1);
-
-                    // Get base pixel
-                    let base = base_layer.get_pixel(src_x, src_y);
-                    // Get preview pixel
-                    let preview = preview_layer.get_pixel(src_x, src_y);
-
-                    // Composite preview on top of base using the blend mode
-                    let composited = self.blend_pixels(*base, *preview, blend_mode);
-
-                    let idx = ((y * THUMBNAIL_SIZE + x) * 4) as usize;
-                    result[idx] = composited[0];
-                    result[idx + 1] = composited[1];
-                    result[idx + 2] = composited[2];
-                    result[idx + 3] = composited[3];
-                }
-                // Outside fitted region: stays transparent (0,0,0,0)
+    ) -> ColorImage {
+        let width = source.width().max(1);
+        let height = source.height().max(1);
+        let scale =
+            (THUMBNAIL_SIZE as f32 * 1.5 / width as f32).min(THUMBNAIL_SIZE as f32 / height as f32);
+        let fit_w = (width as f32 * scale).round().max(1.0) as usize;
+        let fit_h = (height as f32 * scale).round().max(1.0) as usize;
+        let mut pixels = Vec::with_capacity(fit_w * fit_h * 4);
+        for y in 0..fit_h {
+            for x in 0..fit_w {
+                let sx = ((x as u64 * width as u64) / fit_w as u64) as u32;
+                let sy = ((y as u64 * height as u64) / fit_h as u64) as u32;
+                let base = *source.get_pixel(sx, sy);
+                let pixel = if let Some(preview) = preview {
+                    self.blend_pixels(base, *preview.get_pixel(sx, sy), blend_mode)
+                } else {
+                    base
+                };
+                pixels.extend_from_slice(&pixel.0);
             }
         }
-
-        result
+        ColorImage::from_rgba_unmultiplied([fit_w, fit_h], &pixels)
     }
 
     /// Simple alpha blend for thumbnail preview (Normal blend mode only for simplicity)

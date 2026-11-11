@@ -179,6 +179,17 @@ impl PaintFEApp {
         let text_owns_keyboard =
             self.tools_panel.active_tool == Tool::Text && self.tools_panel.text_state.is_editing;
         let is_rebinding = self.settings_window.rebinding_action.is_some();
+        let picker_allowed = !modal_open && !popup_open && !panel_keyboard_focus
+            && !text_owns_keyboard && !is_rebinding && !self.settings_window.open
+            && !self.projects.is_empty() && self.paste_overlay.is_none()
+            && self.straighten_session.is_none()
+            && !self.pointer_over_cursor_blocking_ui(ctx);
+        self.tools_panel.update_temporary_colour_picker(
+            ctx,
+            self.settings.keybindings.get(BindableAction::TemporaryColorPickerModifier),
+            self.settings.keybindings.get(BindableAction::BrushResizeDragModifier),
+            picker_allowed,
+        );
         // Cancel a floating paste without also modifying the underlying selection.
         let mut paste_cancelled = false;
         if self.paste_overlay.is_some()
@@ -690,6 +701,7 @@ impl PaintFEApp {
 
             // Raw Enter/Escape fallback for overlay tools (e.g. Mesh Warp) so
             // commit/cancel still works even if a focused widget consumes key state.
+            let straighten_can_commit = !popup_open && !ctx.text_edit_focused();
             let enter_or_escape = ctx.input_mut(|i| {
                 let mut enter = false;
                 let mut escape = false;
@@ -700,7 +712,8 @@ impl PaintFEApp {
                         key: egui::Key::Enter,
                         pressed: true,
                         ..
-                    } if !consumed_enter => {
+                    } if !consumed_enter
+                        && (self.straighten_session.is_none() || straighten_can_commit) => {
                         enter = true;
                         consumed_enter = true;
                         false
@@ -720,7 +733,12 @@ impl PaintFEApp {
             });
             let enter_poll_edge = global_probe.4 && !self.prev_enter_down;
             let escape_poll_edge = global_probe.5 && !self.prev_escape_down;
-            if enter_or_escape.0 || enter_poll_edge || enter_vk_edge {
+            let enter = enter_or_escape.0 || enter_poll_edge || enter_vk_edge;
+            if self.straighten_session.is_some() {
+                if enter && straighten_can_commit {
+                    self.commit_straighten();
+                }
+            } else if enter {
                 if self.settings.enter_deselect
                     && !escape_operation
                     && !self.tools_panel.magic_wand_has_session()
@@ -1165,7 +1183,11 @@ impl PaintFEApp {
                 ];
                 for (action, tool) in tool_actions {
                     if kb.is_pressed(ctx, *action) {
-                        self.tools_panel.change_tool(*tool);
+                        if *action == BindableAction::ToolEraser {
+                            self.tools_panel.toggle_eraser();
+                        } else {
+                            self.tools_panel.change_tool(*tool);
+                        }
                         break;
                     }
                 }
@@ -1372,27 +1394,7 @@ impl PaintFEApp {
                 || ui_blocks_canvas_input;
 
             if primary_pressed && over_canvas && !over_ui {
-                // Extract pixels into overlay and blank the source area.
-                let mut overlay_out: Option<crate::ops::clipboard::PasteOverlay> = None;
-                let mut before_snapshot: Option<crate::components::history::CanvasSnapshot> = None;
-                if let Some(project) = self.active_project_mut() {
-                    before_snapshot = Some(crate::components::history::CanvasSnapshot::capture(
-                        &project.canvas_state,
-                    ));
-                    if let Some(overlay) =
-                        crate::ops::clipboard::extract_to_overlay(&mut project.canvas_state)
-                    {
-                        overlay_out = Some(overlay);
-                        project.mark_dirty();
-                    }
-                }
-                if let Some(mut overlay) = overlay_out {
-                    overlay.interpolation = self.tools_panel.move_interpolation;
-                    overlay.anti_aliasing = self.tools_panel.move_anti_aliasing;
-                    self.paste_overlay = Some(overlay);
-                    self.move_pixels_before = before_snapshot;
-                    self.is_move_pixels_active = true;
-                }
+                self.begin_move_pixels_overlay(false);
             }
         }
 

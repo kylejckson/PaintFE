@@ -37,6 +37,11 @@ impl PaintFEApp {
         let mut start_straighten = false;
         let mut commit_straighten = false;
         let mut cancel_straighten = false;
+        let mut apply_selection_rotation = false;
+        let mut cancel_selection_rotation = false;
+        let document_size = self.active_project().map(|project| {
+            (project.canvas_state.width, project.canvas_state.height)
+        });
         let mut shelf_ui_rect = egui::Rect::NOTHING;
         let appearance = self.settings.tool_shelf.clone();
         let docked = appearance.docked;
@@ -144,7 +149,11 @@ impl PaintFEApp {
                                 // --- Paste overlay context bar ---
                                 crate::signal_widgets::tool_shelf_tag(
                                     ui,
-                                    &crate::t!("ui.paste"),
+                                    &if overlay.selection_rotation {
+                                        crate::t!("ctx.rotate_selection")
+                                    } else {
+                                        crate::t!("ui.paste")
+                                    },
                                     self.theme.accent,
                                     &self.theme,
                                 );
@@ -185,6 +194,24 @@ impl PaintFEApp {
                                 }
 
                                 ui.add_space(4.0);
+
+                                if overlay.selection_rotation {
+                                    ui.label(crate::t!("ctx.text.effects.gradient.angle"));
+                                    let mut angle = overlay.rotation.to_degrees();
+                                    if ui.add(crate::ui::controls::Numeric::angle(&mut angle)).changed() {
+                                        overlay.rotation = angle.to_radians();
+                                    }
+                                    let clips = document_size.is_some_and(|(w, h)| {
+                                        overlay.selection_rotation_would_clip(w, h)
+                                    });
+                                    if clips {
+                                        ui.weak(crate::t!("menu.canvas.selection_rotation_outside"));
+                                    }
+                                    apply_selection_rotation = ui.add_enabled(
+                                        !clips, egui::Button::new(crate::t!("settings.keybinds.apply"))
+                                    ).clicked();
+                                    cancel_selection_rotation = ui.button(crate::t!("common.cancel")).clicked();
+                                }
 
                                 // Position info
                                 let (content_w, content_h) = overlay.content_size();
@@ -279,6 +306,13 @@ impl PaintFEApp {
             self.cancel_straighten();
         }
 
+        if apply_selection_rotation {
+            self.commit_paste_overlay(true);
+        }
+        if cancel_selection_rotation {
+            self.cancel_paste_overlay();
+        }
+
         // Process pending brush tip actions from context bar
         if self.tools_panel.pending_open_add_brush_tip {
             self.tools_panel.pending_open_add_brush_tip = false;
@@ -362,8 +396,6 @@ impl PaintFEApp {
         // --- Full-Screen Canvas (CentralPanel fills remaining space) ---
         let canvas_bg_top = self.theme.canvas_bg_top;
         let canvas_bg_bottom = self.theme.canvas_bg_bottom;
-        let mut straighten_enter = false;
-        let mut straighten_escape = false;
 
         #[allow(deprecated)]
         egui::CentralPanel::default()
@@ -496,8 +528,6 @@ impl PaintFEApp {
                         if released {
                             session.drag_start = None;
                         }
-                        straighten_enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
-                        straighten_escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
                     }
                     if let Some(overlay) = self.paste_overlay.as_mut()
                         && let Some((before, _after)) = overlay.pending_transform_checkpoint.take()
@@ -512,6 +542,14 @@ impl PaintFEApp {
                             crate::canvas::PasteAction::Commit
                             | crate::canvas::PasteAction::CommitAndSelect
                             | crate::canvas::PasteAction::CommitAndCrop => {
+                                if self.paste_overlay.as_ref().is_some_and(|overlay| {
+                                    overlay.selection_rotation_would_clip(
+                                        project.canvas_state.width, project.canvas_state.height,
+                                    ) || (overlay.selection_rotation
+                                        && action == crate::canvas::PasteAction::CommitAndCrop)
+                                }) {
+                                    return;
+                                }
                                 // Commit the overlay as one undoable operation.
                                 let select_mask = self.paste_overlay.as_ref().map(|overlay| {
                                     overlay.solid_bounds_selection_mask(
@@ -529,7 +567,9 @@ impl PaintFEApp {
                                 if let Some(overlay) = self.paste_overlay.take() {
                                     self.paste_transform_undo.clear();
                                     self.paste_transform_redo.clear();
-                                    let desc = if self.is_move_pixels_active {
+                                    let desc = if overlay.selection_rotation {
+                                        HistoryAction::RotateCw.label("Rotate Selection")
+                                    } else if self.is_move_pixels_active {
                                         HistoryAction::MovePixels.label("Move Pixels")
                                     } else {
                                         HistoryAction::Paste.label("Paste")
@@ -638,12 +678,6 @@ impl PaintFEApp {
                     }
                 }
             });
-        if straighten_enter {
-            self.commit_straighten();
-        }
-        if straighten_escape {
-            self.cancel_straighten();
-        }
 
         // --- Floating Panels ---
         // Detect screen size changes ONCE before any panel renders,

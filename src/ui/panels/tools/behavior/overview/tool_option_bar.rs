@@ -149,6 +149,14 @@ impl ToolsPanel {
                         self.show_content_aware_options(ui);
                     }
                 }
+                if matches!(self.active_tool, Tool::Brush | Tool::Pencil | Tool::Fill) {
+                    ui.separator();
+                    ui.label(t!("ctx.colour_alpha_label").replace(
+                        "{0}",
+                        &format!("{:.0}", f32::from(primary_color.a()) * 100.0 / 255.0),
+                    ))
+                    .on_hover_text(t!("ctx.colour_alpha_tooltip"));
+                }
                 false
             },
         )

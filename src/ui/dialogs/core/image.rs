@@ -133,11 +133,6 @@ impl ResizeImageDialog {
         }
     }
 
-    fn commit_inputs(&mut self) {
-        self.commit_width_input();
-        self.commit_height_input();
-    }
-
     fn generate_comparison_previews(&mut self, ctx: &egui::Context) {
         let Some(source) = &self.preview_source else {
             return;
@@ -522,7 +517,6 @@ impl ResizeImageDialog {
             });
 
         if ok_pressed && matches!(result, DialogResult::Open) {
-            self.commit_inputs();
             let w = (self.width.round() as u32).max(1);
             let h = (self.height.round() as u32).max(1);
             result = DialogResult::Ok((
@@ -625,11 +619,6 @@ impl ResizeCanvasDialog {
         } else {
             self.height_input = format_dimension_value(self.height);
         }
-    }
-
-    fn commit_inputs(&mut self) {
-        self.commit_width_input();
-        self.commit_height_input();
     }
 
     pub fn show(
@@ -815,7 +804,6 @@ impl ResizeCanvasDialog {
             });
 
         if ok_pressed && matches!(result, DialogResult::Open) {
-            self.commit_inputs();
             let w = (self.width.round() as u32).max(1);
             let h = (self.height.round() as u32).max(1);
             let fill = if self.fill_transparent {
@@ -1747,6 +1735,50 @@ impl AddShapeDialog {
 #[cfg(test)]
 mod issue_185_dimension_controls_tests {
     use super::*;
+
+    #[test]
+    fn resize_confirmation_uses_displayed_dimensions_without_reversing_rounding() {
+        crate::i18n::init();
+        let ctx = egui::Context::default();
+        let mut fonts = egui::FontDefinitions::default();
+        fonts.families.insert(
+            egui::FontFamily::Name("WidgetTitle".into()),
+            fonts.families[&egui::FontFamily::Proportional].clone(),
+        );
+        ctx.set_fonts(fonts);
+        let state = CanvasState::new(2528, 1698);
+        let mut dialog = ResizeImageDialog::new(&state);
+        dialog.focus_width_on_open = false;
+        dialog.width_input = "1920".into();
+        dialog.commit_width_input();
+        let displayed = (dialog.width as u32, dialog.height as u32);
+        assert_eq!(displayed, (1920, 1290));
+        let frame_input = || egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1000.0, 800.0),
+            )),
+            ..Default::default()
+        };
+        for _ in 0..3 {
+            let _ = ctx.run_ui(frame_input(), |_| { dialog.show(&ctx); });
+        }
+        let mut input = frame_input();
+        input.events.push(egui::Event::Key {
+            key: egui::Key::Enter,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        let mut actual = None;
+        let _ = ctx.run_ui(input, |_| {
+            if let DialogResult::Ok((w, h, _)) = dialog.show(&ctx) {
+                actual = Some((w, h));
+            }
+        });
+        assert_eq!(actual, Some(displayed));
+    }
 
     #[test]
     fn resize_dialogs_use_draggable_dimensions_and_preserve_aspect_ratio() {

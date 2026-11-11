@@ -25,6 +25,9 @@ impl ToolsPanel {
             }
             self.remember_paintbrush();
             self.remember_painting_tool();
+            if new_tool != Tool::Eraser && self.temporary_picker_return.is_none() {
+                self.eraser_return_tool = Some(new_tool);
+            }
             self.active_tool = new_tool;
             self.restore_painting_tool(new_tool);
             // Auto-init perspective crop ÔÇö need canvas dims, so flag for
@@ -33,6 +36,112 @@ impl ToolsPanel {
                 self.perspective_crop_state.needs_auto_init = true;
             }
             // Note: Actual commitment will be handled in handle_input with canvas_state access
+        }
+    }
+
+    pub(crate) fn toggle_eraser(&mut self) {
+        let target = if self.queued_tool.unwrap_or(self.active_tool) == Tool::Eraser {
+            if self.active_tool != Tool::Eraser {
+                self.active_tool
+            } else {
+                self.eraser_return_tool.unwrap_or(Tool::Brush)
+            }
+        } else {
+            self.eraser_return_tool = Some(self.queued_tool.unwrap_or(self.active_tool));
+            Tool::Eraser
+        };
+        self.change_tool(target);
+    }
+
+    pub(crate) fn update_temporary_colour_picker(
+        &mut self,
+        ctx: &egui::Context,
+        binding: Option<&KeyCombo>,
+        resize_binding: Option<&KeyCombo>,
+        enabled: bool,
+    ) {
+        let is_modifier = |key: egui::Key| {
+            matches!(
+                key,
+                egui::Key::ControlLeft
+                    | egui::Key::ControlRight
+                    | egui::Key::ShiftLeft
+                    | egui::Key::ShiftRight
+                    | egui::Key::AltLeft
+                    | egui::Key::AltRight
+                    | egui::Key::SuperLeft
+                    | egui::Key::SuperRight
+            )
+        };
+        let (held, chord, pointer_down, fresh_press, focused) = ctx.input(|input| {
+            let matches = binding.is_some_and(|binding| {
+                (binding.ctrl || binding.shift || binding.alt)
+                    && binding.key.is_none()
+                    && binding.text_char.is_none()
+                    && binding.ctrl == (input.modifiers.ctrl || input.modifiers.command)
+                    && binding.shift == input.modifiers.shift
+                    && binding.alt == input.modifiers.alt
+            });
+            (
+                matches,
+                input.keys_down.iter().any(|key| !is_modifier(*key))
+                    || input.events.iter().any(|event| match event {
+                        egui::Event::Key {
+                            key,
+                            physical_key,
+                            pressed: true,
+                            ..
+                        } => !is_modifier(*key) && physical_key.is_none_or(|key| !is_modifier(key)),
+                        egui::Event::Text(_)
+                        | egui::Event::Paste(_)
+                        | egui::Event::Copy
+                        | egui::Event::Cut => true,
+                        _ => false,
+                    }),
+                input.pointer.primary_down() || input.pointer.secondary_down(),
+                input.pointer.primary_pressed() || input.pointer.secondary_pressed(),
+                input.focused,
+            )
+        });
+        if !held {
+            self.temporary_picker_suppressed = false;
+        } else if chord || !focused {
+            self.temporary_picker_suppressed = true;
+        }
+        let conflicts_with_resize = matches!(
+            self.temporary_picker_return.unwrap_or(self.active_tool),
+            Tool::Brush | Tool::Eraser
+        ) && binding
+            .is_some_and(|binding| resize_binding == Some(binding));
+        let should_pick = held
+            && enabled
+            && focused
+            && !self.brush_browser_open
+            && !self.temporary_picker_suppressed
+            && !conflicts_with_resize;
+
+        if let Some(previous) = self.temporary_picker_return {
+            if self.active_tool != Tool::ColorPicker {
+                self.temporary_picker_return = None;
+                self.temporary_picker_suppressed = held;
+            } else if !should_pick {
+                self.change_tool(previous);
+                self.temporary_picker_return = None;
+                // A sampling contact must end before it can become a paint stroke.
+                self.paint_requires_release |= pointer_down;
+                self.canvas_pointer_active = false;
+            }
+        } else if should_pick
+            && (!pointer_down || fresh_press)
+            && !self.is_stroke_active()
+            && !self.has_active_tool_preview()
+            && matches!(
+                self.active_tool,
+                Tool::Brush | Tool::Pencil | Tool::Eraser | Tool::Fill | Tool::Smudge
+            )
+        {
+            self.temporary_picker_return = Some(self.active_tool);
+            self.change_tool(Tool::ColorPicker);
         }
     }
 

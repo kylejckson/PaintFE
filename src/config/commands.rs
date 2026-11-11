@@ -50,6 +50,7 @@ pub enum MenuCommand {
     GuidesSnap,
     GuidesNew,
     GuidesClear,
+    CanvasRotateSelection,
 }
 impl MenuCommand {
     pub const ALL: &'static [Self] = &[
@@ -75,6 +76,7 @@ impl MenuCommand {
         Self::FilterStylizeSeamless,
         Self::FileClearRecent,
         Self::CanvasStraighten,
+        Self::CanvasRotateSelection,
         Self::ViewTools,
         Self::ViewLayers,
         Self::ViewHistory,
@@ -636,7 +638,13 @@ pub const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         action: BindableAction::Menu(crate::config::commands::MenuCommand::CanvasStraighten),
-        label_key: "ui.straighten",
+        label_key: "ui.straighten_canvas",
+        category_key: "keybind_category.canvas",
+        needs_document: true,
+    },
+    CommandSpec {
+        action: BindableAction::Menu(MenuCommand::CanvasRotateSelection),
+        label_key: "menu.canvas.rotate_selection",
         category_key: "keybind_category.canvas",
         needs_document: true,
     },

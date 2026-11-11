@@ -6,6 +6,28 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.4.28] - 2026-11-11
+
+- Add Rotate Selection, temporary colour sampling and an Eraser shortcut toggle.
+- Keep crops in place and improve rotation, resizing and brush release behaviour.
+- Refine thumbnails, palette alignment and Linux font handling.
+
+### New features
+
+- Add Rotate Selection for arbitrary angles, with Apply, Cancel and protection against clipping.
+- Hold Ctrl to sample a colour temporarily, and use E to toggle Eraser. Respect custom bindings, text editing and ongoing strokes. Preferences offers Ctrl, Alt or Disabled for temporary sampling.
+- Show colour alpha as a read-only value in the brush toolbar.
+
+### Improvements
+
+- Keep cropped images in place through Undo and Redo, and crop layer masks with their layers. Related to issue 237.
+- Preserve selected pixels through repeated rotations and let Enter apply Straighten. Related to issue 238.
+- Use the displayed image and canvas resize dimensions without recalculating them on confirmation. Related to issue 240.
+- Avoid another paint deposit when a brush stroke ends, and support modifier-drag resizing for Eraser independently of Brush. Related to issues 224 and 239.
+- Make docked toolbar opacity adjustable without moving the canvas. Related to issue 223.
+- Align palette headers with the swatch grid, use transparent layer thumbnails with bounded image proportions, and match Save As previews to the image shape.
+- Use safer font loading on Linux and disable desktop startup notifications that can leave a busy cursor showing. Related to issues 236 and 241.
+
 ## [1.4.27] - 2026-11-06
 
 - Keep in-progress paint strokes intact when changing tools or using Undo.

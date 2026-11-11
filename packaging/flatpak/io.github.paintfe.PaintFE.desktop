@@ -8,5 +8,5 @@ Type=Application
 Categories=Graphics;RasterGraphics;2DGraphics;
 MimeType=image/png;image/jpeg;image/webp;image/bmp;image/tiff;image/gif;image/x-paintnet;
 Keywords=paint;image;editor;photo;raster;
-StartupNotify=true
+StartupNotify=false
 StartupWMClass=PaintFE

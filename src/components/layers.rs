@@ -227,3 +227,70 @@ enum FolderDropZone {
     Inside,
     Below,
 }
+
+#[cfg(test)]
+mod thumbnail_tests {
+    use super::*;
+
+    #[test]
+    fn thumbnails_have_bounded_rectangular_textures_without_padding() {
+        let panel = LayersPanel::default();
+        for (w, h) in [
+            (120, 80),
+            (80, 120),
+            (300, 20),
+            (20, 300),
+            (1, 1280),
+            (1280, 1),
+            (1, 1),
+        ] {
+            let image = image::RgbaImage::from_pixel(w, h, Rgba([40, 80, 120, 128]));
+            let source = TiledImage::from_rgba_image(&image);
+            let thumbnail = panel.generate_thumbnail(&source, None, BlendMode::Normal);
+            assert!(thumbnail.size[0] >= 1 && thumbnail.size[0] <= 60);
+            assert!(thumbnail.size[1] >= 1 && thumbnail.size[1] <= 40);
+            assert!(thumbnail.pixels.iter().all(|pixel| pixel.a() == 128));
+            if w > h {
+                assert!(thumbnail.size[0] > thumbnail.size[1]);
+            }
+            if h > w {
+                assert!(thumbnail.size[1] > thumbnail.size[0]);
+            }
+        }
+        let transparent = TiledImage::new(8, 16);
+        assert!(
+            panel
+                .generate_thumbnail(&transparent, None, BlendMode::Normal)
+                .pixels
+                .iter()
+                .all(|pixel| *pixel == Color32::TRANSPARENT)
+        );
+    }
+
+    #[test]
+    fn thumbnail_cache_reuses_texture_and_transparency_reveals_row_background() {
+        let ctx = egui::Context::default();
+        let mut panel = LayersPanel::default();
+        let mut state = CanvasState::new(120, 80);
+        state.layers[0].pixels = TiledImage::new(120, 80);
+        let mut texture_id = None;
+        for pass in 0..2 {
+            if pass == 1 {
+                state.mark_dirty(None);
+                panel.thumbnail_cache.get_mut(&0).unwrap().last_update =
+                    Instant::now() - std::time::Duration::from_secs(1);
+            }
+            let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let rect = Rect::from_min_size(Pos2::new(20., 20.), egui::vec2(54., 36.));
+                panel.draw_thumbnail(ui, rect, 0, &state, 1.);
+                let id = panel.thumbnail_cache[&0].texture.as_ref().unwrap().id();
+                if let Some(expected) = texture_id {
+                    assert_eq!(id, expected);
+                }
+                texture_id = Some(id);
+            });
+            assert!(!output.shapes.iter().any(|shape| matches!(&shape.shape,
+                egui::Shape::Rect(rect) if rect.fill != Color32::TRANSPARENT)));
+        }
+    }
+}

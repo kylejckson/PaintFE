@@ -1022,7 +1022,31 @@ pub mod custom_fonts {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(target_os = "linux")]
+pub fn load_system_font(family: &str, weight: u16, italic: bool) -> Option<FontArc> {
+    // Fontconfig provides the paths and face indices without loading the faces
+    // through FreeType, which can panic when a face has an unsupported strike.
+    let family = font_kit::source::SystemSource::new()
+        .select_family_by_name(family)
+        .ok()?;
+    family
+        .fonts()
+        .iter()
+        .filter_map(|handle| {
+            let (bytes, index) = font_handle_data(handle)?;
+            let face = ttf_parser::Face::parse(&bytes, index).ok()?;
+            let score = (
+                (face.is_italic() || face.is_oblique()) != italic,
+                face.weight().to_number().abs_diff(weight),
+            );
+            let font = ab_glyph::FontVec::try_from_vec_and_index(bytes, index).ok()?;
+            Some((score, FontArc::new(font)))
+        })
+        .min_by_key(|(score, _)| *score)
+        .map(|(_, font)| font)
+}
+
+#[cfg(not(any(target_arch = "wasm32", target_os = "linux")))]
 pub fn load_system_font(family: &str, weight: u16, italic: bool) -> Option<FontArc> {
     use font_kit::family_name::FamilyName;
     use font_kit::properties::{Properties, Style, Weight};
@@ -1038,9 +1062,18 @@ pub fn load_system_font(family: &str, weight: u16, italic: bool) -> Option<FontA
     let handle = source
         .select_best_match(&[FamilyName::Title(family.to_string())], &props)
         .ok()?;
+    let (bytes, index) = font_handle_data(&handle)?;
+    ab_glyph::FontVec::try_from_vec_and_index(bytes, index)
+        .ok()
+        .map(FontArc::new)
+}
 
-    let font_data = handle.load().ok()?;
-    let font_data_copy = font_data.copy_font_data()?;
-    let bytes: Vec<u8> = (*font_data_copy).clone();
-    FontArc::try_from_vec(bytes).ok()
+#[cfg(not(target_arch = "wasm32"))]
+fn font_handle_data(handle: &font_kit::handle::Handle) -> Option<(Vec<u8>, u32)> {
+    use font_kit::handle::Handle;
+
+    match handle {
+        Handle::Path { path, font_index } => Some((std::fs::read(path).ok()?, *font_index)),
+        Handle::Memory { bytes, font_index } => Some((bytes.as_ref().clone(), *font_index)),
+    }
 }

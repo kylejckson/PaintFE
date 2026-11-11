@@ -55,7 +55,9 @@ impl PaintFEApp {
         if let Some(project) = self.projects.get_mut(self.active_project_index) {
             self.tools_panel
                 .cancel_active_tool(&mut project.canvas_state);
+            let offset = project.history.undo_view_offset(1);
             project.history.undo(&mut project.canvas_state);
+            self.offset_canvas_view(offset);
         }
     }
 
@@ -88,7 +90,9 @@ impl PaintFEApp {
         if let Some(project) = self.projects.get_mut(self.active_project_index) {
             self.tools_panel
                 .cancel_active_tool(&mut project.canvas_state);
+            let offset = project.history.redo_view_offset();
             project.history.redo(&mut project.canvas_state);
+            self.offset_canvas_view(offset);
         }
     }
     /// Spawn a filter job on a background thread.
@@ -384,6 +388,43 @@ impl PaintFEApp {
         });
     }
 
+    fn offset_canvas_view(&mut self, offset: egui::Vec2) {
+        if offset != egui::Vec2::ZERO {
+            let (zoom, pan) = self.canvas.view_state();
+            self.canvas.set_view_state(zoom, pan + offset * zoom);
+        }
+    }
+
+    fn crop_to_selection_in_place(&mut self) {
+        let Some(project) = self.active_project_mut() else {
+            return;
+        };
+        let state = &mut project.canvas_state;
+        if state.selection_all {
+            return;
+        }
+        let Some((x0, y0, x1, y1)) = state.selection_mask_bounds() else {
+            return;
+        };
+        let offset = egui::vec2(
+            (x0 as f32 + x1 as f32 + 1.0 - state.width as f32) * 0.5,
+            (y0 as f32 + y1 as f32 + 1.0 - state.height as f32) * 0.5,
+        );
+        let mut command = SnapshotCommand::new(HistoryAction::Crop.label("Crop to Selection"), state)
+            .with_view_offset(offset);
+        state.ensure_all_text_layers_rasterized();
+        for layer in &mut state.layers {
+            if layer.is_text_layer() {
+                layer.content = crate::canvas::LayerContent::Raster;
+            }
+        }
+        crate::ops::adjustments::crop_to_selection(state);
+        command.set_after(state);
+        project.history.push(Box::new(command));
+        project.mark_dirty();
+        self.offset_canvas_view(offset);
+    }
+
     /// Perform a canvas operation with full-snapshot undo.
     /// The closure receives `&mut CanvasState` and should apply the operation.
     fn do_snapshot_op(
@@ -440,15 +481,58 @@ impl PaintFEApp {
         true
     }
 
+    fn can_rotate_selection(&self) -> bool {
+        self.paste_overlay.is_none() && self.straighten_session.is_none()
+            && self.active_project().is_some_and(|project| {
+                let state = &project.canvas_state;
+                state.selection_mask_bounds().is_some()
+                    && !state.edit_layer_mask
+                    && state.layers.get(state.active_layer_index)
+                        .is_some_and(|layer| !layer.is_text_layer())
+            })
+    }
+
+    fn begin_move_pixels_overlay(&mut self, selection_rotation: bool) -> bool {
+        if self.paste_overlay.is_some() || self.straighten_session.is_some() {
+            return false;
+        }
+        let Some(project) = self.active_project_mut() else {
+            return false;
+        };
+        let before = CanvasSnapshot::capture(&project.canvas_state);
+        let Some(mut overlay) = crate::ops::clipboard::extract_to_overlay(&mut project.canvas_state, selection_rotation) else {
+            return false;
+        };
+        if !selection_rotation {
+            project.mark_dirty();
+        }
+        overlay.interpolation = self.tools_panel.move_interpolation;
+        overlay.anti_aliasing = self.tools_panel.move_anti_aliasing;
+        self.paste_overlay = Some(overlay);
+        self.move_pixels_before = Some(before);
+        self.is_move_pixels_active = true;
+        true
+    }
+
     /// Commit the active paste overlay.
     /// `leave_selected` keeps the pasted region selected afterwards so it can
     /// be cropped/refined immediately (explicit commits like Enter). Auto
     /// commits (tab switch/close) and Move Pixels never leave a selection.
     fn commit_paste_overlay(&mut self, leave_selected: bool) {
+        if self.paste_overlay.as_ref().zip(self.active_project()).is_some_and(|(overlay, project)| {
+            overlay.selection_rotation_would_clip(project.canvas_state.width, project.canvas_state.height)
+        }) {
+            if !leave_selected {
+                self.cancel_paste_overlay();
+            }
+            return;
+        }
         if let Some(overlay) = self.paste_overlay.take() {
             self.paste_transform_undo.clear();
             self.paste_transform_redo.clear();
-            let desc = if self.is_move_pixels_active {
+            let desc = if overlay.selection_rotation {
+                HistoryAction::RotateCw.label("Rotate Selection")
+            } else if self.is_move_pixels_active {
                 HistoryAction::MovePixels.label("Move Pixels")
             } else {
                 HistoryAction::Paste.label("Paste")
@@ -525,15 +609,19 @@ impl PaintFEApp {
     fn finish_pending_paint_stroke(&mut self) {
         self.commit_pending_tool_history();
         let primary = self.colors_panel.get_primary_color_f32();
-        let secondary = self.colors_panel.get_secondary_color_f32();
         if let Some(project) = self.projects.get_mut(self.active_project_index) {
             self.tools_panel
-                .finish_paint_for_action(&mut project.canvas_state, primary, secondary);
+                .finish_paint_for_action(&mut project.canvas_state, primary);
         }
         self.commit_pending_tool_history();
     }
     fn finish_pending_line_edit(&mut self) {
         self.finish_pending_paint_stroke();
+        // Save and document transitions must capture the resolved pixels,
+        // including when the rotation preview has lifted them off the layer.
+        if self.paste_overlay.as_ref().is_some_and(|overlay| overlay.selection_rotation) {
+            self.commit_paste_overlay(false);
+        }
         if let Some(project) = self.projects.get_mut(self.active_project_index) {
             self.tools_panel
                 .commit_pending_line_edit(&mut project.canvas_state);

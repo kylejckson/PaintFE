@@ -145,9 +145,16 @@ impl PaintFEApp {
                         ui.menu_button(t!("menu.canvas.rotate_canvas"), |ui| {
                             ui.set_min_width(ui.min_rect().width().max(160.0));
                             if self.show_command_button(ui,ctx,crate::config::commands::MenuCommand::CanvasStraighten) { ui.close(); }
+                            if self.show_command_button(ui, ctx, crate::config::commands::MenuCommand::CanvasRotateSelection) { ui.close(); }
                             ui.separator();
-                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::RotateCw.icon(), &t!("menu.canvas.rotate_90cw"), true, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Cw)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Cw)); ui.close(); }
-                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::RotateCcw.icon(), &t!("menu.canvas.rotate_90ccw"), true, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Ccw)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Ccw)); ui.close(); }
+                            let quarter_turn_fits = self.active_project().is_some_and(|project| {
+                                crate::ops::transform::selected_quarter_turn_fits(&project.canvas_state)
+                            });
+                            if !quarter_turn_fits {
+                                ui.weak(t!("menu.canvas.selection_rotation_outside"));
+                            }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::RotateCw.icon(), &t!("menu.canvas.rotate_90cw"), quarter_turn_fits, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Cw)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Cw)); ui.close(); }
+                            if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::RotateCcw.icon(), &t!("menu.canvas.rotate_90ccw"), quarter_turn_fits, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Ccw)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Ccw)); ui.close(); }
                             if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Rotate180.icon(), &t!("menu.canvas.rotate_180"), true, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate180)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate180)); ui.close(); }
                         });
                         ui.separator();
