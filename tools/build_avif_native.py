@@ -24,6 +24,19 @@ AOM_COMMIT = '44d0a57786f432d933ff64b653347c66f4d0fa1d'
 AOM_SHA256 = '4c65fbb81250f7cc5bbf70531efbd622fa10ec229a9ac64226c7d93e729e203b'
 
 
+def ensure_native_tools(python, env):
+    lock = ROOT / '.github/requirements-native.txt'
+    digest = hashlib.sha256(lock.read_bytes()).hexdigest()
+    stamp = python.parent.parent / 'paintfe-tools.sha256'
+    if not stamp.is_file() or stamp.read_text(encoding='ascii').strip() != digest:
+        clean = env.copy()
+        clean.pop('PAINTFE_PACK_SIGNING_KEY', None)
+        subprocess.run([str(python), '-m', 'pip', 'install', '--require-hashes',
+                        '--only-binary=:all:', '--force-reinstall', '-r', str(lock)],
+                       env=clean, check=True)
+        stamp.write_text(digest, encoding='ascii')
+
+
 def aom_manifest(archive):
     manifest = {}
     with tarfile.open(archive) as tar:
@@ -89,7 +102,7 @@ def prepare_aom(target, env):
         python = work / 'tools' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
         cmake = str(python.parent / ('cmake.exe' if os.name == 'nt' else 'cmake'))
         if not Path(cmake).is_file():
-            subprocess.run([str(python), '-m', 'pip', 'install', 'cmake==3.31.6'], env=env, check=True)
+            ensure_native_tools(python, env)
     source = prepare_aom_source(work)
     build = work / ('aom-' + (target or f'{platform.system()}-{platform.machine()}'))
     args = [cmake, '-S', str(source), '-B', str(build), '-DCMAKE_BUILD_TYPE=Release',
@@ -134,13 +147,14 @@ def download(url, path, sha256):
 
 def prepare(target, original_env):
     env = original_env.copy()
+    env.pop('PAINTFE_PACK_SIGNING_KEY', None)
     work = ROOT / 'target' / 'avif-native'
     work.mkdir(parents=True, exist_ok=True)
     tools = work / 'tools'
     python = tools / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
     if not python.exists():
-        subprocess.run([sys.executable, '-m', 'venv', str(tools)], check=True)
-        subprocess.run([str(python), '-m', 'pip', 'install', 'meson==1.12.1', 'ninja==1.13.2'], check=True)
+        subprocess.run([sys.executable, '-m', 'venv', str(tools)], env=env, check=True)
+    ensure_native_tools(python, env)
     tool_bin = python.parent
     env['PATH'] = str(tool_bin) + os.pathsep + env.get('PATH', '')
     env['TEMP'] = env['TMP'] = str(work / 'tmp')
@@ -175,7 +189,7 @@ def prepare(target, original_env):
             cross.write_text("[binaries]\nc = 'clang'\nar = 'ar'\nstrip = 'strip'\n[host_machine]\nsystem = 'darwin'\ncpu_family = 'x86_64'\ncpu = 'x86_64'\nendian = 'little'\n[built-in options]\nc_args = ['-arch', 'x86_64']\nc_link_args = ['-arch', 'x86_64']\n", encoding='utf-8')
             options += ['--cross-file', str(cross)]
         subprocess.run(meson + ['setup', str(build), str(source)] + options, env=env, check=True)
-    subprocess.run(meson + ['compile', '-C', str(build), '-j', '2'], env=env, check=True)
+    subprocess.run(meson + ['compile', '-C', str(build), '-j', env.get('CARGO_BUILD_JOBS', '1')], env=env, check=True)
     if os.name == 'nt': shutil.copy2(build / 'src/libdav1d.a', build / 'src/dav1d.lib')
     env.update(SYSTEM_DEPS_DAV1D_NO_PKG_CONFIG='1', SYSTEM_DEPS_DAV1D_LIB='dav1d',
                SYSTEM_DEPS_DAV1D_SEARCH_NATIVE=str(build / 'src'), SYSTEM_DEPS_DAV1D_LINK='static')

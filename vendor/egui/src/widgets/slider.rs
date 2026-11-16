@@ -835,6 +835,9 @@ impl Slider<'_> {
                         visuals.fg_stroke,
                         epaint::StrokeKind::Inside,
                     );
+                    if ui.visuals().retro_bevel {
+                        ui.painter().rect_bevel(rect, false, visuals.bg_fill);
+                    }
                 }
             }
         }

@@ -2099,3 +2099,9 @@ automation.waiting=في انتظار عميل MCP المحلي.
 automation.notice=معطل افتراضيا. يمكن للعملاء المتصلين قراءة معاينات اللوحة القماشية. قد يرسل عميل السحابة AI هذه إلى مزود الخدمة الخاص به. لا يتصل PaintFE بخدمة الذكاء الاصطناعي.
 glass.headers=العناوين
 automation.active=نشاط حديث للوكيل المحلي
+
+
+# Optional theme finishes
+glass.grain=تحبّب خفيف
+ui.retro_bevel=حواف بارزة لعناصر التحكم
+ui.solid_accent_headers=عناوين بلون تمييز مصمت

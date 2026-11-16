@@ -2,6 +2,116 @@ use super::history_tests::{app, context};
 use super::*;
 use crate::services::plugins::Effect;
 use crate::ui::panels::plugin_effect::{Applied, Target};
+
+#[test]
+#[ignore = "requires PAINTFE_TEST_THEME_COLLECTION pointing to the local collection packs"]
+fn local_theme_collection_installs_previews_keeps_restores_and_removes() {
+    use crate::services::plugins as packs;
+    let source = PathBuf::from(
+        std::env::var("PAINTFE_TEST_THEME_COLLECTION").expect("Collection pack directory"),
+    );
+    let at =
+        std::env::temp_dir().join(format!("paintfe-theme-collection-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&at).unwrap();
+    let mut paths: Vec<_> = std::fs::read_dir(source)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "pfeplugin"))
+        .collect();
+    paths.sort();
+    assert_eq!(paths.len(), 11);
+    let mut application = app();
+    let ctx = context();
+    let original_pixels = result(&application).target.pixels;
+    let permissions = serde_json::to_value(&application.settings.automation).unwrap();
+    for path in paths {
+        let bytes = std::fs::read(path).unwrap();
+        let manifest = packs::install(&bytes, &at, true, None).unwrap();
+        let mut preferences = packs::Preferences::default();
+        preferences
+            .packs
+            .entry(manifest.id.clone())
+            .or_default()
+            .current = manifest.version.clone();
+        let installed = packs::installed(&at, &preferences)
+            .into_iter()
+            .find(|pack| pack.manifest.id == manifest.id)
+            .unwrap();
+        let before = application.settings.clone();
+        application
+            .preview_appearance_pack(&ctx, &installed)
+            .unwrap();
+        for _ in 0..3 {
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                application.appearance_preview_dialog(ui.ctx())
+            });
+        }
+        let _ = ctx.run_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::Escape,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                ..Default::default()
+            },
+            |ui| application.appearance_preview_dialog(ui.ctx()),
+        );
+        assert_eq!(
+            application.settings.export_theme_to_string(),
+            before.export_theme_to_string(),
+            "Restore {}",
+            manifest.id
+        );
+        assert_eq!(application.settings.icon_pack_path, before.icon_pack_path);
+        application
+            .preview_appearance_pack(&ctx, &installed)
+            .unwrap();
+        for _ in 0..3 {
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                application.appearance_preview_dialog(ui.ctx())
+            });
+        }
+        let point = ctx
+            .data(|data| data.get_temp::<egui::Rect>(egui::Id::new("appearance_keep_rect")))
+            .unwrap()
+            .center();
+        for pressed in [true, false] {
+            let _ = ctx.run_ui(
+                egui::RawInput {
+                    events: vec![
+                        egui::Event::PointerMoved(point),
+                        egui::Event::PointerButton {
+                            pos: point,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ],
+                    ..Default::default()
+                },
+                |ui| application.appearance_preview_dialog(ui.ctx()),
+            );
+        }
+        assert!(ctx.data(|data| data.get_temp::<AppearancePreview>(egui::Id::new("appearance_preview"))).is_none(), "Keep {}", manifest.id);
+        AppSettings::flush_pending_saves().unwrap();
+        let restored = AppSettings::load();
+        assert_eq!(
+            restored.export_theme_to_string(),
+            application.settings.export_theme_to_string()
+        );
+        assert_eq!(restored.icon_pack_path, application.settings.icon_pack_path);
+        assert_eq!(
+            serde_json::to_value(&application.settings.automation).unwrap(),
+            permissions
+        );
+        assert_eq!(*result(&application).target.pixels, *original_pixels);
+        packs::uninstall(&manifest.id, &at).unwrap();
+    }
+}
+
 fn result(app: &PaintFEApp) -> Applied {
     let p = &app.projects[0];
     let state = &p.canvas_state;

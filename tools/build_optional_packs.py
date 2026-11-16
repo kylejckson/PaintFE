@@ -63,7 +63,7 @@ def run():
     helper = binary_root/f'paintfe-jxl-encoder{suffix}'
     avif_env, native_license = build_avif_native.prepare(target, env)
     avif_manifest = ROOT/'optional/avif-codec/Cargo.toml'
-    subprocess.run(['cargo','build','-j','2','--manifest-path',str(avif_manifest),'--target-dir',str(ROOT/'target')]+extra,cwd=ROOT,env=avif_env,check=True)
+    subprocess.run(['cargo','build','-j','1','--manifest-path',str(avif_manifest),'--target-dir',str(ROOT/'target')]+extra,cwd=ROOT,env=avif_env,check=True)
     avif_helper = binary_root/f'paintfe-avif-codec{suffix}'
     metadata = json.loads(subprocess.check_output(['cargo','metadata','--format-version','1','--manifest-path',str(avif_manifest)],cwd=ROOT,env=avif_env))
     notices = ['PaintFE optional AVIF codec: third-party license notices', native_license.read_text(encoding='utf-8')]

@@ -2098,3 +2098,9 @@ automation.waiting=Warten auf einen lokalen MCP-Client.
 automation.notice=Standardmäßig deaktiviert. Verbundene Clients können Canvas-Vorschauen lesen. Ein Cloud-KI-Client kann diese an seinen Anbieter senden. PaintFE kontaktiert keinen KI-Dienst.
 glass.headers=Überschriften
 automation.active=Kürzliche Aktivität eines lokalen Agenten
+
+
+# Optional theme finishes
+glass.grain=Feine Körnung
+ui.retro_bevel=Abgeschrägte Retro-Bedienelemente
+ui.solid_accent_headers=Einfarbige Akzent-Kopfzeilen

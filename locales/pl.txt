@@ -2098,3 +2098,9 @@ automation.waiting=Oczekiwanie na lokalnego klienta MCP.
 automation.notice=Domyślnie wyłączone. Połączeni klienci mogą czytać podglądy kanwy. Klient AI w chmurze może wysłać je swojemu dostawcy. PaintFE nie kontaktuje się z usługą AI.
 glass.headers=Nagłówki
 automation.active=Ostatnia aktywność lokalnego agenta
+
+
+# Optional theme finishes
+glass.grain=Drobne ziarno
+ui.retro_bevel=Wypukłe kontrolki retro
+ui.solid_accent_headers=Nagłówki w jednolitym kolorze akcentu

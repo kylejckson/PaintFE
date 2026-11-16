@@ -16,6 +16,29 @@ SPEC.loader.exec_module(native)
 
 
 class NativeAvifTests(unittest.TestCase):
+    def test_native_tool_install_checks_hashes_and_never_inherits_signing_credentials(self):
+        with tempfile.TemporaryDirectory(dir=self.scratch) as directory:
+            root = Path(directory)
+            lock = root / '.github/requirements-native.txt'
+            lock.parent.mkdir()
+            lock.write_text('fixture lock')
+            python = root / 'tools/bin/python'
+            python.parent.mkdir(parents=True)
+            with patch.object(native, 'ROOT', root), patch.object(native.subprocess, 'run') as run:
+                original = {'PATH': 'trusted', 'PAINTFE_PACK_SIGNING_KEY': 'test-only-value'}
+                native.ensure_native_tools(python, original)
+                command = run.call_args.args[0]
+                self.assertIn('--require-hashes', command)
+                self.assertIn('--only-binary=:all:', command)
+                self.assertIn(str(lock), command)
+                self.assertNotIn('PAINTFE_PACK_SIGNING_KEY', run.call_args.kwargs['env'])
+                self.assertIn('PAINTFE_PACK_SIGNING_KEY', original)
+                native.ensure_native_tools(python, original)
+                self.assertEqual(run.call_count, 1)
+                lock.write_text('updated fixture lock')
+                native.ensure_native_tools(python, original)
+                self.assertEqual(run.call_count, 2)
+
     @classmethod
     def setUpClass(cls):
         cls.scratch = Path(SPEC.origin).resolve().parents[1] / 'target/avif-native-plan-tests'

@@ -68,3 +68,11 @@ Colour tracks cache sampled textures per stable widget identity instead of creat
 ## Text Direction
 
 Shared widgets use the patched egui/epaint layout pipeline for RTL UI text. Keep values and clipboard text in logical order. Do not add per-widget reversal or custom numeric text editors. See `docs/rtl-text.md` and the vendored patch notes when upgrading the renderer or editing selection/caret behaviour.
+
+## Optional retro appearance
+
+Retro control bevels compose the production controls. They alter painting only,
+using one shared raised/sunken edge painter in egui. Theme presets can also
+request solid accent dialog headers with contrasting title and close-button
+colours. Both options default off, persist through theme export and are cleared
+by Reset to Signal. They do not introduce numeric editors or input policies.

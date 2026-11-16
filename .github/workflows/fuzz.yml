@@ -1,0 +1,52 @@
+name: Parser fuzzing
+on:
+  pull_request:
+    paths:
+      - 'fuzz/**'
+      - '.clusterfuzzlite/**'
+      - '.github/workflows/fuzz.yml'
+      - 'src/io/heic/container.rs'
+      - 'src/io/heic/max_pixels.txt'
+      - 'src/ui/numeric/expression.rs'
+  push:
+    branches: [main]
+    paths:
+      - 'fuzz/**'
+      - '.clusterfuzzlite/**'
+      - '.github/workflows/fuzz.yml'
+      - 'src/io/heic/container.rs'
+      - 'src/io/heic/max_pixels.txt'
+      - 'src/ui/numeric/expression.rs'
+  schedule:
+    - cron: '17 3 * * 2'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: parser-fuzzing-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Build production parser fuzzers with AddressSanitizer
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1
+        with:
+          language: rust
+          sanitizer: address
+          github-token: ${{ github.token }}
+      - name: Run bounded parser fuzzing
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1
+        with:
+          language: rust
+          github-token: ${{ github.token }}
+          fuzz-seconds: 120
+          parallel-fuzzing: false
+          mode: ${{ github.event_name == 'pull_request' && 'code-change' || 'batch' }}
+          sanitizer: address

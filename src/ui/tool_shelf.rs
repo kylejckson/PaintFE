@@ -71,6 +71,7 @@ pub(crate) fn paint_workspace_background(
     mesh.add_triangle(0, 1, 2);
     mesh.add_triangle(1, 2, 3);
     painter.add(egui::Shape::mesh(mesh));
+    crate::ui::glass::paint_workspace_grain(painter, rect);
 }
 
 #[cfg(test)]

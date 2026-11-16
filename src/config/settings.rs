@@ -721,11 +721,25 @@ impl AppSettings {
 
     /// Serialize a Color32 as "r,g,b,a"
     fn color_to_str(c: Color32) -> String {
-        format!("{},{},{},{}", c.r(), c.g(), c.b(), c.a())
+        if c.a() == 0 && c != Color32::TRANSPARENT {
+            return format!("additive:{},{},{}", c.r(), c.g(), c.b());
+        }
+        let [r, g, b, a] = c.to_srgba_unmultiplied();
+        format!("{r},{g},{b},{a}")
     }
 
     /// Parse a Color32 from "r,g,b,a"
     fn str_to_color(s: &str) -> Option<Color32> {
+        if let Some(rgb) = s.strip_prefix("additive:") {
+            let channels: Vec<_> = rgb
+                .split(',')
+                .map(|value| value.trim().parse::<u8>().ok())
+                .collect::<Option<Vec<_>>>()?;
+            if let [r, g, b] = channels.as_slice() {
+                return Some(Color32::from_rgba_premultiplied(*r, *g, *b, 0));
+            }
+            return None;
+        }
         let parts: Vec<&str> = s.split(',').collect();
         if parts.len() == 4 {
             let r = parts[0].trim().parse::<u8>().ok()?;
@@ -978,6 +992,10 @@ impl AppSettings {
             self.glow_intensity,
             self.shadow_strength,
         );
+        content.push_str(&format!(
+            "canvas_grid_visible={}\ncanvas_grid_opacity={}\n",
+            self.canvas_grid_visible, self.canvas_grid_opacity
+        ));
         if let Ok(value) = serde_json::to_string(&self.glass) {
             content.push_str(&format!("glass={value}\n"));
         }
@@ -1086,6 +1104,19 @@ impl AppSettings {
             && let Ok(browser) = serde_json::from_str::<crate::brushes::BrowserSettings>(value)
         {
             self.brush_browser.copy_appearance(&browser);
+        }
+        if let Some(value) = map
+            .get("canvas_grid_visible")
+            .and_then(|value| value.parse::<bool>().ok())
+        {
+            self.canvas_grid_visible = value;
+        }
+        if let Some(value) = map
+            .get("canvas_grid_opacity")
+            .and_then(|value| value.parse::<f32>().ok())
+            .filter(|value| value.is_finite())
+        {
+            self.canvas_grid_opacity = value.clamp(0.0, 1.0);
         }
         if let Some(value) = map.get("glass")
             && let Ok(mut glass) = serde_json::from_str::<crate::ui::glass::GlassSettings>(value)
@@ -3014,5 +3045,30 @@ mod tool_shelf_tests {
         assert_eq!(shelf.right, 0.0);
         assert_eq!(shelf.padding_x, 10.0);
         assert_eq!(shelf.opacity, None);
+    }
+}
+
+#[cfg(test)]
+mod colour_persistence_tests {
+    use super::*;
+    #[test]
+    fn translucent_and_additive_colours_do_not_fade_across_repeated_serialisation() {
+        for alpha in [0, 1, 36, 90, 128, 254, 255] {
+            let original = Color32::from_rgba_unmultiplied(228, 177, 94, alpha);
+            let mut colour = original;
+            for _ in 0..8 {
+                colour = AppSettings::str_to_color(&AppSettings::color_to_str(colour)).unwrap();
+            }
+            assert_eq!(colour, original, "alpha {alpha}");
+        }
+        let original = Color32::from_rgba_premultiplied(90, 40, 10, 0);
+        assert_eq!(
+            AppSettings::str_to_color(&AppSettings::color_to_str(original)),
+            Some(original)
+        );
+        assert_eq!(
+            AppSettings::str_to_color("90,40,10,0"),
+            Some(Color32::TRANSPARENT)
+        );
     }
 }

@@ -464,6 +464,9 @@ fn button_frame(
         );
     }
 
+    if ui.visuals().retro_bevel && ui.is_rect_visible(outer_rect) {
+        ui.painter().rect_bevel(outer_rect, is_popup_open || response.is_primary_button_down_on(), ui.visuals().widgets.inactive.bg_fill);
+    }
     ui.advance_cursor_after_rect(outer_rect);
 
     response

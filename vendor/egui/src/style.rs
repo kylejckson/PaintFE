@@ -1083,6 +1083,9 @@ pub struct Visuals {
     /// Show a background behind buttons.
     pub button_frame: bool,
 
+    /// Optional classic raised/sunken control edges. Paint only, no layout changes.
+    pub retro_bevel: bool,
+
     /// Show a background behind collapsing headers.
     pub collapsing_header_frame: bool,
 
@@ -1527,6 +1530,7 @@ impl Visuals {
 
             clip_rect_margin: 0.0,
             button_frame: true,
+            retro_bevel: false,
             collapsing_header_frame: false,
             indent_has_left_vline: true,
 
@@ -2290,6 +2294,7 @@ impl Visuals {
 
             clip_rect_margin,
             button_frame,
+            retro_bevel: _,
             collapsing_header_frame,
             indent_has_left_vline,
 

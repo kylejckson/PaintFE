@@ -2098,3 +2098,9 @@ automation.waiting=กำลังรอไคลเอ็นต์ MCP ใน�
 automation.notice=ปิดใช้งานตามค่าเริ่มต้น Connected clients can read canvas previews. ไคลเอนต์ AI บนคลาวด์อาจส่งข้อมูลเหล่านี้ไปยังผู้ให้บริการ PaintFE ไม่ติดต่อกับบริการ AI
 glass.headers=ส่วนหัว
 automation.active=กิจกรรมล่าสุดของเอเจนต์ในเครื่อง
+
+
+# Optional theme finishes
+glass.grain=เกรนละเอียด
+ui.retro_bevel=ขอบนูนของตัวควบคุมแบบย้อนยุค
+ui.solid_accent_headers=ส่วนหัวสีเน้นแบบทึบ

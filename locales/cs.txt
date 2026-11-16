@@ -2098,3 +2098,9 @@ automation.waiting=Čekání na místního klienta MCP.
 automation.notice=Ve výchozím nastavení zakázáno. Připojení klienti mohou číst náhledy plátna. Klient cloudové AI je může odeslat svému poskytovateli. PaintFE nekontaktuje službu AI.
 glass.headers=Záhlaví
 automation.active=Nedávná aktivita místního agenta
+
+
+# Optional theme finishes
+glass.grain=Jemné zrno
+ui.retro_bevel=Retro zkosené ovládací prvky
+ui.solid_accent_headers=Plné zvýrazněné záhlaví

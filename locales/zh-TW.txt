@@ -2098,3 +2098,8 @@ automation.waiting=正在等待本機 MCP 用戶端。
 automation.notice=預設禁用。連線的客戶端可以讀取畫布預覽。雲端人工智慧客戶端可以將這些發送給其提供者。 PaintFE 不聯絡 AI 服務。
 glass.headers=標頭
 automation.active=本機代理程式的近期活動
+
+# Optional theme finishes
+glass.grain=細緻顆粒
+ui.retro_bevel=復古立體控制項
+ui.solid_accent_headers=純色強調色標題列

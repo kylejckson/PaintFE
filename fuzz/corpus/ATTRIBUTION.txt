@@ -1,0 +1,1 @@
+HEIF seed from pillow-heif commit b16be1196dfa465a342d68894696e685ca3655cb, tests/images/heif/RGBA_8__29x100.heif. See the adjacent BSD-3-Clause licence and tests/fixtures/heif/README.md.

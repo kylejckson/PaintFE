@@ -6,6 +6,25 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.5.1] - 2026-11-16
+
+- Add more theme finishes for the community theme collection.
+- Keep translucent theme colours consistent after saving and reopening PaintFE.
+- Tighten release publishing checks and build dependency verification.
+
+### Themes and interface
+
+- Add optional fine grain for glass surfaces, raised retro controls and solid accent dialogue headers. These settings are included in theme files and stay off by default.
+- Use the same solid header colours in Preferences and standard dialogues, with contrasting title text.
+- Include canvas grid visibility and opacity in theme imports and exports, and apply glass changes immediately when previewing or restoring a theme.
+
+### Improvements
+
+- Save translucent colours correctly so faint accents and borders do not become darker after each restart. Reapplying an original theme restores colours affected by earlier saves.
+- Run AUR publishing after the release downloads have been verified. Validate the release version, tag and commit before preparing packages, and keep release metadata out of shell code.
+- Verify Python and native build tools against exact versions and approved wheel hashes. Keep dependency installation away from signing credentials.
+- Add bounded fuzzing for HEIF metadata and numeric expressions, alongside the existing regression tests.
+
 ## [1.5.0] - 2026-11-16
 
 - Add Community add-ons, a browser for user-made plugins, themes and icon packs.

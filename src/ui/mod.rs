@@ -14,3 +14,6 @@ pub mod help;
 pub(crate) mod tool_shelf;
 
 pub mod glass;
+
+#[cfg(test)]
+mod theme_collection_tests;

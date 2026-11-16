@@ -21,3 +21,20 @@ The small documented egui frame hook changes only outer-container frame shapes. 
 GPU alpha support alone is insufficient. The Windows adapter installs a stock zero-alpha black class brush, clears the client redirection surface once when transparency changes, and explicitly enables DWM alpha composition. Plain transparency does not clear the accent policy unnecessarily. These calls run on a state change, not per frame. Disabling glass restores opaque composition; re-enabling it clears and restores the native alpha path. The existing Vulkan backend is retained.
 
 The opt-in `transparency_surface` example reports actual surface alpha capabilities for Vulkan, ordinary DX12 and DirectComposition on this machine. An advertised premultiplied mode is not proof that desktop pixels are visible. The original gray-background reproduction was verified in the actual app against a separate native checkerboard window, including glass off/on and a standard New File dialog. The user independently confirmed desktop visibility. See [Win32 reference demos](https://github.com/jeweg/win32-window-transparency) for the redirection-surface explanation.
+
+## Optional fine grain
+
+Fine grain is a static 64 by 64 repeating texture, cached once per UI context.
+It is painted over workspace and outer surfaces, with rounded clipping and
+physical-pixel alignment. It never reads desktop or document pixels, never
+creates canvas blur textures and does not animate. Zero grain performs no
+texture allocation. Dialog title bands stay uniform and untextured.
+
+The new finish requires a build with grain support. PaintFE 1.5.0 ignores that
+extra theme field safely and retains its existing glass material.
+
+Translucent theme colours are serialised as straight RGBA and premultiplied only
+when parsed into Color32. Additive colours have an explicit additive prefix.
+This prevents faint accent and border colours from darkening on each restart.
+Previously degraded colours cannot be inferred from the saved values; applying
+the original theme again restores its authored palette.

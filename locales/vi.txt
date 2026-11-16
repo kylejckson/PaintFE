@@ -2098,3 +2098,9 @@ automation.waiting=Đang chờ một máy khách MCP cục bộ.
 automation.notice=Bị tắt theo mặc định. Khách hàng được kết nối có thể đọc bản xem trước canvas. Máy khách AI trên nền tảng đám mây có thể gửi những thứ này đến nhà cung cấp của nó. PaintFE không liên hệ với dịch vụ AI.
 glass.headers=Tiêu đề
 automation.active=Hoạt động gần đây của tác nhân cục bộ
+
+
+# Optional theme finishes
+glass.grain=Hạt mịn
+ui.retro_bevel=Viền nổi điều khiển cổ điển
+ui.solid_accent_headers=Tiêu đề màu nhấn đặc

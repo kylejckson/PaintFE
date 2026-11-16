@@ -2099,3 +2099,9 @@ automation.waiting=Waiting for a local MCP client.
 automation.notice=Disabled by default. Connected clients can read canvas previews. A cloud AI client may send these to its provider. PaintFE does not contact an AI service.
 glass.headers=Headers
 automation.active=Recent local agent activity
+
+
+# Optional theme finishes
+glass.grain=Fine grain
+ui.retro_bevel=Retro control bevels
+ui.solid_accent_headers=Solid accent headers

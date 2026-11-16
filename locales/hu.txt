@@ -2098,3 +2098,9 @@ automation.waiting=Várakozás a helyi MCP kliensre.
 automation.notice=Alapértelmezés szerint letiltva. A csatlakoztatott ügyfelek elolvashatják a vászon előnézeteit. Egy felhő AI-kliens elküldheti ezeket a szolgáltatójának. A PaintFE nem veszi fel a kapcsolatot az AI-szolgáltatással.
 glass.headers=Fejlécek
 automation.active=Helyi ügynök legutóbbi tevékenysége
+
+
+# Optional theme finishes
+glass.grain=Finom szemcsézettség
+ui.retro_bevel=Retró domború vezérlők
+ui.solid_accent_headers=Egyszínű kiemelt fejlécek

@@ -1,69 +1,62 @@
 name: Publish to AUR
 
-# Runs automatically after the Release workflow succeeds.
-# Publishes both paintfe (source build) and paintfe-bin (prebuilt binary) packages.
-# Requires three repository secrets — see packaging/aur/PKGBUILD comments and AUR_SETUP_GUIDE.md.
-#   AUR_SSH_PRIVATE_KEY  — private half of the AUR deploy SSH key
-#   AUR_USERNAME         — your AUR / git author username (e.g. kylejckson)
-#   AUR_EMAIL            — your AUR / git author email
-
 on:
-  workflow_run:
-    workflows: ["Release"]
-    types: [completed]
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+    secrets:
+      AUR_SSH_PRIVATE_KEY:
+        required: true
+      AUR_USERNAME:
+        required: true
+      AUR_EMAIL:
+        required: true
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to publish (e.g. 1.1.13)"
+        description: 'Published version, for example 1.5.1'
         required: true
+        type: string
 
-# Prevent duplicate/overlapping publishes for the same version.
+permissions:
+  contents: read
+
 concurrency:
-  group: >-
-    aur-publish-${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.event.workflow_run.head_branch }}
-  cancel-in-progress: true
-
-permissions: read-all
+  group: aur-publish-${{ inputs.version }}
+  cancel-in-progress: false
 
 jobs:
   aur-publish:
+    if: github.repository == 'kylejckson/PaintFE'
     name: Publish ${{ matrix.pkgname }} to AUR
     runs-on: ubuntu-latest
-    # For workflow_run: only run when Release succeeded on a version tag.
-    # For workflow_dispatch: always run.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       startsWith(github.event.workflow_run.head_branch, 'v'))
-
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - pkgname: paintfe
-            pkgbuild_path: packaging/aur/PKGBUILD
+            pkgbuild_path: target/aur/PKGBUILD
           - pkgname: paintfe-bin
-            pkgbuild_path: packaging/aur/PKGBUILD-bin
-
+            pkgbuild_path: target/aur/PKGBUILD-bin
     steps:
-      - name: Checkout at release commit
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Checkout trusted packaging tools
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/v{0}', inputs.version) || github.event.workflow_run.head_sha }}
+          ref: main
+          persist-credentials: false
 
-      - name: Extract version from tag
+      - name: Verify published release and prepare recipes
         id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-          else
-            TAG="${{ github.event.workflow_run.head_branch }}"
-            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Stamp version into PKGBUILD
-        run: |
-          sed -i "s/^pkgver=.*/pkgver=${{ steps.version.outputs.version }}/" ${{ matrix.pkgbuild_path }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUR_VERSION: ${{ inputs.version }}
+          AUR_REPOSITORY: ${{ github.repository }}
+          AUR_EVENT: ${{ github.event_name }}
+          AUR_RELEASE_SHA: ${{ github.event_name == 'push' && github.sha || '' }}
+        run: python3 tools/prepare_aur_release.py
 
       - name: Publish to AUR
         uses: KSXGitHub/github-actions-deploy-aur@084b0d9b15415bf9cdb65d44dad1efe37a354050
@@ -73,7 +66,7 @@ jobs:
           commit_username: ${{ secrets.AUR_USERNAME }}
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Update to v${{ steps.version.outputs.version }}"
+          commit_message: Update to v${{ steps.version.outputs.version }}
           updpkgsums: true
           test: false
           allow_empty_commits: false

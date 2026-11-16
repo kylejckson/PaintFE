@@ -398,6 +398,12 @@ impl<'a> Button<'a> {
             );
         }
 
+        if paint_frame && ui.visuals().retro_bevel && ui.is_rect_visible(response.response.rect) {
+            ui.painter().rect_bevel(response.response.rect,
+                response.response.is_primary_button_down_on() || state == WidgetState::Active,
+                ui.visuals().widgets.inactive.bg_fill);
+        }
+
         if let Some(cursor) = ui.visuals().interact_cursor
             && response.response.hovered()
         {

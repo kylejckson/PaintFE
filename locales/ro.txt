@@ -2098,3 +2098,9 @@ automation.waiting=Se așteaptă un client MCP local.
 automation.notice=Dezactivat implicit. Clienții conectați pot citi previzualizările pânzei. Un client cloud AI le poate trimite furnizorului său. PaintFE nu contactează un serviciu AI.
 glass.headers=Anteturi
 automation.active=Activitate recentă a agentului local
+
+
+# Optional theme finishes
+glass.grain=Granulație fină
+ui.retro_bevel=Controale retro în relief
+ui.solid_accent_headers=Antete cu culoare de accent uniformă

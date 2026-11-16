@@ -2098,3 +2098,9 @@ automation.waiting=Menunggu klien MCP lokal.
 automation.notice=Dinonaktifkan secara default. Klien yang terhubung dapat membaca pratinjau kanvas. Klien cloud AI dapat mengirimkan ini ke penyedianya. PaintFE tidak menghubungi layanan AI.
 glass.headers=Header
 automation.active=Aktivitas agen lokal terbaru
+
+
+# Optional theme finishes
+glass.grain=Butiran halus
+ui.retro_bevel=Tepi timbul kontrol retro
+ui.solid_accent_headers=Tajuk warna aksen solid

@@ -729,6 +729,10 @@ impl TextEdit<'_> {
             allocated.paint(ui)
         };
 
+        if ui.visuals().retro_bevel && frame.is_none_or(|frame| frame.fill.a() > 0 || frame.stroke.width > 0.0) && ui.is_rect_visible(response.rect) {
+            ui.painter().rect_bevel(response.rect, true, ui.visuals().text_edit_bg_color());
+        }
+
         let inner_rect = response.rect(inner_rect_id).unwrap_or(Rect::ZERO);
 
         // Our atom closure was now called, so the galley should always be available here

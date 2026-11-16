@@ -50,3 +50,13 @@ through hover, secondary press/drag/release and primary/keyboard activation.
 `containers/frame.rs` exposes a cloned Context-local `FramePaintHook`. Prepared frame painting may replace its visual shape, after releasing the Context data lock. Geometry, clipping, input and allocation remain upstream. No callback means the exact upstream paint path. PaintFE installs it only for opt-in materials. On upgrades verify disabled rendering, callback lock ownership, clipping and fill ordering; never let it mutate document pixels.
 
 The material hook runs only at the outer opaque frame of a container. Transparent wrapper frames do not suppress a toolbar material, while nested opaque groups keep their original paint. Verify ordinary group frames inside windows and modals, plus transparent top-panel wrappers containing a toolbar.
+
+## Optional classic control edges
+
+`Visuals::retro_bevel` defaults to false. When enabled by a theme, one shared
+`Painter::rect_bevel` draws physical-pixel raised/sunken edges for buttons,
+combo boxes, text fields and rectangular slider handles. It does not change
+allocation, IDs, focus or hit testing. Press feedback uses primary-button state.
+When rebasing, preserve the opt-in default and test both themes, secondary
+presses, numeric editing, popup controls and DPI scaling. Main coverage is in
+`src/ui/theme_collection_tests.rs` and the existing shared control tests.

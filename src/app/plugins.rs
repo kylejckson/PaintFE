@@ -240,6 +240,7 @@ impl PaintFEApp {
         self.theme.polish = self.settings.ui_polish.clone();
         self.theme.density = self.settings.ui_density;
         self.theme.apply(ctx);
+        crate::ui::glass::configure(ctx, &self.settings.glass, self.theme.mode == crate::theme::ThemeMode::Dark);
     }
     fn preview_appearance_pack(
         &mut self,

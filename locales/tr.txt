@@ -2098,3 +2098,9 @@ automation.waiting=Yerel bir MCP istemcisi bekleniyor.
 automation.notice=Varsayılan olarak devre dışıdır. Bağlı istemciler tuval önizlemelerini okuyabilir. Bir bulut yapay zeka istemcisi bunları sağlayıcısına gönderebilir. PaintFE bir AI hizmetiyle iletişim kurmaz.
 glass.headers=Başlıklar
 automation.active=Yerel aracının son etkinliği
+
+
+# Optional theme finishes
+glass.grain=İnce gren
+ui.retro_bevel=Retro kabartmalı denetimler
+ui.solid_accent_headers=Düz vurgu rengi başlıkları

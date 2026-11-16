@@ -2098,3 +2098,9 @@ automation.waiting=Aguarda-se um cliente MCP local.
 automation.notice=Desativado por defeito. Os clientes conectados podem ler visualizações de ecrãs. Um cliente de IA na nuvem pode enviá-los para o seu fornecedor. O PaintFE não contacta um serviço de IA.
 glass.headers=Cabeçalhos
 automation.active=Atividade recente do agente local
+
+
+# Optional theme finishes
+glass.grain=Granulação fina
+ui.retro_bevel=Relevo retro dos controlos
+ui.solid_accent_headers=Cabeçalhos com cor de destaque sólida

@@ -2,6 +2,26 @@
 use egui::{Color32, Context, Id, Response, Stroke, Ui};
 use serde::{Deserialize, Serialize};
 
+/// Shared solid-title palette, with the existing faint appearance as the default.
+pub fn header_colours(ctx: &Context, faint: Color32, accent: Color32) -> (Color32, Color32) {
+    if !settings(ctx).solid_headers {
+        return (faint, accent);
+    }
+    let fill = ctx
+        .data(|data| data.get_temp::<crate::theme::Theme>(Id::new("floating_widget_theme")))
+        .map_or(accent, |theme| theme.accent);
+    let luminance =
+        f32::from(fill.r()) * 0.2126 + f32::from(fill.g()) * 0.7152 + f32::from(fill.b()) * 0.0722;
+    (
+        fill,
+        if luminance > 150.0 {
+            Color32::BLACK
+        } else {
+            Color32::WHITE
+        },
+    )
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MotionMode {
     Off,
@@ -43,6 +63,8 @@ pub struct PolishSettings {
     pub numeric_wheel: bool,
     pub double_click_slider_reset: bool,
     pub fine_adjustment: f32,
+    pub retro_bevel: bool,
+    pub solid_headers: bool,
 }
 impl Default for PolishSettings {
     fn default() -> Self {
@@ -66,6 +88,8 @@ impl Default for PolishSettings {
             numeric_wheel: true,
             double_click_slider_reset: true,
             fine_adjustment: 0.1,
+            retro_bevel: false,
+            solid_headers: false,
         }
     }
 }
@@ -684,6 +708,11 @@ pub fn preferences(ui: &mut Ui, config: &mut PolishSettings) -> bool {
         ));
     });
     Collapse::new("Shared spacing and typography").show(ui, |ui| {
+        ui.checkbox(&mut config.retro_bevel, crate::t!("ui.retro_bevel"));
+        ui.checkbox(
+            &mut config.solid_headers,
+            crate::t!("ui.solid_accent_headers"),
+        );
         ui.add(
             crate::ui::controls::Slider::new(&mut config.spacing_scale, 0.8..=1.5)
                 .double_click_reset_to(PolishSettings::default().spacing_scale)

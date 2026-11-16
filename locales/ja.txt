@@ -2098,3 +2098,9 @@ automation.waiting=ローカル MCP クライアントを待機しています�
 automation.notice=デフォルトでは無効になっています。接続されたクライアントはキャンバスのプレビューを読み取ることができます。クラウド AI クライアントはこれらをプロバイダーに送信できます。 PaintFE は AI サービスに接続しません。
 glass.headers=ヘッダー
 automation.active=ローカルエージェントの最近の操作
+
+
+# Optional theme finishes
+glass.grain=微細な粒子
+ui.retro_bevel=レトロな立体コントロール
+ui.solid_accent_headers=アクセント色の単色ヘッダー

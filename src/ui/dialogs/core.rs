@@ -284,13 +284,12 @@ fn paint_dialog_header_impl(
         ui.allocate_exact_size(Vec2::new(available_width, header_height), Sense::hover());
 
     let painter = ui.painter();
+    let solid_header = crate::ui::polish::settings(ui.ctx()).solid_headers;
+    let (header_fill, header_text) =
+        crate::ui::polish::header_colours(ui.ctx(), colors.accent_faint, colors.accent_strong);
+
     // Gradient-like header: accent faint fill with rounded top corners
-    crate::ui::glass::paint_header(
-        painter,
-        rect,
-        ctx_theme(ui.ctx()).widget_cr(4),
-        colors.accent_faint,
-    );
+    crate::ui::glass::paint_header(painter, rect, ctx_theme(ui.ctx()).widget_cr(4), header_fill);
     // Left accent bar (3px, full accent color)
     painter.rect_filled(
         Rect::from_min_size(rect.min, Vec2::new(3.0, header_height)),
@@ -318,7 +317,7 @@ fn paint_dialog_header_impl(
             egui::Align2::LEFT_CENTER,
             title,
             title_font(ui.ctx()),
-            colors.accent_strong,
+            header_text,
         );
     } else {
         painter.text(
@@ -326,7 +325,7 @@ fn paint_dialog_header_impl(
             egui::Align2::LEFT_CENTER,
             format!("{icon} {title}"),
             title_font(ui.ctx()),
-            colors.accent_strong,
+            header_text,
         );
     }
 
@@ -355,7 +354,9 @@ fn paint_dialog_header_impl(
     crate::signal_widgets::paint_close_cross(
         ui,
         close_visual_rect,
-        if close_response.hovered() {
+        if solid_header {
+            header_text
+        } else if close_response.hovered() {
             colors.accent
         } else {
             colors.text_muted

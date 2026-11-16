@@ -1,6 +1,7 @@
 //! Lightweight translucent UI fills. Document pixels are never sampled or blurred.
 use egui::{Color32, Context, Rect, Shape};
 use serde::{Deserialize, Serialize};
+mod grain;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Surface {
@@ -26,6 +27,8 @@ pub struct GlassSettings {
     pub desktop: bool,
     pub desktop_blur: bool,
     pub workspace_opacity: f32,
+    /// Static fine grain, opt-in and independent of native blur.
+    pub grain: f32,
     pub panels: Surface,
     pub headers: Surface,
     pub menus: Surface,
@@ -39,6 +42,7 @@ impl Default for GlassSettings {
             desktop: true,
             desktop_blur: false,
             workspace_opacity: 0.18,
+            grain: 0.0,
             panels: Surface::default(),
             headers: Surface {
                 opacity: 1.,
@@ -63,6 +67,7 @@ impl GlassSettings {
             };
         }
         limit(&mut self.workspace_opacity, 0.18, 1.);
+        limit(&mut self.grain, 0.0, 1.);
         for s in [
             &mut self.panels,
             &mut self.headers,
@@ -137,7 +142,17 @@ fn material(
         ) => &m.settings.menus,
         _ => &m.settings.panels,
     };
-    material_surface(frame, content, surface)
+    let base = material_surface(frame, content, surface)?;
+    if let Some(noise) = grain::shape(
+        ctx,
+        frame.widget_rect(content),
+        frame.corner_radius,
+        m.settings.grain,
+    ) {
+        Some(Shape::Vec(vec![base, noise]))
+    } else {
+        Some(base)
+    }
 }
 fn material_surface(frame: &egui::Frame, content: Rect, surface: &Surface) -> Option<Shape> {
     if !surface.enabled {
@@ -160,6 +175,16 @@ fn material_surface(frame: &egui::Frame, content: Rect, surface: &Surface) -> Op
     f.stroke.width *= surface.border;
     Some(f.paint(content))
 }
+pub(crate) fn paint_workspace_grain(painter: &egui::Painter, rect: Rect) {
+    let s = settings(painter.ctx());
+    if s.enabled
+        && s.desktop
+        && let Some(shape) = grain::shape(painter.ctx(), rect, egui::CornerRadius::ZERO, s.grain)
+    {
+        painter.add(shape);
+    }
+}
+
 pub fn workspace(ctx: &Context, color: Color32) -> Color32 {
     let s = settings(ctx);
     if s.enabled && s.desktop {
@@ -191,6 +216,11 @@ pub fn preferences(ui: &mut egui::Ui, s: &mut GlassSettings) -> bool {
         if s.desktop && s.desktop_blur {
             ui.weak(crate::services::glass::status());
         }
+        ui.add(
+            crate::ui::controls::Slider::new(&mut s.grain, 0.0..=1.0)
+                .text(crate::t!("glass.grain"))
+                .reset_to(0.0),
+        );
         for (name, part) in [
             ("glass.panels", &mut s.panels),
             ("glass.headers", &mut s.headers),

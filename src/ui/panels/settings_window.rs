@@ -294,6 +294,8 @@ impl SettingsWindow {
                         Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 25)
                     };
 
+                    let (header_fill, header_text) =
+                        crate::ui::polish::header_colours(ctx, accent_faint, accent);
                     let (rect, _) = ui.allocate_exact_size(
                         Vec2::new(available_width, header_height),
                         Sense::hover(),
@@ -312,7 +314,7 @@ impl SettingsWindow {
                         ctx.request_repaint();
                     }
                     let painter = ui.painter();
-                    painter.rect_filled(rect, egui::CornerRadius::ZERO, accent_faint);
+                    painter.rect_filled(rect, egui::CornerRadius::ZERO, header_fill);
                     painter.rect_filled(
                         egui::Rect::from_min_size(rect.min, Vec2::new(3.0, header_height)),
                         egui::CornerRadius::ZERO,
@@ -323,7 +325,7 @@ impl SettingsWindow {
                         egui::Align2::LEFT_CENTER,
                         format!("\u{2699} {}", t!("settings.title")),
                         egui::FontId::proportional(14.0),
-                        accent,
+                        header_text,
                     );
 
                     if let Some(error) = crate::config::persistence::error() {
@@ -356,7 +358,15 @@ impl SettingsWindow {
                         false,
                         theme.widget_rounding.min(6.0),
                     );
-                    crate::signal_widgets::paint_close_cross(ui, btn_rect, theme.text_muted);
+                    crate::signal_widgets::paint_close_cross(
+                        ui,
+                        btn_rect,
+                        if crate::ui::polish::settings(ctx).solid_headers {
+                            header_text
+                        } else {
+                            theme.text_muted
+                        },
+                    );
                     if btn_response.clicked() {
                         should_close = true;
                     }

@@ -43,6 +43,10 @@ jobs:
           key: windows-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: windows-cargo-
 
+      - name: Install verified pack build tools
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: -r .github/requirements-build.txt
+
       - name: Build release
         # .cargo/config.toml applies -C target-feature=+crt-static on Windows,
         # statically linking vcruntime into the EXE — no external C++ dependency
@@ -50,7 +54,6 @@ jobs:
         env:
           PAINTFE_PACK_SIGNING_KEY: ${{ secrets.OPTIONAL_PACK_SIGNING_KEY }}
         run: |
-          python -m pip install cryptography==46.0.7
           python tools/build_optional_packs.py --release
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
@@ -128,11 +131,14 @@ jobs:
           key: linux-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: linux-cargo-
 
+      - name: Install verified pack build tools
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: -r .github/requirements-build.txt
+
       - name: Build release
         env:
           PAINTFE_PACK_SIGNING_KEY: ${{ secrets.OPTIONAL_PACK_SIGNING_KEY }}
         run: |
-          python -m pip install cryptography==46.0.7
           python tools/build_optional_packs.py --release
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
@@ -295,12 +301,15 @@ jobs:
           key: macos-arm-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: macos-arm-cargo-
 
+      - name: Install verified pack build tools
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: -r .github/requirements-build.txt
+          brew install nasm
+
       - name: Build release
         env:
           PAINTFE_PACK_SIGNING_KEY: ${{ secrets.OPTIONAL_PACK_SIGNING_KEY }}
         run: |
-          python -m pip install cryptography==46.0.7
-          brew install nasm
           python tools/build_optional_packs.py --release
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
@@ -370,12 +379,15 @@ jobs:
           key: macos-x86-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: macos-x86-cargo-
 
+      - name: Install verified pack build tools
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: -r .github/requirements-build.txt
+          brew install nasm
+
       - name: Build release (cross-compile for Intel)
         env:
           PAINTFE_PACK_SIGNING_KEY: ${{ secrets.OPTIONAL_PACK_SIGNING_KEY }}
         run: |
-          python -m pip install cryptography==46.0.7
-          brew install nasm
           python tools/build_optional_packs.py --release --target x86_64-apple-darwin
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
@@ -528,7 +540,8 @@ jobs:
           python-version: '3.12'
 
       - name: Install pack verification tools
-        run: python -m pip install cryptography==46.0.7
+        run: >-
+          python -m pip install --require-hashes --only-binary=:all: -r .github/requirements-build.txt
 
       - name: Prepare release notes
         env:
@@ -664,3 +677,17 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: python tools/stage_release_packs.py --tag "$RELEASE_TAG" --destination dist/packs --verify-published
+
+  publish-aur:
+    name: Publish AUR packages
+    needs: release
+    if: github.repository == 'kylejckson/PaintFE'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/aur-publish.yml
+    with:
+      version: ${{ github.ref_name }}
+    secrets:
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+      AUR_USERNAME: ${{ secrets.AUR_USERNAME }}
+      AUR_EMAIL: ${{ secrets.AUR_EMAIL }}

@@ -2098,3 +2098,9 @@ automation.waiting=Wachten op een lokale MCP-client.
 automation.notice=Standaard uitgeschakeld. Verbonden clients kunnen canvasvoorbeelden lezen. Een cloud AI-client kan deze naar zijn provider sturen. PaintFE neemt geen contact op met een AI-service.
 glass.headers=Kopteksten
 automation.active=Recente activiteit van lokale agent
+
+
+# Optional theme finishes
+glass.grain=Fijne korrel
+ui.retro_bevel=Afgeschuinde retrobediening
+ui.solid_accent_headers=Effen koppen in accentkleur

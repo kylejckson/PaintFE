@@ -1,0 +1,35 @@
+[package]
+name = "paintfe-fuzz-targets"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[features]
+libfuzzer = ["dep:libfuzzer-sys"]
+
+[dependencies]
+libfuzzer-sys = { version = "=0.4.13", optional = true }
+
+[[bin]]
+name = "heif_metadata"
+path = "fuzz_targets/heif_metadata.rs"
+test = false
+doc = false
+required-features = ["libfuzzer"]
+
+[[bin]]
+name = "numeric_expression"
+path = "fuzz_targets/numeric_expression.rs"
+test = false
+doc = false
+required-features = ["libfuzzer"]
+
+[[bin]]
+name = "fuzz-smoke"
+path = "src/bin/smoke.rs"
+
+[workspace]
+members = ["."]

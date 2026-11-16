@@ -6,8 +6,8 @@ Only the latest stable release receives security fixes. Older versions will not 
 
 | Version | Supported |
 | ------- | --------- |
-| 1.0.x (latest) | Yes |
-| < 1.0.0 | No |
+| Latest stable release | Yes |
+| Older releases | No |
 
 If you are running an older release, please update to the current stable release before reporting an issue, as it may already be resolved.
 
@@ -102,3 +102,8 @@ PaintFE ships as a single portable binary with no installer. Verify the SHA-256 
 Researchers who responsibly disclose valid security issues will be credited by name (or handle, or anonymously on request) in the GitHub Security Advisory and in the release notes for the patch that resolves the issue.
 
 Thank you for helping keep PaintFE and its users secure.
+
+## Maintainer checks
+
+See [security maintenance](docs/security-maintenance.md) for release hardening,
+hash-locked build dependencies, parser fuzzing and evidence-based alert triage.

@@ -868,6 +868,8 @@ impl Theme {
             ThemeMode::Light => Visuals::light(),
         };
 
+        visuals.retro_bevel = self.polish.retro_bevel;
+
         // Override with our custom colors
         visuals.panel_fill = self.panel_bg;
         visuals.window_fill = self.window_bg;
@@ -976,6 +978,17 @@ impl Theme {
         visuals.warn_fg_color = Color32::from_rgb(255, 180, 100);
         visuals.error_fg_color = Color32::from_rgb(255, 100, 100);
 
+        if self.polish.retro_bevel {
+            for widget in [
+                &mut visuals.widgets.noninteractive,
+                &mut visuals.widgets.inactive,
+                &mut visuals.widgets.hovered,
+                &mut visuals.widgets.active,
+                &mut visuals.widgets.open,
+            ] {
+                widget.corner_radius = CornerRadius::ZERO;
+            }
+        }
         ctx.set_visuals(visuals);
 
         // Expose extra paint-time theme colors for custom widgets/helpers.

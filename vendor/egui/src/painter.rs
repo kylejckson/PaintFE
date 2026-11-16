@@ -403,6 +403,28 @@ impl Painter {
         self.add(RectShape::filled(rect, corner_radius, fill_color))
     }
 
+    /// Paint classic control edges without changing the hit rectangle or fill.
+    pub fn rect_bevel(&self, rect: Rect, sunken: bool, fill: Color32) {
+        let pixel = 1.0 / self.ctx().pixels_per_point();
+        if rect.width().min(rect.height()) <= pixel * 4.0 { return; }
+        let rgba = fill.to_srgba_unmultiplied();
+        let light = Color32::from_rgba_unmultiplied(
+            (rgba[0] as f32 * 0.15 + 216.75) as u8,
+            (rgba[1] as f32 * 0.15 + 216.75) as u8,
+            (rgba[2] as f32 * 0.15 + 216.75) as u8, rgba[3]);
+        let dark = Color32::from_rgba_unmultiplied(rgba[0] / 3, rgba[1] / 3, rgba[2] / 3, rgba[3]);
+        let (top, bottom) = if sunken { (dark, light) } else { (light, dark) };
+        for inset in [0.5, 1.5] {
+            let r = rect.shrink(pixel * inset);
+            for (points, colour) in [
+                ([r.left_bottom(), r.left_top()], top),
+                ([r.left_top(), r.right_top()], top),
+                ([r.right_top(), r.right_bottom()], bottom),
+                ([r.right_bottom(), r.left_bottom()], bottom),
+            ] { self.line_segment(points, Stroke::new(pixel, colour)); }
+        }
+    }
+
     pub fn rect_stroke(
         &self,
         rect: Rect,
