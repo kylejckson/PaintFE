@@ -891,13 +891,9 @@ pub fn enumerate_font_weights(family: &str) -> Vec<(String, u16)> {
     let mut seen_weights = std::collections::HashSet::new();
 
     for font_handle in fonts {
-        if let Ok(font) = font_handle.load() {
-            let props = font.properties();
-            let weight_val = props.weight.0 as u16;
-            let style = props.style;
-            let is_italic = style == font_kit::properties::Style::Italic
-                || style == font_kit::properties::Style::Oblique;
-
+        if let Some((weight_val, is_italic)) = font_handle_data(font_handle)
+            .and_then(|(bytes, index)| font_face_metadata(&bytes, index))
+        {
             // Skip italic variants — they're handled by the italic toggle
             if is_italic {
                 continue;
@@ -1069,11 +1065,38 @@ pub fn load_system_font(family: &str, weight: u16, italic: bool) -> Option<FontA
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+fn font_face_metadata(bytes: &[u8], index: u32) -> Option<(u16, bool)> {
+    let face = ttf_parser::Face::parse(bytes, index).ok()?;
+    // Reject faces the document text engine cannot render, without invoking
+    // FreeType to inspect bitmap strikes or collection faces.
+    ab_glyph::FontRef::try_from_slice_and_index(bytes, index).ok()?;
+    Some((
+        face.weight().to_number(),
+        face.is_italic() || face.is_oblique(),
+    ))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn font_handle_data(handle: &font_kit::handle::Handle) -> Option<(Vec<u8>, u32)> {
     use font_kit::handle::Handle;
 
     match handle {
         Handle::Path { path, font_index } => Some((std::fs::read(path).ok()?, *font_index)),
         Handle::Memory { bytes, font_index } => Some((bytes.as_ref().clone(), *font_index)),
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod safe_font_metadata_tests {
+    use super::*;
+    #[test]
+    fn invalid_and_collection_indices_fail_without_native_face_loading() {
+        let bytes = include_bytes!("../../assets/fonts/DMSans-Regular.ttf");
+        assert_eq!(font_face_metadata(bytes, 0), Some((400, false)));
+        assert!(font_face_metadata(bytes, 1).is_none());
+        for length in [0, 1, 12, 64] {
+            assert!(font_face_metadata(&bytes[..length], 0).is_none());
+        }
+        assert!(font_face_metadata(b"not a font", 0).is_none());
     }
 }

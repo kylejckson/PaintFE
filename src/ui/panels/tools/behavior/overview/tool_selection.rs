@@ -133,11 +133,14 @@ impl ToolsPanel {
             }
         } else if should_pick
             && (!pointer_down || fresh_press)
-            && !self.is_stroke_active()
-            && !self.has_active_tool_preview()
+            && ((!self.is_stroke_active() && !self.has_active_tool_preview())
+                || (self.active_tool == Tool::Line
+                    && self.line_state.line_tool.stage != LineStage::Dragging
+                    && self.line_state.line_tool.dragging_handle.is_none()
+                    && !self.line_state.line_tool.pan_handle_dragging))
             && matches!(
                 self.active_tool,
-                Tool::Brush | Tool::Pencil | Tool::Eraser | Tool::Fill | Tool::Smudge
+                Tool::Brush | Tool::Pencil | Tool::Eraser | Tool::Fill | Tool::Smudge | Tool::Line
             )
         {
             self.temporary_picker_return = Some(self.active_tool);

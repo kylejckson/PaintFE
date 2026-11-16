@@ -33,7 +33,7 @@ continue to resolve through aliases, including personal label overrides. Languag
 picker entries draw the native name and parenthesised language code separately to
 avoid joining Arabic and Latin text into one ambiguous bidirectional run.
 
-Hold Ctrl with Brush, Pencil, Eraser, Fill or Smudge to sample a colour temporarily.
+Hold Ctrl with Brush, Pencil, Eraser, Line, Fill or Smudge to sample a colour temporarily.
 Left-click samples the primary colour and right-click samples the secondary colour.
 Release the modifier to return to the previous tool. Preferences > Keybinds > Tools
 includes Temporary colour picker modifier, with Ctrl, Alt and Disabled choices.
@@ -45,3 +45,18 @@ The Eraser shortcut (E by default) toggles between Eraser and the previous tool.
 Toolbar tool selection still selects a tool directly. Rebinding or disabling the
 Eraser shortcut applies to the toggle too. A toggle during painting waits for the
 stroke to finish, and repeated key events do not toggle again.
+
+## Selection rotation
+
+With a selection, Ctrl+G and Ctrl+H lift the active layer's selected pixels into
+one editable transform with handles. Repeating a rotation changes that same
+floating selection, without cutting or resampling the layer again. Enter or Apply
+commits one history entry. Escape or Cancel restores the original pixels and
+selection. Whole-canvas rotation remains available when there is no selection.
+Other image edits wait until the floating selection is applied or cancelled.
+Pending-transform Undo follows Preferences > Editing > Undo tool adjustments.
+
+The Line tool supports temporary Ctrl colour sampling too. Its two blue curve
+handles start apart, and changing colour, size, pattern or blending updates the
+pending line while the pointer remains over the controls. Apply and Cancel in
+the options bar perform the same actions as Enter and Escape.

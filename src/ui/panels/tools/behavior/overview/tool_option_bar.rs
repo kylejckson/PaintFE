@@ -927,6 +927,15 @@ impl ToolsPanel {
             &mut self.properties.blending_mode,
             90.,
         );
+        if self.line_state.line_tool.stage == LineStage::Editing {
+            ui.separator();
+            if ui.button(t!("settings.keybinds.apply")).clicked() {
+                self.injected_enter_pressed = true;
+            }
+            if ui.button(t!("common.cancel")).clicked() {
+                self.injected_escape_pressed = true;
+            }
+        }
     }
 
     /// Show eraser-specific options (size, hardness - opacity from color alpha)

@@ -782,16 +782,21 @@ fn docked_appearance_is_used_by_the_actual_frame_painter() {
     app.settings.tool_shelf.top_separator = Some([17, 41, 233]);
     app.settings.tool_shelf.separator_opacity = 0.25;
     app.settings.tool_shelf_rounding = Some(12.);
-    let output = ctx.run_ui(
-        egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(900., 700.),
-            )),
-            ..Default::default()
-        },
-        |ui| app.show_runtime_canvas_tail(&ctx, ui, false),
-    );
+    let mut output = None;
+    for tick in 0..3 {
+        output = Some(ctx.run_ui(
+            egui::RawInput {
+                time: Some(tick as f64),
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(900., 700.),
+                )),
+                ..Default::default()
+            },
+            |ui| app.show_runtime_canvas_tail(&ctx, ui, false),
+        ));
+    }
+    let output = output.unwrap();
     let fill = app.theme.tool_shelf_bg.gamma_multiply(0.5);
     assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::epaint::Shape::Rect(rect) if rect.fill==fill && rect.corner_radius.nw==12 && rect.rect.width()>800.)));
     let separator = egui::Color32::from_rgb(17, 41, 233).gamma_multiply(0.25);
@@ -1993,109 +1998,141 @@ fn eraser_resize_drag_does_not_paint_or_change_brush_size() {
 
 #[test]
 fn temporary_picker_samples_without_editing_and_does_not_paint_when_ctrl_is_released_first() {
-    for secondary in [false, true] {
-        let mut app = app();
-        let ctx = context();
-        let before = app.projects[0].canvas_state.layers[0]
-            .pixels
-            .to_rgba_image();
-        let frame = |app: &mut PaintFEApp, modifiers, events| {
-            let _ = ctx.run_ui(
-                egui::RawInput {
-                    modifiers,
-                    events,
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(900., 700.),
-                    )),
-                    ..Default::default()
-                },
-                |ui| {
-                    app.update_runtime_input(ui.ctx());
-                    app.show_runtime_canvas_tail(&ctx, ui, false);
-                },
-            );
-        };
-        for _ in 0..3 {
-            frame(&mut app, egui::Modifiers::NONE, vec![]);
-        }
-        let rect = app.canvas.last_image_rect.unwrap();
-        let point = rect.min + egui::vec2(4.5, 5.5) * app.canvas.view_state().0;
-        let button = if secondary {
-            egui::PointerButton::Secondary
-        } else {
-            egui::PointerButton::Primary
-        };
-        let control = if secondary {
-            egui::Key::ControlRight
-        } else {
-            egui::Key::ControlLeft
-        };
-        frame(
-            &mut app,
-            egui::Modifiers::CTRL,
-            vec![egui::Event::Key {
-                key: control,
-                physical_key: Some(control),
-                pressed: true,
-                repeat: false,
-                modifiers: egui::Modifiers::CTRL,
-            }],
-        );
-        assert_eq!(app.tools_panel.active_tool, Tool::ColorPicker);
-        frame(
-            &mut app,
-            egui::Modifiers::CTRL,
-            vec![
-                egui::Event::PointerMoved(point),
-                egui::Event::PointerButton {
-                    pos: point,
-                    button,
-                    pressed: true,
-                    modifiers: egui::Modifiers::CTRL,
-                },
-            ],
-        );
-        assert_eq!(app.tools_panel.active_tool, Tool::ColorPicker);
-        let (colour, picked_secondary) = app
-            .tools_panel
-            .last_picked_color
-            .take()
-            .expect("sampled colour");
-        assert_eq!(colour.to_srgba_unmultiplied(), before.get_pixel(4, 5).0);
-        assert_eq!(picked_secondary, secondary);
-        frame(
-            &mut app,
-            egui::Modifiers::NONE,
-            vec![
-                egui::Event::Key {
+    for (tool, pending) in [
+        (Tool::Brush, false),
+        (Tool::Line, false),
+        (Tool::Line, true),
+    ] {
+        for secondary in [false, true] {
+            let mut app = app();
+            let ctx = context();
+            app.tools_panel.active_tool = tool;
+            let before = app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image();
+            let frame = |app: &mut PaintFEApp, modifiers, events| {
+                let _ = ctx.run_ui(
+                    egui::RawInput {
+                        modifiers,
+                        events,
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(900., 700.),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        app.update_runtime_input(ui.ctx());
+                        app.show_runtime_canvas_tail(&ctx, ui, false);
+                    },
+                );
+            };
+            for _ in 0..3 {
+                frame(&mut app, egui::Modifiers::NONE, vec![]);
+            }
+            let rect = app.canvas.last_image_rect.unwrap();
+            let point = rect.min + egui::vec2(4.5, 5.5) * app.canvas.view_state().0;
+            if pending {
+                let endpoint = point + egui::vec2(12., 6.) * app.canvas.view_state().0;
+                frame(
+                    &mut app,
+                    egui::Modifiers::NONE,
+                    vec![
+                        egui::Event::PointerMoved(point),
+                        screen_pointer(point, true),
+                    ],
+                );
+                frame(
+                    &mut app,
+                    egui::Modifiers::NONE,
+                    vec![egui::Event::PointerMoved(endpoint)],
+                );
+                frame(
+                    &mut app,
+                    egui::Modifiers::NONE,
+                    vec![screen_pointer(endpoint, false)],
+                );
+                assert_eq!(
+                    app.tools_panel.line_state.line_tool.stage,
+                    crate::components::tools::LineStage::Editing
+                );
+            }
+            let button = if secondary {
+                egui::PointerButton::Secondary
+            } else {
+                egui::PointerButton::Primary
+            };
+            let control = if secondary {
+                egui::Key::ControlRight
+            } else {
+                egui::Key::ControlLeft
+            };
+            frame(
+                &mut app,
+                egui::Modifiers::CTRL,
+                vec![egui::Event::Key {
                     key: control,
                     physical_key: Some(control),
-                    pressed: false,
+                    pressed: true,
                     repeat: false,
+                    modifiers: egui::Modifiers::CTRL,
+                }],
+            );
+            assert_eq!(app.tools_panel.active_tool, Tool::ColorPicker);
+            frame(
+                &mut app,
+                egui::Modifiers::CTRL,
+                vec![
+                    egui::Event::PointerMoved(point),
+                    egui::Event::PointerButton {
+                        pos: point,
+                        button,
+                        pressed: true,
+                        modifiers: egui::Modifiers::CTRL,
+                    },
+                ],
+            );
+            assert_eq!(app.tools_panel.active_tool, Tool::ColorPicker);
+            let (colour, picked_secondary) = app
+                .tools_panel
+                .last_picked_color
+                .take()
+                .expect("sampled colour");
+            assert_eq!(colour.to_srgba_unmultiplied(), before.get_pixel(4, 5).0);
+            assert_eq!(picked_secondary, secondary);
+            frame(
+                &mut app,
+                egui::Modifiers::NONE,
+                vec![
+                    egui::Event::Key {
+                        key: control,
+                        physical_key: Some(control),
+                        pressed: false,
+                        repeat: false,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                    egui::Event::PointerMoved(point + egui::vec2(2., 0.)),
+                ],
+            );
+            assert_eq!(app.tools_panel.active_tool, tool);
+            frame(
+                &mut app,
+                egui::Modifiers::NONE,
+                vec![egui::Event::PointerButton {
+                    pos: point,
+                    button,
+                    pressed: false,
                     modifiers: egui::Modifiers::NONE,
-                },
-                egui::Event::PointerMoved(point + egui::vec2(2., 0.)),
-            ],
-        );
-        assert_eq!(app.tools_panel.active_tool, Tool::Brush);
-        frame(
-            &mut app,
-            egui::Modifiers::NONE,
-            vec![egui::Event::PointerButton {
-                pos: point,
-                button,
-                pressed: false,
-                modifiers: egui::Modifiers::NONE,
-            }],
-        );
-        assert_eq!(
-            app.projects[0].canvas_state.layers[0]
-                .pixels
-                .to_rgba_image(),
-            before
-        );
-        assert_eq!(app.projects[0].history.undo_count(), 0);
+                }],
+            );
+            assert_eq!(
+                app.projects[0].canvas_state.layers[0]
+                    .pixels
+                    .to_rgba_image(),
+                before
+            );
+            assert_eq!(app.projects[0].history.undo_count(), 0);
+        }
     }
 }
 
@@ -2303,6 +2340,394 @@ fn render_palette_and_thumbnail_review() {
                 output,
                 [900, 400],
                 &path,
+            );
+        }
+    }
+}
+
+#[test]
+fn selected_quarter_turns_lift_once_preserve_background_and_commit_one_history_entry() {
+    use crate::config::{commands::MenuCommand, keybindings::BindableAction};
+    for (w, h) in [(7, 5), (8, 5), (7, 6), (8, 6)] {
+        let mut app = app();
+        let ctx = context();
+        let mut selection = image::GrayImage::new(32, 24);
+        for y in 8..8 + h {
+            for x in 10..10 + w {
+                selection.put_pixel(x, y, image::Luma([255]));
+            }
+        }
+        app.projects[0].canvas_state.selection_mask = Some(selection.clone());
+        let before = app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image();
+        let action = BindableAction::Menu(MenuCommand::CanvasRotate90Cw);
+        for turn in 1..=4 {
+            assert!(app.execute_menu_command(&ctx, action));
+            let overlay = app.paste_overlay.as_ref().unwrap();
+            assert_eq!(overlay.source.width(), w);
+            assert_eq!(overlay.source.height(), h);
+            assert!(overlay.rotation.abs() <= std::f32::consts::PI);
+            assert_eq!(app.projects[0].history.undo_count(), 0);
+            assert!(!app.menu_command_enabled(&ctx, BindableAction::ColorInvertColors));
+            let source = app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image();
+            for y in 0..24 {
+                for x in 0..32 {
+                    if x < 10 || x >= 10 + w || y < 8 || y >= 8 + h {
+                        assert_eq!(
+                            source.get_pixel(x, y),
+                            before.get_pixel(x, y),
+                            "turn {turn}"
+                        );
+                    }
+                }
+            }
+        }
+        app.commit_paste_overlay(true);
+        assert!(app.paste_overlay.is_none());
+        assert_eq!(app.projects[0].history.undo_count(), 1);
+        assert_eq!(
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image(),
+            before
+        );
+        assert_eq!(
+            app.projects[0].canvas_state.selection_mask.as_ref(),
+            Some(&selection)
+        );
+        app.perform_undo();
+        assert_eq!(
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image(),
+            before
+        );
+        app.perform_redo();
+        assert_eq!(
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image(),
+            before
+        );
+        assert!(app.projects[0].canvas_state.has_selection());
+    }
+}
+
+#[test]
+fn docked_shelf_keeps_real_image_and_grid_underlay_without_input_or_navigation_changes() {
+    fn meshes<'a>(shape: &'a egui::Shape, result: &mut Vec<&'a egui::epaint::Mesh>) {
+        match shape {
+            egui::Shape::Mesh(mesh) => result.push(mesh),
+            egui::Shape::Vec(children) => {
+                for child in children {
+                    meshes(child, result);
+                }
+            }
+            _ => {}
+        }
+    }
+    for dark in [false, true] {
+        let mut app = app();
+        let ctx = context();
+        app.theme = if dark {
+            crate::theme::Theme::dark()
+        } else {
+            crate::theme::Theme::light()
+        };
+        app.theme.apply(&ctx);
+        app.settings.tool_shelf.docked = true;
+        app.projects[0].canvas_state.show_pixel_grid = true;
+        let frame = |app: &mut PaintFEApp, events| {
+            ctx.run_ui(
+                egui::RawInput {
+                    events,
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900., 700.),
+                    )),
+                    ..Default::default()
+                },
+                |ui| app.show_runtime_canvas_tail(&ctx, ui, false),
+            )
+        };
+        for _ in 0..3 {
+            let _ = frame(&mut app, vec![]);
+        }
+        let navigation = app.canvas.last_canvas_rect.unwrap();
+        app.canvas
+            .set_view_state(8., egui::vec2(0., 4. - navigation.center().y + 96.));
+        let mut image_rect = None;
+        for opacity in [0_f32, 0.5, 1.] {
+            app.settings.tool_shelf.opacity = Some(opacity);
+            for tool in [Tool::Brush, Tool::Fill, Tool::Line] {
+                app.tools_panel.change_tool(tool);
+                let output = frame(&mut app, vec![]);
+                assert_eq!(app.canvas.last_canvas_rect.unwrap(), navigation);
+                if let Some(rect) = image_rect {
+                    assert_eq!(app.canvas.last_image_rect.unwrap(), rect);
+                } else {
+                    image_rect = app.canvas.last_image_rect;
+                }
+                let texture = app.projects[0]
+                    .canvas_state
+                    .composite_cache
+                    .as_ref()
+                    .unwrap()
+                    .id();
+                let mut actual_image = false;
+                let mut actual_grid = false;
+                for shape in &output.shapes {
+                    if shape.clip_rect.top() >= navigation.top() {
+                        continue;
+                    }
+                    let mut found = Vec::new();
+                    meshes(&shape.shape, &mut found);
+                    for mesh in found {
+                        if mesh.vertices.iter().any(|v| v.pos.y < navigation.top()) {
+                            actual_image |= mesh.texture_id == texture;
+                            actual_grid |= ctx
+                                .tex_manager()
+                                .read()
+                                .meta(mesh.texture_id)
+                                .is_some_and(|m| m.name.starts_with("pixel_grid_"));
+                        }
+                    }
+                }
+                assert!(actual_image, "image was clipped at the docked shelf");
+                assert!(actual_grid, "pixel grid was clipped at the docked shelf");
+            }
+        }
+        app.tools_panel.change_tool(Tool::Brush);
+        let before = app.projects[0].canvas_state.layers[0]
+            .pixels
+            .to_rgba_image();
+        let x = app.canvas.last_image_rect.unwrap().center().x;
+        let y = navigation.top() - 12.;
+        let _ = frame(
+            &mut app,
+            vec![
+                egui::Event::PointerMoved(egui::pos2(x, y)),
+                screen_pointer(egui::pos2(x, y), true),
+            ],
+        );
+        let _ = frame(&mut app, vec![screen_pointer(egui::pos2(x, y), false)]);
+        assert_eq!(
+            app.projects[0].canvas_state.layers[0]
+                .pixels
+                .to_rgba_image(),
+            before
+        );
+        assert_eq!(app.projects[0].history.undo_count(), 0);
+    }
+}
+
+fn screen_pointer(point: egui::Pos2, down: bool) -> egui::Event {
+    egui::Event::PointerButton {
+        pos: point,
+        button: egui::PointerButton::Primary,
+        pressed: down,
+        modifiers: egui::Modifiers::NONE,
+    }
+}
+
+#[test]
+fn fast_line_gestures_keep_press_anchor_release_position_and_distinct_curve_handles() {
+    for one_frame in [false, true] {
+        let mut app = app();
+        let ctx = context();
+        app.tools_panel.active_tool = Tool::Line;
+        let start = (4., 5.);
+        let end = (24., 17.);
+        let moved = egui::Event::PointerMoved(egui::pos2(100. + end.0 * 4., 100. + end.1 * 4.));
+        let mut events = vec![brush_pointer(start, true), moved];
+        if one_frame {
+            events.push(brush_pointer(end, false));
+        }
+        tool_frame(&mut app, &ctx, end, events);
+        if !one_frame {
+            tool_frame(&mut app, &ctx, end, vec![brush_pointer(end, false)]);
+        }
+        let line = &app.tools_panel.line_state.line_tool;
+        assert_eq!(line.stage, crate::components::tools::LineStage::Editing);
+        assert_eq!(line.control_points[0], egui::pos2(start.0, start.1));
+        assert_eq!(line.control_points[3], egui::pos2(end.0, end.1));
+        assert_ne!(line.control_points[1], line.control_points[2]);
+        let old = line.control_points[1];
+        let target = old + egui::vec2(0., 3.);
+        tool_frame(
+            &mut app,
+            &ctx,
+            (target.x, target.y),
+            vec![
+                brush_pointer((old.x, old.y), true),
+                egui::Event::PointerMoved(egui::pos2(100. + target.x * 4., 100. + target.y * 4.)),
+                brush_pointer((target.x, target.y), false),
+            ],
+        );
+        assert!(
+            (app.tools_panel.line_state.line_tool.control_points[1] - target).length() < 0.0001
+        );
+        assert_eq!(app.projects[0].history.undo_count(), 0);
+    }
+}
+
+#[test]
+fn numeric_edit_finish_keys_do_not_also_apply_or_cancel_an_editable_line() {
+    for key in [egui::Key::Enter, egui::Key::Escape] {
+        let mut app = app();
+        let ctx = context();
+        app.tools_panel.active_tool = Tool::Line;
+        tool_frame(
+            &mut app,
+            &ctx,
+            (24., 17.),
+            vec![
+                brush_pointer((4., 5.), true),
+                brush_pointer((24., 17.), false),
+            ],
+        );
+        assert_eq!(
+            app.tools_panel.line_state.line_tool.stage,
+            crate::components::tools::LineStage::Editing
+        );
+        let mut value = 5_f32;
+        for (index, events) in [
+            vec![],
+            vec![],
+            vec![
+                egui::Event::Key {
+                    key: egui::Key::A,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers {
+                        ctrl: true,
+                        command: true,
+                        ..Default::default()
+                    },
+                },
+                egui::Event::Text("7".into()),
+            ],
+            vec![egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let _ = ctx.run_ui(
+                egui::RawInput {
+                    events,
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900., 700.),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    app.update_runtime_input(ui.ctx());
+                    ui.add(
+                        crate::ui::controls::Numeric::new(&mut value)
+                            .id_salt("line_finish_key")
+                            .focus_on_open(index == 0),
+                    );
+                    app.show_runtime_canvas_tail(&ctx, ui, false);
+                },
+            );
+        }
+        assert_eq!(value, if key == egui::Key::Enter { 7. } else { 5. });
+        assert_eq!(
+            app.tools_panel.line_state.line_tool.stage,
+            crate::components::tools::LineStage::Editing
+        );
+        assert_eq!(app.projects[0].history.undo_count(), 0);
+        let _ = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(900., 700.),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                app.update_runtime_input(ui.ctx());
+                app.show_runtime_canvas_tail(&ctx, ui, false);
+            },
+        );
+        assert_eq!(
+            app.tools_panel.line_state.line_tool.stage,
+            crate::components::tools::LineStage::Editing,
+            "field key replayed on the following frame"
+        );
+        app.tools_panel.injected_enter_pressed = key == egui::Key::Enter;
+        app.tools_panel.injected_escape_pressed = key == egui::Key::Escape;
+        let _ = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(900., 700.),
+                )),
+                ..Default::default()
+            },
+            |ui| app.show_runtime_canvas_tail(&ctx, ui, false),
+        );
+        app.commit_pending_tool_history();
+        assert_eq!(
+            app.tools_panel.line_state.line_tool.stage,
+            crate::components::tools::LineStage::Idle
+        );
+        assert_eq!(
+            app.projects[0].history.undo_count(),
+            usize::from(key == egui::Key::Enter)
+        );
+    }
+}
+
+#[test]
+fn selection_rotation_shortcuts_reject_text_and_mask_targets_before_cutting_pixels() {
+    use crate::config::{commands::MenuCommand, keybindings::BindableAction};
+    for text in [false, true] {
+        let mut app = app();
+        let ctx = context();
+        if text {
+            let project = &mut app.projects[0];
+            crate::ops::canvas_ops::add_text_layer(&mut project.canvas_state, &mut project.history);
+        } else {
+            app.projects[0].canvas_state.layers[0].ensure_mask();
+            app.projects[0].canvas_state.edit_layer_mask = true;
+        }
+        app.projects[0].canvas_state.selection_mask =
+            Some(image::GrayImage::from_pixel(32, 24, image::Luma([255])));
+        let before = app.projects[0]
+            .canvas_state
+            .layers
+            .iter()
+            .map(|l| l.pixels.to_rgba_image())
+            .collect::<Vec<_>>();
+        let count = app.projects[0].history.undo_count();
+        for command in [
+            MenuCommand::CanvasRotate90Cw,
+            MenuCommand::CanvasRotate90Ccw,
+            MenuCommand::CanvasRotate180,
+        ] {
+            assert!(!app.execute_menu_command(&ctx, BindableAction::Menu(command)));
+            assert!(app.paste_overlay.is_none());
+            assert_eq!(app.projects[0].history.undo_count(), count);
+            assert_eq!(
+                app.projects[0]
+                    .canvas_state
+                    .layers
+                    .iter()
+                    .map(|l| l.pixels.to_rgba_image())
+                    .collect::<Vec<_>>(),
+                before
             );
         }
     }

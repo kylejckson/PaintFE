@@ -12,3 +12,5 @@ pub mod menus;
 
 pub mod help;
 pub(crate) mod tool_shelf;
+
+pub mod glass;

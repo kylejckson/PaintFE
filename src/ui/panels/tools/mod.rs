@@ -13,3 +13,6 @@ include!("brush_picker.rs");
 
 #[cfg(test)]
 mod session_tests;
+
+#[cfg(not(target_arch = "wasm32"))]
+include!("automation.rs");

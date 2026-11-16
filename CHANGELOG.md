@@ -6,6 +6,39 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.5.0] - 2026-11-16
+
+- Add Community add-ons, a browser for user-made plugins, themes and icon packs.
+- Add optional MCP tools so compatible AI agents can work with the editor.
+- Expand appearance customisation to support transparent and glass-style themes.
+
+### New features
+
+- Add the requested plugin browser, called Community add-ons, for browsing and installing effect plugins, themes and icon packs made by users. Find it under View, with search, categories, Favourites and Installed. Downloads happen only when requested; installed effects run offline.
+- Create reusable script effects with native controls, previews and a protected Cancel action. Save, edit and export local packs, or install signed community packs. Related to discussion 242.
+- Add four starter effects: Two Tone, Paper Grain, Colour Offset and Soft Vignette.
+- Install themes and icon packs through the same browser. Preview an appearance before keeping it, or restore the previous settings. Luminous remains built in, with Classic still available.
+- Expand interface customisation so custom themes can use transparency and glass effects. Adjust workspace and panel opacity, surface colours and borders, with optional OS-managed desktop blur. Include Glass Dark in charcoal and Glass Light in pearl white. Glass is off by default and does not change saved image pixels.
+- Add local MCP connections for document inspection, previews, basic painting, selections, layers, Undo/Redo and sandboxed raster scripts. Connections, editing and scripts have separate permissions and start disabled. Related to discussion 242.
+- Expand the documentation for community packs, authoring, MCP setup and glass appearance.
+
+### Fixes and improvements
+
+- Restore the default appearance fully with Reset to Signal, including turning glass off. Keep Light/Dark switches consistent across Preferences and View while retaining glass opacity, blur and layout choices.
+- Keep add-on cards within the browser width, wrapping actions and using vertical scrolling instead of making the window wider.
+- Show the catalogue before artwork finishes loading. Prepare previews in small background batches, limit texture uploads per frame and show loading progress. Use the supplied favourite icons with theme-aware colours.
+- Give repeated advanced appearance controls distinct widget identities, avoiding overlapping debug labels and conflicting numeric edits.
+- Preserve toolbar and panel alpha when a glass tint is enabled, so low opacity settings no longer get replaced by the glass surface opacity.
+- Give 1 px dotted and dashed lines with antialiasing off a pixel-based pattern, keeping spacing consistent along diagonals. Related to issue 244.
+- Lift selected pixels into one editable transform for quarter-turn rotation. Further turns reuse the same source, keeping the handles and avoiding repeated cuts or resampling. Apply makes one history entry; Cancel restores the original. Related to issue 238.
+- Render the image, checkerboard and pixel grid beneath a translucent docked toolbar while keeping canvas navigation steady and blocking clicks through the toolbar. Related to issue 223.
+- Match Square and Diamond painting and cursor coverage at small sizes and rotated angles, including antialiasing off. Related to issue 243.
+- Improve Line handles, fast drags, dotted and dashed spacing, and preview updates after changing settings. Temporary colour sampling now works with an editable line. Related to issue 244.
+- Keep Enter and Escape in a numeric editor from also applying or cancelling a pending canvas tool. Related to issue 244.
+- Remove unwanted repeating dots from pale and low-alpha previews. Intentional dotted line styles, selections and pixel grids remain.
+- Read Linux font family and weight information from font data, skipping unsupported faces safely. Related to issue 241.
+- Keep glass rendering lightweight without sampling the document or uploading blurred canvas textures. Use native desktop effects where supported, with plain transparency available independently.
+
 ## [1.4.28] - 2026-11-11
 
 - Add Rotate Selection, temporary colour sampling and an Eraser shortcut toggle.

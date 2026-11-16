@@ -1,4 +1,218 @@
 impl ToolsPanel {
+    /// Thin aliased patterns count raster cells rather than snapping regularly
+    /// spaced geometric dots into occasionally adjacent pixels.
+    fn draw_thin_pixel_pattern(
+        &self,
+        image: &mut TiledImage,
+        points: [Pos2; 4],
+        steps: usize,
+        pattern: LinePattern,
+        color: [f32; 4],
+        mask: Option<&GrayImage>,
+    ) -> bool {
+        if self.line_state.line_tool.options.anti_alias
+            || self.properties.size > 1.001
+            || pattern == LinePattern::Solid
+        {
+            return false;
+        }
+        let [a, b, c, d] = points;
+        let length = (b - a).length() + (c - b).length() + (d - c).length();
+        if !length.is_finite() || length > 1_000_000. {
+            return false;
+        }
+        let straight = length - (d - a).length() < 0.001;
+        let samples = if straight { 1 } else { steps };
+        let mut path: Vec<(i32, i32)> = Vec::new();
+        let mut previous = (a.x.floor() as i32, a.y.floor() as i32);
+        path.push(previous);
+        for sample in 1..=samples {
+            let p = self.bezier_point(a, b, c, d, sample as f32 / samples as f32);
+            let end = (p.x.floor() as i32, p.y.floor() as i32);
+            let (mut x, mut y) = previous;
+            let dx = (i64::from(end.0) - i64::from(x)).abs();
+            let dy = -(i64::from(end.1) - i64::from(y)).abs();
+            let sx = if x < end.0 { 1 } else { -1 };
+            let sy = if y < end.1 { 1 } else { -1 };
+            let mut error = dx + dy;
+            while (x, y) != end {
+                let twice = error * 2;
+                if twice >= dy {
+                    error += dy;
+                    x += sx;
+                }
+                if twice <= dx {
+                    error += dx;
+                    y += sy;
+                }
+                // Collapse subpixel stair corners into one diagonal raster cell.
+                if !straight && path.len() >= 2 {
+                    let prior = path[path.len() - 2];
+                    if prior != (x, y)
+                        && (i64::from(prior.0) - i64::from(x)).abs() <= 1
+                        && (i64::from(prior.1) - i64::from(y)).abs() <= 1
+                    {
+                        path.pop();
+                    }
+                }
+                if path.last() != Some(&(x, y)) {
+                    path.push((x, y));
+                }
+            }
+            previous = end;
+        }
+        let rgba = Rgba(color.map(|value| (value * 255.).round() as u8));
+        for (index, (x, y)) in path.into_iter().enumerate() {
+            let on = match pattern {
+                LinePattern::Dotted => index % 2 == 0,
+                _ => index % 4 < 2,
+            };
+            if on
+                && x >= 0
+                && y >= 0
+                && (x as u32) < image.width()
+                && (y as u32) < image.height()
+                && Self::selection_allows(mask, x as u32, y as u32)
+            {
+                image.put_pixel(x as u32, y as u32, rgba);
+            }
+        }
+        true
+    }
+
+    pub(crate) fn line_handle_cursor(
+        &self,
+        pos: Pos2,
+        image: Rect,
+        zoom: f32,
+    ) -> Option<egui::CursorIcon> {
+        if self.active_tool != Tool::Line || self.line_state.line_tool.stage != LineStage::Editing {
+            return None;
+        }
+        if self.line_state.line_tool.dragging_handle.is_some()
+            || self.line_state.line_tool.pan_handle_dragging
+        {
+            Some(egui::CursorIcon::Grabbing)
+        } else if self.pointer_over_off_canvas_edit_handle(pos, image, zoom) {
+            Some(egui::CursorIcon::Grab)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn refresh_line_preview(&mut self, canvas: &mut CanvasState, color: Color32) {
+        if (self.active_tool != Tool::Line && self.temporary_picker_return != Some(Tool::Line))
+            || self.line_state.line_tool.stage != LineStage::Editing
+            || self.line_target_layer(canvas).is_none()
+        {
+            return;
+        }
+        let line = &self.line_state.line_tool;
+        let changed = line.last_size != self.properties.size
+            || line.last_color != color
+            || line.last_blend != self.properties.blending_mode
+            || line.last_pattern != line.options.pattern
+            || line.last_cap_style != line.options.cap_style
+            || line.last_end_shape != line.options.end_shape
+            || line.last_arrow_side != line.options.arrow_side
+            || line.last_anti_alias != line.options.anti_alias;
+        if !changed {
+            return;
+        }
+        self.properties.color = color;
+        let line = &mut self.line_state.line_tool;
+        line.last_size = self.properties.size;
+        line.last_color = color;
+        line.last_blend = self.properties.blending_mode;
+        line.last_pattern = line.options.pattern;
+        line.last_cap_style = line.options.cap_style;
+        line.last_end_shape = line.options.end_shape;
+        line.last_arrow_side = line.options.arrow_side;
+        line.last_anti_alias = line.options.anti_alias;
+        let points = line.control_points;
+        let last = line.last_bounds;
+        let current = self.get_bezier_bounds(points, canvas.width, canvas.height);
+        self.rasterize_bezier(
+            canvas,
+            points,
+            color,
+            self.line_state.line_tool.options.pattern,
+            self.line_state.line_tool.options.cap_style,
+            last,
+        );
+        canvas.mark_preview_changed_rect(last.map_or(current, |old| old.union(current)));
+        self.line_state.line_tool.last_bounds = Some(current);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_line_capsule(
+        &self,
+        image: &mut TiledImage,
+        start: Pos2,
+        end: Pos2,
+        color: [f32; 4],
+        mask: Option<&GrayImage>,
+        flat_start: bool,
+        flat_end: bool,
+    ) {
+        let aa = self.line_state.line_tool.options.anti_alias;
+        let align = |p: Pos2| {
+            let (x, y) = crate::ui::panels::tools::pixel_aligned_brush_center(
+                (p.x + 0.0001, p.y + 0.0001),
+                self.properties.size,
+                !aa,
+            );
+            Pos2::new(x, y)
+        };
+        let start = align(start);
+        let end = align(end);
+        let delta = end - start;
+        let length_sq = delta.length_sq();
+        let radius = self.properties.size * 0.5;
+        let pad = radius + if aa { 0.5 } else { 0. };
+        let x0 = (start.x.min(end.x) - pad).floor().max(0.) as u32;
+        let y0 = (start.y.min(end.y) - pad).floor().max(0.) as u32;
+        let x1 = (start.x.max(end.x) + pad).ceil().min(image.width() as f32) as u32;
+        let y1 = (start.y.max(end.y) + pad).ceil().min(image.height() as f32) as u32;
+        for y in y0..y1 {
+            for x in x0..x1 {
+                if !Self::selection_allows(mask, x, y) {
+                    continue;
+                }
+                let pixel = Pos2::new(x as f32 + 0.5, y as f32 + 0.5);
+                let t = if length_sq > 0.000001 {
+                    (pixel - start).dot(delta) / length_sq
+                } else {
+                    0.
+                };
+                if (flat_start && t < 0.) || (flat_end && t > 1.) {
+                    continue;
+                }
+                let distance = (pixel - (start + delta * t.clamp(0., 1.))).length();
+                let coverage = if aa {
+                    (radius + 0.5 - distance).clamp(0., 1.)
+                } else if distance <= radius {
+                    1.
+                } else {
+                    0.
+                };
+                let alpha = (coverage * color[3] * 255.).round() as u8;
+                if alpha > image.get_pixel(x, y)[3] {
+                    image.put_pixel(
+                        x,
+                        y,
+                        Rgba([
+                            (color[0] * 255.).round() as u8,
+                            (color[1] * 255.).round() as u8,
+                            (color[2] * 255.).round() as u8,
+                            alpha,
+                        ]),
+                    );
+                }
+            }
+        }
+    }
+
     fn canvas_to_screen(&self, canvas_pos: (u32, u32), canvas_rect: Rect, zoom: f32) -> Pos2 {
         let (x, y) = canvas_pos;
         Pos2::new(
@@ -83,12 +297,9 @@ impl ToolsPanel {
         last_bounds: Option<Rect>, // Previous frame's bounds for focused clearing
     ) {
         // Convert Color32 to high-precision f32 for drawing
-        let color_f32 = [
-            color.r() as f32 / 255.0,
-            color.g() as f32 / 255.0,
-            color.b() as f32 / 255.0,
-            color.a() as f32 / 255.0,
-        ];
+        let color_f32 = color
+            .to_srgba_unmultiplied()
+            .map(|channel| channel as f32 / 255.);
         // Create or clear preview layer
         if canvas_state.preview_layer.is_none()
             || canvas_state.preview_layer.as_ref().unwrap().width() != canvas_state.width
@@ -142,72 +353,87 @@ impl ToolsPanel {
             let steps = (total_length / spacing).ceil() as usize;
             let steps = steps.clamp(20, 5000); // Higher max for quality
 
-            // Track cumulative distance for pattern rendering
-            let mut cumulative_distance = 0.0;
-            let mut last_pos: Option<Pos2> = None;
-
-            // Pattern parameters (in pixels)
-            let (on_length, off_length) = match pattern {
-                LinePattern::Solid => (0.0, 0.0), // No pattern
-                LinePattern::Dotted => (self.properties.size * 0.5, self.properties.size * 1.5), // Dot size, larger gap
-                LinePattern::Dashed => (self.properties.size * 2.0, self.properties.size * 1.5), // Dash, gap
-            };
-            let pattern_cycle = on_length + off_length;
             let selection_mask = canvas_state.selection_mask.as_ref();
-
-            // Collect all points first for cap style processing
-            let mut line_points = Vec::new();
-
-            for i in 0..=steps {
-                let t = i as f32 / steps as f32;
-                let pos = self.bezier_point(p0, p1, p2, p3, t);
-
-                // Update cumulative distance
-                if let Some(prev_pos) = last_pos {
-                    cumulative_distance += (pos - prev_pos).length();
-                }
-                last_pos = Some(pos);
-
-                let fx = pos.x;
-                let fy = pos.y;
-
-                if fx >= 0.0
-                    && fy >= 0.0
-                    && (fx as u32) < canvas_state.width
-                    && (fy as u32) < canvas_state.height
-                {
-                    // Check pattern based on cumulative distance
-                    let should_draw = match pattern {
-                        LinePattern::Solid => true,
-                        LinePattern::Dotted | LinePattern::Dashed => {
-                            let pos_in_cycle = cumulative_distance % pattern_cycle;
-                            pos_in_cycle < on_length
-                        }
-                    };
-
-                    if should_draw {
-                        if !Self::selection_allows(selection_mask, fx as u32, fy as u32) {
-                            continue;
-                        }
-                        line_points.push((fx, fy, i == 0, i == steps));
-                    }
-                }
-            }
-
-            // Determine which endpoints have arrows (skip dot drawing there)
-            let end_shape = self.line_state.line_tool.options.end_shape;
-            let arrow_side = self.line_state.line_tool.options.arrow_side;
-
-            // Draw all points
-            for &(fx, fy, is_start, is_end) in &line_points {
-                // For flat caps, skip drawing circles at the very endpoints
-                if cap_style == CapStyle::Flat && (is_start || is_end) {
+            let pixel_pattern = self.draw_thin_pixel_pattern(
+                preview,
+                control_points,
+                steps,
+                pattern,
+                color_f32,
+                selection_mask,
+            );
+            let mut previous = p0;
+            let mut distance = 0.0_f32;
+            let mut next_dot = 0.0_f32;
+            let size = self.properties.size.max(1.);
+            let on = (size * 2.).round().max(1.);
+            let off = (size * 1.5).round().max(1.);
+            let cycle = on + off;
+            for i in 1..=if pixel_pattern { 0 } else { steps } {
+                let point = self.bezier_point(p0, p1, p2, p3, i as f32 / steps as f32);
+                let length = (point - previous).length();
+                if length <= 0.00001 {
                     continue;
                 }
-
-                // Normal drawing for round caps or middle points
-                self.draw_bezier_dot(preview, (fx, fy), color_f32, selection_mask);
+                let end_distance = distance + length;
+                match pattern {
+                    LinePattern::Dotted => {
+                        while next_dot <= end_distance + 0.00001 {
+                            let t = ((next_dot - distance) / length).clamp(0., 1.);
+                            let dot = previous + (point - previous) * t;
+                            self.draw_bezier_dot(
+                                preview,
+                                (dot.x, dot.y),
+                                color_f32,
+                                selection_mask,
+                            );
+                            next_dot += size * 2.;
+                        }
+                    }
+                    LinePattern::Solid => self.draw_line_capsule(
+                        preview,
+                        previous,
+                        point,
+                        color_f32,
+                        selection_mask,
+                        cap_style == CapStyle::Flat && i == 1,
+                        cap_style == CapStyle::Flat && i == steps,
+                    ),
+                    LinePattern::Dashed => {
+                        let mut position = distance;
+                        while position < end_distance - 0.00001 {
+                            let phase = position.rem_euclid(cycle);
+                            let drawing = phase < on - 0.00001;
+                            let remaining = if drawing { on - phase } else { cycle - phase };
+                            let finish = (position + remaining.max(0.00001)).min(end_distance);
+                            if drawing {
+                                let start = previous
+                                    + (point - previous) * ((position - distance) / length);
+                                let end =
+                                    previous + (point - previous) * ((finish - distance) / length);
+                                self.draw_line_capsule(
+                                    preview,
+                                    start,
+                                    end,
+                                    color_f32,
+                                    selection_mask,
+                                    cap_style == CapStyle::Flat && phase < 0.0001,
+                                    cap_style == CapStyle::Flat
+                                        && (finish - position - remaining).abs() < 0.0001,
+                                );
+                            }
+                            position = finish;
+                        }
+                    }
+                }
+                distance = end_distance;
+                previous = point;
             }
+            if !pixel_pattern && distance < 0.00001 {
+                self.draw_bezier_dot(preview, (p0.x, p0.y), color_f32, selection_mask);
+            }
+            let end_shape = self.line_state.line_tool.options.end_shape;
+            let arrow_side = self.line_state.line_tool.options.arrow_side;
 
             // Draw arrowheads if enabled
             if end_shape == LineEndShape::Arrow {
@@ -372,63 +598,6 @@ impl ToolsPanel {
         }
     }
 
-    /// Draw a segment as part of Bézier curve with spacing
-    fn draw_bezier_segment(
-        &self,
-        preview: &mut TiledImage,
-        start: (f32, f32),
-        end: (f32, f32),
-        color_f32: [f32; 4],
-    ) {
-        let (x0, y0) = start;
-        let (x1, y1) = end;
-
-        // Calculate spacing (25% of brush diameter)
-        let spacing = (self.properties.size * 0.25).max(1.0);
-        let radius = self.properties.size / 2.0;
-
-        // Calculate distance
-        let dx = x1 - x0;
-        let dy = y1 - y0;
-        let distance = (dx * dx + dy * dy).sqrt();
-
-        // If distance is too small, just draw one circle
-        if distance < 0.1 {
-            if (start.0 as u32) < preview.width() && (start.1 as u32) < preview.height() {
-                let anti_alias = self.line_state.line_tool.options.anti_alias;
-                self.draw_bezier_circle_with_hardness(
-                    preview, start, color_f32, radius, 0.95, anti_alias, None,
-                );
-            }
-            return;
-        }
-
-        // Calculate number of steps
-        let num_steps = (distance / spacing).ceil() as usize;
-
-        // Draw circles at spaced intervals
-        for i in 0..=num_steps {
-            let t = (i as f32 * spacing / distance).min(1.0);
-            let x = x0 + dx * t;
-            let y = y0 + dy * t;
-
-            if (x as u32) < preview.width() && (y as u32) < preview.height() {
-                let anti_alias = self.line_state.line_tool.options.anti_alias;
-                self.draw_bezier_circle_with_hardness(
-                    preview,
-                    (x, y),
-                    color_f32,
-                    radius,
-                    0.95,
-                    anti_alias,
-                    None,
-                );
-            }
-        }
-
-        // Do NOT force-draw the end point - only draw at spacing intervals
-    }
-
     /// Draw a single dot for Bézier curve (sub-pixel position for smooth AA)
     fn draw_bezier_dot(
         &self,
@@ -463,14 +632,18 @@ impl ToolsPanel {
         anti_alias: bool,
         selection_mask: Option<&image::GrayImage>,
     ) {
-        let (cx, cy) = pos;
+        let (cx, cy) = crate::ui::panels::tools::pixel_aligned_brush_center(
+            (pos.0 + 0.0001, pos.1 + 0.0001),
+            radius * 2.,
+            !anti_alias,
+        );
 
         // Extend the sampling area beyond the nominal radius so the soft fade
         // region actually gets drawn.  For tiny radii (< 1.5) we only need 1px
         // of AA feather; for larger radii the fade scales with softness.
         let aa_pad = if anti_alias {
             if radius < 1.5 {
-                1.5  // 1px AA feather for thin lines
+                1.5 // 1px AA feather for thin lines
             } else {
                 (radius * (1.0 - forced_hardness)).max(2.0) + 2.0
             }
@@ -493,8 +666,8 @@ impl ToolsPanel {
                     continue;
                 }
                 // Sub-pixel distance from float center for smooth AA
-                let dx = x as f32 - cx;
-                let dy = y as f32 - cy;
+                let dx = x as f32 + 0.5 - cx;
+                let dy = y as f32 + 0.5 - cy;
                 let dist = (dx * dx + dy * dy).sqrt();
 
                 // Compute alpha — this returns 0.0 for pixels beyond the
@@ -607,6 +780,165 @@ impl ToolsPanel {
             }
         }
     }
-
 }
 
+#[cfg(test)]
+mod line_refinement_tests {
+    use super::*;
+    #[test]
+    fn one_pixel_patterns_repeat_in_raster_cells_at_all_slopes() {
+        for (start, end) in [
+            ((4., 4.), (55., 55.)),
+            ((55., 4.), (4., 55.)),
+            ((10., 4.), (30., 60.)),
+            ((4., 10.), (60., 30.)),
+            ((55., 55.), (4., 4.)),
+        ] {
+            for pattern in [LinePattern::Dotted, LinePattern::Dashed] {
+                let mut tools = ToolsPanel::default();
+                tools.properties.size = 1.;
+                tools.line_state.line_tool.options.anti_alias = false;
+                let mut canvas = CanvasState::new(64, 64);
+                let a = Pos2::new(start.0, start.1);
+                let b = Pos2::new(end.0, end.1);
+                tools.rasterize_bezier(
+                    &mut canvas,
+                    [a, a + (b - a) / 3., a + (b - a) * 2. / 3., b],
+                    Color32::BLACK,
+                    pattern,
+                    CapStyle::Round,
+                    None,
+                );
+                let image = canvas.preview_layer.as_ref().unwrap();
+                let x_major = (b.x - a.x).abs() >= (b.y - a.y).abs();
+                let length = if x_major {
+                    (b.x - a.x).abs()
+                } else {
+                    (b.y - a.y).abs()
+                } as i32;
+                for index in 0..=length {
+                    let axis = if x_major {
+                        a.x as i32 + index * (if b.x >= a.x { 1 } else { -1 })
+                    } else {
+                        a.y as i32 + index * (if b.y >= a.y { 1 } else { -1 })
+                    };
+                    let painted = (0..64)
+                        .filter(|other| {
+                            if x_major {
+                                image.get_pixel(axis as u32, *other)[3] != 0
+                            } else {
+                                image.get_pixel(*other, axis as u32)[3] != 0
+                            }
+                        })
+                        .count();
+                    let on = if pattern == LinePattern::Dotted {
+                        index % 2 == 0
+                    } else {
+                        index % 4 < 2
+                    };
+                    assert_eq!(
+                        painted,
+                        usize::from(on),
+                        "{pattern:?}, {start:?}->{end:?}, step {index}"
+                    );
+                }
+            }
+        }
+    }
+    #[test]
+    fn small_aliased_patterns_have_uniform_arc_length_spacing() {
+        for size in [1_f32, 2.] {
+            for pattern in [LinePattern::Dotted, LinePattern::Dashed] {
+                let mut tools = ToolsPanel::default();
+                tools.properties.size = size;
+                tools.line_state.line_tool.options.anti_alias = false;
+                let mut state = CanvasState::new(160, 32);
+                tools.rasterize_bezier(
+                    &mut state,
+                    [
+                        Pos2::new(8., 16.),
+                        Pos2::new(48., 16.),
+                        Pos2::new(88., 16.),
+                        Pos2::new(128., 16.),
+                    ],
+                    Color32::RED,
+                    pattern,
+                    CapStyle::Round,
+                    None,
+                );
+                let pixels = state.preview_layer.as_ref().unwrap();
+                let period = if pattern == LinePattern::Dotted {
+                    (size * 2.) as u32
+                } else {
+                    ((size * 2.).round() + (size * 1.5).round()) as u32
+                };
+                assert!(
+                    pixels
+                        .to_rgba_image()
+                        .pixels()
+                        .all(|p| p[3] == 0 || p[3] == 255)
+                );
+                for x in 20..100 {
+                    for y in 13..19 {
+                        assert_eq!(
+                            pixels.get_pixel(x, y),
+                            pixels.get_pixel(x + period, y),
+                            "size {size}, pattern {pattern:?}, x {x}, y {y}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn toolbar_changes_refresh_pending_line_without_pointer_input_or_baking_pixels() {
+        let mut tools = ToolsPanel {
+            active_tool: Tool::Line,
+            ..Default::default()
+        };
+        let mut state = CanvasState::new(64, 32);
+        let original = state.layers[0].pixels.to_rgba_image();
+        tools.capture_line_target(&state);
+        tools.line_state.line_tool.stage = LineStage::Editing;
+        tools.line_state.line_tool.control_points = [
+            Pos2::new(8., 16.),
+            Pos2::new(20., 16.),
+            Pos2::new(32., 16.),
+            Pos2::new(44., 16.),
+        ];
+        tools.properties.size = 1.;
+        tools.line_state.line_tool.options.anti_alias = false;
+        tools.refresh_line_preview(&mut state, Color32::RED);
+        let before = state.preview_layer.as_ref().unwrap().to_rgba_image();
+        tools.properties.size = 4.;
+        tools.properties.blending_mode = BlendMode::HardLight;
+        tools.line_state.line_tool.options.pattern = LinePattern::Dashed;
+        tools.refresh_line_preview(&mut state, Color32::BLUE);
+        assert_ne!(
+            before,
+            state.preview_layer.as_ref().unwrap().to_rgba_image()
+        );
+        assert_eq!(tools.line_state.line_tool.last_color, Color32::BLUE);
+        assert_eq!(tools.line_state.line_tool.last_blend, BlendMode::HardLight);
+        assert!(
+            state
+                .preview_layer
+                .as_ref()
+                .unwrap()
+                .to_rgba_image()
+                .pixels()
+                .any(|p| p[2] == 255 && p[3] > 0)
+        );
+        assert_eq!(state.layers[0].pixels.to_rgba_image(), original);
+        tools.commit_pending_line_edit(&mut state);
+        assert_eq!(tools.line_state.line_tool.stage, LineStage::Idle);
+        assert!(
+            state.layers[0]
+                .pixels
+                .to_rgba_image()
+                .pixels()
+                .any(|p| p[2] > 0)
+        );
+    }
+}

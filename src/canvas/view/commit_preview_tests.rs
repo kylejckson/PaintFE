@@ -196,3 +196,50 @@ fn committed_stroke_overlay_uses_final_pixels_and_replaces_the_presented_region(
         }
     }
 }
+
+#[test]
+fn empty_and_off_canvas_preview_regions_never_allocate_or_upload_zero_width_rows() {
+    let ctx = egui::Context::default();
+    let mut state = CanvasState::new(8, 8);
+    for rect in [
+        Rect::NOTHING,
+        Rect::from_min_max(egui::pos2(8., 2.), egui::pos2(8., 5.)),
+        Rect::from_min_max(egui::pos2(20., 20.), egui::pos2(30., 30.)),
+        Rect::from_min_max(egui::pos2(6., 6.), egui::pos2(2., 2.)),
+    ] {
+        assert!(state.composite_partial(rect).0.pixels.is_empty());
+        for scale in [0, 1, 4] {
+            assert!(
+                state
+                    .composite_partial_downscaled(rect, scale)
+                    .0
+                    .pixels
+                    .is_empty()
+            );
+            assert!(
+                state
+                    .composite_committed_downscaled(rect, scale)
+                    .0
+                    .pixels
+                    .is_empty()
+            );
+        }
+        state.preview_layer = Some(TiledImage::new(8, 8));
+        state.preview_stroke_bounds = Some(rect);
+        state.preview_dirty_rect = Some(rect);
+        state.preview_force_composite = true;
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            Canvas::new_without_state().update_preview_overlay(
+                ui,
+                &mut state,
+                &crate::assets::AppSettings::default(),
+                None,
+            );
+        });
+        assert!(state.preview_texture_cache.is_none());
+        assert!(state.preview_dirty_rect.is_none());
+    }
+    let rect = Rect::from_min_max(egui::pos2(-4., -4.), egui::pos2(2., 3.));
+    assert_eq!(state.composite_partial(rect).0.size, [2, 3]);
+    assert_eq!(state.composite_partial_downscaled(rect, 0).0.size, [2, 3]);
+}

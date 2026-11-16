@@ -482,18 +482,47 @@ impl PaintFEApp {
     }
 
     fn can_rotate_selection(&self) -> bool {
-        self.paste_overlay.is_none() && self.straighten_session.is_none()
+        (self.paste_overlay.is_some() || self.active_project().is_some_and(|p| {
+            p.canvas_state.selection_mask_bounds().is_some()
+        })) && self.straighten_session.is_none()
             && self.active_project().is_some_and(|project| {
                 let state = &project.canvas_state;
-                state.selection_mask_bounds().is_some()
-                    && !state.edit_layer_mask
+                !state.edit_layer_mask
                     && state.layers.get(state.active_layer_index)
                         .is_some_and(|layer| !layer.is_text_layer())
             })
     }
 
+    fn rotate_selection_or_canvas(&mut self, turns: i32) -> bool {
+        if self.paste_overlay.is_none() {
+            self.finish_pending_line_edit();
+        }
+        let selected = self.active_project().is_some_and(|p| p.canvas_state.has_selection());
+        if self.paste_overlay.is_none() && selected && !self.begin_move_pixels_overlay(true) {
+            return false;
+        }
+        if let Some(overlay) = self.paste_overlay.as_mut() {
+            self.paste_transform_undo.push(overlay.transform());
+            self.paste_transform_redo.clear();
+            overlay.set_rotation(overlay.rotation + turns as f32 * std::f32::consts::FRAC_PI_2);
+            return true;
+        }
+        let (action, label) = match turns {
+            1 => (HistoryAction::RotateCw, "Rotate 90 deg CW"),
+            -1 => (HistoryAction::RotateCcw, "Rotate 90 deg CCW"),
+            _ => (HistoryAction::Rotate180, "Rotate 180 deg"),
+        };
+        self.do_snapshot_op(action.label(label), |state| match turns {
+            1 => crate::ops::transform::rotate_canvas_90cw(state),
+            -1 => crate::ops::transform::rotate_canvas_90ccw(state),
+            _ => crate::ops::transform::rotate_canvas_180(state),
+        });
+        true
+    }
+
     fn begin_move_pixels_overlay(&mut self, selection_rotation: bool) -> bool {
-        if self.paste_overlay.is_some() || self.straighten_session.is_some() {
+        if self.paste_overlay.is_some() || self.straighten_session.is_some()
+            || (selection_rotation && !self.can_rotate_selection()) {
             return false;
         }
         let Some(project) = self.active_project_mut() else {
@@ -537,8 +566,8 @@ impl PaintFEApp {
             } else {
                 HistoryAction::Paste.label("Paste")
             };
-            let keep_selection =
-                leave_selected && !self.is_move_pixels_active && self.settings.select_after_paste;
+            let keep_selection = leave_selected && (overlay.selection_rotation
+                || (!self.is_move_pixels_active && self.settings.select_after_paste));
             let move_before = if self.is_move_pixels_active {
                 self.move_pixels_before.take()
             } else {
@@ -559,13 +588,6 @@ impl PaintFEApp {
                 });
                 project.canvas_state.clear_preview_state();
                 overlay.commit(&mut project.canvas_state);
-                let after =
-                    crate::components::history::CanvasSnapshot::capture(&project.canvas_state);
-                project.history.push(Box::new(
-                    crate::components::history::SnapshotCommand::from_snapshots(
-                        desc, before, after,
-                    ),
-                ));
                 if let Some(mut mask) = select_mask {
                     if let Some((x0, y0, x1, y1)) = select_bounds {
                         for y in y0..y1 {
@@ -578,6 +600,13 @@ impl PaintFEApp {
                     project.canvas_state.invalidate_selection_overlay();
                     reassert = project.canvas_state.selection_mask.clone();
                 }
+                let after =
+                    crate::components::history::CanvasSnapshot::capture(&project.canvas_state);
+                project.history.push(Box::new(
+                    crate::components::history::SnapshotCommand::from_snapshots(
+                        desc, before, after,
+                    ),
+                ));
                 project.mark_dirty();
             }
             self.pending_selection_reassert = reassert;

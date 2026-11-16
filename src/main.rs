@@ -311,6 +311,7 @@ fn main_inner() -> Result<(), eframe::Error> {
                     startup_settings.persist_window_height.max(480.0),
                 ])
                 .with_title("PaintFE")
+                .with_transparent(true)
                 .with_app_id("io.github.paintfe.PaintFE");
             if let Some((x, y)) = startup_settings.persist_window_pos
                 && let Some(safe_pos) = sanitize_window_position((x, y))
@@ -428,6 +429,16 @@ fn main_inner() -> Result<(), eframe::Error> {
 /// Entry point — on Windows, wraps main_inner with SEH protection to catch
 /// assertion failures from third-party injected DLLs (e.g. AlphaRing overlay).
 fn main() -> Result<(), eframe::Error> {
+    if std::env::args().nth(1).as_deref() == Some("--mcp") {
+        std::process::exit(paintfe::services::automation::bridge());
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "--paintfe-plugin-worker")
+    {
+        std::process::exit(paintfe::services::plugins::worker::run_worker());
+    }
     #[cfg(not(target_arch = "wasm32"))]
     if std::env::args_os()
         .nth(1)

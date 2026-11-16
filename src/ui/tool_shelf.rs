@@ -61,6 +61,8 @@ pub(crate) fn paint_workspace_background(
     top: Color32,
     bottom: Color32,
 ) {
+    let top = crate::ui::glass::workspace(painter.ctx(), top);
+    let bottom = crate::ui::glass::workspace(painter.ctx(), bottom);
     let mut mesh = egui::Mesh::default();
     mesh.colored_vertex(rect.left_top(), top);
     mesh.colored_vertex(rect.right_top(), top);

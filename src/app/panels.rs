@@ -1070,6 +1070,10 @@ impl PaintFEApp {
 
             // Handle run request
             if self.script_editor.run_requested {
+                #[cfg(not(target_arch = "wasm32"))]
+                if crate::ui::panels::plugin_author::editing(ctx) { self.preview_authored_plugin(ctx); }
+                else { self.run_script(); }
+                #[cfg(target_arch = "wasm32")]
                 self.run_script();
             }
         });

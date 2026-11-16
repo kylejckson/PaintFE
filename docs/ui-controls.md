@@ -23,7 +23,7 @@ Native egui colour-picker popups also contain private DragValue fields. Use our 
 ## Identity and Interaction Contract
 
 - Every component has a call-site identity. In loops, dynamic lists, and reusable row helpers, also set `.id_salt(stable_model_key)`. Do not use translated labels or array positions for reorderable data. Keep the surrounding UI scope stable.
-- Dragging previews values live. Numeric text is live by default; dimension text commits with Enter, Tab, or loss of focus. `.update_while_editing(false)` selects that policy explicitly. Escape restores the value at the start of editing.
+- Dragging previews values live. Numeric text is live by default; dimension text commits with Enter, Tab, or loss of focus. `.update_while_editing(false)` selects that policy explicitly. Escape restores the value at the start of editing. Numeric editors record ownership of Enter and Escape for the current frame. Pending canvas tools respect this ownership, while modal dialogs retain their existing confirmation policy.
 - Numeric wheel adjustment follows Preferences. An event is consumed once, so it cannot both change the value and scroll the container. Disabled controls do neither.
 - The Preferences Interface page reserves the wheel for scrolling. Use `controls::without_wheel_adjustment` for such containers: it scopes the policy to child controls without changing the saved global preference. Dragging, typing, keyboard stepping, and buttons remain available.
 - Shift uses the configured fine-adjustment factor; integer quantities still change by at least one. Slider arrows step; Home/End select their limits.
@@ -39,6 +39,12 @@ Native egui colour-picker popups also contain private DragValue fields. Use our 
 - Genuine strings such as search queries, file paths, hex colours, and W:H aspect ratio expressions remain text editors. A colour wheel, gradient-stop editor, curves editor, or canvas transform is a specialized 2D or multi-value editor, not a scalar slider. Reuse the shared primitives where applicable; document any new numeric exception here and give it independent interaction tests.
 
 ## Examples and Validation
+
+Repeated optional colour rows in Preferences scope their picker, checkbox and
+numeric alpha editor using the helper's caller identity before entering its
+layout closure. A shared numeric call site inside a closure is not a unique row
+identity. Preserve the stable parent scope when adding similar helpers, and
+exercise several rows together to catch egui widget-ID collisions.
 
 Preferences > Pen & Tablet has a specialized 2D pressure test area. It consumes
 ordered touch/primary-pointer samples, uses the existing pressure enable setting

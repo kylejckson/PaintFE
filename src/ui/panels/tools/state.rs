@@ -363,6 +363,8 @@ pub struct LineToolState {
     pub last_end_shape: LineEndShape, // Track end shape for change detection
     pub last_arrow_side: ArrowSide,  // Track arrow side for change detection
     pub last_anti_alias: bool,       // Track AA for change detection
+    pub last_color: Color32,
+    pub last_blend: BlendMode,
 }
 
 impl Default for LineToolState {
@@ -386,6 +388,8 @@ impl Default for LineToolState {
             last_end_shape: LineEndShape::None,
             last_arrow_side: ArrowSide::End,
             last_anti_alias: true,
+            last_color: Color32::TRANSPARENT,
+            last_blend: BlendMode::Normal,
         }
     }
 }

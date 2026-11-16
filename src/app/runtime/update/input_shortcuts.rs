@@ -1614,8 +1614,10 @@ impl PaintFEApp {
             }
         }
 
-        // Consume native Escape edges even while a dialog or text field owns the key.
-        // Otherwise its closing press could be replayed as deselection next frame.
+        // Drain finish-key edges even while a dialog or text field owns them.
+        // Otherwise ending a field edit can apply/cancel a tool next frame.
+        self.prev_enter_down = global_probe.4;
+        self.prev_vk_enter_press_count = vk_probe.enter_press_count;
         self.prev_escape_down = global_probe.5;
         self.prev_vk_escape_press_count = vk_probe.escape_press_count;
         modal_open

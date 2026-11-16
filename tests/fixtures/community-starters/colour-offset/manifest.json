@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "api": 1,
+  "id": "paintfe.colour-offset",
+  "version": "1.0.0",
+  "name": "Colour Offset",
+  "author": "PaintFE",
+  "description": "Separate the colour channels for a subtle fringe or a stronger misprint effect.",
+  "license": "MIT",
+  "tags": [
+    "Colour",
+    "Distortion"
+  ],
+  "effects": [
+    {
+      "id": "colour-offset",
+      "name": "Colour Offset",
+      "category": "Community",
+      "script": "effects/effect.rhai",
+      "description": "Separate the colour channels for a subtle fringe or a stronger misprint effect.",
+      "parameters": [
+        {
+          "id": "horizontal",
+          "label": "Horizontal offset",
+          "kind": "integer",
+          "default": 4,
+          "min": -100,
+          "max": 100,
+          "step": 1
+        },
+        {
+          "id": "vertical",
+          "label": "Vertical offset",
+          "kind": "integer",
+          "default": 0,
+          "min": -100,
+          "max": 100,
+          "step": 1
+        },
+        {
+          "id": "channel",
+          "label": "Channel",
+          "kind": "choice",
+          "default": "Red",
+          "choices": [
+            "Red",
+            "Green",
+            "Blue"
+          ],
+          "min": 0,
+          "max": 1,
+          "step": 1
+        },
+        {
+          "id": "strength",
+          "label": "Strength",
+          "kind": "number",
+          "default": 1.0,
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.01
+        }
+      ],
+      "histogram": false
+    }
+  ],
+  "icon": "art/icon.png",
+  "menu_light": "art/menu.png",
+  "menu_dark": "art/menu.png",
+  "screenshot": "art/preview.png",
+  "files": []
+}

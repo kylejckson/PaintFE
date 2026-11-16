@@ -6,6 +6,8 @@
 // pixel-manipulation scripts. The engine exposes a host API for reading/writing
 // pixels, calling built-in effects, and utility functions.
 
+mod bulk;
+
 use image::{GrayImage, RgbaImage, imageops};
 use rhai::{AST, Array, Dynamic, Engine, EvalAltResult, FnPtr, ImmutableString, Scope};
 use std::sync::{
@@ -271,6 +273,8 @@ struct ScriptContext {
     /// Selection mask (same dimensions as pixels, 0=unselected, 255=selected)
     mask: Option<Vec<u8>>,
     console_output: Vec<String>,
+    output_bytes: usize,
+    preview_count: usize,
     cancelled: Arc<AtomicBool>,
     /// Channel for sending messages to main thread.
     sender: std::sync::mpsc::Sender<ScriptMessage>,
@@ -289,6 +293,9 @@ type SharedContext = Arc<Mutex<ScriptContext>>;
 /// Create a new sandboxed Rhai engine with all PaintFE host functions registered.
 fn create_engine(ctx: SharedContext) -> Engine {
     let mut engine = Engine::new();
+    engine.set_module_resolver(rhai::module_resolvers::DummyModuleResolver::new());
+    engine.set_max_functions(128);
+    engine.set_max_modules(0);
 
     // â”€â”€ Sandbox limits â”€â”€
     engine.set_max_operations(50_000_000);
@@ -318,6 +325,7 @@ fn create_engine(ctx: SharedContext) -> Engine {
     register_transform_api(&mut engine, ctx.clone());
     register_utility_api(&mut engine, ctx.clone());
     register_selection_api(&mut engine, ctx.clone());
+    bulk::register(&mut engine, ctx.clone());
 
     engine
 }
@@ -1220,7 +1228,11 @@ fn register_utility_api(engine: &mut Engine, ctx: SharedContext) {
     // print(msg) â€” output to script console
     let c = ctx.clone();
     engine.register_fn("print_line", move |msg: ImmutableString| {
-        let lock = c.lock().unwrap_or_else(|e| e.into_inner());
+        let mut lock = c.lock().unwrap_or_else(|e| e.into_inner());
+        if lock.output_bytes.saturating_add(msg.len()) > 65536 {
+            return;
+        }
+        lock.output_bytes += msg.len().max(256);
         let _ = lock
             .sender
             .send(ScriptMessage::ConsoleOutput(msg.to_string()));
@@ -1228,7 +1240,11 @@ fn register_utility_api(engine: &mut Engine, ctx: SharedContext) {
     // Also override built-in print
     let c = ctx.clone();
     engine.on_print(move |msg| {
-        let lock = c.lock().unwrap_or_else(|e| e.into_inner());
+        let mut lock = c.lock().unwrap_or_else(|e| e.into_inner());
+        if lock.output_bytes.saturating_add(msg.len()) > 65536 {
+            return;
+        }
+        lock.output_bytes += msg.len().max(256);
         let _ = lock
             .sender
             .send(ScriptMessage::ConsoleOutput(msg.to_string()));
@@ -1240,15 +1256,27 @@ fn register_utility_api(engine: &mut Engine, ctx: SharedContext) {
         let ms_clamped = ms.clamp(0, 10_000) as u64;
         // Send current pixel state as preview
         {
-            let lock = c.lock().unwrap_or_else(|e| e.into_inner());
-            let _ = lock.sender.send(ScriptMessage::Preview {
-                project_index: lock.project_index,
-                pixels: lock.pixels.clone(),
-                width: lock.width,
-                height: lock.height,
-            });
+            let mut lock = c.lock().unwrap_or_else(|e| e.into_inner());
+            if lock.preview_count < 4 && lock.pixels.len() <= 32 * 1024 * 1024 {
+                lock.preview_count += 1;
+                let _ = lock.sender.send(ScriptMessage::Preview {
+                    project_index: lock.project_index,
+                    pixels: lock.pixels.clone(),
+                    width: lock.width,
+                    height: lock.height,
+                });
+            }
         }
-        std::thread::sleep(std::time::Duration::from_millis(ms_clamped));
+        for _ in 0..ms_clamped.div_ceil(10) {
+            if c.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .cancelled
+                .load(Ordering::Relaxed)
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     });
 
     // progress(fraction) â€” update progress bar
@@ -1587,6 +1615,8 @@ pub fn execute_script(
                 height,
                 mask,
                 console_output: Vec::new(),
+                output_bytes: 0,
+                preview_count: 0,
                 cancelled: cancel_flag,
                 sender: sender_clone.clone(),
                 rng_state: rng_seed,
@@ -1815,6 +1845,27 @@ pub fn execute_script_sync(
     height: u32,
     mask: Option<Vec<u8>>,
 ) -> Result<(Vec<u8>, u32, u32, Vec<String>, Vec<CanvasOpRequest>), ScriptError> {
+    execute_script_parameters(
+        source,
+        pixels,
+        width,
+        height,
+        mask,
+        &std::collections::BTreeMap::new(),
+        None,
+    )
+}
+
+/// Host-validated parameters and a stable seed for repeatable plugin previews.
+pub fn execute_script_parameters(
+    source: &str,
+    pixels: Vec<u8>,
+    width: u32,
+    height: u32,
+    mask: Option<Vec<u8>>,
+    values: &std::collections::BTreeMap<String, serde_json::Value>,
+    seed: Option<u64>,
+) -> Result<(Vec<u8>, u32, u32, Vec<String>, Vec<CanvasOpRequest>), ScriptError> {
     let cancel_flag = Arc::new(AtomicBool::new(false));
 
     // Dummy channel — sync mode ignores progress/preview messages
@@ -1825,7 +1876,7 @@ pub fn execute_script_sync(
         let t = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default();
-        t.as_nanos() as u64 ^ 0x517cc1b727220a95
+        seed.unwrap_or(t.as_nanos() as u64 ^ 0x517cc1b727220a95)
     };
 
     let ctx = Arc::new(Mutex::new(ScriptContext {
@@ -1835,6 +1886,8 @@ pub fn execute_script_sync(
         height,
         mask,
         console_output: Vec::new(),
+        output_bytes: 0,
+        preview_count: 0,
         cancelled: cancel_flag,
         sender: dummy_tx,
         rng_state: rng_seed,
@@ -1843,6 +1896,23 @@ pub fn execute_script_sync(
 
     let engine = create_engine(ctx.clone());
     let mut scope = Scope::new();
+    fn dynamic(value: &serde_json::Value) -> Dynamic {
+        match value {
+            serde_json::Value::Bool(b) => Dynamic::from(*b),
+            serde_json::Value::Number(n) => n
+                .as_i64()
+                .map(Dynamic::from)
+                .unwrap_or_else(|| Dynamic::from(n.as_f64().unwrap_or(0.))),
+            serde_json::Value::String(s) => Dynamic::from(s.clone()),
+            serde_json::Value::Array(a) => Dynamic::from_array(a.iter().map(dynamic).collect()),
+            _ => Dynamic::UNIT,
+        }
+    }
+    let params: rhai::Map = values
+        .iter()
+        .map(|(k, v)| (k.clone().into(), dynamic(v)))
+        .collect();
+    scope.push_constant("params", params);
 
     let ast = engine.compile(source).map_err(|e| {
         let pos = e.position();

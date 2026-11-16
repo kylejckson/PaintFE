@@ -21,13 +21,26 @@ Preferences > Interface contains the floating/docked layout and appearance contr
 Follow theme applies to the docked bar's separator colour. Turning it off starts
 with the current theme colour; choose a different colour to see a change.
 Separator opacity fades that line. Background opacity fades the bar over the
-window background. Corner radius rounds the bar's outer corners, with square
+canvas beneath it. Corner radius rounds the bar's outer corners, with square
 corners as the default for a docked bar. Reset buttons restore the defaults or
 resume following the theme for inherited values.
 
 Theme background alpha and Background opacity multiply. A docked bar blends over
-the window background, while its reserved height keeps the canvas in place when
-tools or horizontal overflow change. Reset in Tool options restores that section.
+the actual image, transparency checkerboard and grids beneath it. Its reserved
+height keeps navigation and fitting stable when tools or horizontal overflow
+change. The toolbar still owns pointer input, including at zero opacity. Reset
+in Tool options restores that section.
+
+## Editable lines and selection rotation (upcoming in 1.5)
+
+After drawing a Line, adjust its curve handles or toolbar settings before Apply.
+Temporary colour sampling preserves the pending line. Enter and Escape finish a
+focused numeric field without also applying or cancelling the canvas operation.
+Use the tool's Apply or Cancel buttons when you want to finish the line.
+
+Quarter-turn commands with selected pixels lift them into one floating transform.
+Further turns reuse its source and handles, rather than cutting the base layer
+again. Apply creates one history entry; Cancel restores the original pixels.
 
 ## Pen and tablet input
 

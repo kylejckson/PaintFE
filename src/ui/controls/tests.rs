@@ -75,6 +75,11 @@ fn frame(
                 egui::Frame::popup(ui.style()).show(ui, draw);
             }
         }
+        let owned = (
+            crate::ui::numeric::editor_handled_finish_key(ctx, Key::Enter),
+            crate::ui::numeric::editor_handled_finish_key(ctx, Key::Escape),
+        );
+        ui.data_mut(|data| data.insert_temp(egui::Id::new("observed_finish_key_ownership"), owned));
     });
     result.unwrap()
 }
@@ -957,5 +962,47 @@ fn reserved_numeric_width_does_not_move_adjacent_controls() {
             positions.iter().all(|rect| *rect == positions[0]),
             "{positions:?}"
         );
+    }
+}
+
+#[test]
+fn both_slider_styles_record_numeric_finish_key_ownership() {
+    for colour in [false, true] {
+        for place in 0..3 {
+            for finish in [Key::Enter, Key::Escape] {
+                let ctx = egui::Context::default();
+                let mut value = 50.;
+                frame(&ctx, &mut value, colour, place, true, input(vec![]));
+                let editor = parts(&ctx, "control_test_editor");
+                ctx.memory_mut(|m| m.request_focus(editor.id));
+                frame(&ctx, &mut value, colour, place, true, input(vec![]));
+                frame(
+                    &ctx,
+                    &mut value,
+                    colour,
+                    place,
+                    true,
+                    input(vec![key(finish, Modifiers::NONE)]),
+                );
+                let owned = ctx
+                    .data(|data| {
+                        data.get_temp::<(bool, bool)>(egui::Id::new(
+                            "observed_finish_key_ownership",
+                        ))
+                    })
+                    .unwrap();
+                assert!(if finish == Key::Enter {
+                    owned.0
+                } else {
+                    owned.1
+                });
+                frame(&ctx, &mut value, colour, place, true, input(vec![]));
+                assert_eq!(
+                    ctx.data(|data| data
+                        .get_temp::<(bool, bool)>(egui::Id::new("observed_finish_key_ownership"))),
+                    Some((false, false))
+                );
+            }
+        }
     }
 }

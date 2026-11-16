@@ -7,3 +7,12 @@ pub mod tools;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod optional_features;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub mod plugin_browser;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub mod plugin_effect;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub mod plugin_author;

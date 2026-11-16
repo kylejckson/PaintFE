@@ -203,6 +203,8 @@ impl ToolsPaletteSettings {
 pub struct AppSettings {
     pub dialog_preferences: crate::ui::dialogs::remember::DialogPreferences,
     pub ui_polish: crate::ui::polish::PolishSettings,
+    pub glass: crate::ui::glass::GlassSettings,
+    pub automation: crate::services::automation_config::AutomationSettings,
     pub workspace: crate::ui::workspace::WorkspaceSettings,
     pub workspace_profiles: Vec<crate::ui::workspace::WorkspaceLayout>,
     /// Theme mode (Light or Dark)
@@ -485,6 +487,8 @@ impl Default for AppSettings {
         Self {
             dialog_preferences: Default::default(),
             ui_polish: crate::ui::polish::PolishSettings::default(),
+            glass: Default::default(),
+            automation: Default::default(),
             workspace: crate::ui::workspace::WorkspaceSettings::default(),
             workspace_profiles: Vec::new(),
             // Web has no persisted settings file (no real filesystem), so
@@ -763,8 +767,110 @@ impl AppSettings {
         Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
     }
 
-    /// Build a `ThemeOverrides` from the current settings.
-    /// Returns `ThemeOverrides::empty()` when `advanced_customization` is off.
+    fn clear_theme_colour_overrides(&mut self) {
+        self.ov_bg_color = None;
+        self.ov_panel_bg = None;
+        self.ov_window_bg = None;
+        self.ov_bg2 = None;
+        self.ov_bg3 = None;
+        self.ov_text_color = None;
+        self.ov_text_muted = None;
+        self.ov_text_faint = None;
+        self.ov_border_color = None;
+        self.ov_border_lit = None;
+        self.ov_separator_color = None;
+        self.ov_button_bg = None;
+        self.ov_button_hover = None;
+        self.ov_button_active = None;
+        self.ov_floating_window_bg = None;
+        self.ov_tool_shelf_bg = None;
+        self.ov_tool_shelf_border = None;
+        self.ov_toolbar_bg = None;
+        self.ov_menu_bg = None;
+        self.ov_icon_button_bg = None;
+        self.ov_icon_button_active = None;
+        self.ov_icon_button_disabled = None;
+        self.ov_text_input_bg = None;
+        self.ov_stepper_button_bg = None;
+        self.ov_canvas_bg_top = None;
+        self.ov_canvas_bg_bottom = None;
+        self.ov_glow_accent = None;
+        self.ov_accent3 = None;
+        self.ov_accent4 = None;
+    }
+
+    /// Restore advanced appearance controls from the same defaults as a new profile.
+    pub fn reset_theme_overrides(&mut self) {
+        self.clear_theme_colour_overrides();
+        let defaults = Self::default();
+        self.history_rounding = defaults.history_rounding;
+        self.history_placeholder_opacity = defaults.history_placeholder_opacity;
+        self.history_animations = defaults.history_animations;
+        self.widget_rounding = defaults.widget_rounding;
+        self.window_rounding = defaults.window_rounding;
+        self.menu_rounding = defaults.menu_rounding;
+        self.tool_shelf_rounding = defaults.tool_shelf_rounding;
+        self.tool_button_rounding = defaults.tool_button_rounding;
+        self.dialog_rounding = defaults.dialog_rounding;
+        self.glow_intensity = defaults.glow_intensity;
+        self.shadow_strength = defaults.shadow_strength;
+        self.canvas_grid_visible = defaults.canvas_grid_visible;
+        self.canvas_grid_opacity = defaults.canvas_grid_opacity;
+        self.ui_density = defaults.ui_density;
+        self.badge_rounding = defaults.badge_rounding;
+        self.tab_rounding = defaults.tab_rounding;
+    }
+
+    /// Restore Signal appearance without resetting documents, tools or permissions.
+    pub fn reset_signal_theme(&mut self) {
+        self.reset_theme_overrides();
+        let defaults = Self::default();
+        self.theme_mode = ThemeMode::Light;
+        self.theme_preset = ThemePreset::Signal;
+        self.custom_accent = ThemePreset::Signal.accent_colors();
+        self.advanced_customization = defaults.advanced_customization;
+        self.neon_mode = defaults.neon_mode;
+        self.glass = defaults.glass;
+        self.ui_polish = defaults.ui_polish;
+        self.brush_browser.copy_appearance(&defaults.brush_browser);
+        self.ruler = defaults.ruler;
+        self.tool_shelf.opacity = defaults.tool_shelf.opacity;
+        self.tool_shelf.top_separator = defaults.tool_shelf.top_separator;
+        self.tool_shelf.separator_opacity = defaults.tool_shelf.separator_opacity;
+        self.resize_grip_color = defaults.resize_grip_color;
+        self.resize_grip_opacity = defaults.resize_grip_opacity;
+        self.info_text_color = defaults.info_text_color;
+        self.info_background_color = defaults.info_background_color;
+        self.info_opacity = defaults.info_opacity;
+        self.info_font_size = defaults.info_font_size;
+    }
+
+    /// An explicit mode switch adopts its palette while retaining glass and layout.
+    pub fn set_theme_mode(&mut self, mode: ThemeMode) {
+        if self.theme_mode == mode {
+            return;
+        }
+        self.theme_mode = mode;
+        self.clear_theme_colour_overrides();
+        self.info_text_color = None;
+        self.info_background_color = None;
+        self.resize_grip_color = None;
+        self.ruler.text_color = None;
+        self.ruler.tick_color = None;
+        self.ruler.background_color = None;
+        self.tool_shelf.top_separator = None;
+        for surface in [
+            &mut self.glass.panels,
+            &mut self.glass.headers,
+            &mut self.glass.menus,
+            &mut self.glass.toolbars,
+            &mut self.glass.buttons,
+        ] {
+            surface.tint = None;
+        }
+    }
+
+    /// Build overrides, returning an empty set when advanced customisation is off.
     pub fn build_theme_overrides(&self) -> ThemeOverrides {
         if !self.advanced_customization {
             return ThemeOverrides::empty();
@@ -872,6 +978,9 @@ impl AppSettings {
             self.glow_intensity,
             self.shadow_strength,
         );
+        if let Ok(value) = serde_json::to_string(&self.glass) {
+            content.push_str(&format!("glass={value}\n"));
+        }
         if let Ok(value) = serde_json::to_string(&self.ui_polish) {
             content.push_str(&format!("ui_polish={value}\n"));
         }
@@ -977,6 +1086,12 @@ impl AppSettings {
             && let Ok(browser) = serde_json::from_str::<crate::brushes::BrowserSettings>(value)
         {
             self.brush_browser.copy_appearance(&browser);
+        }
+        if let Some(value) = map.get("glass")
+            && let Ok(mut glass) = serde_json::from_str::<crate::ui::glass::GlassSettings>(value)
+        {
+            glass.sanitize();
+            self.glass = glass;
         }
         if let Some(value) = map.get("ui_polish") {
             if let Ok(mut polish) = serde_json::from_str::<crate::ui::polish::PolishSettings>(value)
@@ -1328,6 +1443,8 @@ impl AppSettings {
         ));
         for (key, value) in [
             ("ui_polish", serde_json::to_string(&self.ui_polish)),
+            ("glass", serde_json::to_string(&self.glass)),
+            ("automation", serde_json::to_string(&self.automation)),
             ("ruler", serde_json::to_string(&self.ruler)),
             ("tooltip_delay", serde_json::to_string(&self.tooltip_delay)),
             (
@@ -1824,6 +1941,18 @@ impl AppSettings {
                 "debug_show_gpu" => s.debug_show_gpu = val.parse().unwrap_or(s.debug_show_gpu),
                 "debug_show_operations" => {
                     s.debug_show_operations = val.parse().unwrap_or(s.debug_show_operations)
+                }
+                "glass" => {
+                    if let Ok(mut v) = serde_json::from_str::<crate::ui::glass::GlassSettings>(val)
+                    {
+                        v.sanitize();
+                        s.glass = v;
+                    }
+                }
+                "automation" => {
+                    if let Ok(v) = serde_json::from_str(val) {
+                        s.automation = v;
+                    }
                 }
                 "ui_polish" => {
                     if let Ok(mut value) =

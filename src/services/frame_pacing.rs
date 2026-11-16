@@ -34,6 +34,7 @@ pub fn set_policy(detect: bool, fps: u32) {
     };
 }
 pub fn register_window(window: Arc<Window>) {
+    crate::services::glass::register(&window);
     WINDOWS
         .lock()
         .unwrap_or_else(|e| e.into_inner())

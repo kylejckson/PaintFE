@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "api": 1,
+  "id": "paintfe.paper-grain",
+  "version": "1.0.0",
+  "name": "Paper Grain",
+  "author": "PaintFE",
+  "description": "Add a little texture without losing the detail underneath.",
+  "license": "MIT",
+  "tags": [
+    "Texture",
+    "Photography"
+  ],
+  "effects": [
+    {
+      "id": "paper-grain",
+      "name": "Paper Grain",
+      "category": "Community",
+      "script": "effects/effect.rhai",
+      "description": "Add a little texture without losing the detail underneath.",
+      "parameters": [
+        {
+          "id": "amount",
+          "label": "Amount",
+          "kind": "number",
+          "default": 0.12,
+          "min": 0.0,
+          "max": 0.6,
+          "step": 0.01
+        },
+        {
+          "id": "size",
+          "label": "Grain size",
+          "kind": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 8,
+          "step": 1
+        },
+        {
+          "id": "seed",
+          "label": "Seed",
+          "kind": "integer",
+          "default": 1,
+          "min": 0,
+          "max": 10000,
+          "step": 1
+        },
+        {
+          "id": "monochrome",
+          "label": "Monochrome",
+          "kind": "boolean",
+          "default": true,
+          "min": 0,
+          "max": 1,
+          "step": 1
+        }
+      ],
+      "histogram": false
+    }
+  ],
+  "icon": "art/icon.png",
+  "menu_light": "art/menu.png",
+  "menu_dark": "art/menu.png",
+  "screenshot": "art/preview.png",
+  "files": []
+}

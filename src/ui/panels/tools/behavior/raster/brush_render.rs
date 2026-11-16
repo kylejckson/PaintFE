@@ -856,11 +856,11 @@ impl ToolsPanel {
                 for y in 0..dst_size {
                     for x in 0..dst_size {
                         self.brush_tip_mask[(y * dst_size + x) as usize] =
-                            (crate::ui::panels::tools::geometric_tip_alpha(
+                            (crate::ui::panels::tools::rotated_geometric_tip_alpha(
                                 geometry,
-                                x as f32 + 0.5 - half,
-                                y as f32 + 0.5 - half,
-                                half,
+                                (x as f32 + 0.5 - half, y as f32 + 0.5 - half),
+                                half * 2.,
+                                (0., 1.),
                                 self.properties.hardness,
                                 self.properties.anti_aliased,
                             ) * 255.)
@@ -946,7 +946,9 @@ impl ToolsPanel {
         };
         let (cx, cy) = crate::ui::panels::tools::pixel_aligned_brush_center(
             (cx, cy),
-            half * 2.,
+            geometry.map_or(half * 2., |geometry| {
+                crate::ui::panels::tools::geometric_tip_span(geometry, half * 2., rotation_deg)
+            }),
             (geometry.is_some() || self.brush_paintbrush.is_some_and(|tip| !tip.has_bristles()))
                 && !self.properties.anti_aliased,
         );
@@ -1107,11 +1109,11 @@ impl ToolsPanel {
                         let geom_alpha_u8 = if let Some(geometry) = geometry {
                             let x = rel_x + 0.5;
                             let y = rel_y + 0.5;
-                            (crate::ui::panels::tools::geometric_tip_alpha(
+                            (crate::ui::panels::tools::rotated_geometric_tip_alpha(
                                 geometry,
-                                x * cos_a - y * sin_a,
-                                x * sin_a + y * cos_a,
-                                half,
+                                (x, y),
+                                half * 2.,
+                                (sin_a, cos_a),
                                 self.properties.hardness,
                                 self.properties.anti_aliased,
                             ) * 255.)
@@ -1509,6 +1511,102 @@ mod mega_pass_brush_tests {
                 tools.properties.anti_aliased = false;
                 tools.rebuild_tip_mask(&assets);
                 assert!(tools.brush_tip_mask.iter().all(|&a| a == 0 || a == 255));
+            }
+        }
+    }
+
+    #[test]
+    fn rotated_geometric_cursor_matches_actual_dabs_and_independent_pixel_coverage() {
+        let ctx = egui::Context::default();
+        let mut assets = Assets::new();
+        assets.init(&ctx);
+        for name in ["Square", "Diamond"] {
+            let geometry = assets.get_brush_tip_data(name).unwrap().geometry.unwrap();
+            let mut tools = ToolsPanel::default();
+            tools.properties.brush_tip = BrushTip::Image(name.into());
+            tools.properties.hardness = 1.;
+            tools.properties.opacity = 1.;
+            tools.properties.flow = 1.;
+            tools.properties.pressure_size = false;
+            tools.properties.pressure_opacity = false;
+            for diameter in 1..=16 {
+                let size = diameter as f32;
+                tools.properties.size = size;
+                for angle in [0_f32, 17., 45., 90., 135., 270.] {
+                    tools.properties.tip_rotation = angle;
+                    tools.properties.anti_aliased = false;
+                    tools.rebuild_tip_mask(&assets);
+                    let (mask, side) = crate::components::tools::geometric_cursor_mask(
+                        geometry, size, angle, 1., false,
+                    );
+                    let span = crate::components::tools::geometric_tip_span(geometry, size, angle);
+                    let centre = crate::components::tools::pixel_aligned_brush_center(
+                        (31.7, 31.7),
+                        span,
+                        true,
+                    );
+                    let mut image = TiledImage::new(64, 64);
+                    tools.brush_coverage.clear();
+                    tools.draw_circle_no_dirty(
+                        &mut image,
+                        64,
+                        64,
+                        (31.7, 31.7),
+                        false,
+                        false,
+                        [1., 0., 0., 1.],
+                        [0.; 4],
+                        None,
+                    );
+                    let mut erased = TiledImage::new(64, 64);
+                    tools.brush_coverage.clear();
+                    tools.draw_circle_no_dirty(
+                        &mut erased,
+                        64,
+                        64,
+                        (31.7, 31.7),
+                        true,
+                        false,
+                        [1., 0., 0., 1.],
+                        [0.; 4],
+                        None,
+                    );
+                    let origin = (centre.0 - side as f32 / 2., centre.1 - side as f32 / 2.);
+                    let (sin, cos) = angle.to_radians().sin_cos();
+                    for y in 0..64 {
+                        for x in 0..64 {
+                            let dx = x as f32 + 0.5 - centre.0;
+                            let dy = y as f32 + 0.5 - centre.1;
+                            let u = dx * cos + dy * sin;
+                            let v = -dx * sin + dy * cos;
+                            let inside = if name == "Square" {
+                                u.abs().max(v.abs()) <= size / 2.
+                            } else {
+                                u.abs() + v.abs() <= size / 2.
+                            };
+                            let expected = if inside { 255 } else { 0 };
+                            assert_eq!(
+                                image.get_pixel(x, y)[3],
+                                expected,
+                                "{name} size {size} angle {angle} at {x},{y}"
+                            );
+                            assert_eq!(
+                                erased.get_pixel(x, y)[3],
+                                expected,
+                                "eraser {name} size {size} angle {angle}"
+                            );
+                            let mx = x as i32 - origin.0 as i32;
+                            let my = y as i32 - origin.1 as i32;
+                            let cursor =
+                                if mx >= 0 && my >= 0 && mx < side as i32 && my < side as i32 {
+                                    mask[(my as u32 * side + mx as u32) as usize]
+                                } else {
+                                    0
+                                };
+                            assert_eq!(cursor, expected, "cursor {name} size {size} angle {angle}");
+                        }
+                    }
+                }
             }
         }
     }

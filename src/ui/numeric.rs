@@ -6,6 +6,20 @@ pub(crate) use expression::evaluate_dimension_expression;
 pub(crate) type Formatter<'a> = Box<dyn Fn(f64, RangeInclusive<usize>) -> String + 'a>;
 pub(crate) type Parser<'a> = Box<dyn Fn(&str) -> Option<f64> + 'a>;
 
+/// Whether a numeric editor handled this finish key during the current frame.
+pub(crate) fn editor_handled_finish_key(ctx: &egui::Context, key: egui::Key) -> bool {
+    let frame = ctx.cumulative_frame_nr();
+    ctx.data(|data| data.get_temp::<(u64, bool, bool)>(egui::Id::new("numeric_finish_key_owner")))
+        .is_some_and(|(owner, enter, escape)| {
+            owner == frame
+                && match key {
+                    egui::Key::Enter => enter,
+                    egui::Key::Escape => escape,
+                    _ => false,
+                }
+        })
+}
+
 pub fn step(ui: &Ui, value: f32) -> f32 {
     if ui.input(|i| i.modifiers.shift) {
         value * super::polish::settings(ui.ctx()).fine_adjustment
@@ -370,6 +384,7 @@ impl<T: Number> Numeric<'_, T> {
         if let Some(decimals) = self.decimals {
             widget = widget.max_decimals(decimals);
         }
+        let had_focus = ui.memory(|memory| memory.has_focus(id));
         let mut response = if let Some(sample) = &self.width_sample {
             let font = egui::TextStyle::Button.resolve(ui.style());
             let width = ui
@@ -485,6 +500,27 @@ impl<T: Number> Numeric<'_, T> {
                 d.remove_temp::<f64>(edit_id);
                 d.remove::<bool>(id.with("numeric_select_all"));
             });
+        }
+        // Keep ownership after Enter/Escape ends editing. Canvas tools can
+        // respect the field without changing a dialog's confirmation policy.
+        if had_focus || response.has_focus() || response.lost_focus() {
+            let (enter, escape) = ui.input(|input| {
+                (
+                    input.key_pressed(egui::Key::Enter),
+                    input.key_pressed(egui::Key::Escape),
+                )
+            });
+            if enter || escape {
+                let frame = ui.ctx().cumulative_frame_nr();
+                ui.ctx().data_mut(|data| {
+                    let id = egui::Id::new("numeric_finish_key_owner");
+                    let previous = data
+                        .get_temp::<(u64, bool, bool)>(id)
+                        .filter(|old| old.0 == frame)
+                        .unwrap_or((frame, false, false));
+                    data.insert_temp(id, (frame, enter || previous.1, escape || previous.2));
+                });
+            }
         }
         ui.ctx()
             .data_mut(|d| d.insert_temp(value_id, self.value.to_f64()));

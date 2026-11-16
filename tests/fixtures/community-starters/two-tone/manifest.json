@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "api": 1,
+  "id": "paintfe.two-tone",
+  "version": "1.0.0",
+  "name": "Two Tone",
+  "author": "PaintFE",
+  "description": "Turn an image into two colours. Useful for posters, prints and simple graphic treatments.",
+  "license": "MIT",
+  "tags": [
+    "Colour",
+    "Graphic"
+  ],
+  "effects": [
+    {
+      "id": "two-tone",
+      "name": "Two Tone",
+      "category": "Community",
+      "script": "effects/effect.rhai",
+      "description": "Turn an image into two colours. Useful for posters, prints and simple graphic treatments.",
+      "parameters": [
+        {
+          "id": "shadow",
+          "label": "Shadows",
+          "kind": "colour",
+          "default": [
+            25,
+            43,
+            67,
+            255
+          ],
+          "min": 0,
+          "max": 1,
+          "step": 1
+        },
+        {
+          "id": "light",
+          "label": "Highlights",
+          "kind": "colour",
+          "default": [
+            245,
+            188,
+            135,
+            255
+          ],
+          "min": 0,
+          "max": 1,
+          "step": 1
+        },
+        {
+          "id": "contrast",
+          "label": "Contrast",
+          "kind": "number",
+          "default": 1.0,
+          "min": 0.25,
+          "max": 3.0,
+          "step": 0.01
+        },
+        {
+          "id": "strength",
+          "label": "Strength",
+          "kind": "number",
+          "default": 1.0,
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.01
+        }
+      ],
+      "histogram": true
+    }
+  ],
+  "icon": "art/icon.png",
+  "menu_light": "art/menu.png",
+  "menu_dark": "art/menu.png",
+  "screenshot": "art/preview.png",
+  "files": []
+}

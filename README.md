@@ -152,6 +152,14 @@ Background removal runs locally through ONNX Runtime. Images are processed on yo
 
 Supported model families are **BiRefNet**, **U2-Net**, and **IS-Net (DIS)**. Open **Edit > Preferences > AI** and select an ONNX Runtime library and model file. Versioned Linux runtime libraries are also accepted. Graph optimization can be All (default), Basic or Disabled. The CPU memory arena is disabled by default to reduce retained intermediate allocations. Older BiRefNet exports can still need several GB during inference even for a small source image, because their model input is fixed at 1024 × 1024. Prefer newer official exports when compatible with your runtime; PaintFE does not substitute models or change fixed input dimensions. Model links are available in Preferences; runtime downloads are available from [ONNX Runtime releases](https://github.com/microsoft/onnxruntime/releases).
 
+### Community Add-ons and Agent Tools (Upcoming in 1.5.0)
+
+Open **View > Community add-ons** to browse script effects, themes and icon packs. Fetching the catalogue and installing a pack connects to GitHub only when requested. Installed effects run offline. The browser includes search, Favourites, local imports and appearance previews with Keep and Restore. Create reusable effects through the Script Editor, with native controls and protected cancellation. See the [pack guide](docs/plugins.md) and [community repository](https://github.com/kylejckson/PaintFE_plugins) for installation and authoring instructions.
+
+Optional **MCP agent control** is under Preferences > AI, with separate connection, editing and script permissions. It starts disabled. A compatible external client can inspect previews, paint, work with basic layers and selections, undo changes and run bounded raster scripts. PaintFE includes no AI model, and a cloud client may send requested previews to its own provider. See [setup, tools and limits](docs/automation.md).
+
+**Glass appearance** is under Preferences > Interface. Configure desktop transparency, surface colours and borders, with optional native background blur where supported. Glass Dark uses charcoal surfaces; Glass Light uses pearl-white surfaces. Appearance changes do not alter exported image pixels. See the [glass guide](docs/glass.md).
+
 ### Paint.NET Legacy Plugins (Experimental)
 
 PaintFE supports a limited profile of classic Paint.NET 3.5 CPU effect plugins through an optional out-of-process .NET host. Open **Edit > Preferences > Plugins**, import a DLL, and explicitly trust it. Supported plugins use `PropertyBasedEffect` with standard numeric, boolean, or list properties.

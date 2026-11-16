@@ -285,7 +285,12 @@ fn paint_dialog_header_impl(
 
     let painter = ui.painter();
     // Gradient-like header: accent faint fill with rounded top corners
-    painter.rect_filled(rect, ctx_theme(ui.ctx()).widget_cr(4), colors.accent_faint);
+    crate::ui::glass::paint_header(
+        painter,
+        rect,
+        ctx_theme(ui.ctx()).widget_cr(4),
+        colors.accent_faint,
+    );
     // Left accent bar (3px, full accent color)
     painter.rect_filled(
         Rect::from_min_size(rect.min, Vec2::new(3.0, header_height)),
@@ -502,7 +507,18 @@ pub(crate) fn dialog_footer_keys(ctx: &egui::Context) -> (bool, bool) {
 
 /// Styled OK / Cancel footer. Returns (ok_clicked, cancel_clicked).
 pub(crate) fn dialog_footer(ui: &mut egui::Ui, colors: &DialogColors) -> (bool, bool) {
-    let (mut ok, mut cancel) = dialog_footer_keys(ui.ctx());
+    dialog_footer_action(ui, colors, &t!("common.ok"), true)
+}
+
+/// Shared themed footer for host-owned actions, with cancellation always available.
+pub(crate) fn dialog_footer_action(
+    ui: &mut egui::Ui,
+    colors: &DialogColors,
+    label: &str,
+    enabled: bool,
+) -> (bool, bool) {
+    let (key_ok, mut cancel) = dialog_footer_keys(ui.ctx());
+    let mut ok = key_ok && enabled;
 
     ui.add_space(4.0);
     accent_separator(ui, colors);
@@ -514,14 +530,14 @@ pub(crate) fn dialog_footer(ui: &mut egui::Ui, colors: &DialogColors) -> (bool, 
                 cancel = true;
             }
             // Styled accent OK button
-            let ok_label = format!("  {}  ", t!("common.ok"));
+            let ok_label = format!("  {label}  ");
             let ok_btn = egui::Button::new(
                 egui::RichText::new(ok_label)
                     .color(contrast_text_color(colors.accent))
                     .strong(),
             )
             .fill(colors.accent);
-            if ui.add(ok_btn).clicked() {
+            if ui.add_enabled(enabled, ok_btn).clicked() {
                 ok = true;
             }
         });

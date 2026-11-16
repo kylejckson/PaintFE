@@ -197,6 +197,10 @@ impl<'a> PolishedWindow<'a> {
         self.0 = self.0.constrain(value);
         self
     }
+    pub fn constrain_to(mut self, rect: egui::Rect) -> Self {
+        self.0 = self.0.constrain_to(rect);
+        self
+    }
     pub fn vscroll(mut self, value: bool) -> Self {
         self.0 = self.0.vscroll(value);
         self

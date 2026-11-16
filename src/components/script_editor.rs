@@ -227,7 +227,35 @@ impl ScriptEditorPanel {
                 .button(RichText::new(crate::t!("script.save")).color(text_color))
                 .clicked()
             {
+                #[cfg(not(target_arch = "wasm32"))]
+                if crate::ui::panels::plugin_author::editing(ui.ctx()) {
+                    crate::ui::panels::plugin_author::request_save(ui.ctx(), &self.code, false);
+                } else {
+                    self.save_current_script();
+                }
+                #[cfg(target_arch = "wasm32")]
                 self.save_current_script();
+            }
+
+            #[cfg(not(target_arch = "wasm32"))]
+            if crate::ui::panels::plugin_author::editing(ui.ctx()) {
+                if ui
+                    .button(crate::ui::panels::plugin_browser::tr("save_as"))
+                    .clicked()
+                {
+                    crate::ui::panels::plugin_author::request_save(ui.ctx(), &self.code, true);
+                }
+                if ui
+                    .button(crate::ui::panels::plugin_browser::tr("properties"))
+                    .clicked()
+                {
+                    crate::ui::panels::plugin_author::properties(ui.ctx());
+                }
+            } else if ui
+                .button(crate::ui::panels::plugin_browser::tr("create"))
+                .clicked()
+            {
+                crate::ui::panels::plugin_author::create(ui.ctx(), &self.code);
             }
 
             // Load button
@@ -236,6 +264,8 @@ impl ScriptEditorPanel {
                 .clicked()
             {
                 self.load_script_dialog();
+                #[cfg(not(target_arch = "wasm32"))]
+                crate::ui::panels::plugin_author::unbind(ui.ctx());
             }
 
             // Add to Filters button
@@ -284,6 +314,8 @@ impl ScriptEditorPanel {
                             {
                                 self.selected_script_idx = Some(i);
                                 self.code = script.code.clone();
+                                #[cfg(not(target_arch = "wasm32"))]
+                                crate::ui::panels::plugin_author::unbind(ui.ctx());
                             }
                         }
                     });

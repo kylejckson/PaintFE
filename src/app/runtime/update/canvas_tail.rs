@@ -63,19 +63,11 @@ impl PaintFEApp {
                 ui.disable();
             }
             let bar_w = if docked {
-                ui.available_width()
+                viewport_rect.width()
             } else {
                 (viewport_rect.width() - left - right).max(0.0)
             };
             ui.set_width(bar_w);
-            if docked {
-                crate::ui::tool_shelf::paint_workspace_background(
-                    ui.painter(),
-                    egui::Rect::from_min_size(ui.cursor().min, egui::vec2(bar_w, shelf_style.height())),
-                    self.theme.canvas_bg_top,
-                    self.theme.canvas_bg_bottom,
-                );
-            }
             let shelf_frame = shelf_style.frame;
             let content_w = (bar_w - shelf_frame.total_margin().sum().x).max(0.0);
             let shelf_inner = shelf_frame.show(ui, |ui| {
@@ -197,9 +189,9 @@ impl PaintFEApp {
 
                                 if overlay.selection_rotation {
                                     ui.label(crate::t!("ctx.text.effects.gradient.angle"));
-                                    let mut angle = overlay.rotation.to_degrees();
+                                    let mut angle = crate::ops::clipboard::normalize_rotation(overlay.rotation).to_degrees();
                                     if ui.add(crate::ui::controls::Numeric::angle(&mut angle)).changed() {
-                                        overlay.rotation = angle.to_radians();
+                                        overlay.set_rotation(angle.to_radians());
                                     }
                                     let clips = document_size.is_some_and(|(w, h)| {
                                         overlay.selection_rotation_would_clip(w, h)
@@ -288,13 +280,22 @@ impl PaintFEApp {
                 .exact_size(shelf_style.height())
                 .resizable(false)
                 .frame(egui::Frame::NONE)
-                .show(root_ui, &mut show_shelf);
-        } else {
-            egui::Area::new(egui::Id::new("tool_shelf_strip"))
-                .order(egui::Order::Middle)
-                .fixed_pos(shelf_anchor)
-                .show(ctx, &mut show_shelf);
+                .show(root_ui, |_| {});
         }
+        ctx.data_mut(|data| {
+            let key = egui::Id::new("paintfe_docked_canvas_paint_rect");
+            if docked {
+                data.insert_temp(key, viewport_rect);
+            } else {
+                data.remove::<egui::Rect>(key);
+            }
+        });
+        egui::Area::new(egui::Id::new(if docked { "docked_tool_shelf_strip" } else { "tool_shelf_strip" }))
+            .order(egui::Order::Middle)
+            .fixed_pos(shelf_anchor)
+            .constrain(false)
+            .movable(false)
+            .show(ctx, &mut show_shelf);
         self.remember_ui_cursor_rect(shelf_ui_rect);
         if start_straighten {
             self.start_straighten();
@@ -400,7 +401,7 @@ impl PaintFEApp {
         #[allow(deprecated)]
         egui::CentralPanel::default()
             .frame(egui::Frame {
-                fill: canvas_bg_bottom,
+                fill: egui::Color32::TRANSPARENT,
                 ..Default::default()
             })
             .show(root_ui, |ui| {
@@ -564,6 +565,8 @@ impl PaintFEApp {
                                             project.canvas_state.height,
                                         )
                                     });
+                                let selection_rotation = self.paste_overlay.as_ref().is_some_and(|overlay| overlay.selection_rotation);
+                                let mut committed_history = None;
                                 if let Some(overlay) = self.paste_overlay.take() {
                                     self.paste_transform_undo.clear();
                                     self.paste_transform_redo.clear();
@@ -591,15 +594,7 @@ impl PaintFEApp {
                                         });
                                     project.canvas_state.clear_preview_state();
                                     overlay.commit(&mut project.canvas_state);
-                                    if let Some((desc, before)) = cmd.take() {
-                                        let after =
-                                            crate::components::history::CanvasSnapshot::capture(
-                                                &project.canvas_state,
-                                            );
-                                        project.history.push(Box::new(
-                                            SnapshotCommand::from_snapshots(desc, before, after),
-                                        ));
-                                    }
+                                    committed_history = cmd.take();
                                     project.mark_dirty();
                                 }
                                 self.is_move_pixels_active = false;
@@ -614,7 +609,7 @@ impl PaintFEApp {
                                 let keep_selection = action
                                     == crate::canvas::PasteAction::CommitAndSelect
                                     || (action == crate::canvas::PasteAction::Commit
-                                        && self.settings.select_after_paste);
+                                        && (selection_rotation || self.settings.select_after_paste));
                                 project.canvas_state.selection_mask =
                                     if needs_mask || keep_selection {
                                         select_mask
@@ -632,6 +627,10 @@ impl PaintFEApp {
                                 }
                                 project.canvas_state.invalidate_selection_overlay();
                                 project.canvas_state.mark_dirty(None);
+                                if let Some((desc, before)) = committed_history {
+                                    let after = crate::components::history::CanvasSnapshot::capture(&project.canvas_state);
+                                    project.history.push(Box::new(SnapshotCommand::from_snapshots(desc, before, after)));
+                                }
                                 if keep_selection {
                                     self.tools_panel.selection_state.mode =
                                         crate::canvas::SelectionMode::Replace;

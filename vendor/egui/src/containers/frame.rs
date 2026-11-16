@@ -6,6 +6,10 @@ use crate::{
 };
 use epaint::{Color32, CornerRadius, Margin, MarginF32, Rect, Shadow, Shape, Stroke};
 
+/// Optional host painter for frame visuals. It does not change layout or input.
+#[derive(Clone)]
+pub struct FramePaintHook(pub std::sync::Arc<dyn Fn(&crate::Context, &Frame, crate::Rect, Option<crate::UiKind>) -> Option<crate::Shape> + Send + Sync>);
+
 /// A frame around some content, including margin, colors, etc.
 ///
 /// ## Definitions
@@ -475,7 +479,25 @@ impl Prepared {
         let widget_rect = self.frame.widget_rect(content_rect);
 
         if ui.is_rect_visible(widget_rect) {
-            let shape = self.frame.paint(content_rect);
+            let hook = ui.ctx().data(|d| d.get_temp::<FramePaintHook>(crate::Id::new("frame_paint_hook")));
+            // Apply a material once at the owning container, not to nested opaque groups.
+            let shape = hook.filter(|_| self.frame.fill.a() != 0).and_then(|hook| {
+                let mut opaque_frames = 0;
+                let mut owner = None;
+                for node in self.content_ui.stack().iter() {
+                    match node.kind() {
+                        Some(crate::UiKind::Frame) => {
+                            if node.frame().fill.a() != 0 { opaque_frames += 1; }
+                        }
+                        Some(kind) if kind.is_area() || kind.is_panel() => {
+                            owner = Some(kind);
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                if opaque_frames == 1 { (hook.0)(ui.ctx(), &self.frame, content_rect, owner) } else { None }
+            }).unwrap_or_else(|| self.frame.paint(content_rect));
             ui.painter().set(self.where_to_put_background, shape);
         }
     }

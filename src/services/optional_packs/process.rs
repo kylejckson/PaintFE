@@ -13,7 +13,7 @@ pub(crate) fn hidden_command(path: &Path) -> Command {
     #[cfg(not(windows))]
     command
 }
-pub(super) fn curl_path() -> PathBuf {
+pub(crate) fn curl_path() -> PathBuf {
     #[cfg(windows)]
     {
         PathBuf::from(std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into()))

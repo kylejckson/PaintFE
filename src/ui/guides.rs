@@ -444,7 +444,8 @@ pub fn interact(
     handled
 }
 pub fn paint(ui: &Ui, state: &CanvasState, image: Rect, view: Rect, zoom: f32) {
-    let painter = ui.painter().with_clip_rect(view);
+    let mut painter = ui.painter().clone();
+    painter.set_clip_rect(view);
     let visual = ui.visuals();
     let draw = |axis: Axis, position: f32, active: bool| {
         let c = if active {

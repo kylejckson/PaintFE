@@ -757,13 +757,24 @@ impl CanvasState {
         scale: u32,
         include_preview: bool,
     ) -> (ColorImage, [usize; 2]) {
-        let min_x = rect.min.x.floor() as u32;
-        let min_y = rect.min.y.floor() as u32;
+        let min_x = (rect.min.x.floor() as u32).min(self.width);
+        let min_y = (rect.min.y.floor() as u32).min(self.height);
         let max_x = (rect.max.x.ceil() as u32).min(self.width);
         let max_y = (rect.max.y.ceil() as u32).min(self.height);
 
-        let source_w = max_x - min_x;
-        let source_h = max_y - min_y;
+        let source_w = max_x.saturating_sub(min_x);
+        let source_h = max_y.saturating_sub(min_y);
+        if source_w == 0 || source_h == 0 {
+            return (
+                ColorImage {
+                    size: [0, 0],
+                    source_size: egui::Vec2::ZERO,
+                    pixels: Vec::new(),
+                },
+                [min_x as usize, min_y as usize],
+            );
+        }
+        let scale = scale.max(1);
         let target_w = source_w.div_ceil(scale);
         let target_h = source_h.div_ceil(scale);
 
@@ -935,13 +946,23 @@ impl CanvasState {
     /// Processes chunk-by-chunk within the dirty rect for efficient batch access.
     pub fn composite_partial(&self, rect: Rect) -> (ColorImage, [usize; 2]) {
         // 1. Clamp rect to canvas bounds
-        let min_x = rect.min.x.floor() as u32;
-        let min_y = rect.min.y.floor() as u32;
+        let min_x = (rect.min.x.floor() as u32).min(self.width);
+        let min_y = (rect.min.y.floor() as u32).min(self.height);
         let max_x = (rect.max.x.ceil() as u32).min(self.width);
         let max_y = (rect.max.y.ceil() as u32).min(self.height);
 
-        let width = max_x - min_x;
-        let height = max_y - min_y;
+        let width = max_x.saturating_sub(min_x);
+        let height = max_y.saturating_sub(min_y);
+        if width == 0 || height == 0 {
+            return (
+                ColorImage {
+                    size: [0, 0],
+                    source_size: egui::Vec2::ZERO,
+                    pixels: Vec::new(),
+                },
+                [min_x as usize, min_y as usize],
+            );
+        }
 
         // Capture shared state for the parallel closure
         let layer_visibility: Vec<bool> = (0..self.layers.len())

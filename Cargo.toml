@@ -1,6 +1,6 @@
 [package]
 name = "PaintFE"
-version = "1.4.28"
+version = "1.5.0"
 edition = "2024"
 
 [lib]
@@ -45,7 +45,6 @@ winapi = { version = "0.3", features = ["winuser", "windef", "shellapi", "dwmapi
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11-dl = "2.21"
-ttf-parser = "0.25"
 
 # Native-only: no wasm32 equivalent (native file dialogs, system font
 # enumeration, dynamic library loading, RAW demosaicing needing a C toolchain,
@@ -58,6 +57,7 @@ webp = "0.3"
 libwebp-sys = "=0.9.6"
 arboard = { version = "3", features = ["wayland-data-control"] }
 font-kit = "0.14"
+ttf-parser = "0.25"
 libloading = "0.8"
 rawloader = "0.37"
 imagepipe = "0.5"
@@ -116,3 +116,7 @@ epaint = { path = "vendor/epaint" }
 egui = { path = "vendor/egui" }
 
 rfd = { path = "vendor/rfd" }
+
+# Keep interactive script previews representative of release execution.
+[profile.dev.package.rhai]
+opt-level = 2

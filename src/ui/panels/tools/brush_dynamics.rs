@@ -1,4 +1,8 @@
 impl ToolsPanel {
+    pub(crate) fn cursor_geometry(&self) -> Option<crate::config::brushes::BuiltinTipGeometry> {
+        self.brush_tip_geometry
+    }
+
     pub(crate) fn select_brush_tip(&mut self, tip: BrushTip, assets: &Assets) {
         if tip == self.properties.brush_tip {
             self.rebuild_tip_mask(assets);

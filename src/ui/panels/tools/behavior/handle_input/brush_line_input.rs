@@ -463,6 +463,11 @@ impl ToolsPanel {
                 }
             }
             Tool::Line => {
+                if escape_pressed_global {
+                    self.cancel_active_tool(canvas_state);
+                    ui.ctx().request_repaint();
+                    return;
+                }
                 if self.line_state.line_tool.stage == LineStage::Idle && is_primary_pressed {
                     self.capture_line_target(canvas_state);
                 }
@@ -477,7 +482,24 @@ impl ToolsPanel {
                     return;
                 }
 
-                // TASK 1: Advanced Bezier Line Tool
+                let press_screen = ui.input(|input| input.events.iter().find_map(|event| match event {
+                    egui::Event::PointerButton {pos, button:egui::PointerButton::Primary, pressed:true, ..} => Some(*pos),
+                    egui::Event::Touch {pos, phase:egui::TouchPhase::Start, ..} => Some(*pos),
+                    _ => None,
+                }));
+                // A quick drag can deliver its complete gesture in one frame.
+                // The press owns the anchor, not the frame's last pointer sample.
+                if self.line_state.line_tool.stage == LineStage::Idle && is_primary_pressed
+                    && (!self.line_state.line_tool.require_mouse_release || is_primary_released)
+                    && let Some(pos) = press_screen.map(|pos| self.screen_to_canvas_pos2(pos, canvas_rect, zoom))
+                        .or_else(|| canvas_pos_f32.or(canvas_pos_unclamped).map(|(x,y)|Pos2::new(x,y)))
+                {
+                    self.line_state.line_tool.control_points = [pos;4];
+                    self.line_state.line_tool.stage = LineStage::Dragging;
+                    self.line_state.line_tool.last_bounds = None;
+                    self.line_state.line_tool.require_mouse_release = false;
+                }
+
                 match self.line_state.line_tool.stage {
                     LineStage::Idle => {
                         // Clear the require_mouse_release flag when mouse is released
@@ -555,9 +577,8 @@ impl ToolsPanel {
                             };
                             // Update end point
                             self.line_state.line_tool.control_points[3] = pos2;
-                            let midpoint = Pos2::new((p0.x + pos2.x) / 2.0, (p0.y + pos2.y) / 2.0);
-                            self.line_state.line_tool.control_points[1] = midpoint;
-                            self.line_state.line_tool.control_points[2] = midpoint;
+                            self.line_state.line_tool.control_points[1] = p0 + (pos2 - p0) / 3.;
+                            self.line_state.line_tool.control_points[2] = p0 + (pos2 - p0) * (2. / 3.);
 
                             // OPTIMIZATION: Calculate bounds and use smart dirty rects
                             let current_bounds = self.get_bezier_bounds(
@@ -646,62 +667,7 @@ impl ToolsPanel {
                             })
                         });
 
-                        // Check if settings changed and re-render if needed
-                        let settings_changed =
-                            (self.properties.size - self.line_state.line_tool.last_size).abs()
-                                > 0.1
-                                || self.line_state.line_tool.options.pattern
-                                    != self.line_state.line_tool.last_pattern
-                                || self.line_state.line_tool.options.cap_style
-                                    != self.line_state.line_tool.last_cap_style
-                                || self.line_state.line_tool.options.end_shape
-                                    != self.line_state.line_tool.last_end_shape
-                                || self.line_state.line_tool.options.arrow_side
-                                    != self.line_state.line_tool.last_arrow_side
-                                || self.line_state.line_tool.options.anti_alias
-                                    != self.line_state.line_tool.last_anti_alias;
-
-                        if settings_changed {
-                            // Update tracked values
-                            self.line_state.line_tool.last_size = self.properties.size;
-                            self.line_state.line_tool.last_pattern =
-                                self.line_state.line_tool.options.pattern;
-                            self.line_state.line_tool.last_cap_style =
-                                self.line_state.line_tool.options.cap_style;
-                            self.line_state.line_tool.last_end_shape =
-                                self.line_state.line_tool.options.end_shape;
-                            self.line_state.line_tool.last_arrow_side =
-                                self.line_state.line_tool.options.arrow_side;
-                            self.line_state.line_tool.last_anti_alias =
-                                self.line_state.line_tool.options.anti_alias;
-
-                            // Re-calculate bounds
-                            let current_bounds = self.get_bezier_bounds(
-                                self.line_state.line_tool.control_points,
-                                canvas_state.width,
-                                canvas_state.height,
-                            );
-
-                            // Re-rasterize with new settings
-                            self.rasterize_bezier(
-                                canvas_state,
-                                self.line_state.line_tool.control_points,
-                                self.properties.color,
-                                self.line_state.line_tool.options.pattern,
-                                self.line_state.line_tool.options.cap_style,
-                                self.line_state.line_tool.last_bounds,
-                            );
-
-                            // Mark dirty for preview update
-                            let dirty_bounds = match self.line_state.line_tool.last_bounds {
-                                Some(last) => last.union(current_bounds),
-                                None => current_bounds,
-                            };
-                            canvas_state.mark_preview_changed_rect(dirty_bounds);
-                            self.line_state.line_tool.last_bounds = Some(current_bounds);
-
-                            ui.ctx().request_repaint();
-                        }
+                        self.refresh_line_preview(canvas_state, self.properties.color);
 
                         // Handle Enter key or tool change to commit
                         if enter_pressed {
@@ -760,14 +726,15 @@ impl ToolsPanel {
                                 (pan_handle_screen - screen_pos).length() < pan_hit_radius;
                             self.line_state.line_tool.pan_handle_hovering = hovering_pan;
 
-                            if is_primary_down
+                            if (is_primary_down || is_primary_released)
                                 && self.line_state.line_tool.dragging_handle.is_none()
                                 && !self.line_state.line_tool.pan_handle_dragging
                             {
                                 // -- Check pan handle first --
-                                if is_primary_pressed && hovering_pan {
+                                let press = press_screen.unwrap_or(screen_pos);
+                                if is_primary_pressed && (pan_handle_screen - press).length() < pan_hit_radius {
                                     let canvas_pos_now =
-                                        self.screen_to_canvas_pos2(screen_pos, canvas_rect, zoom);
+                                        self.screen_to_canvas_pos2(press, canvas_rect, zoom);
                                     self.line_state.line_tool.pan_handle_dragging = true;
                                     self.line_state.line_tool.pan_drag_canvas_start =
                                         Some(canvas_pos_now);
@@ -780,7 +747,7 @@ impl ToolsPanel {
                                             canvas_rect,
                                             zoom,
                                         );
-                                        if (handle_screen - screen_pos).length() < handle_radius {
+                                        if (handle_screen - press).length() < handle_radius {
                                             self.line_state.line_tool.dragging_handle = Some(i);
                                             clicked_handle = true;
                                             break;
@@ -835,7 +802,7 @@ impl ToolsPanel {
                             }
 
                             // -- Pan drag: translate all 4 control points together --
-                            if is_primary_down && self.line_state.line_tool.pan_handle_dragging {
+                            if (is_primary_down || is_primary_released) && self.line_state.line_tool.pan_handle_dragging {
                                 let canvas_pos_now =
                                     self.screen_to_canvas_pos2(screen_pos, canvas_rect, zoom);
                                 if let Some(drag_start) =
@@ -880,7 +847,7 @@ impl ToolsPanel {
                             }
 
                             // -- Individual handle drag --
-                            if is_primary_down
+                            if (is_primary_down || is_primary_released)
                                 && !self.line_state.line_tool.pan_handle_dragging
                                 && let Some(handle_idx) = self.line_state.line_tool.dragging_handle
                             {

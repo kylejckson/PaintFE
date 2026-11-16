@@ -377,6 +377,7 @@ impl PaintFEApp {
             script_receiver,
             custom_scripts: script_editor::load_custom_effects(),
             script_original_pixels: None,
+            plugin_modal_open: false,
             pending_close_index: None,
             pending_exit: false,
             force_exit: false,

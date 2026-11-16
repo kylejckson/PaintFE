@@ -11,6 +11,19 @@ use egui::{Color32, Pos2, Rect, Stroke, Vec2};
 use image::{GrayImage, Luma, Rgba, RgbaImage, imageops};
 use std::sync::{Arc, Mutex};
 
+pub(crate) fn normalize_rotation(radians: f32) -> f32 {
+    if !radians.is_finite() {
+        return 0.;
+    }
+    let angle = radians.rem_euclid(std::f32::consts::TAU);
+    let angle = if angle > std::f32::consts::PI {
+        angle - std::f32::consts::TAU
+    } else {
+        angle
+    };
+    if angle.abs() < 0.000001 { 0. } else { angle }
+}
+
 mod availability;
 
 #[cfg(target_os = "linux")]
@@ -1007,9 +1020,33 @@ impl PasteOverlay {
         }
     }
 
+    pub fn set_rotation(&mut self, radians: f32) {
+        self.rotation = normalize_rotation(radians);
+        self.invalidate_cache();
+    }
+
+    fn rotation_uses_aa(&self) -> bool {
+        let turns = self.rotation / std::f32::consts::FRAC_PI_2;
+        self.anti_aliasing && (!self.selection_rotation || (turns - turns.round()).abs() > 0.00001)
+    }
+
+    fn rotation_sin_cos(&self) -> (f32, f32) {
+        let turns = self.rotation / std::f32::consts::FRAC_PI_2;
+        if (turns - turns.round()).abs() < 0.00001 {
+            match (turns.round() as i32).rem_euclid(4) {
+                0 => (0., 1.),
+                1 => (1., 0.),
+                2 => (0., -1.),
+                _ => (-1., 0.),
+            }
+        } else {
+            self.rotation.sin_cos()
+        }
+    }
+
     pub fn set_transform(&mut self, t: PasteOverlayTransform) {
         self.center = t.center;
-        self.rotation = t.rotation;
+        self.rotation = normalize_rotation(t.rotation);
         self.scale_x = t.scale_x;
         self.scale_y = t.scale_y;
         self.anchor_offset = t.anchor_offset;
@@ -1243,11 +1280,10 @@ impl PasteOverlay {
         let mut out = RgbaImage::new(out_w, out_h);
 
         let anchor = self.anchor_canvas();
-        let cos = self.rotation.cos();
-        let sin = self.rotation.sin();
+        let (sin, cos) = self.rotation_sin_cos();
         let origin_x = self.center.x - scaled_w as f32 / 2.0;
         let origin_y = self.center.y - scaled_h as f32 / 2.0;
-        let use_aa = self.anti_aliasing;
+        let use_aa = self.rotation_uses_aa();
 
         for out_y in 0..out_h {
             let py = row_start as f32 + out_y as f32 + 0.5;
@@ -1364,11 +1400,10 @@ impl PasteOverlay {
         let col_end = (bb_max_x.ceil().min(cw as f32 - 1.0)) as u32;
 
         let anchor = self.anchor_canvas();
-        let cos = self.rotation.cos();
-        let sin = self.rotation.sin();
+        let (sin, cos) = self.rotation_sin_cos();
         let origin_x = self.center.x - scaled_w as f32 / 2.0;
         let origin_y = self.center.y - scaled_h as f32 / 2.0;
-        let use_aa = self.anti_aliasing;
+        let use_aa = self.rotation_uses_aa();
 
         for dy in row_start..=row_end {
             let py = dy as f32 + 0.5;
@@ -1456,8 +1491,7 @@ impl PasteOverlay {
         let anchor = self.anchor_canvas();
         let dx = p.x - anchor.x;
         let dy = p.y - anchor.y;
-        let cos = self.rotation.cos();
-        let sin = self.rotation.sin();
+        let (sin, cos) = self.rotation_sin_cos();
         Pos2::new(
             anchor.x + dx * cos - dy * sin,
             anchor.y + dx * sin + dy * cos,
@@ -1520,7 +1554,32 @@ impl PasteOverlay {
     /// move the textured quad, so resize/rotate never trigger CPU resampling or
     /// a texture upload.
     pub fn ensure_gpu_texture(&mut self, ctx: &egui::Context) {
-        if self.gpu_texture.is_some() {
+        let filter = if self.rotation_uses_aa() {
+            egui::TextureFilter::Linear
+        } else {
+            egui::TextureFilter::Nearest
+        };
+        let options = egui::TextureOptions {
+            magnification: filter,
+            minification: filter,
+            ..Default::default()
+        };
+        if let Some(texture) = self.gpu_texture.as_mut() {
+            let changed = ctx
+                .tex_manager()
+                .read()
+                .meta(texture.id())
+                .is_some_and(|meta| meta.options != options);
+            if changed {
+                // Updating one unchanged texel also updates sampler options without
+                // uploading the source image again during a transform.
+                let pixel = self.source.get_pixel(0, 0).0;
+                texture.set_partial(
+                    [0, 0],
+                    egui::ColorImage::from_rgba_unmultiplied([1, 1], &pixel),
+                    options,
+                );
+            }
             return;
         }
 
@@ -1541,16 +1600,7 @@ impl PasteOverlay {
         // A11: reuse existing TextureHandle via tex.set() instead of allocating new
         // Derive filter mode from the anti_aliasing setting so nearest-neighbour
         // paste (pixel art) is not blurred during drag.
-        let tex_filter = if self.anti_aliasing {
-            egui::TextureFilter::Linear
-        } else {
-            egui::TextureFilter::Nearest
-        };
-        let tex_options = egui::TextureOptions {
-            magnification: tex_filter,
-            minification: tex_filter,
-            ..Default::default()
-        };
+        let tex_options = options;
         let image_data = egui::ImageData::Color(std::sync::Arc::new(color_image));
         if let Some(ref mut tex) = self.gpu_texture {
             tex.set(
@@ -2174,7 +2224,7 @@ impl PasteOverlay {
                         let snap = std::f32::consts::FRAC_PI_4; // 45°
                         new_rot = (new_rot / snap).round() * snap;
                     }
-                    self.rotation = new_rot;
+                    self.rotation = normalize_rotation(new_rot);
                 }
                 HandleKind::CropTop
                 | HandleKind::CropBottom
@@ -2503,11 +2553,10 @@ impl PasteOverlay {
         let col_end = (bb_max_x.ceil().min(cw as f32 - 1.0)) as u32;
 
         let anchor = self.anchor_canvas();
-        let cos = self.rotation.cos();
-        let sin = self.rotation.sin();
+        let (sin, cos) = self.rotation_sin_cos();
         let origin_x = self.center.x - scaled_w as f32 / 2.0;
         let origin_y = self.center.y - scaled_h as f32 / 2.0;
-        let use_aa = self.anti_aliasing;
+        let use_aa = self.rotation_uses_aa();
         let overwrite_transparent = self.overwrite_transparent_pixels;
 
         // Flatten layer for fast reads, compute source pixels in parallel,

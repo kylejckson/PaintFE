@@ -287,6 +287,7 @@ pub struct PaintFEApp {
     custom_scripts: Vec<script_editor::CustomScriptEffect>,
     /// Backup of layer pixels before script execution (for restore on error)
     script_original_pixels: Option<(uuid::Uuid, usize, TiledImage, u64)>,
+    plugin_modal_open: bool,
 
     /// Project index pending close confirmation (unsaved-changes dialog)
     pending_close_index: Option<usize>,

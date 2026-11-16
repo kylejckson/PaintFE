@@ -277,6 +277,17 @@ impl Canvas {
                     )
                 });
 
+                let sb = sb.intersect(Rect::from_min_max(
+                    Pos2::ZERO,
+                    egui::pos2(state.width as f32, state.height as f32),
+                ));
+                if !sb.is_positive() || !sb.is_finite() {
+                    state.preview_texture_cache = None;
+                    state.preview_tile_textures.clear();
+                    state.preview_dirty_rect = None;
+                    return;
+                }
+
                 // Zoom-adaptive filtering based on user preference.
                 // Linear (smooth) or Nearest (sharp) for zoomed-out pixel art.
                 let preview_filter = match debug_settings.zoom_filter_mode {
@@ -474,7 +485,7 @@ impl Canvas {
                 continue;
             }
             preview.extract_region_rgba_fast(dx, dy, dw, dh, &mut state.preview_flat_buffer);
-            premultiply_dithered(&mut state.preview_flat_buffer, dx, dy, dw);
+            premultiply_preview(&mut state.preview_flat_buffer);
             let pixels: &[Color32] = bytemuck::cast_slice(&state.preview_flat_buffer);
             let image = ColorImage {
                 size: [dw as usize, dh as usize],
@@ -547,7 +558,7 @@ impl Canvas {
         let sense = egui::Sense::click_and_drag()
             .union(egui::Sense::hover())
             .union(egui::Sense::focusable_noninteractive());
-        let (response, painter) = ui.allocate_painter(available_size, sense);
+        let (response, mut painter) = ui.allocate_painter(available_size, sense);
         self.canvas_widget_id = Some(response.id);
         state.canvas_widget_id = Some(response.id);
         // Keep focus on the canvas when no other UI widget is active.
@@ -566,6 +577,17 @@ impl Canvas {
             response.request_focus();
         }
         let canvas_rect = response.rect;
+        // Extend painting beneath the docked shelf without changing navigation or input bounds.
+        let render_rect = ui.ctx().data(|data| {
+            data.get_temp::<egui::Rect>(egui::Id::new("paintfe_docked_canvas_paint_rect"))
+                .map_or(canvas_rect, |rect| {
+                    egui::Rect::from_min_max(
+                        egui::pos2(canvas_rect.left(), rect.top().min(canvas_rect.top())),
+                        canvas_rect.max,
+                    )
+                })
+        });
+        painter.set_clip_rect(render_rect);
         self.last_canvas_rect = Some(canvas_rect);
         self.navigation_size = Some((state.width, state.height));
         self.zoom = self.zoom.max(self.minimum_zoom());
@@ -1188,7 +1210,8 @@ impl Canvas {
         let ui_blocks_canvas_input = ui_blocks_canvas_input || guide_input;
 
         // Fill background with theme color
-        painter.rect_filled(canvas_rect, 0.0, bg_color);
+        let glass=crate::ui::glass::settings(ui.ctx());
+        if !(glass.enabled&&glass.desktop) {painter.rect_filled(render_rect, 0.0, bg_color);}
 
         // Draw subtle grid texture on canvas background (Signal Grid pattern)
         // Only draw when grid cells would be visible (> 5px on screen) and grid is enabled
@@ -1203,7 +1226,7 @@ impl Canvas {
                     // Light mode: dark blue-black, visible on white bg
                     Color32::from_rgba_unmultiplied(0, 0, 20, (18.0 * base_alpha) as u8)
                 };
-                crate::signal_draw::draw_grid_texture(&painter, canvas_rect, grid_cell, grid_color);
+                crate::signal_draw::draw_grid_texture(&painter, render_rect, grid_cell, grid_color);
             }
         }
 
@@ -1271,7 +1294,7 @@ impl Canvas {
         self.draw_checkerboard(
             &painter,
             image_rect,
-            canvas_rect,
+            render_rect,
             debug_settings.checkerboard_brightness,
             ui.ctx(),
         );
@@ -1286,13 +1309,13 @@ impl Canvas {
         if !is_overwrite_paste && straighten_preview.is_none() {
             if large_document {
                 self.large_display
-                    .paint(&painter, image_rect, canvas_rect, state, texture_options);
+                    .paint(&painter, image_rect, render_rect, state, texture_options);
                 state.dirty_rect = None;
             } else {
                 self.paint_composite_texture(
                     &painter,
                     image_rect,
-                    canvas_rect,
+                    render_rect,
                     state,
                     Color32::WHITE,
                 );
@@ -1315,14 +1338,14 @@ impl Canvas {
         // stroke feedback) when tools are attached. Without tools there is no
         // input pass, so build + paint here in draw order instead.
         // Fill this image slot after input without covering the grid or selection.
-        let stroke_preview_slot = painter.with_clip_rect(canvas_rect).add(egui::Shape::Noop);
+        let stroke_preview_slot = painter.with_clip_rect(render_rect).add(egui::Shape::Noop);
         if tools.is_none() {
             self.update_preview_overlay(ui, state, debug_settings, prev_filter_was_linear);
-            painter.with_clip_rect(canvas_rect).set(
+            painter.with_clip_rect(render_rect).set(
                 stroke_preview_slot,
                 egui::Shape::Vec(self.preview_texture_shapes(
                     image_rect,
-                    canvas_rect,
+                    render_rect,
                     state,
                     Color32::WHITE,
                     true,
@@ -1331,17 +1354,17 @@ impl Canvas {
         }
 
         if state.show_wrap_preview {
-            self.draw_wrap_preview(&painter, image_rect, canvas_rect, state);
+            self.draw_wrap_preview(&painter, image_rect, render_rect, state);
         }
 
         // Draw pixel grid overlay when zoomed in
         if state.show_pixel_grid && self.zoom >= 8.0 {
-            self.draw_pixel_grid(&painter, image_rect, state, canvas_rect, debug_settings);
+            self.draw_pixel_grid(&painter, image_rect, state, render_rect, debug_settings);
         }
 
         // Draw mirror axis overlay
         if state.mirror_mode.is_active() {
-            self.draw_mirror_overlay(&painter, image_rect, state, canvas_rect);
+            self.draw_mirror_overlay(&painter, image_rect, state, render_rect);
         }
 
         // ====================================================================
@@ -1544,9 +1567,9 @@ impl Canvas {
             {
                 paste_cursor = overlay.cursor_icon(pos, image_rect, self.zoom);
             }
-            if overlay.draw_overflow(&painter, image_rect, canvas_rect, self.zoom) {
-                painter.with_clip_rect(canvas_rect).text(
-                    canvas_rect.center_bottom() + egui::vec2(0., -12.),
+            if overlay.draw_overflow(&painter, image_rect, render_rect, self.zoom) {
+                painter.with_clip_rect(render_rect).text(
+                    render_rect.center_bottom() + egui::vec2(0., -12.),
                     egui::Align2::CENTER_BOTTOM,
                     crate::t!("paste.outside_hint"),
                     egui::FontId::proportional(12.),
@@ -1705,7 +1728,7 @@ impl Canvas {
 
             // Draw handles/border on top of the composite.
             if state.show_pixel_grid && self.zoom >= 8.0 {
-                self.draw_pixel_grid(&painter, image_rect, state, canvas_rect, debug_settings);
+                self.draw_pixel_grid(&painter, image_rect, state, render_rect, debug_settings);
             }
             overlay.draw(&painter, image_rect, self.zoom, is_dark, accent);
             if state.show_pixel_grid
@@ -1839,9 +1862,9 @@ impl Canvas {
         // Draw center/thirds guidelines above pasted overlays for easier
         // placement while transforming clipboard content.
         if state.show_guidelines {
-            self.draw_guidelines(&painter, image_rect, state, canvas_rect);
+            self.draw_guidelines(&painter, image_rect, state, render_rect);
         }
-        crate::ui::guides::paint(ui, state, image_rect, canvas_rect, self.zoom);
+        crate::ui::guides::paint(ui, state, image_rect, render_rect, self.zoom);
 
         // ====================================================================
         // EXTRACT DEBUG INFO before tools is consumed
@@ -1974,19 +1997,6 @@ impl Canvas {
         // Extract active tool for cursor icon mapping
         let active_tool_for_cursor = tools.as_ref().map(|t| t.active_tool);
         // Extract line tool pan-handle state for cursor icon
-        let line_pan_hovering = tools.as_ref().is_some_and(|t| {
-            t.active_tool == crate::components::tools::Tool::Line
-                && t.line_state.line_tool.stage == crate::components::tools::LineStage::Editing
-                && t.line_state.line_tool.pan_handle_hovering
-        });
-        let line_pan_dragging = tools.as_ref().is_some_and(|t| {
-            t.active_tool == crate::components::tools::Tool::Line
-                && t.line_state.line_tool.pan_handle_dragging
-        });
-        // Extract zoom tool out-mode for cursor icon
-        let _zoom_out_mode = tools
-            .as_ref()
-            .is_some_and(|t| t.zoom_tool_state.zoom_out_mode);
         // Extract brush cursor info before tools ref is consumed
         // (size, clone_source, is_circle, mask_data_for_cursor, rotation_deg)
         let brush_cursor_info: Option<(
@@ -1997,6 +2007,7 @@ impl Canvas {
             f32,
             bool,
             crate::brushes::DabTransform,
+            Option<(crate::config::brushes::BuiltinTipGeometry, f32, bool)>,
         )> = tools.as_ref().and_then(|t| {
             use crate::components::tools::Tool;
             match t.active_tool {
@@ -2016,7 +2027,11 @@ impl Canvas {
                     // For image tips, pass the mask so cursor can draw shape overlay
                     let mask_info = if !is_circle_tip && !t.brush_tip_mask.is_empty() {
                         Some((
-                            t.brush_tip_mask.clone(),
+                            if t.cursor_geometry().is_some() {
+                                Vec::new()
+                            } else {
+                                t.brush_tip_mask.clone()
+                            },
                             t.brush_tip_mask_size,
                             t.brush_tip_mask_revision,
                         ))
@@ -2038,6 +2053,9 @@ impl Canvas {
                         t.snaps_tip_to_pixels()
                             && matches!(t.active_tool, Tool::Brush | Tool::Eraser),
                         t.brush_cursor_transform(),
+                        t.cursor_geometry().map(|geometry| {
+                            (geometry, t.properties.hardness, t.properties.anti_aliased)
+                        }),
                     ))
                 }
                 _ => None,
@@ -2228,8 +2246,19 @@ impl Canvas {
                 && !pointer_over_egui_with_touch
                 && !pointer_over_blocking_ui
                 && !ui_blocks_canvas_input;
-            let keyboard_finalize_pressed =
-                ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape));
+            tools.refresh_line_preview(
+                state,
+                crate::components::color_widgets::rgba(
+                    (primary_color_f32[0] * 255.).round() as u8,
+                    (primary_color_f32[1] * 255.).round() as u8,
+                    (primary_color_f32[2] * 255.).round() as u8,
+                    (primary_color_f32[3] * 255.).round() as u8,
+                ),
+            );
+            let keyboard_finalize_pressed = tools.injected_enter_pressed
+                || tools.injected_escape_pressed
+                || ui
+                    .input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape));
             let pending_tool_commit = tools.mesh_warp_state.commit_pending
                 || tools.liquify_state.commit_pending
                 || tools.gradient_state.commit_pending
@@ -2239,6 +2268,8 @@ impl Canvas {
                 && (tools.mesh_warp_state.is_active
                     || tools.liquify_state.is_active
                     || tools.shapes_state.placed.is_some()
+                    || tools.line_state.line_tool.stage
+                        == crate::components::tools::LineStage::Editing
                     || tools.perspective_crop_state.active);
             let allow_input = !modal_open
                 && (paste_overlay.is_none()
@@ -2396,11 +2427,11 @@ impl Canvas {
                 state.clear_preview_state();
             }
             self.update_preview_overlay(ui, state, debug_settings, prev_filter_was_linear);
-            painter.with_clip_rect(canvas_rect).set(
+            painter.with_clip_rect(render_rect).set(
                 stroke_preview_slot,
                 egui::Shape::Vec(self.preview_texture_shapes(
                     image_rect,
-                    canvas_rect,
+                    render_rect,
                     state,
                     Color32::WHITE,
                     true,
@@ -2513,6 +2544,9 @@ impl Canvas {
                             })
                     });
                     let cursor = match tool {
+                        Tool::Line => mouse_pos
+                            .and_then(|p| tools.line_handle_cursor(p, image_rect, self.zoom))
+                            .unwrap_or(egui::CursorIcon::Crosshair),
                         // Tools with custom icon cursor ÔÇö hide OS cursor
                         Tool::Pencil | Tool::Fill | Tool::ColorPicker | Tool::Zoom | Tool::Pan => {
                             egui::CursorIcon::None
@@ -2537,16 +2571,6 @@ impl Canvas {
                                     placed, canvas_pos, self.zoom,
                                 ))
                                 .unwrap_or(egui::CursorIcon::Crosshair)
-                            } else {
-                                egui::CursorIcon::Crosshair
-                            }
-                        }
-                        // Line tool: move cursor when on pan handle, crosshair otherwise
-                        Tool::Line => {
-                            if line_pan_dragging {
-                                egui::CursorIcon::Grabbing
-                            } else if line_pan_hovering {
-                                egui::CursorIcon::Move
                             } else {
                                 egui::CursorIcon::Crosshair
                             }
@@ -2827,9 +2851,10 @@ impl Canvas {
                 clone_source,
                 is_circle_tip,
                 ref mask_info,
-                cursor_rotation_deg,
+                mut cursor_rotation_deg,
                 snap_pixels,
-                cursor_shape,
+                mut cursor_shape,
+                cursor_geometry,
             )) = brush_cursor_info
                 && cursor_visual_allowed
                 && let Some(pos) = mouse_pos
@@ -2837,7 +2862,13 @@ impl Canvas {
                 let point = self.screen_to_canvas_unclamped(pos, canvas_rect, state);
                 let (canvas_x, canvas_y) = crate::components::tools::pixel_aligned_brush_center(
                     point,
-                    brush_size,
+                    cursor_geometry.map_or(brush_size, |(geometry, _, _)| {
+                        crate::components::tools::geometric_tip_span(
+                            geometry,
+                            brush_size,
+                            cursor_rotation_deg,
+                        )
+                    }),
                     snap_pixels,
                 );
                 // Brush center in screen coords
@@ -2879,13 +2910,33 @@ impl Canvas {
                     } else if let Some((mask_data, mask_sz, revision)) = mask_info {
                         // Image tip ÔÇö overlay the mask shape twice (white + black)
                         // for visibility on any background colour.
-                        let ms = *mask_sz;
-                        let tip_name = match &tip_name_for_cursor {
-                            Some(n) => n.as_str(),
-                            None => "",
-                        };
-                        let key = (tip_name.to_string(), ms, *revision);
+                        let mut ms = *mask_sz;
+                        let tip_name = tip_name_for_cursor.as_deref().unwrap_or("");
+                        let mut cursor_revision = *revision;
+                        if cursor_geometry.is_some() {
+                            cursor_revision ^= (cursor_rotation_deg.to_bits() as u64) << 32;
+                            cursor_revision ^= brush_size.to_bits() as u64;
+                        }
+                        let mut key = (tip_name.to_string(), ms, cursor_revision);
+                        if cursor_geometry.is_some() {
+                            key.1 = 0;
+                        }
                         if key != self.brush_tip_cursor_key || self.brush_tip_cursor_tex.is_none() {
+                            let geometric;
+                            let mask_data = if let Some((geometry, hardness, aa)) = cursor_geometry
+                            {
+                                geometric = crate::components::tools::geometric_cursor_mask(
+                                    geometry,
+                                    brush_size,
+                                    cursor_rotation_deg,
+                                    hardness,
+                                    aa,
+                                );
+                                ms = geometric.1;
+                                &geometric.0
+                            } else {
+                                mask_data
+                            };
                             // Rebuild cursor textures from mask
                             let n = (ms * ms) as usize;
                             let mut rgba_white = vec![0u8; n * 4];
@@ -2904,7 +2955,11 @@ impl Canvas {
                                 rgba_black[i * 4 + 3] = a;
                             }
                             let opts = egui::TextureOptions {
-                                magnification: egui::TextureFilter::Linear,
+                                magnification: if snap_pixels {
+                                    egui::TextureFilter::Nearest
+                                } else {
+                                    egui::TextureFilter::Linear
+                                },
                                 minification: egui::TextureFilter::Linear,
                                 ..Default::default()
                             };
@@ -2938,7 +2993,19 @@ impl Canvas {
                             }
                             self.brush_tip_cursor_key = key;
                         }
-                        let screen_sz = brush_size * self.zoom;
+                        let display_size = if let Some((geometry, _, _)) = cursor_geometry {
+                            let side = crate::components::tools::geometric_cursor_extent(
+                                geometry,
+                                brush_size,
+                                cursor_rotation_deg,
+                            );
+                            cursor_rotation_deg = 0.;
+                            cursor_shape = crate::brushes::DabTransform::default();
+                            side as f32
+                        } else {
+                            brush_size
+                        };
+                        let screen_sz = display_size * self.zoom;
                         let center = Pos2::new(screen_cx, screen_cy);
 
                         // Check if we need rotated drawing
@@ -3562,22 +3629,13 @@ impl Canvas {
     }
 }
 
-/// Premultiply RGBA bytes in place with a 4x4 ordered (Bayer) dither on the
-/// rounding step. The dither spans one quantization level, which dissolves
-/// the contour banding that very soft brush ramps show after 8-bit rounding.
-fn premultiply_dithered(buf: &mut [u8], origin_x: u32, origin_y: u32, width: u32) {
-    const BAYER: [u16; 16] = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
-    if width == 0 {
-        return;
-    }
-    for (i, px) in buf.chunks_exact_mut(4).enumerate() {
-        let x = (origin_x + (i as u32 % width)) as usize & 3;
-        let y = (origin_y + (i as u32 / width)) as usize & 3;
-        let dither = BAYER[y * 4 + x] * 17; // 0..=255, mean 127.5
+/// Convert display pixels without spatial patterning or endpoint overflow.
+fn premultiply_preview(buf: &mut [u8]) {
+    for px in buf.chunks_exact_mut(4) {
         let a = px[3] as u16;
-        px[0] = ((px[0] as u16 * a + dither) / 255) as u8;
-        px[1] = ((px[1] as u16 * a + dither) / 255) as u8;
-        px[2] = ((px[2] as u16 * a + dither) / 255) as u8;
+        px[0] = ((px[0] as u16 * a + 127) / 255) as u8;
+        px[1] = ((px[1] as u16 * a + 127) / 255) as u8;
+        px[2] = ((px[2] as u16 * a + 127) / 255) as u8;
     }
 }
 
@@ -3750,6 +3808,24 @@ mod brush_preview_optimization_tests {
     use super::*;
 
     #[test]
+    fn preview_alpha_conversion_preserves_endpoints_and_has_no_spatial_pattern() {
+        for alpha in 0..=255u8 {
+            for channel in 0..=255u8 {
+                let pixel = [channel, 255, 0, alpha];
+                let mut actual = pixel.repeat(16);
+                premultiply_preview(&mut actual);
+                let expected = [
+                    (channel as f64 * alpha as f64 / 255.).round() as u8,
+                    alpha,
+                    0,
+                    alpha,
+                ];
+                assert!(actual.chunks_exact(4).all(|p| p == expected));
+            }
+        }
+    }
+
+    #[test]
     fn tiled_preview_uploads_match_full_pixels_and_preserve_texture_sizes() {
         let ctx = egui::Context::default();
         let mut state = CanvasState::new(777, 529);
@@ -3814,7 +3890,12 @@ mod brush_preview_optimization_tests {
                     .as_ref()
                     .unwrap()
                     .extract_region_rgba_fast(x0, y0, width, height, &mut expected);
-                premultiply_dithered(&mut expected, x0, y0, width);
+                for pixel in expected.chunks_exact_mut(4) {
+                    let alpha = f64::from(pixel[3]) / 255.;
+                    for channel in &mut pixel[..3] {
+                        *channel = (f64::from(*channel) * alpha).round() as u8;
+                    }
+                }
                 let pixels: &[Color32] = bytemuck::cast_slice(&expected);
                 assert_eq!(uploaded[&texture.id()].pixels, pixels);
             }

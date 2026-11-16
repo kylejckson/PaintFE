@@ -19,6 +19,9 @@ include unreleased behaviour; the website marks upcoming changes separately.
 - [Linux packages](linux-packages.md)
 - [Custom interface labels](personal-labels.md)
 - [Scripting and batch processing](scripting-batch.md)
+- [Community add-ons (unreleased)](plugins.md)
+- [Local agent control (unreleased)](automation.md)
+- [Glass appearance (unreleased)](glass.md)
 
 ## Developer documentation
 

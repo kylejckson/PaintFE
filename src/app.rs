@@ -31,6 +31,8 @@ include!("app/project_io.rs");
 include!("app/save_flow.rs");
 include!("app/ops.rs");
 include!("app/panels.rs");
+include!("app/plugins.rs");
+include!("app/automation.rs");
 
 #[cfg(test)]
 mod bug_review_tests;
@@ -46,3 +48,9 @@ mod preferences_review_tests;
 mod save_safety_tests;
 #[cfg(test)]
 mod session_review_tests;
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod plugin_tests;
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod automation_tests;

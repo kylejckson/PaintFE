@@ -15,6 +15,39 @@ impl PaintFEApp {
         if self.document_modal_open() || self.processing_busy() {
             return false;
         }
+        // A lifted selection owns its pixels until it is applied or cancelled.
+        // Compatible rotations target the overlay; unrelated image operations
+        // must not see the temporarily cleared source region.
+        if self
+            .paste_overlay
+            .as_ref()
+            .is_some_and(|o| o.selection_rotation)
+            && spec.needs_document
+            && !matches!(
+                action,
+                BindableAction::Save
+                    | BindableAction::SaveAs
+                    | BindableAction::SaveAll
+                    | BindableAction::CloseProject
+                    | BindableAction::Undo
+                    | BindableAction::Redo
+                    | BindableAction::Copy
+                    | BindableAction::ViewZoomIn
+                    | BindableAction::ViewZoomOut
+                    | BindableAction::ViewFitToWindow
+                    | BindableAction::ViewZoom100
+                    | BindableAction::Menu(
+                        crate::config::commands::MenuCommand::CanvasRotate90Cw
+                            | crate::config::commands::MenuCommand::CanvasRotate90Ccw
+                            | crate::config::commands::MenuCommand::CanvasRotate180
+                            | crate::config::commands::MenuCommand::CanvasRotateSelection
+                            | crate::config::commands::MenuCommand::FileInfo
+                            | crate::config::commands::MenuCommand::FileQuit
+                    )
+            )
+        {
+            return false;
+        }
         let no_dialog = matches!(self.active_dialog, ActiveDialog::None);
         let has_sel = self
             .active_project()
@@ -45,7 +78,9 @@ impl PaintFEApp {
             BindableAction::Menu(crate::config::commands::MenuCommand::FileDuplicate) => {
                 has_project
             }
-            BindableAction::Menu(crate::config::commands::MenuCommand::FilePrint) => has_project && !cfg!(target_arch = "wasm32"),
+            BindableAction::Menu(crate::config::commands::MenuCommand::FilePrint) => {
+                has_project && !cfg!(target_arch = "wasm32")
+            }
             BindableAction::CloseProject => has_project,
             BindableAction::Menu(crate::config::commands::MenuCommand::FileQuit) => true,
             BindableAction::Undo => can_undo,
@@ -78,9 +113,17 @@ impl PaintFEApp {
                 true
             }
             BindableAction::Menu(crate::config::commands::MenuCommand::CanvasFlipVertical) => true,
-            BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Cw) => true,
-            BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Ccw) => true,
-            BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate180) => true,
+            BindableAction::Menu(
+                crate::config::commands::MenuCommand::CanvasRotate90Cw
+                | crate::config::commands::MenuCommand::CanvasRotate90Ccw
+                | crate::config::commands::MenuCommand::CanvasRotate180,
+            ) => {
+                self.paste_overlay.is_some()
+                    || self
+                        .active_project()
+                        .is_some_and(|p| !p.canvas_state.has_selection())
+                    || self.can_rotate_selection()
+            }
             BindableAction::FlattenLayers => true,
             BindableAction::ColorAutoLevels => true,
             BindableAction::ColorDesaturate => true,
@@ -151,7 +194,10 @@ impl PaintFEApp {
             BindableAction::Menu(crate::config::commands::MenuCommand::ViewHistory) => true,
             BindableAction::Menu(crate::config::commands::MenuCommand::ViewColors) => true,
             BindableAction::Menu(crate::config::commands::MenuCommand::ViewPalette) => true,
-            BindableAction::Menu(crate::config::commands::MenuCommand::ViewScriptEditor) => !cfg!(target_arch = "wasm32"),
+            BindableAction::Menu(
+                crate::config::commands::MenuCommand::ViewScriptEditor
+                | crate::config::commands::MenuCommand::BrowsePlugins,
+            ) => !cfg!(target_arch = "wasm32"),
             BindableAction::Menu(crate::config::commands::MenuCommand::ViewPixelGrid) => true,
             BindableAction::Menu(crate::config::commands::MenuCommand::ViewCmyk) => true,
             BindableAction::Menu(crate::config::commands::MenuCommand::ViewLight) => true,
@@ -163,18 +209,48 @@ impl PaintFEApp {
                 align_enabled
             }
             BindableAction::FilterRemoveBackground => no_dialog && !self.background_removal_pending,
-            BindableAction::Menu(crate::config::commands::MenuCommand::ToolEllipseSelect) => self.paste_overlay.is_none() && !(self.tools_panel.active_tool==crate::components::tools::Tool::Text && self.tools_panel.text_state.is_editing),
-            BindableAction::Menu(crate::config::commands::MenuCommand::ToolMoveSelection) => self.paste_overlay.is_none() && !(self.tools_panel.active_tool==crate::components::tools::Tool::Text && self.tools_panel.text_state.is_editing),
-            BindableAction::Menu(crate::config::commands::MenuCommand::ToolContentAwareBrush) => self.paste_overlay.is_none() && !(self.tools_panel.active_tool==crate::components::tools::Tool::Text && self.tools_panel.text_state.is_editing),
-            BindableAction::Menu(crate::config::commands::MenuCommand::ToolLiquify) => self.paste_overlay.is_none() && !(self.tools_panel.active_tool==crate::components::tools::Tool::Text && self.tools_panel.text_state.is_editing),
-            BindableAction::Menu(crate::config::commands::MenuCommand::ToolSmudge) => self.paste_overlay.is_none() && !(self.tools_panel.active_tool==crate::components::tools::Tool::Text && self.tools_panel.text_state.is_editing),
-            BindableAction::Menu(crate::config::commands::MenuCommand::ToolPerspectiveCrop) => self.paste_overlay.is_none() && !(self.tools_panel.active_tool==crate::components::tools::Tool::Text && self.tools_panel.text_state.is_editing),
+            BindableAction::Menu(crate::config::commands::MenuCommand::ToolEllipseSelect) => {
+                self.paste_overlay.is_none()
+                    && !(self.tools_panel.active_tool == crate::components::tools::Tool::Text
+                        && self.tools_panel.text_state.is_editing)
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::ToolMoveSelection) => {
+                self.paste_overlay.is_none()
+                    && !(self.tools_panel.active_tool == crate::components::tools::Tool::Text
+                        && self.tools_panel.text_state.is_editing)
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::ToolContentAwareBrush) => {
+                self.paste_overlay.is_none()
+                    && !(self.tools_panel.active_tool == crate::components::tools::Tool::Text
+                        && self.tools_panel.text_state.is_editing)
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::ToolLiquify) => {
+                self.paste_overlay.is_none()
+                    && !(self.tools_panel.active_tool == crate::components::tools::Tool::Text
+                        && self.tools_panel.text_state.is_editing)
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::ToolSmudge) => {
+                self.paste_overlay.is_none()
+                    && !(self.tools_panel.active_tool == crate::components::tools::Tool::Text
+                        && self.tools_panel.text_state.is_editing)
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::ToolPerspectiveCrop) => {
+                self.paste_overlay.is_none()
+                    && !(self.tools_panel.active_tool == crate::components::tools::Tool::Text
+                        && self.tools_panel.text_state.is_editing)
+            }
             BindableAction::Menu(crate::config::commands::MenuCommand::GuidesRulers) => true,
             BindableAction::Menu(crate::config::commands::MenuCommand::GuidesVisible) => true,
             BindableAction::Menu(crate::config::commands::MenuCommand::GuidesLocked) => true,
             BindableAction::Menu(crate::config::commands::MenuCommand::GuidesSnap) => true,
-            BindableAction::Menu(crate::config::commands::MenuCommand::GuidesNew) => self.active_project().is_some_and(|p| !p.canvas_state.guides.locked),
-            BindableAction::Menu(crate::config::commands::MenuCommand::GuidesClear) => self.active_project().is_some_and(|p| !p.canvas_state.guides.locked && !p.canvas_state.guides.items.is_empty()),
+            BindableAction::Menu(crate::config::commands::MenuCommand::GuidesNew) => self
+                .active_project()
+                .is_some_and(|p| !p.canvas_state.guides.locked),
+            BindableAction::Menu(crate::config::commands::MenuCommand::GuidesClear) => {
+                self.active_project().is_some_and(|p| {
+                    !p.canvas_state.guides.locked && !p.canvas_state.guides.items.is_empty()
+                })
+            }
             BindableAction::ViewFitToWindow => true,
             _ => false,
         }
@@ -347,29 +423,13 @@ impl PaintFEApp {
                 });
             }
             BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Cw) => {
-                if !self.active_project().is_some_and(|project| {
-                    crate::ops::transform::selected_quarter_turn_fits(&project.canvas_state)
-                }) {
-                    return false;
-                }
-                self.do_snapshot_op(HistoryAction::RotateCw.label("Rotate 90 deg CW"), |s| {
-                    crate::ops::transform::rotate_canvas_90cw(s);
-                });
+                return self.rotate_selection_or_canvas(1);
             }
             BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Ccw) => {
-                if !self.active_project().is_some_and(|project| {
-                    crate::ops::transform::selected_quarter_turn_fits(&project.canvas_state)
-                }) {
-                    return false;
-                }
-                self.do_snapshot_op(HistoryAction::RotateCcw.label("Rotate 90 deg CCW"), |s| {
-                    crate::ops::transform::rotate_canvas_90ccw(s);
-                });
+                return self.rotate_selection_or_canvas(-1);
             }
             BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate180) => {
-                self.do_snapshot_op(HistoryAction::Rotate180.label("Rotate 180 deg"), |s| {
-                    crate::ops::transform::rotate_canvas_180(s);
-                });
+                return self.rotate_selection_or_canvas(2);
             }
             BindableAction::FlattenLayers => {
                 self.do_snapshot_op(HistoryAction::Flatten.label("Flatten All Layers"), |s| {
@@ -741,6 +801,9 @@ impl PaintFEApp {
                 self.start_straighten();
             }
             BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotateSelection) => {
+                if self.paste_overlay.is_some() {
+                    return true;
+                }
                 return self.begin_move_pixels_overlay(true);
             }
             BindableAction::Menu(crate::config::commands::MenuCommand::ViewTools) => {
@@ -764,6 +827,10 @@ impl PaintFEApp {
                     self.window_visibility.script_editor = !self.window_visibility.script_editor;
                 }
             }
+            BindableAction::Menu(crate::config::commands::MenuCommand::BrowsePlugins) => {
+                #[cfg(not(target_arch = "wasm32"))]
+                crate::ui::panels::plugin_browser::open(ctx);
+            }
             BindableAction::Menu(crate::config::commands::MenuCommand::ViewPixelGrid) => {
                 if let Some(project) = self.active_project_mut() {
                     project.canvas_state.show_pixel_grid = !project.canvas_state.show_pixel_grid;
@@ -778,17 +845,31 @@ impl PaintFEApp {
             }
             BindableAction::Menu(crate::config::commands::MenuCommand::ViewLight) => {
                 if self.theme.mode != crate::theme::ThemeMode::Light {
+                    self.settings.set_theme_mode(crate::theme::ThemeMode::Light);
                     self.theme.toggle();
+                    self.theme
+                        .apply_overrides(&self.settings.build_theme_overrides());
                     self.theme.apply(ctx);
-                    self.settings.theme_mode = self.theme.mode;
+                    crate::ui::glass::configure(
+                        ctx,
+                        &self.settings.glass,
+                        self.theme.mode == crate::theme::ThemeMode::Dark,
+                    );
                     self.settings.save();
                 }
             }
             BindableAction::Menu(crate::config::commands::MenuCommand::ViewDark) => {
                 if self.theme.mode != crate::theme::ThemeMode::Dark {
+                    self.settings.set_theme_mode(crate::theme::ThemeMode::Dark);
                     self.theme.toggle();
+                    self.theme
+                        .apply_overrides(&self.settings.build_theme_overrides());
                     self.theme.apply(ctx);
-                    self.settings.theme_mode = self.theme.mode;
+                    crate::ui::glass::configure(
+                        ctx,
+                        &self.settings.glass,
+                        self.theme.mode == crate::theme::ThemeMode::Dark,
+                    );
                     self.settings.save();
                 }
             }
@@ -817,19 +898,87 @@ impl PaintFEApp {
                     );
                 }
             }
-            BindableAction::Menu(crate::config::commands::MenuCommand::ToolEllipseSelect) => {self.tools_panel.change_tool(crate::components::tools::Tool::EllipseSelect);},
-            BindableAction::Menu(crate::config::commands::MenuCommand::ToolMoveSelection) => {self.tools_panel.change_tool(crate::components::tools::Tool::MoveSelection);},
-            BindableAction::Menu(crate::config::commands::MenuCommand::ToolContentAwareBrush) => {self.tools_panel.change_tool(crate::components::tools::Tool::ContentAwareBrush);},
-            BindableAction::Menu(crate::config::commands::MenuCommand::ToolLiquify) => {self.tools_panel.change_tool(crate::components::tools::Tool::Liquify);},
-            BindableAction::Menu(crate::config::commands::MenuCommand::ToolSmudge) => {self.tools_panel.change_tool(crate::components::tools::Tool::Smudge);},
-            BindableAction::Menu(crate::config::commands::MenuCommand::ToolPerspectiveCrop) => {self.tools_panel.change_tool(crate::components::tools::Tool::PerspectiveCrop);},
-            BindableAction::Menu(crate::config::commands::MenuCommand::GuidesRulers) => {if let Some(project)=self.active_project_mut() {crate::ui::guides::run_menu_command(ctx,project,crate::config::commands::MenuCommand::GuidesRulers);}},
-            BindableAction::Menu(crate::config::commands::MenuCommand::GuidesVisible) => {if let Some(project)=self.active_project_mut() {crate::ui::guides::run_menu_command(ctx,project,crate::config::commands::MenuCommand::GuidesVisible);}},
-            BindableAction::Menu(crate::config::commands::MenuCommand::GuidesLocked) => {if let Some(project)=self.active_project_mut() {crate::ui::guides::run_menu_command(ctx,project,crate::config::commands::MenuCommand::GuidesLocked);}},
-            BindableAction::Menu(crate::config::commands::MenuCommand::GuidesSnap) => {if let Some(project)=self.active_project_mut() {crate::ui::guides::run_menu_command(ctx,project,crate::config::commands::MenuCommand::GuidesSnap);}},
-            BindableAction::Menu(crate::config::commands::MenuCommand::GuidesNew) => {if let Some(project)=self.active_project_mut() {crate::ui::guides::run_menu_command(ctx,project,crate::config::commands::MenuCommand::GuidesNew);}},
-            BindableAction::Menu(crate::config::commands::MenuCommand::GuidesClear) => {if let Some(project)=self.active_project_mut() {crate::ui::guides::run_menu_command(ctx,project,crate::config::commands::MenuCommand::GuidesClear);}},
-            BindableAction::ViewFitToWindow => {self.fit_active_document();},
+            BindableAction::Menu(crate::config::commands::MenuCommand::ToolEllipseSelect) => {
+                self.tools_panel
+                    .change_tool(crate::components::tools::Tool::EllipseSelect);
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::ToolMoveSelection) => {
+                self.tools_panel
+                    .change_tool(crate::components::tools::Tool::MoveSelection);
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::ToolContentAwareBrush) => {
+                self.tools_panel
+                    .change_tool(crate::components::tools::Tool::ContentAwareBrush);
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::ToolLiquify) => {
+                self.tools_panel
+                    .change_tool(crate::components::tools::Tool::Liquify);
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::ToolSmudge) => {
+                self.tools_panel
+                    .change_tool(crate::components::tools::Tool::Smudge);
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::ToolPerspectiveCrop) => {
+                self.tools_panel
+                    .change_tool(crate::components::tools::Tool::PerspectiveCrop);
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::GuidesRulers) => {
+                if let Some(project) = self.active_project_mut() {
+                    crate::ui::guides::run_menu_command(
+                        ctx,
+                        project,
+                        crate::config::commands::MenuCommand::GuidesRulers,
+                    );
+                }
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::GuidesVisible) => {
+                if let Some(project) = self.active_project_mut() {
+                    crate::ui::guides::run_menu_command(
+                        ctx,
+                        project,
+                        crate::config::commands::MenuCommand::GuidesVisible,
+                    );
+                }
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::GuidesLocked) => {
+                if let Some(project) = self.active_project_mut() {
+                    crate::ui::guides::run_menu_command(
+                        ctx,
+                        project,
+                        crate::config::commands::MenuCommand::GuidesLocked,
+                    );
+                }
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::GuidesSnap) => {
+                if let Some(project) = self.active_project_mut() {
+                    crate::ui::guides::run_menu_command(
+                        ctx,
+                        project,
+                        crate::config::commands::MenuCommand::GuidesSnap,
+                    );
+                }
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::GuidesNew) => {
+                if let Some(project) = self.active_project_mut() {
+                    crate::ui::guides::run_menu_command(
+                        ctx,
+                        project,
+                        crate::config::commands::MenuCommand::GuidesNew,
+                    );
+                }
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::GuidesClear) => {
+                if let Some(project) = self.active_project_mut() {
+                    crate::ui::guides::run_menu_command(
+                        ctx,
+                        project,
+                        crate::config::commands::MenuCommand::GuidesClear,
+                    );
+                }
+            }
+            BindableAction::ViewFitToWindow => {
+                self.fit_active_document();
+            }
             _ => return false,
         }
         true
@@ -837,17 +986,58 @@ impl PaintFEApp {
 }
 
 impl PaintFEApp {
-    fn show_command_toggle(&mut self,ui:&mut egui::Ui,ctx:&egui::Context,command:crate::config::commands::MenuCommand,value:bool) {
-        let action=crate::config::keybindings::BindableAction::Menu(command);
-        let mut checked=value;
-        let response=ui.push_id(action,|ui|ui.add_enabled(self.menu_command_enabled(ctx,action),egui::Checkbox::new(&mut checked,command.label()))).inner;
-        let response=if let Some(combo)=self.settings.keybindings.get(action) {response.on_hover_text(combo.display())} else {response};
-        if response.changed() {self.execute_menu_command(ctx,action);}
+    fn show_command_toggle(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        command: crate::config::commands::MenuCommand,
+        value: bool,
+    ) {
+        let action = crate::config::keybindings::BindableAction::Menu(command);
+        let mut checked = value;
+        let response = ui
+            .push_id(action, |ui| {
+                ui.add_enabled(
+                    self.menu_command_enabled(ctx, action),
+                    egui::Checkbox::new(&mut checked, command.label()),
+                )
+            })
+            .inner;
+        let response = if let Some(combo) = self.settings.keybindings.get(action) {
+            response.on_hover_text(combo.display())
+        } else {
+            response
+        };
+        if response.changed() {
+            self.execute_menu_command(ctx, action);
+        }
     }
-    fn show_command_button(&mut self,ui:&mut egui::Ui,ctx:&egui::Context,command:crate::config::commands::MenuCommand)->bool {
-        let action=crate::config::keybindings::BindableAction::Menu(command);
-        let shortcut=self.settings.keybindings.get(action).map(|combo|combo.display()).unwrap_or_default();
-        let response=ui.push_id(action,|ui|ui.add_enabled(self.menu_command_enabled(ctx,action),egui::Button::new(command.label()).right_text(shortcut))).inner;
-        if response.clicked(){self.execute_menu_command(ctx,action);true}else{false}
+    fn show_command_button(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        command: crate::config::commands::MenuCommand,
+    ) -> bool {
+        let action = crate::config::keybindings::BindableAction::Menu(command);
+        let shortcut = self
+            .settings
+            .keybindings
+            .get(action)
+            .map(|combo| combo.display())
+            .unwrap_or_default();
+        let response = ui
+            .push_id(action, |ui| {
+                ui.add_enabled(
+                    self.menu_command_enabled(ctx, action),
+                    egui::Button::new(command.label()).right_text(shortcut),
+                )
+            })
+            .inner;
+        if response.clicked() {
+            self.execute_menu_command(ctx, action);
+            true
+        } else {
+            false
+        }
     }
 }

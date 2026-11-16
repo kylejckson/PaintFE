@@ -53,6 +53,9 @@ impl PaintFEApp {
     }
 
     fn document_modal_open(&self) -> bool {
+        if self.plugin_modal_open {
+            return true;
+        }
         #[cfg(target_arch = "wasm32")]
         let welcome_open = self.show_welcome_popup;
         #[cfg(not(target_arch = "wasm32"))]
@@ -91,6 +94,9 @@ impl eframe::App for PaintFEApp {
         let _ = (ctx, input);
     }
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        if self.settings.glass.enabled && self.settings.glass.desktop {
+            return [0.; 4];
+        }
         let c = self.theme.canvas_bg_bottom;
         [
             c.r() as f32 / 255.0,
@@ -102,6 +108,13 @@ impl eframe::App for PaintFEApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        crate::ui::glass::configure(
+            &ctx,
+            &self.settings.glass,
+            matches!(self.theme.mode, crate::theme::ThemeMode::Dark),
+        );
+        #[cfg(not(target_arch = "wasm32"))]
+        self.update_automation(&ctx);
         self.guide_dialog_open = crate::ui::guides::dialog_open(&ctx);
         crate::ui::guides::set_appearance(&ctx, &self.settings.ruler);
         crate::io::heic::set_library_path(&self.settings.heic_library_path);
@@ -131,6 +144,8 @@ impl eframe::App for PaintFEApp {
         #[cfg(target_arch = "wasm32")]
         let pack_modal = false;
         self.processing_dialog(&ctx);
+        #[cfg(not(target_arch = "wasm32"))]
+        self.update_plugins(&ctx);
         let modal_open = {
             let _scope = crate::ui::perf::Scope::new(4);
             self.update_runtime_input(&ctx) || pack_modal
@@ -158,9 +173,15 @@ include!("runtime/update/canvas_tail.rs");
 
 impl Drop for PaintFEApp {
     fn drop(&mut self) {
-        self.operation_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.operation_cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         #[cfg(not(target_arch = "wasm32"))]
         crate::services::resize_worker::drain_cancelled();
+        #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+        {
+            crate::services::plugins::shutdown_downloads();
+            crate::services::plugins::worker::shutdown();
+        }
         if let Err(error) = crate::config::persistence::drain() {
             crate::logger::write("WARN", &format!("Settings shutdown save failed: {error}"));
         }

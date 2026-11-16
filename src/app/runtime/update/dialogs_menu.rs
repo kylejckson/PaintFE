@@ -147,12 +147,7 @@ impl PaintFEApp {
                             if self.show_command_button(ui,ctx,crate::config::commands::MenuCommand::CanvasStraighten) { ui.close(); }
                             if self.show_command_button(ui, ctx, crate::config::commands::MenuCommand::CanvasRotateSelection) { ui.close(); }
                             ui.separator();
-                            let quarter_turn_fits = self.active_project().is_some_and(|project| {
-                                crate::ops::transform::selected_quarter_turn_fits(&project.canvas_state)
-                            });
-                            if !quarter_turn_fits {
-                                ui.weak(t!("menu.canvas.selection_rotation_outside"));
-                            }
+                            let quarter_turn_fits = self.paste_overlay.is_some() || self.active_project().is_some_and(|p| !p.canvas_state.has_selection()) || self.can_rotate_selection();
                             if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::RotateCw.icon(), &t!("menu.canvas.rotate_90cw"), quarter_turn_fits, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Cw)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Cw)); ui.close(); }
                             if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::RotateCcw.icon(), &t!("menu.canvas.rotate_90ccw"), quarter_turn_fits, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Ccw)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Ccw)); ui.close(); }
                             if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Rotate180.icon(), &t!("menu.canvas.rotate_180"), true, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate180)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate180)); ui.close(); }
@@ -196,7 +191,12 @@ impl PaintFEApp {
                     }));
 
                     // ==================== FILTER MENU (was: Effects) ====================
-                    ui.add_enabled_ui(has_project, |ui| ui.menu_button(t!("menu.filter"), |ui| {
+                    ui.menu_button(t!("menu.filter"), |ui| {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        {
+                            crate::ui::panels::plugin_browser::menu(ui,has_project && no_dialog);
+                        }
+                        ui.add_enabled_ui(has_project, |ui| {
                         if !has_project {
                             ui.disable();
                         }
@@ -391,7 +391,8 @@ impl PaintFEApp {
                                 }
                             });
                         }
-                    }));
+                        });
+                    });
 
                     // ==================== GENERATE MENU (was: Effects > Render) ====================
                     ui.add_enabled_ui(has_project, |ui| ui.menu_button(t!("menu.generate"), |ui| {
@@ -417,6 +418,8 @@ impl PaintFEApp {
                         // offer the menu entry at all there.
                         #[cfg(not(target_arch = "wasm32"))]
                         self.show_command_toggle(ui,ctx,crate::config::commands::MenuCommand::ViewScriptEditor,self.window_visibility.script_editor);
+                        #[cfg(not(target_arch = "wasm32"))]
+                        if self.show_command_button(ui,ctx,crate::config::commands::MenuCommand::BrowsePlugins) { ui.close(); }
 
                         ui.separator();
 

@@ -329,7 +329,8 @@ impl ToolsPanel {
         }
 
         // Auto-commit Bezier line if tool changed away from Line tool
-        if self.active_tool != Tool::Line && self.line_state.line_tool.stage == LineStage::Editing {
+        if self.active_tool != Tool::Line && self.temporary_picker_return != Some(Tool::Line)
+            && self.line_state.line_tool.stage == LineStage::Editing {
             let line_editing_mask = self.line_state.line_tool.source_mask;
             // Capture "before" for undo (layer still unchanged, line is in preview)
             if let Some(final_bounds) = self.line_state.line_tool.last_bounds {
@@ -526,10 +527,10 @@ impl ToolsPanel {
             );
         }
         let shift_held = ui.input(|i| i.modifiers.shift);
-        let enter_pressed =
-            ui.input(|i| i.key_pressed(egui::Key::Enter)) || self.injected_enter_pressed;
-        let escape_pressed_global =
-            ui.input(|i| i.key_pressed(egui::Key::Escape)) || self.injected_escape_pressed;
+        let enter_pressed = (ui.input(|i| i.key_pressed(egui::Key::Enter)) || self.injected_enter_pressed)
+            && !crate::ui::numeric::editor_handled_finish_key(ui.ctx(), egui::Key::Enter);
+        let escape_pressed_global = (ui.input(|i| i.key_pressed(egui::Key::Escape)) || self.injected_escape_pressed)
+            && !crate::ui::numeric::editor_handled_finish_key(ui.ctx(), egui::Key::Escape);
         self.injected_enter_pressed = false;
         self.injected_escape_pressed = false;
 

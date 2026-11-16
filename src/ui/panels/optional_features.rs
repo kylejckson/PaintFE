@@ -208,7 +208,14 @@ fn import(ctx: &Context, state: &mut State, pack: Pack) {
         start(ctx, state, pack, Some(path), false);
     }
 }
-pub fn show_settings(ui: &mut Ui) {
+pub fn show_settings(ui: &mut Ui) -> bool {
+    ui.strong(super::plugin_browser::tr("community"));
+    ui.label(super::plugin_browser::tr("offline_notice"));
+    if ui.button(super::plugin_browser::tr("browse")).clicked() {
+        super::plugin_browser::open(ui.ctx());
+        return true;
+    }
+    ui.separator();
     let ctx = ui.ctx().clone();
     let mut state = state(&ctx);
     super::settings_window::SettingsWindow::section_header(ui, &crate::t!("packs.title"));
@@ -290,6 +297,7 @@ pub fn show_settings(ui: &mut Ui) {
         ui.weak(&caps.detail);
     }
     save(&ctx, state);
+    false
 }
 pub fn show_heic_library_settings(
     ui: &mut Ui,

@@ -11,7 +11,16 @@ pub mod resize_worker;
 pub mod storage;
 
 #[cfg(not(target_arch = "wasm32"))]
+pub mod plugins;
+
+#[cfg(not(target_arch = "wasm32"))]
 pub mod optional_packs;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod frame_pacing;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub mod automation;
+pub mod automation_config;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod glass;

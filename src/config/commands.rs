@@ -30,6 +30,7 @@ pub enum MenuCommand {
     ViewColors,
     ViewPalette,
     ViewScriptEditor,
+    BrowsePlugins,
     ViewPixelGrid,
     ViewCmyk,
     ViewLight,
@@ -83,6 +84,7 @@ impl MenuCommand {
         Self::ViewColors,
         Self::ViewPalette,
         Self::ViewScriptEditor,
+        Self::BrowsePlugins,
         Self::ViewPixelGrid,
         Self::ViewCmyk,
         Self::ViewLight,
@@ -681,6 +683,12 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         action: BindableAction::Menu(crate::config::commands::MenuCommand::ViewScriptEditor),
         label_key: "menu.view.script_editor",
+        category_key: "keybind_category.view",
+        needs_document: false,
+    },
+    CommandSpec {
+        action: BindableAction::Menu(crate::config::commands::MenuCommand::BrowsePlugins),
+        label_key: "plugins.browse",
         category_key: "keybind_category.view",
         needs_document: false,
     },

@@ -527,7 +527,7 @@ impl SettingsWindow {
                                 match self.active_tab {
                                     #[cfg(not(target_arch = "wasm32"))]
                                     SettingsTab::OptionalFeatures => {
-                                        super::optional_features::show_settings(ui);
+                                        should_close |= super::optional_features::show_settings(ui);
                                         super::optional_features::show_heic_library_settings(
                                             ui, settings,
                                         );
@@ -2300,6 +2300,12 @@ impl SettingsWindow {
                 self.dirty = true;
             }
         });
+        super::settings_sections::show(ui, "glass", revision, force, |ui| {
+            Self::section_header(ui, &crate::t!("glass.title"));
+            if crate::ui::glass::preferences(ui, &mut settings.glass) {
+                settings.save();
+            }
+        });
         super::settings_sections::show(ui, "icons", revision, force, |ui| {
             // -- Icon Pack -------------------------------------------------
             Self::section_header(ui, &t!("settings.interface.icon_pack"));
@@ -3422,49 +3428,7 @@ impl SettingsWindow {
                         .search_target(ui, "ui.reset_all_overrides")
                         .clicked()
                     {
-                        settings.ov_bg_color = None;
-                        settings.ov_panel_bg = None;
-                        settings.ov_window_bg = None;
-                        settings.ov_bg2 = None;
-                        settings.ov_bg3 = None;
-                        settings.ov_text_color = None;
-                        settings.ov_text_muted = None;
-                        settings.ov_text_faint = None;
-                        settings.ov_border_color = None;
-                        settings.ov_border_lit = None;
-                        settings.ov_separator_color = None;
-                        settings.ov_button_bg = None;
-                        settings.ov_button_hover = None;
-                        settings.ov_button_active = None;
-                        settings.ov_floating_window_bg = None;
-                        settings.ov_tool_shelf_bg = None;
-                        settings.ov_tool_shelf_border = None;
-                        settings.ov_toolbar_bg = None;
-                        settings.ov_menu_bg = None;
-                        settings.ov_icon_button_bg = None;
-                        settings.ov_icon_button_active = None;
-                        settings.ov_icon_button_disabled = None;
-                        settings.ov_text_input_bg = None;
-                        settings.ov_stepper_button_bg = None;
-                        settings.ov_canvas_bg_top = None;
-                        settings.ov_canvas_bg_bottom = None;
-                        settings.ov_glow_accent = None;
-                        settings.ov_accent3 = None;
-                        settings.ov_accent4 = None;
-                        settings.history_rounding = None;
-                        settings.history_placeholder_opacity = None;
-                        settings.history_animations = None;
-                        settings.widget_rounding = None;
-                        settings.window_rounding = None;
-                        settings.menu_rounding = None;
-                        settings.tool_shelf_rounding = None;
-                        settings.tool_button_rounding = None;
-                        settings.dialog_rounding = None;
-                        settings.glow_intensity = 1.0;
-                        settings.shadow_strength = 1.0;
-                        settings.canvas_grid_visible = true;
-                        settings.canvas_grid_opacity = 0.4;
-                        settings.ui_density = UiDensity::Normal;
+                        settings.reset_theme_overrides();
                         self.dirty = true;
                     }
                 });
@@ -3481,11 +3445,7 @@ impl SettingsWindow {
                     .search_target(ui, "settings.interface.reset_to_signal")
                     .clicked()
                 {
-                    self.staged_preset = ThemePreset::Signal;
-                    self.staged_accent = ThemePreset::Signal.accent_colors();
-                    self.staged_mode = ThemeMode::Light;
-                    self.dirty = true;
-                    self.apply_theme(settings, theme, ctx);
+                    self.reset_to_signal(settings, theme, ctx);
                 }
 
                 ui.add_space(12.0);
@@ -3769,60 +3729,72 @@ impl SettingsWindow {
         }
     }
 
+    #[track_caller]
     fn opt_color_row(ui: &mut egui::Ui, label: &str, opt: &mut Option<Color32>, dirty: &mut bool) {
         let label = crate::i18n::translate_english(label);
-        ui.horizontal(|ui| {
-            let mut enabled = opt.is_some();
-            if ui.checkbox(&mut enabled, "").changed() {
-                if enabled {
-                    // Initialise to a neutral grey so the user sees something
-                    *opt = Some(opt.unwrap_or(Color32::from_rgb(128, 128, 128)));
-                } else {
-                    *opt = None;
-                }
-                *dirty = true;
-            }
-            let response = ui.label(format!("{label}:"));
-            Self::search_mark(ui, &label, &response);
-            if let Some(color) = opt {
-                let mut egui_color = *color;
-                if crate::ui::controls::color_edit_button_srgba(
-                    ui,
-                    &mut egui_color,
-                    egui::color_picker::Alpha::OnlyBlend,
-                )
-                .changed()
-                {
-                    *color = egui_color;
-                    *dirty = true;
-                }
-                // Alpha DragValue
-                let mut alpha = color.a() as u16;
-                if ui
-                    .add(
-                        crate::ui::controls::Numeric::new(&mut alpha)
-                            .range(0..=255)
-                            .speed(1),
-                    )
-                    .changed()
-                {
-                    let [r, g, b, _] = color.to_srgba_unmultiplied();
-                    *color = Color32::from_rgba_unmultiplied(r, g, b, alpha as u8);
-                    *dirty = true;
-                }
-                if ui
-                    .small_button("\u{21BA}")
-                    .on_hover_text(crate::t!("common.reset"))
-                    .clicked()
-                {
-                    *opt = None;
-                    *dirty = true;
-                }
-            } else {
-                ui.weak(crate::t!("ui.preset_default"))
-                    .search_target(ui, "ui.preset_default");
-            }
-        });
+        let caller = std::panic::Location::caller();
+        ui.push_id(
+            (
+                "optional_colour",
+                caller.file(),
+                caller.line(),
+                caller.column(),
+            ),
+            |ui| {
+                ui.horizontal(|ui| {
+                    let mut enabled = opt.is_some();
+                    if ui.checkbox(&mut enabled, "").changed() {
+                        if enabled {
+                            // Initialise to a neutral grey so the user sees something
+                            *opt = Some(opt.unwrap_or(Color32::from_rgb(128, 128, 128)));
+                        } else {
+                            *opt = None;
+                        }
+                        *dirty = true;
+                    }
+                    let response = ui.label(format!("{label}:"));
+                    Self::search_mark(ui, &label, &response);
+                    if let Some(color) = opt {
+                        let mut egui_color = *color;
+                        if crate::ui::controls::color_edit_button_srgba(
+                            ui,
+                            &mut egui_color,
+                            egui::color_picker::Alpha::OnlyBlend,
+                        )
+                        .changed()
+                        {
+                            *color = egui_color;
+                            *dirty = true;
+                        }
+                        // Alpha DragValue
+                        let mut alpha = color.a() as u16;
+                        if ui
+                            .add(
+                                crate::ui::controls::Numeric::new(&mut alpha)
+                                    .range(0..=255)
+                                    .speed(1),
+                            )
+                            .changed()
+                        {
+                            let [r, g, b, _] = color.to_srgba_unmultiplied();
+                            *color = Color32::from_rgba_unmultiplied(r, g, b, alpha as u8);
+                            *dirty = true;
+                        }
+                        if ui
+                            .small_button("\u{21BA}")
+                            .on_hover_text(crate::t!("common.reset"))
+                            .clicked()
+                        {
+                            *opt = None;
+                            *dirty = true;
+                        }
+                    } else {
+                        ui.weak(crate::t!("ui.preset_default"))
+                            .search_target(ui, "ui.preset_default");
+                    }
+                });
+            },
+        );
     }
 
     /// Render an optional float override row with an enable checkbox + slider + reset button.
@@ -3940,6 +3912,20 @@ impl SettingsWindow {
         .changed()
     }
 
+    fn reset_to_signal(
+        &mut self,
+        settings: &mut AppSettings,
+        theme: &mut crate::theme::Theme,
+        ctx: &egui::Context,
+    ) {
+        settings.reset_signal_theme();
+        self.staged_preset = settings.theme_preset;
+        self.staged_accent = settings.custom_accent;
+        self.staged_mode = settings.theme_mode;
+        self.dirty = true;
+        self.apply_theme(settings, theme, ctx);
+    }
+
     /// Commit staged theme changes to settings and rebuild the theme
     fn apply_theme(
         &mut self,
@@ -3953,7 +3939,7 @@ impl SettingsWindow {
             self.staged_preset.accent_colors()
         };
 
-        settings.theme_mode = self.staged_mode;
+        settings.set_theme_mode(self.staged_mode);
         settings.theme_preset = self.staged_preset;
         settings.custom_accent = effective_accent;
         self.staged_accent = effective_accent;
@@ -3976,12 +3962,20 @@ impl SettingsWindow {
         theme.polish = settings.ui_polish.clone();
         theme.density = settings.ui_density;
         theme.apply(ctx);
+        crate::ui::glass::configure(ctx, &settings.glass, theme.mode == ThemeMode::Dark);
         self.dirty = false;
         settings.save();
     }
 
     // -- AI Tab -------------------------------------------------------
     fn show_ai_tab(&mut self, ui: &mut egui::Ui, settings: &mut AppSettings) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            Self::section_header(ui, &crate::t!("automation.title"));
+            if crate::services::automation_config::preferences(ui, &mut settings.automation) {
+                settings.save();
+            }
+        }
         #[cfg(target_os = "windows")]
         if ui
             .add(egui::Button::new(t!("settings.ai.clean_recent")).wrap())
@@ -4859,6 +4853,109 @@ impl SettingsWindow {
 #[cfg(test)]
 mod preference_consistency_tests {
     use super::*;
+
+    #[test]
+    fn signal_reset_removes_glass_and_stale_colours_without_resetting_user_workflow() {
+        crate::i18n::init();
+        let ctx = context();
+        let mut settings = AppSettings {
+            theme_mode: ThemeMode::Dark,
+            advanced_customization: true,
+            ov_bg_color: Some(Color32::BLACK),
+            ov_panel_bg: Some(Color32::BLACK),
+            ov_canvas_bg_top: Some(Color32::BLACK),
+            ov_canvas_bg_bottom: Some(Color32::BLACK),
+            badge_rounding: Some(20.),
+            tab_rounding: Some(20.),
+            onnx_runtime_path: "keep-runtime".into(),
+            ..Default::default()
+        };
+        settings.glass.enabled = true;
+        settings.glass.desktop_blur = true;
+        settings.glass.panels.tint = Some([0, 0, 0]);
+        settings.tool_shelf.docked = true;
+        settings.tool_shelf.opacity = Some(0.2);
+        let mut window = SettingsWindow::default();
+        window.sync_from_settings(&settings);
+        let mut theme = crate::theme::Theme::dark();
+        window.apply_theme(&mut settings, &mut theme, &ctx);
+        assert!(crate::ui::glass::settings(&ctx).enabled);
+
+        window.reset_to_signal(&mut settings, &mut theme, &ctx);
+        let expected = crate::theme::Theme::light_with_accent(
+            ThemePreset::Signal,
+            ThemePreset::Signal.accent_colors(),
+        );
+        assert_eq!(theme.mode, ThemeMode::Light);
+        assert_eq!(theme.bg_color, expected.bg_color);
+        assert_eq!(theme.panel_bg, expected.panel_bg);
+        assert_eq!(theme.canvas_bg_bottom, expected.canvas_bg_bottom);
+        assert!(!ctx.global_style().visuals.dark_mode);
+        assert!(!crate::ui::glass::settings(&ctx).enabled);
+        assert!(!settings.glass.desktop_blur);
+        assert!(settings.ov_bg_color.is_none());
+        assert!(settings.badge_rounding.is_none());
+        assert!(settings.tab_rounding.is_none());
+        assert!(settings.tool_shelf.opacity.is_none());
+        assert!(settings.tool_shelf.docked);
+        assert_eq!(settings.onnx_runtime_path, "keep-runtime");
+        settings.advanced_customization = true;
+        window.apply_theme(&mut settings, &mut theme, &ctx);
+        assert_eq!(theme.panel_bg, expected.panel_bg);
+        AppSettings::flush_pending_saves().unwrap();
+        let restored = AppSettings::load();
+        assert!(!restored.glass.enabled);
+        assert_eq!(restored.theme_mode, ThemeMode::Light);
+        assert!(restored.ov_bg_color.is_none());
+    }
+
+    #[test]
+    fn mode_switches_replace_fixed_colours_but_preserve_glass_and_geometry() {
+        crate::i18n::init();
+        let ctx = context();
+        let mut settings = AppSettings {
+            theme_mode: ThemeMode::Dark,
+            advanced_customization: true,
+            ov_panel_bg: Some(Color32::BLACK),
+            widget_rounding: Some(11.),
+            ..Default::default()
+        };
+        settings.glass.enabled = true;
+        settings.glass.desktop_blur = true;
+        settings.glass.panels.opacity = 0.31;
+        settings.glass.panels.tint = Some([0, 0, 0]);
+        settings.tool_shelf.docked = true;
+        settings.tool_shelf.opacity = Some(0.2);
+        let mut window = SettingsWindow::default();
+        window.sync_from_settings(&settings);
+        let mut theme = crate::theme::Theme::dark();
+        for mode in [ThemeMode::Light, ThemeMode::Dark, ThemeMode::Light] {
+            window.staged_mode = mode;
+            window.apply_theme(&mut settings, &mut theme, &ctx);
+            let expected = match mode {
+                ThemeMode::Light => crate::theme::Theme::light_with_accent(
+                    settings.theme_preset,
+                    settings.custom_accent,
+                ),
+                ThemeMode::Dark => crate::theme::Theme::dark_with_accent(
+                    settings.theme_preset,
+                    settings.custom_accent,
+                ),
+            };
+            assert_eq!(theme.panel_bg, expected.panel_bg);
+            assert_eq!(
+                ctx.global_style().visuals.dark_mode,
+                mode == ThemeMode::Dark
+            );
+            assert!(settings.glass.enabled && settings.glass.desktop_blur);
+            assert_eq!(settings.glass.panels.opacity, 0.31);
+            assert_eq!(settings.glass.panels.tint, None);
+            assert_eq!(settings.widget_rounding, Some(11.));
+            assert!(settings.tool_shelf.docked);
+            assert_eq!(settings.tool_shelf.opacity, Some(0.2));
+            assert_eq!(crate::ui::glass::settings(&ctx), settings.glass);
+        }
+    }
 
     fn labelled_rects(output: &egui::FullOutput, needle: &str) -> Vec<egui::Rect> {
         fn collect(shape: &egui::Shape, needle: &str, rects: &mut Vec<egui::Rect>) {
@@ -5841,6 +5938,47 @@ mod preference_consistency_tests {
 #[cfg(test)]
 mod shared_colour_row_tests {
     use super::*;
+    #[test]
+    fn repeated_optional_colours_have_distinct_stable_numeric_ids() {
+        let ctx = egui::Context::default();
+        let mut colours = [Some(Color32::from_gray(128)); 3];
+        let render = |colours: &mut [Option<Color32>; 3]| {
+            let mut ids = Vec::new();
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                SettingsWindow::opt_color_row(ui, "Colour", &mut colours[0], &mut false);
+                ids.push(
+                    ctx.data(|d| {
+                        d.get_temp::<egui::Response>(egui::Id::new("control_test_editor"))
+                    })
+                    .unwrap()
+                    .id,
+                );
+                SettingsWindow::opt_color_row(ui, "Colour", &mut colours[1], &mut false);
+                ids.push(
+                    ctx.data(|d| {
+                        d.get_temp::<egui::Response>(egui::Id::new("control_test_editor"))
+                    })
+                    .unwrap()
+                    .id,
+                );
+                SettingsWindow::opt_color_row(ui, "Colour", &mut colours[2], &mut false);
+                ids.push(
+                    ctx.data(|d| {
+                        d.get_temp::<egui::Response>(egui::Id::new("control_test_editor"))
+                    })
+                    .unwrap()
+                    .id,
+                );
+            });
+            ids
+        };
+        let first = render(&mut colours);
+        assert_eq!(
+            first.iter().collect::<std::collections::HashSet<_>>().len(),
+            3
+        );
+        assert_eq!(render(&mut colours), first);
+    }
     #[test]
     fn alpha_capsules_preserve_straight_rgb_in_both_override_variants() {
         for optional in [false, true] {
