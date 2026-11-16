@@ -25,7 +25,7 @@ class BuildRequirementsTests(unittest.TestCase):
 
     def test_lock_contains_exact_versions_and_wheel_hashes_for_every_dependency(self):
         self.assertEqual(self.locked_packages(".github/requirements-build.txt"), {"cryptography": "46.0.7", "cffi": "2.0.0", "pycparser": "2.23"})
-        self.assertEqual(self.locked_packages(".github/requirements-native.txt"), {"cmake": "3.31.6", "meson": "1.12.1", "ninja": "1.13.2"})
+        self.assertEqual(self.locked_packages(".github/requirements-native.txt"), {"cmake": "4.2.3", "meson": "1.12.1", "ninja": "1.13.2"})
 
     def test_all_workflow_pip_installs_require_the_shared_hash_lock_and_wheels(self):
         installs = []
