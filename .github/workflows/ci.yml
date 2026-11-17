@@ -63,6 +63,7 @@ jobs:
 
       - name: Test image codecs and personal labels
         run: |
+          cargo test -j1 --test mcp_stdio -- --test-threads=1
           cargo test -j1 --test jpeg_xl -- --test-threads=1
           cargo test -j1 --test heif -- --test-threads=1
           cargo test -j1 --test avif -- --test-threads=1
@@ -74,6 +75,14 @@ jobs:
           cargo test -j1 --lib toolbar_save_overwrites_opened_heif_without_any_save_dialog -- --test-threads=1
           cargo test -j1 --test label_overrides -- --test-threads=1
           cargo test -j1 --lib ui::panels::label_editor -- --test-threads=1
+
+      - name: Test Python MCP client against production app
+        env:
+          PAINTFE_MCP_TEST_EXE: ${{ github.workspace }}/target/debug/PaintFE.exe
+          PAINTFE_TEST_PYTHON: python
+          PAINTFE_TEST_STORAGE_DIR: ${{ runner.temp }}/paintfe-mcp-app-review
+          RAYON_NUM_THREADS: '2'
+        run: cargo test -j1 --lib app::automation_tests::python_client_draws_through_real_bridge -- --ignored --exact --test-threads=1
 
       - name: Test shared control interactions
         run: cargo test -j1 --lib ui::controls -- --test-threads=1

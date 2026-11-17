@@ -1,5 +1,123 @@
 use super::history_tests::{app, context};
 use super::*;
+
+#[test]
+#[ignore = "Requires PAINTFE_MCP_TEST_EXE and PAINTFE_TEST_PYTHON; runs the real Python client and bridge"]
+fn python_client_draws_through_real_bridge() {
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+    let exe =
+        std::env::var_os("PAINTFE_MCP_TEST_EXE").expect("Set the built PaintFE executable path");
+    let python = std::env::var_os("PAINTFE_TEST_PYTHON").expect("Set the Python executable path");
+    assert!(
+        std::env::var_os("PAINTFE_TEST_STORAGE_DIR").is_some(),
+        "Set a disposable settings profile"
+    );
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/mcp-app-tests")
+        .join(uuid::Uuid::new_v4().to_string());
+    let directory = root.join("automation");
+    std::fs::create_dir_all(&directory).unwrap();
+    let ctx = context();
+    let mut a = app();
+    a.settings.automation.enabled = true;
+    a.settings.automation.editing = true;
+    let mut setup = args(&a);
+    setup["name"] = serde_json::json!("Existing top layer");
+    call(
+        &mut a,
+        "new_layer",
+        setup,
+        &mut automation_state::Session::default(),
+    )
+    .unwrap();
+    assert_eq!(a.projects[0].canvas_state.active_layer_index, 1);
+    let original = a.projects[0].canvas_state.layers[0].pixels.to_rgba_image();
+    let baseline = a.projects[0].history.undo_count();
+    let state = automation_state::state(&ctx);
+    let token = uuid::Uuid::new_v4().to_string();
+    std::fs::write(
+        directory.join("session.json"),
+        serde_json::json!({"token":token}).to_string(),
+    )
+    .unwrap();
+    {
+        let mut s = state.lock().unwrap();
+        s.path = Some(directory);
+        s.token = token;
+    }
+    let clock = Instant::now();
+    for mode in ["inspect", "draw", "denied"] {
+        a.settings.automation.editing = mode != "denied";
+        let mut command = Command::new(&python);
+        command
+            .arg("examples/mcp_client.py")
+            .arg("--paintfe")
+            .arg(&exe)
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .env("PAINTFE_TEST_STORAGE_DIR", &root)
+            .env("PYTHONIOENCODING", "utf-8")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if mode != "inspect" {
+            command.arg("--draw");
+        }
+        let mut child = command.spawn().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(45);
+        while child.try_wait().unwrap().is_none() {
+            if Instant::now() > deadline {
+                let _ = child.kill();
+                panic!(
+                    "Python example timed out: {:?}",
+                    child.wait_with_output().unwrap()
+                );
+            }
+            let _ = ctx.run_ui(
+                egui::RawInput {
+                    time: Some(clock.elapsed().as_secs_f64()),
+                    ..Default::default()
+                },
+                |ui| a.update_automation(ui.ctx()),
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let output = child.wait_with_output().unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            output.status.success(),
+            mode != "denied",
+            "{mode}: {stdout}\n{stderr}"
+        );
+        if mode == "inspect" {
+            assert!(stdout.contains("Read-only check complete"));
+            assert_eq!(a.projects[0].history.undo_count(), baseline);
+        } else if mode == "draw" {
+            assert!(stdout.contains("Three dots added"));
+            assert_eq!(a.projects[0].history.undo_count(), baseline + 4);
+            assert_eq!(a.projects[0].canvas_state.layers.len(), 3);
+            let pixels = a.projects[0].canvas_state.layers[2].pixels.to_rgba_image();
+            for (x, y, colour) in [
+                (6, 4, [255, 0, 0, 255]),
+                (16, 12, [0, 180, 0, 255]),
+                (25, 19, [0, 80, 255, 255]),
+            ] {
+                assert_eq!(pixels.get_pixel(x, y).0, colour);
+            }
+        } else {
+            assert!(stderr.contains("permission"), "{stderr}");
+            assert_eq!(a.projects[0].history.undo_count(), baseline + 4);
+        }
+        assert_eq!(
+            a.projects[0].canvas_state.layers[0].pixels.to_rgba_image(),
+            original
+        );
+    }
+    drop(a);
+    drop(ctx);
+    drop(state);
+    std::fs::remove_dir_all(root).unwrap();
+}
 fn args(a: &PaintFEApp) -> serde_json::Value {
     let p = &a.projects[0];
     serde_json::json!({"document":p.id.to_string(),"layer":p.canvas_state.layers[0].runtime_id.to_string(),"revision":p.edit_revision})
