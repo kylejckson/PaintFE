@@ -2105,3 +2105,10 @@ automation.active=نشاط حديث للوكيل المحلي
 glass.grain=تحبّب خفيف
 ui.retro_bevel=حواف بارزة لعناصر التحكم
 ui.solid_accent_headers=عناوين بلون تمييز مصمت
+
+psd.filter=مستند فوتوشوب
+psd.loss_editability=سيُحوَّل النص القابل للتحرير إلى بكسلات، ولن تُحفَظ مجلدات الطبقات.
+psd.composite=الصورة المدمجة
+psd.composite_notice=فُتحت الصورة المدمجة كطبقة واحدة. لم يتغير ملف PSD الأصلي.
+ai.refine_edges=تحسين الحواف
+ai.refine_edges_help=معالجة إضافية للحواف في الصور حتى 16 مليون بكسل. قد تستغرق وقتًا أطول.

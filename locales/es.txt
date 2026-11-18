@@ -2104,3 +2104,10 @@ automation.active=Actividad reciente del agente local
 glass.grain=Grano fino
 ui.retro_bevel=Relieves clásicos en los controles
 ui.solid_accent_headers=Cabeceras con color de acento sólido
+
+psd.filter=Documento de Photoshop
+psd.loss_editability=El texto editable se convertirá en píxeles y no se guardarán las carpetas de capas.
+psd.composite=Imagen combinada
+psd.composite_notice=Se abrió la imagen combinada en una capa. El PSD original no se modificó.
+ai.refine_edges=Refinar bordes
+ai.refine_edges_help=Procesamiento adicional de bordes hasta 16 millones de píxeles. Tarda más.

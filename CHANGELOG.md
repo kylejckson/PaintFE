@@ -6,6 +6,21 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.5.2] - 2026-11-18
+
+- Open and save layered Photoshop PSD files.
+- Use local RMBG 2.0 models and optionally refine background removal edges.
+- Fix wide MCP brush strokes drawing only their outline.
+
+### Added
+
+- Read and write common 8-bit RGB PSD raster layers, with simple masks, opacity, visibility and supported blend modes. PaintFE can open the embedded composite when it cannot import the layers, and warns before exporting unsupported content. Related to issue 246.
+- Add support for local RMBG 2.0 ONNX models and an optional Refine edges pass for larger images. Related to issue 247.
+
+### Fixed
+
+- Fill wide MCP brush strokes using the same brush coverage as the editor. Related to issue 245.
+
 ## [1.5.1] - 2026-11-16
 
 - Add more theme finishes for the community theme collection.

@@ -2104,3 +2104,10 @@ automation.active=Activitate recentă a agentului local
 glass.grain=Granulație fină
 ui.retro_bevel=Controale retro în relief
 ui.solid_accent_headers=Antete cu culoare de accent uniformă
+
+psd.filter=Document Photoshop
+psd.loss_editability=Textul editabil va fi convertit în pixeli, iar dosarele de straturi nu vor fi salvate.
+psd.composite=Imagine compozită
+psd.composite_notice=Imaginea compozită a fost deschisă pe un singur strat. PSD-ul original nu a fost modificat.
+ai.refine_edges=Rafinează marginile
+ai.refine_edges_help=Procesare suplimentară a marginilor până la 16 milioane de pixeli. Durează mai mult.

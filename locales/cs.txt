@@ -2104,3 +2104,10 @@ automation.active=Nedávná aktivita místního agenta
 glass.grain=Jemné zrno
 ui.retro_bevel=Retro zkosené ovládací prvky
 ui.solid_accent_headers=Plné zvýrazněné záhlaví
+
+psd.filter=Dokument Photoshopu
+psd.loss_editability=Upravitelný text se převede na pixely a složky vrstev se neuloží.
+psd.composite=Sloučený obraz
+psd.composite_notice=Sloučený obraz byl otevřen v jedné vrstvě. Původní PSD se nezměnil.
+ai.refine_edges=Zpřesnit okraje
+ai.refine_edges_help=Dodatečné zpracování okrajů u snímků do 16 milionů pixelů trvá déle.

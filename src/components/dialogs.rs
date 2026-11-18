@@ -593,6 +593,7 @@ pub enum SaveFormat {
     Tiff,
     Gif,
     Pfe,
+    Psd,
 }
 
 /// Compression options for TIFF format
@@ -619,6 +620,7 @@ impl SaveFormat {
             SaveFormat::Tiff => "tiff",
             SaveFormat::Gif => "gif",
             SaveFormat::Pfe => "pfe",
+            SaveFormat::Psd => "psd",
         }
     }
 
@@ -636,6 +638,7 @@ impl SaveFormat {
             SaveFormat::Tiff => t!("format.tiff"),
             SaveFormat::Gif => t!("format.gif"),
             SaveFormat::Pfe => t!("format.pfe"),
+            SaveFormat::Psd => t!("psd.filter"),
         }
     }
 
@@ -655,9 +658,15 @@ impl SaveFormat {
         matches!(self, SaveFormat::Png | SaveFormat::Gif | SaveFormat::Webp)
     }
 
+    pub fn preserves_layers(&self) -> bool {
+        matches!(self, Self::Pfe | Self::Psd)
+    }
+
     fn all() -> &'static [SaveFormat] {
         &[
             SaveFormat::Pfe,
+            #[cfg(not(target_arch = "wasm32"))]
+            SaveFormat::Psd,
             SaveFormat::Png,
             SaveFormat::Jpeg,
             #[cfg(not(target_arch = "wasm32"))]
@@ -870,7 +879,7 @@ pub fn generate_preview(
                 preview_image: image.clone(),
             })
         }
-        SaveFormat::Pfe => {
+        SaveFormat::Pfe | SaveFormat::Psd => {
             // PFE is a project format — no single-image preview needed
             // Estimate a rough size (header + raw pixels)
             let estimated_size = (image.width() * image.height() * 4) as usize + 64;
@@ -1220,6 +1229,7 @@ impl SaveFileDialog {
                 "tiff" | "tif" => SaveFormat::Tiff,
                 "gif" => SaveFormat::Gif,
                 "pfe" => SaveFormat::Pfe,
+                "psd" if cfg!(not(target_arch = "wasm32")) => SaveFormat::Psd,
                 _ => SaveFormat::Png,
             };
         }

@@ -12,6 +12,7 @@ include unreleased behaviour; the website marks upcoming changes separately.
 - [Local background removal](local-ai.md)
 - [Warp and Liquify](warp-and-liquify.md)
 - [Saving and export settings](export-settings.md)
+- [Photoshop documents](psd-import.md)
 - [Guides, rulers and alignment](guides-and-rendering.md)
 - [Optional features](optional-features.md)
 - [HEIC library setup](heic-libraries.md)

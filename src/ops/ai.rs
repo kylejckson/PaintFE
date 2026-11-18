@@ -14,6 +14,8 @@ use std::path::Path;
 
 mod availability;
 mod model;
+#[cfg(not(target_arch = "wasm32"))]
+mod refinement;
 pub(crate) use availability::AvailabilityProbe;
 pub use model::ModelProfile;
 
@@ -23,6 +25,7 @@ pub use model::ModelProfile;
 #[derive(Clone, Debug)]
 pub struct RemoveBgSettings {
     pub model_profile: ModelProfile,
+    pub refine_edges: bool,
     /// Foreground probability threshold (0.0–1.0). Pixels with probability
     /// below this are considered background. Higher values remove more of
     /// the subject. Default: 0.5. IS-Net preserves soft alpha; BiRefNet/U²-Net use the established edge curve.
@@ -46,6 +49,7 @@ impl Default for RemoveBgSettings {
     fn default() -> Self {
         Self {
             model_profile: ModelProfile::Auto,
+            refine_edges: false,
             threshold: 0.5,
             edge_feather: 0.0,
             mask_expansion: 0,
@@ -1307,10 +1311,16 @@ fn remove_background_native(
                 "Model input exceeds 8192 pixels per side".into(),
             ));
         }
-        let model_profile =
-            settings
-                .model_profile
-                .resolve(model_path, &input_name, model_input_size)?;
+        if output_count == 0 {
+            return Err(OnnxError::InvalidOutput("Model has no outputs".into()));
+        }
+        let first_output = get_session_output_name(&api, session, 0, allocator)?;
+        let model_profile = settings.model_profile.resolve(
+            model_path,
+            &input_name,
+            model_input_size,
+            &first_output,
+        )?;
         eprintln!(
             "[AI] Detected model profile: {}",
             model_profile.description()
@@ -1319,10 +1329,21 @@ fn remove_background_native(
         // Fetch only the profile's mask. IS-Net exports may also expose large
         // intermediate feature maps that must not be treated as segmentation.
         let output_index = model_profile.preferred_output_index(output_count);
-        if output_count == 0 {
-            return Err(OnnxError::InvalidOutput("Model has no outputs".into()));
+        let output_name = if output_index == 0 {
+            first_output
+        } else {
+            get_session_output_name(&api, session, output_index, allocator)?
+        };
+        if model_profile == ModelProfile::Rmbg2
+            && (input_name != "pixel_values"
+                || output_name != "alphas"
+                || (model_input_w, model_input_h) != (1024, 1024))
+        {
+            return Err(OnnxError::InvalidOutput(
+                "Use an RMBG 2.0 export with 1024 x 1024 pixel_values input and alphas output"
+                    .into(),
+            ));
         }
-        let output_name = get_session_output_name(&api, session, output_index, allocator)?;
         let output_name_c = std::ffi::CString::new(output_name)
             .map_err(|e| OnnxError::InvalidOutput(e.to_string()))?;
         let output_name_ptrs = [output_name_c.as_ptr()];
@@ -1338,156 +1359,188 @@ fn remove_background_native(
             model_input_size, model_input_size
         );
         let (orig_w, orig_h) = input.dimensions();
-        let (mut tensor_data, content_size) =
-            model::preprocess_image(input, model_input_w, model_input_h, model_profile);
-        let tensor_shape: [i64; 4] = [1, 3, model_input_h as i64, model_input_w as i64];
+        if settings.refine_edges && u64::from(orig_w) * u64::from(orig_h) > refinement::MAX_PIXELS {
+            return Err(OnnxError::InferenceFailed(
+                "Refine edges supports images up to 16 million pixels. Turn it off to process this image.".into(),
+            ));
+        }
         let input_type = model::input_element_type(&api, session)?;
-        let mut half_data: Vec<u16> = Vec::new();
-        let (input_ptr, data_len, tensor_type) = match input_type {
-            1 => (
-                tensor_data.as_mut_ptr().cast(),
-                tensor_data.len() * 4,
-                ONNXTensorElementDataType::Float,
-            ),
-            10 => {
-                half_data.extend(
-                    tensor_data
-                        .iter()
-                        .map(|&v| half::f16::from_f32(v).to_bits()),
-                );
-                (
-                    half_data.as_mut_ptr().cast(),
-                    half_data.len() * 2,
-                    ONNXTensorElementDataType::Float16,
-                )
-            }
-            other => {
-                return Err(OnnxError::InferenceFailed(format!(
-                    "Unsupported model input type {other}; expected float32 or float16"
-                )));
-            }
-        };
-
-        // -- Create memory info --
-        eprintln!("[AI] Creating memory info and input tensor...");
-        let _memory_guard = ort_owned(&api, api.release_memory_info(), |out| {
-            (api.create_cpu_memory_info())(
-                OrtAllocatorType::ArenaAllocator,
-                OrtMemType::Default,
-                out,
-            )
-        })
-        .map_err(|error| OnnxError::InferenceFailed(format!("Create memory info: {error}")))?;
-        let memory_info = _memory_guard.ptr;
-
-        let _input_guard = ort_owned(&api, api.release_value(), |out| {
-            (api.create_tensor_with_data())(
-                memory_info,
-                input_ptr,
-                data_len,
-                tensor_shape.as_ptr(),
-                4,
-                tensor_type,
-                out,
-            )
-        })
-        .map_err(|error| OnnxError::InferenceFailed(format!("Create input tensor: {error}")))?;
-        let input_tensor = _input_guard.ptr;
-        // -- Run inference requesting only the selected mask --
-        eprintln!("[AI] Running inference (requesting {} output(s))...", 1);
-        let input_name_c = std::ffi::CString::new(input_name.clone()).unwrap();
+        let input_name_c = std::ffi::CString::new(input_name)
+            .map_err(|e| OnnxError::InvalidOutput(e.to_string()))?;
         let input_names = [input_name_c.as_ptr()];
-        let input_tensors = [input_tensor as *const OrtValue];
-        let mut output_tensors = OrtValuesGuard {
-            api: &api,
-            values: vec![std::ptr::null_mut(); 1],
-        };
+        let infer = |input: &RgbaImage| -> Result<refinement::Mask, OnnxError> {
+            let (mut tensor_data, content_size) =
+                model::preprocess_image(input, model_input_w, model_input_h, model_profile);
+            let tensor_shape: [i64; 4] = [1, 3, model_input_h as i64, model_input_w as i64];
+            let mut half_data: Vec<u16> = Vec::new();
+            let (input_ptr, data_len, tensor_type) = match input_type {
+                1 => (
+                    tensor_data.as_mut_ptr().cast(),
+                    tensor_data.len() * 4,
+                    ONNXTensorElementDataType::Float,
+                ),
+                10 => {
+                    half_data.extend(
+                        tensor_data
+                            .iter()
+                            .map(|&v| half::f16::from_f32(v).to_bits()),
+                    );
+                    (
+                        half_data.as_mut_ptr().cast(),
+                        half_data.len() * 2,
+                        ONNXTensorElementDataType::Float16,
+                    )
+                }
+                other => {
+                    return Err(OnnxError::InferenceFailed(format!(
+                        "Unsupported model input type {other}; expected float32 or float16"
+                    )));
+                }
+            };
 
-        crate::log_info!(
-            "AI phase=inference input={}x{}",
-            model_input_h,
-            model_input_w
-        );
-        if cancel
-            .as_ref()
-            .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Relaxed))
-        {
-            return Err(OnnxError::InferenceFailed("Cancelled".into()));
-        }
-        let create: unsafe extern "C" fn(*mut *mut OrtRunOptions) -> *mut OrtStatus =
-            api.get_fn(39);
-        let terminate: unsafe extern "C" fn(*mut OrtRunOptions) -> *mut OrtStatus = api.get_fn(46);
-        let release: unsafe extern "C" fn(*mut OrtRunOptions) = api.get_fn(97);
-        let release_status = api.release_status();
-        let mut run_options = std::ptr::null_mut();
-        status_to_result(&api, create(&mut run_options)).map_err(OnnxError::InferenceFailed)?;
-        let run_address = run_options as usize;
-        let done = std::sync::atomic::AtomicBool::new(false);
-        let run_status = std::thread::scope(|scope| {
-            if let Some(cancel) = cancel.as_ref() {
-                let done = &done;
-                scope.spawn(move || {
-                    while !done.load(std::sync::atomic::Ordering::Acquire) {
-                        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
-                            let status = terminate(run_address as *mut OrtRunOptions);
-                            if !status.is_null() {
-                                release_status(status);
-                            }
-                            break;
-                        }
-                        std::thread::sleep(std::time::Duration::from_millis(5));
-                    }
-                });
-            }
-            let status = (api.run())(
-                session,
-                run_options,
-                input_names.as_ptr(),
-                input_tensors.as_ptr(),
-                1,
-                output_name_ptrs.as_ptr(),
-                1,
-                output_tensors.values.as_mut_ptr(),
+            // -- Create memory info --
+            eprintln!("[AI] Creating memory info and input tensor...");
+            let _memory_guard = ort_owned(&api, api.release_memory_info(), |out| {
+                (api.create_cpu_memory_info())(
+                    OrtAllocatorType::ArenaAllocator,
+                    OrtMemType::Default,
+                    out,
+                )
+            })
+            .map_err(|error| OnnxError::InferenceFailed(format!("Create memory info: {error}")))?;
+            let memory_info = _memory_guard.ptr;
+
+            let _input_guard = ort_owned(&api, api.release_value(), |out| {
+                (api.create_tensor_with_data())(
+                    memory_info,
+                    input_ptr,
+                    data_len,
+                    tensor_shape.as_ptr(),
+                    4,
+                    tensor_type,
+                    out,
+                )
+            })
+            .map_err(|error| OnnxError::InferenceFailed(format!("Create input tensor: {error}")))?;
+            let input_tensor = _input_guard.ptr;
+            // -- Run inference requesting only the selected mask --
+            eprintln!("[AI] Running inference (requesting {} output(s))...", 1);
+            let input_tensors = [input_tensor as *const OrtValue];
+            let mut output_tensors = OrtValuesGuard {
+                api: &api,
+                values: vec![std::ptr::null_mut(); 1],
+            };
+
+            crate::log_info!(
+                "AI phase=inference input={}x{}",
+                model_input_h,
+                model_input_w
             );
-            done.store(true, std::sync::atomic::Ordering::Release);
-            status
-        });
-        release(run_options);
+            if cancel
+                .as_ref()
+                .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Relaxed))
+            {
+                return Err(OnnxError::InferenceFailed("Cancelled".into()));
+            }
+            let create: unsafe extern "C" fn(*mut *mut OrtRunOptions) -> *mut OrtStatus =
+                api.get_fn(39);
+            let terminate: unsafe extern "C" fn(*mut OrtRunOptions) -> *mut OrtStatus =
+                api.get_fn(46);
+            let release: unsafe extern "C" fn(*mut OrtRunOptions) = api.get_fn(97);
+            let release_status = api.release_status();
+            let mut run_options = std::ptr::null_mut();
+            status_to_result(&api, create(&mut run_options)).map_err(OnnxError::InferenceFailed)?;
+            let run_address = run_options as usize;
+            let done = std::sync::atomic::AtomicBool::new(false);
+            let run_status = std::thread::scope(|scope| {
+                if let Some(cancel) = cancel.as_ref() {
+                    let done = &done;
+                    scope.spawn(move || {
+                        while !done.load(std::sync::atomic::Ordering::Acquire) {
+                            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                                let status = terminate(run_address as *mut OrtRunOptions);
+                                if !status.is_null() {
+                                    release_status(status);
+                                }
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(5));
+                        }
+                    });
+                }
+                let status = (api.run())(
+                    session,
+                    run_options,
+                    input_names.as_ptr(),
+                    input_tensors.as_ptr(),
+                    1,
+                    output_name_ptrs.as_ptr(),
+                    1,
+                    output_tensors.values.as_mut_ptr(),
+                );
+                done.store(true, std::sync::atomic::Ordering::Release);
+                status
+            });
+            release(run_options);
 
-        if let Err(e) = status_to_result(&api, run_status) {
-            crate::log_err!("AI phase=inference error={e}");
-            eprintln!("[AI] Inference FAILED: {}", e);
-            // Cleanup before returning error
-            return Err(OnnxError::InferenceFailed(e));
-        }
+            if let Err(e) = status_to_result(&api, run_status) {
+                crate::log_err!("AI phase=inference error={e}");
+                eprintln!("[AI] Inference FAILED: {}", e);
+                // Cleanup before returning error
+                return Err(OnnxError::InferenceFailed(e));
+            }
 
-        eprintln!("[AI] Inference completed. Reading mask output {output_index}.");
+            eprintln!("[AI] Inference completed. Reading mask output {output_index}.");
 
-        // Select the declared mask output, never an auxiliary feature tensor by confidence.
-        let output_tensor = *output_tensors
-            .values
-            .first()
-            .ok_or_else(|| OnnxError::InvalidOutput("Model has no mask output".into()))?;
-        let (mut probabilities, mut out_h, mut out_w, element_type) =
-            model::read_mask(&api, output_tensor)?;
-        model::normalize_mask(&mut probabilities, model_profile, element_type)?;
-        if model_profile == ModelProfile::ISNetTransformers {
-            let crop_w = ((content_size.0 as f64 / model_input_w as f64) * out_w as f64)
-                .round()
-                .max(1.0) as u32;
-            let crop_h = ((content_size.1 as f64 / model_input_h as f64) * out_h as f64)
-                .round()
-                .max(1.0) as u32;
-            let mask =
-                image::ImageBuffer::<image::Luma<f32>, _>::from_raw(out_w, out_h, probabilities)
-                    .ok_or_else(|| OnnxError::InvalidOutput("Invalid padded mask".into()))?;
-            probabilities =
-                image::imageops::crop_imm(&mask, 0, 0, crop_w.min(out_w), crop_h.min(out_h))
-                    .to_image()
-                    .into_raw();
-            out_w = crop_w.min(out_w);
-            out_h = crop_h.min(out_h);
-        }
+            // Select the declared mask output, never an auxiliary feature tensor by confidence.
+            let output_tensor = *output_tensors
+                .values
+                .first()
+                .ok_or_else(|| OnnxError::InvalidOutput("Model has no mask output".into()))?;
+            let (mut probabilities, mut out_h, mut out_w, element_type) =
+                model::read_mask(&api, output_tensor)?;
+            model::normalize_mask(&mut probabilities, model_profile, element_type)?;
+            if model_profile == ModelProfile::ISNetTransformers {
+                let crop_w = ((content_size.0 as f64 / model_input_w as f64) * out_w as f64)
+                    .round()
+                    .max(1.0) as u32;
+                let crop_h = ((content_size.1 as f64 / model_input_h as f64) * out_h as f64)
+                    .round()
+                    .max(1.0) as u32;
+                let mask = image::ImageBuffer::<image::Luma<f32>, _>::from_raw(
+                    out_w,
+                    out_h,
+                    probabilities,
+                )
+                .ok_or_else(|| OnnxError::InvalidOutput("Invalid padded mask".into()))?;
+                probabilities =
+                    image::imageops::crop_imm(&mask, 0, 0, crop_w.min(out_w), crop_h.min(out_h))
+                        .to_image()
+                        .into_raw();
+                out_w = crop_w.min(out_w);
+                out_h = crop_h.min(out_h);
+            }
+            refinement::Mask::from_raw(out_w, out_h, probabilities)
+                .ok_or_else(|| OnnxError::InvalidOutput("Invalid mask dimensions".into()))
+        };
+        let base = infer(input)?;
+        let refined = if settings.refine_edges {
+            refinement::refine(
+                input,
+                &base,
+                (model_input_w, model_input_h),
+                settings.threshold,
+                infer,
+            )?
+        } else {
+            None
+        };
+        let was_refined = refined.is_some();
+        let mask_width = base.width();
+        let mask_height = base.height();
+        let mask = refined.unwrap_or(base);
+        let (out_w, out_h) = mask.dimensions();
+        let probabilities = mask.into_raw();
 
         // Log mask statistics for debugging
         let mut min_val = f32::MAX;
@@ -1517,15 +1570,23 @@ fn remove_background_native(
             settings.smooth_edges,
             settings.fill_holes
         );
-        let resolved_settings = RemoveBgSettings {
+        let mut resolved_settings = RemoveBgSettings {
             model_profile,
             ..settings.clone()
         };
+        if was_refined {
+            let scale = (out_w as f32 / mask_width as f32).min(out_h as f32 / mask_height as f32);
+            resolved_settings.mask_expansion = (settings.mask_expansion as f32 * scale)
+                .round()
+                .clamp(-32.0, 32.0) as i32;
+            resolved_settings.fill_holes = (settings.fill_holes as f32 * scale)
+                .round()
+                .clamp(0.0, 32.0) as u32;
+        }
         let result = postprocess_mask(&probabilities, out_h, out_w, input, &resolved_settings);
 
         // -- Cleanup --
         eprintln!("[AI] Cleaning up ONNX resources...");
-        drop(output_tensors);
         crate::log_info!(
             "AI phase=complete elapsed={:.3}s",
             started.elapsed().as_secs_f64()

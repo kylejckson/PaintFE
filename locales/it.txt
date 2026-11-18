@@ -2104,3 +2104,10 @@ automation.active=Attività recente dell’agente locale
 glass.grain=Grana fine
 ui.retro_bevel=Bordi in rilievo dei controlli rétro
 ui.solid_accent_headers=Intestazioni con colore di accento pieno
+
+psd.filter=Documento Photoshop
+psd.loss_editability=Il testo modificabile verrà convertito in pixel e le cartelle dei livelli non verranno salvate.
+psd.composite=Immagine composita
+psd.composite_notice=L’immagine composita è stata aperta su un solo livello. Il PSD originale è intatto.
+ai.refine_edges=Migliora bordi
+ai.refine_edges_help=Elaborazione aggiuntiva dei bordi fino a 16 milioni di pixel. Richiede più tempo.

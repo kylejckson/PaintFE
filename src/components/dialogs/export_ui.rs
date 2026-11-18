@@ -30,7 +30,7 @@ impl SaveFileDialog {
             }
             if self.preview_completed == Some(self.preview_key())
                 && self.preview_error.is_none()
-                && self.format != SaveFormat::Pfe
+                && !self.format.preserves_layers()
                 && !self.animated
             {
                 ui.weak(crate::i18n::format_translation(

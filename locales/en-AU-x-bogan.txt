@@ -2104,3 +2104,10 @@ automation.active=Recent local agent activity
 glass.grain=A bit of grain
 ui.retro_bevel=Old-school bevelled controls
 ui.solid_accent_headers=Solid accent headers
+
+psd.filter=Photoshop document
+psd.loss_editability=Editable text will be converted to pixels and layer folders will not be saved.
+psd.composite=Photoshop composite
+psd.composite_notice=Opened the embedded Photoshop composite as one layer. The original PSD is unchanged.
+ai.refine_edges=Refine edges
+ai.refine_edges_help=Try extra overlapping crops around uncertain edges on larger images. This takes longer and supports images up to 16 million pixels.

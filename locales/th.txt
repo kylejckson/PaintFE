@@ -2104,3 +2104,10 @@ automation.active=กิจกรรมล่าสุดของเอเจ�
 glass.grain=เกรนละเอียด
 ui.retro_bevel=ขอบนูนของตัวควบคุมแบบย้อนยุค
 ui.solid_accent_headers=ส่วนหัวสีเน้นแบบทึบ
+
+psd.filter=เอกสาร Photoshop
+psd.loss_editability=ข้อความที่แก้ไขได้จะถูกแปลงเป็นพิกเซล และจะไม่บันทึกโฟลเดอร์เลเยอร์
+psd.composite=ภาพรวมเลเยอร์
+psd.composite_notice=เปิดภาพรวมเลเยอร์เป็นเลเยอร์เดียวแล้ว ไฟล์ PSD ต้นฉบับไม่เปลี่ยนแปลง
+ai.refine_edges=ปรับขอบให้ละเอียด
+ai.refine_edges_help=ประมวลผลขอบเพิ่มเติมสำหรับภาพไม่เกิน 16 ล้านพิกเซล ใช้เวลานานขึ้น

@@ -190,6 +190,104 @@ fn pfe_save_keeps_layers_and_clears_dirty_only_after_completion() {
     );
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn psd_save_as_preserves_layers_and_supports_quick_save() {
+    let mut app = app();
+    layered(&mut app);
+    let layer = &mut app.projects[0].canvas_state.layers[1];
+    layer.name = "Ink 🖌 層".into();
+    layer.blend_mode = BlendMode::Multiply;
+    layer.opacity = 128.0 / 255.0;
+    layer.visible = false;
+    layer.ensure_mask();
+    layer
+        .mask
+        .as_mut()
+        .unwrap()
+        .put_pixel(0, 0, image::Rgba([0, 0, 0, 128]));
+    layer.mask_enabled = false;
+    let ctx = egui::Context::default();
+    let path = directory().join("layers.psd");
+    app.save_file_dialog.set_from_path(&path);
+    assert_eq!(app.save_file_dialog.format(), SaveFormat::Psd);
+    app.request_save(
+        PendingSave {
+            project_id: app.projects[0].id,
+            action: action(path.clone(), SaveFormat::Psd),
+            update_path: true,
+        },
+        0.0,
+    );
+    assert!(app.save_warning.is_none());
+    wait(&mut app, &ctx);
+    assert!(!app.projects[0].is_dirty);
+    assert_eq!(
+        app.projects[0].file_handler.current_path.as_ref(),
+        Some(&path)
+    );
+    let import = crate::io::psd::load(&path).unwrap();
+    assert!(!import.composite_only);
+    assert_eq!(import.canvas.layers.len(), 2);
+    let layer = &import.canvas.layers[1];
+    assert_eq!(layer.name, "Ink 🖌 層");
+    assert_eq!(layer.blend_mode, BlendMode::Multiply);
+    assert_eq!(layer.opacity, 128.0 / 255.0);
+    assert!(!layer.visible);
+    assert!(!layer.mask_enabled);
+    assert_eq!(layer.mask.as_ref().unwrap().get_pixel(0, 0)[3], 128);
+
+    app.projects[0].canvas_state.layers[1]
+        .pixels
+        .put_pixel(2, 2, image::Rgba([1, 2, 3, 4]));
+    app.projects[0].mark_dirty();
+    app.handle_save(0.0);
+    assert!(app.save_warning.is_none());
+    wait(&mut app, &ctx);
+    assert!(!app.projects[0].is_dirty);
+    let reopened = crate::io::psd::load(&path).unwrap();
+    assert_eq!(
+        *reopened.canvas.layers[1].pixels.get_pixel(2, 2),
+        image::Rgba([1, 2, 3, 4])
+    );
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn lossy_psd_export_warns_and_keeps_the_editable_save_target() {
+    let mut app = app();
+    layered(&mut app);
+    let root = directory();
+    let project_path = root.join("original.pfe");
+    let output = root.join("flattened.psd");
+    let project = &mut app.projects[0];
+    project.file_handler.current_path = Some(project_path.clone());
+    project.file_handler.last_export_options.format = SaveFormat::Pfe;
+    project.canvas_state.layers[1].blend_mode = BlendMode::Overwrite;
+    let expected = project.canvas_state.composite_committed();
+
+    app.request_save(
+        PendingSave {
+            project_id: app.projects[0].id,
+            action: action(output.clone(), SaveFormat::Psd),
+            update_path: true,
+        },
+        0.0,
+    );
+    assert!(app.save_warning.is_some());
+    assert!(!output.exists());
+    app.resolve_save_warning(1, 0.0);
+    wait(&mut app, &egui::Context::default());
+    assert_eq!(
+        app.projects[0].file_handler.current_path.as_ref(),
+        Some(&project_path)
+    );
+    assert!(app.projects[0].is_dirty);
+    let import = crate::io::psd::load(&output).unwrap();
+    assert_eq!(import.canvas.layers.len(), 1);
+    assert_eq!(import.canvas.composite(), expected);
+}
+
 #[test]
 fn flattening_writes_image_but_keeps_editable_document_dirty_and_intact() {
     let mut app = app();

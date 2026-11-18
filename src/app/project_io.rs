@@ -544,9 +544,11 @@ impl PaintFEApp {
             .extension()
             .map(|ext| ext.to_string_lossy().to_lowercase() == "pfe")
             .unwrap_or(false);
-        let is_pdn = path
+        let import_format = path
             .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("pdn"));
+            .and_then(|ext| ext.to_str())
+            .map(str::to_ascii_lowercase)
+            .filter(|ext| ext == "pdn" || ext == "psd");
 
         if is_pfe {
             // Open .pfe project file in background (preserves layers)
@@ -566,7 +568,7 @@ impl PaintFEApp {
                     });
                 }
             });
-        } else if is_pdn {
+        } else if let Some(_format) = import_format {
             #[cfg(not(target_arch = "wasm32"))]
             {
                 let sender = self.io_sender.clone();
@@ -574,23 +576,29 @@ impl PaintFEApp {
                     self.io_ops_start_time = Some(current_time);
                 }
                 self.pending_io_ops += 1;
-                rayon::spawn(move || match crate::pdn::load_pdn(&path) {
-                    Ok(canvas_state) => {
-                        let _ = sender.send(IoResult::PdnLoaded { canvas_state, path });
-                    }
-                    Err(error) => {
-                        let _ = sender.send(IoResult::LoadFailed {
+                rayon::spawn(move || {
+                    let result = if _format == "psd" {
+                        crate::io::psd::load(&path).map(|import| {
+                            let notice = import.composite_only.then(|| crate::t!("psd.composite_notice"));
+                            (import.canvas, notice)
+                        })
+                    } else {
+                        crate::pdn::load_pdn(&path).map(|canvas| (canvas, None))
+                    };
+                    let _ = sender.send(match result {
+                        Ok((canvas_state, notice)) => IoResult::ImportedProject { canvas_state, path, notice },
+                        Err(error) => IoResult::LoadFailed {
                             path: Some(path),
-                            error: format!("Failed to import Paint.NET project: {error}"),
-                        });
-                    }
+                            error,
+                        },
+                    });
                 });
             }
             #[cfg(target_arch = "wasm32")]
             {
                 let _ = self.io_sender.send(IoResult::LoadFailed {
                     path: Some(path),
-                    error: "Paint.NET project import is unavailable in the browser".to_string(),
+                    error: "Layered project import is unavailable in the browser".to_string(),
                 });
             }
         } else {

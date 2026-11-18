@@ -2104,3 +2104,10 @@ automation.active=Activité récente d’un agent local
 glass.grain=Grain fin
 ui.retro_bevel=Relief rétro des commandes
 ui.solid_accent_headers=En-têtes en couleur d’accentuation unie
+
+psd.filter=Document Photoshop
+psd.loss_editability=Le texte modifiable sera converti en pixels et les dossiers de calques ne seront pas enregistrés.
+psd.composite=Image composite
+psd.composite_notice=L’image composite a été ouverte sur un seul calque. Le PSD d’origine est intact.
+ai.refine_edges=Affiner les contours
+ai.refine_edges_help=Traitement supplémentaire des contours jusqu’à 16 millions de pixels. Prend plus de temps.

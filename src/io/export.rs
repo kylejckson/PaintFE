@@ -93,6 +93,45 @@ pub fn write(
 ) -> Result<(), String> {
     write_with_tracking(image, path, options, true)
 }
+
+pub(crate) fn write_atomically(
+    path: &Path,
+    extension: &str,
+    encode: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let temporary = parent.join(format!(
+        ".paintfe-save-{}.{extension}",
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .map_err(|e| e.to_string())?;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        encode(&temporary)?;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&temporary)
+            .and_then(|file| file.sync_all())
+            .map_err(|e| e.to_string())?;
+        std::fs::rename(&temporary, path).map_err(|e| e.to_string())
+    }))
+    .unwrap_or_else(|_| {
+        Err(
+            "The image encoder failed unexpectedly. Your original file has not been replaced."
+                .into(),
+        )
+    });
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
 fn write_with_tracking(
     image: PreparedExportImage,
     path: &Path,
@@ -100,6 +139,9 @@ fn write_with_tracking(
     tracked: bool,
 ) -> Result<(), String> {
     options.validate()?;
+    if options.format == SaveFormat::Psd {
+        return Err("PSD export requires the editable document".into());
+    }
     if formats::write(&image, path, options, tracked)? {
         return Ok(());
     }
@@ -158,7 +200,7 @@ pub fn preview(
         std::fs::create_dir(&directory).map_err(|e| e.to_string())?;
         let path = directory.join(format!("preview.{}", options.format.extension()));
         let result = (|| {
-            if options.format == SaveFormat::Pfe {
+            if options.format.preserves_layers() {
                 return Ok(crate::components::dialogs::PreviewResult {
                     file_size: 0,
                     preview_image: image.rgba8(),

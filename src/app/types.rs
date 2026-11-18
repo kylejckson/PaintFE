@@ -145,10 +145,11 @@ pub enum IoResult {
         canvas_state: CanvasState,
         path: std::path::PathBuf,
     },
-    /// A read-only Paint.NET project import. Saving must use a PaintFE-supported format.
-    PdnLoaded {
+    /// An imported project. Its original path is not a save target.
+    ImportedProject {
         canvas_state: CanvasState,
         path: std::path::PathBuf,
+        notice: Option<String>,
     },
 }
 

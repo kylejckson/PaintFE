@@ -2104,3 +2104,10 @@ automation.active=Kürzliche Aktivität eines lokalen Agenten
 glass.grain=Feine Körnung
 ui.retro_bevel=Abgeschrägte Retro-Bedienelemente
 ui.solid_accent_headers=Einfarbige Akzent-Kopfzeilen
+
+psd.filter=Photoshop-Dokument
+psd.loss_editability=Bearbeitbarer Text wird in Pixel umgewandelt und Ebenenordner werden nicht gespeichert.
+psd.composite=Zusammengefügtes Bild
+psd.composite_notice=Das zusammengefügte Bild wurde als eine Ebene geöffnet. Die ursprüngliche PSD-Datei ist unverändert.
+ai.refine_edges=Kanten verfeinern
+ai.refine_edges_help=Zusätzliche Kantenbearbeitung bis 16 Millionen Pixel. Dauert länger.

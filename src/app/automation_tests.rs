@@ -47,21 +47,41 @@ fn python_client_draws_through_real_bridge() {
         s.token = token;
     }
     let clock = Instant::now();
-    for mode in ["inspect", "draw", "denied"] {
+    for mode in ["inspect", "draw", "brush", "denied"] {
         a.settings.automation.editing = mode != "denied";
         let mut command = Command::new(&python);
+        if mode == "brush" {
+            command
+                .args([
+                    "-c",
+                    r#"
+import sys
+sys.path.insert(0, "examples")
+from mcp_client import Client, current_document, target
+with Client(sys.argv[1]) as c:
+    c.connect()
+    document = current_document(c)
+    c.tool("stroke", {**target(document), "points": [[6, 12], [24, 12]],
+                      "colour": [255, 0, 255, 255], "size": 9, "pencil": False})
+    c.wait_for_job()
+"#,
+                ])
+                .arg(&exe);
+        } else {
+            command
+                .arg("examples/mcp_client.py")
+                .arg("--paintfe")
+                .arg(&exe);
+            if mode != "inspect" {
+                command.arg("--draw");
+            }
+        }
         command
-            .arg("examples/mcp_client.py")
-            .arg("--paintfe")
-            .arg(&exe)
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .env("PAINTFE_TEST_STORAGE_DIR", &root)
             .env("PYTHONIOENCODING", "utf-8")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        if mode != "inspect" {
-            command.arg("--draw");
-        }
         let mut child = command.spawn().unwrap();
         let deadline = Instant::now() + Duration::from_secs(45);
         while child.try_wait().unwrap().is_none() {
@@ -104,9 +124,19 @@ fn python_client_draws_through_real_bridge() {
             ] {
                 assert_eq!(pixels.get_pixel(x, y).0, colour);
             }
+        } else if mode == "brush" {
+            let p = &a.projects[0];
+            assert_eq!(p.history.undo_count(), baseline + 5);
+            let pixels = &p.canvas_state.layers[2].pixels;
+            for y in 10..14 {
+                for x in 10..20 {
+                    assert_eq!(pixels.get_pixel(x, y).0, [255, 0, 255, 255]);
+                }
+            }
+            assert_eq!(pixels.get_pixel(14, 4).0[3], 0);
         } else {
             assert!(stderr.contains("permission"), "{stderr}");
-            assert_eq!(a.projects[0].history.undo_count(), baseline + 4);
+            assert_eq!(a.projects[0].history.undo_count(), baseline + 5);
         }
         assert_eq!(
             a.projects[0].canvas_state.layers[0].pixels.to_rgba_image(),
@@ -264,6 +294,43 @@ fn agent_brush_and_pencil_use_selection_and_respect_cancel() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn agent_brush_and_eraser_fill_the_interior_of_a_wide_stroke() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut mask = image::GrayImage::from_pixel(256, 256, image::Luma([255]));
+    mask.put_pixel(100, 40, image::Luma([0]));
+    for erase in [false, true] {
+        let background = if erase { 255 } else { 0 };
+        let pixels = crate::ui::panels::tools::ToolsPanel::render_automation_stroke(
+            256,
+            256,
+            &vec![background; 256 * 256 * 4],
+            Some(mask.clone()),
+            &[[60.0, 40.0, 1.0], [140.0, 40.0, 1.0]],
+            [255, 0, 255, 255],
+            15.0,
+            false,
+            erase,
+            &cancel,
+        )
+        .unwrap();
+        for y in 35..=44 {
+            for x in 75..125 {
+                let index = (y * 256 + x) * 4;
+                let pixel = &pixels[index..index + 4];
+                if (x, y) == (100, 40) {
+                    assert_eq!(pixel[3], background);
+                } else if erase {
+                    assert_eq!(pixel[3], 0);
+                } else {
+                    assert_eq!(pixel, [255, 0, 255, 255]);
+                }
+            }
+        }
+        assert_eq!(pixels[(29 * 256 + 100) * 4 + 3], background);
+    }
 }
 #[test]
 fn agent_stroke_rejects_unbounded_points_before_starting_worker() {

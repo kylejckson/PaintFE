@@ -61,7 +61,7 @@ pub struct CliArgs {
     #[arg(long, value_name = "DIR")]
     pub output_dir: Option<PathBuf>,
 
-    /// Output format: png, jpeg, jxl, avif, heic, webp, bmp, tga, ico, tiff, gif, pfe.
+    /// Output format: png, jpeg, jxl, avif, heic, webp, bmp, tga, ico, tiff, gif, pfe, psd.
     /// When omitted, the format is inferred from --output's extension, defaulting to png.
     #[arg(short, long, value_name = "FORMAT")]
     pub format: Option<String>,
@@ -87,7 +87,7 @@ pub struct CliArgs {
     pub tiff_compression: String,
 
     /// Flatten all visible layers before saving.
-    /// Always true for raster formats; PFE output preserves layers regardless.
+    /// PFE and PSD output preserve supported layers regardless of this setting.
     #[arg(long, default_value_t = true)]
     pub flatten: bool,
 
@@ -332,6 +332,17 @@ fn run_one(
         SaveFormat::Pfe => {
             save_pfe(&state, output).map_err(|e| format!("PFE save failed: {:?}", e))?;
         }
+        SaveFormat::Psd => {
+            let losses = crate::io::psd::losses(&state);
+            if !losses.is_empty() {
+                return Err(format!(
+                    "PSD export would lose document data. Save as PFE. {}",
+                    losses.join(" ")
+                ));
+            }
+            let document = crate::io::psd::Export::prepare(&state)?;
+            crate::io::export::write_atomically(output, "psd", |path| document.write(path))?;
+        }
         SaveFormat::Jxl(_)
             if state
                 .layers
@@ -435,6 +446,7 @@ fn parse_format(format_arg: Option<&str>, output: Option<&Path>) -> SaveFormat {
             "tiff" | "tif" => SaveFormat::Tiff,
             "gif" => SaveFormat::Gif,
             "pfe" => SaveFormat::Pfe,
+            "psd" => SaveFormat::Psd,
             _ => SaveFormat::Png,
         };
     }
@@ -458,6 +470,7 @@ fn parse_format(format_arg: Option<&str>, output: Option<&Path>) -> SaveFormat {
             "tiff" | "tif" => SaveFormat::Tiff,
             "gif" => SaveFormat::Gif,
             "pfe" => SaveFormat::Pfe,
+            "psd" => SaveFormat::Psd,
             _ => SaveFormat::Png,
         };
     }

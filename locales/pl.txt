@@ -2104,3 +2104,10 @@ automation.active=Ostatnia aktywność lokalnego agenta
 glass.grain=Drobne ziarno
 ui.retro_bevel=Wypukłe kontrolki retro
 ui.solid_accent_headers=Nagłówki w jednolitym kolorze akcentu
+
+psd.filter=Dokument Photoshop
+psd.loss_editability=Edytowalny tekst zostanie zamieniony na piksele, a foldery warstw nie zostaną zapisane.
+psd.composite=Obraz scalony
+psd.composite_notice=Obraz scalony otwarto jako jedną warstwę. Oryginalny PSD nie został zmieniony.
+ai.refine_edges=Dopracuj krawędzie
+ai.refine_edges_help=Dodatkowe przetwarzanie krawędzi do 16 milionów pikseli. Zajmuje więcej czasu.

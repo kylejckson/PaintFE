@@ -2104,3 +2104,10 @@ automation.active=Hoạt động gần đây của tác nhân cục bộ
 glass.grain=Hạt mịn
 ui.retro_bevel=Viền nổi điều khiển cổ điển
 ui.solid_accent_headers=Tiêu đề màu nhấn đặc
+
+psd.filter=Tài liệu Photoshop
+psd.loss_editability=Văn bản có thể chỉnh sửa sẽ được chuyển thành điểm ảnh và các thư mục lớp sẽ không được lưu.
+psd.composite=Ảnh tổng hợp
+psd.composite_notice=Ảnh tổng hợp đã được mở dưới dạng một lớp. Tệp PSD gốc không thay đổi.
+ai.refine_edges=Tinh chỉnh cạnh
+ai.refine_edges_help=Xử lý cạnh bổ sung cho ảnh tối đa 16 triệu điểm ảnh. Tốn thêm thời gian.

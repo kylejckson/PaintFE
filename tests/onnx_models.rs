@@ -20,7 +20,71 @@ fn profile_from_environment() -> ModelProfile {
         Ok("transformers") => ModelProfile::ISNetTransformers,
         Ok("original") => ModelProfile::ISNet,
         Ok("rembg") => ModelProfile::ISNetRembg,
+        Ok("rmbg2") => ModelProfile::Rmbg2,
         _ => ModelProfile::Auto,
+    }
+}
+
+#[test]
+#[ignore = "Requires local ONNX Runtime, RMBG 2.0 export, photo and independent reference mask"]
+fn native_rmbg_reference_and_refinement_preserve_source_pixels() {
+    let runtime = std::env::var("PAINTFE_ONNX_RUNTIME").unwrap();
+    let model = std::env::var("PAINTFE_MODEL_PATH").unwrap();
+    let source = image::open(std::env::var("PAINTFE_MODEL_INPUT").unwrap())
+        .unwrap()
+        .to_rgba8();
+    let expected = image::open(std::env::var("PAINTFE_MODEL_MASK").unwrap())
+        .unwrap()
+        .to_luma8();
+    let input = image::imageops::resize(&source, 1100, 1400, image::imageops::FilterType::Triangle);
+    assert_eq!(input.dimensions(), expected.dimensions());
+    let settings = RemoveBgSettings::default();
+    let start = std::time::Instant::now();
+    let baseline =
+        remove_background_with_options(&runtime, &model, &input, &settings, &options()).unwrap();
+    eprintln!("RMBG standard pass: {:?}", start.elapsed());
+    let disagreement = baseline
+        .pixels()
+        .zip(expected.pixels())
+        .filter(|(a, b)| (a[3] >= 128) != (b[0] >= 128))
+        .count();
+    let proportion = disagreement as f64 / f64::from(input.width() * input.height());
+    eprintln!(
+        "RMBG reference mask threshold disagreement: {:.3}%",
+        proportion * 100.0
+    );
+    assert!(proportion < 0.02);
+    let start = std::time::Instant::now();
+    let refined = remove_background_with_options(
+        &runtime,
+        &model,
+        &input,
+        &RemoveBgSettings {
+            refine_edges: true,
+            ..settings
+        },
+        &options(),
+    )
+    .unwrap();
+    eprintln!("RMBG refined pass: {:?}", start.elapsed());
+    assert_eq!(refined.dimensions(), input.dimensions());
+    let mut changed = 0;
+    for ((a, b), source) in refined.pixels().zip(baseline.pixels()).zip(input.pixels()) {
+        assert_eq!(&a.0[..3], &source.0[..3]);
+        assert!(a[3] <= source[3]);
+        changed += usize::from(a[3] != b[3]);
+    }
+    assert!(
+        changed > 0,
+        "At least one uncertain edge must actually change"
+    );
+    if let Ok(path) = std::env::var("PAINTFE_MODEL_OUTPUT") {
+        baseline
+            .save(std::path::Path::new(&path).with_extension("base.png"))
+            .unwrap();
+        refined
+            .save(std::path::Path::new(&path).with_extension("refined.png"))
+            .unwrap();
     }
 }
 

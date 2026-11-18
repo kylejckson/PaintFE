@@ -2104,3 +2104,10 @@ automation.active=로컬 에이전트의 최근 활동
 glass.grain=미세 입자
 ui.retro_bevel=복고풍 입체 컨트롤
 ui.solid_accent_headers=강조색 단색 머리글
+
+psd.filter=Photoshop 문서
+psd.loss_editability=편집 가능한 텍스트는 픽셀로 변환되며 레이어 폴더는 저장되지 않습니다.
+psd.composite=합성 이미지
+psd.composite_notice=합성 이미지를 한 레이어로 열었습니다. 원본 PSD는 변경되지 않았습니다.
+ai.refine_edges=가장자리 다듬기
+ai.refine_edges_help=최대 1600만 픽셀 이미지에서 가장자리를 추가 처리합니다. 시간이 더 걸립니다.

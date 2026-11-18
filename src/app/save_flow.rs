@@ -29,6 +29,8 @@ struct SaveSequence {
 
 enum SavePayload {
     Project(crate::io::PfeData),
+    #[cfg(not(target_arch = "wasm32"))]
+    Photoshop(Result<crate::io::psd::Export, String>),
     Image(crate::io::PreparedExportImage),
     Frames(
         Vec<image::RgbaImage>,
@@ -57,6 +59,14 @@ impl Project {
     fn save_losses(&mut self, action: &crate::components::dialogs::SaveAction) -> Vec<String> {
         if action.format == SaveFormat::Pfe {
             return Vec::new();
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if action.format == SaveFormat::Psd {
+            let mut losses = crate::io::psd::losses(&self.canvas_state);
+            if self.was_animated {
+                losses.push(crate::t!("save.loss_animation"));
+            }
+            return losses;
         }
         let mut losses = Vec::new();
         if !self.canvas_state.guides.items.is_empty() {
@@ -196,11 +206,14 @@ impl PaintFEApp {
         }
         project.canvas_state.ensure_all_text_layers_rasterized();
         let action = request.action.clone();
-        let editable_loss = action.format != SaveFormat::Pfe && project.has_editable_structure();
-        let payload = if action.format == SaveFormat::Pfe {
-            SavePayload::Project(crate::io::build_pfe(&project.canvas_state))
-        } else if action.animated && action.format.supports_animation() {
-            SavePayload::Frames(
+        let (payload, editable_loss) = match action.format {
+            SaveFormat::Pfe => (SavePayload::Project(crate::io::build_pfe(&project.canvas_state)), false),
+            #[cfg(not(target_arch = "wasm32"))]
+            SaveFormat::Psd => {
+                let editable_loss = !project.save_losses(&action).is_empty();
+                (SavePayload::Photoshop(crate::io::psd::Export::prepare(&project.canvas_state)), editable_loss)
+            }
+            _ if action.animated && action.format.supports_animation() => (SavePayload::Frames(
                 project
                     .canvas_state
                     .layers
@@ -213,9 +226,8 @@ impl PaintFEApp {
                     .iter()
                     .map(|l| l.webp_frame_compression)
                     .collect(),
-            )
-        } else {
-            SavePayload::Image(crate::io::prepare_export_image(&project.canvas_state))
+            ), project.has_editable_structure()),
+            _ => (SavePayload::Image(crate::io::prepare_export_image(&project.canvas_state)), project.has_editable_structure()),
         };
         let project_id = project.id;
         self.save_jobs.insert(
@@ -262,7 +274,7 @@ impl PaintFEApp {
         if let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) {
             // An export must not replace an existing editable project's save target.
             let retain_project = job.editable_loss
-                && project.file_handler.last_export_options.format == SaveFormat::Pfe;
+                && project.file_handler.last_export_options.format.preserves_layers();
             if !retain_project {
                 project.file_handler.current_path = Some(action.path.clone());
                 project.file_handler.last_export_options = action.options;
@@ -480,65 +492,36 @@ fn write_save_atomically(
     action: &crate::components::dialogs::SaveAction,
     payload: SavePayload,
 ) -> Result<(), String> {
-    let parent = action
-        .path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| std::path::Path::new("."));
-    let temporary = parent.join(format!(
-        ".paintfe-save-{}.{}",
-        uuid::Uuid::new_v4(),
-        action.format.extension()
-    ));
-    // Reserve our own temporary name and never truncate the user's destination on failure.
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temporary)
-        .map_err(|e| e.to_string())?;
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    crate::io::export::write_atomically(&action.path, action.format.extension(), |temporary| {
         match payload {
             SavePayload::Project(data) => {
-                crate::io::write_pfe(&data, &temporary).map_err(|e| e.to_string())?
+                crate::io::write_pfe(&data, temporary).map_err(|e| e.to_string())?
             }
+            #[cfg(not(target_arch = "wasm32"))]
+            SavePayload::Photoshop(data) => data?.write(temporary)?,
             SavePayload::Image(image) => {
-                crate::io::export::write(image, &temporary, action.options)?
+                crate::io::export::write(image, temporary, action.options)?
             }
             SavePayload::Frames(frames, modes) => match action.format {
                 SaveFormat::Gif => crate::io::encode_animated_gif_options(
                     &frames,
                     action.animation_fps,
                     action.options,
-                    &temporary,
+                    temporary,
                 ),
                 SaveFormat::Png => {
-                    crate::io::encode_animated_png(&frames, action.animation_fps, &temporary)
+                    crate::io::encode_animated_png(&frames, action.animation_fps, temporary)
                 }
                 SaveFormat::Webp => crate::io::encode_animated_webp(
                     &frames,
                     &modes,
                     action.animation_fps,
                     action.quality,
-                    &temporary,
+                    temporary,
                 ),
                 _ => Err("Format does not support animation".into()),
             }?,
         }
-        std::fs::OpenOptions::new()
-            .write(true)
-            .open(&temporary)
-            .and_then(|file| file.sync_all())
-            .map_err(|e| e.to_string())?;
-        std::fs::rename(&temporary, &action.path).map_err(|e| e.to_string())
-    }))
-    .unwrap_or_else(|_| {
-        Err(
-            "The image encoder failed unexpectedly. Your original file has not been replaced."
-                .into(),
-        )
-    });
-    if result.is_err() {
-        let _ = std::fs::remove_file(&temporary);
-    }
-    result
+        Ok(())
+    })
 }

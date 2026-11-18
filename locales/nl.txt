@@ -2104,3 +2104,10 @@ automation.active=Recente activiteit van lokale agent
 glass.grain=Fijne korrel
 ui.retro_bevel=Afgeschuinde retrobediening
 ui.solid_accent_headers=Effen koppen in accentkleur
+
+psd.filter=Photoshop-document
+psd.loss_editability=Bewerkbare tekst wordt omgezet in pixels en laagmappen worden niet opgeslagen.
+psd.composite=Samengevoegde afbeelding
+psd.composite_notice=De samengevoegde afbeelding is geopend als één laag. Het oorspronkelijke PSD-bestand is ongewijzigd.
+ai.refine_edges=Randen verfijnen
+ai.refine_edges_help=Extra randbewerking tot 16 miljoen pixels. Dit duurt langer.

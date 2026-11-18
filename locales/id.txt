@@ -2104,3 +2104,10 @@ automation.active=Aktivitas agen lokal terbaru
 glass.grain=Butiran halus
 ui.retro_bevel=Tepi timbul kontrol retro
 ui.solid_accent_headers=Tajuk warna aksen solid
+
+psd.filter=Dokumen Photoshop
+psd.loss_editability=Teks yang dapat diedit akan diubah menjadi piksel, dan folder lapisan tidak akan disimpan.
+psd.composite=Gambar gabungan
+psd.composite_notice=Gambar gabungan dibuka sebagai satu lapisan. PSD asli tidak berubah.
+ai.refine_edges=Perhalus tepi
+ai.refine_edges_help=Pemrosesan tepi tambahan hingga 16 juta piksel. Memerlukan waktu lebih lama.

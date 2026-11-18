@@ -22,6 +22,9 @@ impl ToolsPanel {
         tools.properties.pressure_size = true;
         tools.properties.anti_aliased = !pencil;
         tools.reset_brush_pointer_state();
+        if !pencil {
+            tools.rebuild_brush_lut();
+        }
         let c = colour.map(|v| v as f32 / 255.);
         let mut previous = points[0];
         for next in points {

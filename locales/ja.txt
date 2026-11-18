@@ -2104,3 +2104,10 @@ automation.active=ローカルエージェントの最近の操作
 glass.grain=微細な粒子
 ui.retro_bevel=レトロな立体コントロール
 ui.solid_accent_headers=アクセント色の単色ヘッダー
+
+psd.filter=Photoshop ドキュメント
+psd.loss_editability=編集可能なテキストはピクセルに変換され、レイヤーフォルダーは保存されません。
+psd.composite=統合画像
+psd.composite_notice=統合画像を単一のレイヤーとして開きました。元の PSD は変更されていません。
+ai.refine_edges=境界を補正
+ai.refine_edges_help=最大1600万画素の画像で境界を追加処理します。処理に時間がかかります。

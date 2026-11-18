@@ -1,5 +1,6 @@
 pub struct RemoveBackgroundDialog {
     pub model_profile: crate::ops::ai::ModelProfile,
+    pub refine_edges: bool,
     pub threshold: f32,
     pub edge_feather: f32,
     pub mask_expansion: i32,
@@ -11,6 +12,7 @@ impl RemoveBackgroundDialog {
     pub fn new() -> Self {
         Self {
             model_profile: crate::ops::ai::ModelProfile::Auto,
+            refine_edges: false,
             threshold: 0.5,
             edge_feather: 0.0,
             mask_expansion: 0,
@@ -53,6 +55,8 @@ impl RemoveBackgroundDialog {
                 ui.label(egui::RichText::new(crate::t!("ui.if_automatic_cannot_identify_your_export_select_its_profile")).small().color(colors.text_muted));
                 });
                 section_label(ui, &colors, &crate::t!("ui.mask_settings"));
+                ui.checkbox(&mut self.refine_edges, t!("ai.refine_edges"))
+                    .on_hover_text(t!("ai.refine_edges_help"));
                 ui.add_space(2.0);
 
                 egui::Grid::new("remove_bg_grid")
@@ -225,6 +229,7 @@ impl RemoveBackgroundDialog {
                         if run_btn.clicked() {
                             result = DialogResult::Ok(crate::ops::ai::RemoveBgSettings {
                                 model_profile: self.model_profile,
+                                refine_edges: self.refine_edges,
                                 threshold: self.threshold,
                                 edge_feather: self.edge_feather,
                                 mask_expansion: self.mask_expansion,

@@ -23,6 +23,8 @@ pub mod export;
 pub mod heic;
 pub mod jxl;
 mod pfe_masks;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod psd;
 
 pub fn is_heif_path(path: &Path) -> bool {
     path.extension()
@@ -101,6 +103,7 @@ pub const IMAGE_EXTENSIONS: &[&str] = &[
 pub fn document_extensions() -> Vec<&'static str> {
     ["pfe", "pdn"]
         .into_iter()
+        .chain((!cfg!(target_arch = "wasm32")).then_some("psd"))
         .chain(IMAGE_EXTENSIONS.iter().copied())
         .chain(RAW_EXTENSIONS.iter().copied())
         .collect()
@@ -793,6 +796,14 @@ pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
         return crate::pdn::load_pdn(path);
         #[cfg(target_arch = "wasm32")]
         return Err("Paint.NET project import is unavailable in the browser".to_string());
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if ext == "psd" {
+        let import = psd::load(path)?;
+        if import.composite_only {
+            eprintln!("{}", crate::t!("psd.composite_notice"));
+        }
+        return Ok(import.canvas);
     }
 
     // Decode to display RGBA while preserving high-depth payload when available.
@@ -1882,6 +1893,11 @@ pub fn encode_and_write(
     tiff_compression: TiffCompression,
     webp_lossless: bool,
 ) -> Result<(), ImageError> {
+    if format == SaveFormat::Psd {
+        return Err(ImageError::IoError(std::io::Error::other(
+            "PSD export requires the editable document",
+        )));
+    }
     if format == SaveFormat::Webp {
         validate_webp_dimensions(image.width(), image.height())?;
     }
@@ -2005,6 +2021,7 @@ pub fn encode_and_write(
         SaveFormat::Pfe => {
             unreachable!("PFE format should be handled via save_pfe(), not encode_and_write()");
         }
+        SaveFormat::Psd => unreachable!("PSD is handled before opening the destination"),
         SaveFormat::Gif => {
             // Static GIF: quantize to 256 colors and save single frame
             encode_static_gif(image, path)
@@ -2118,6 +2135,7 @@ impl FileHandler {
         .add_filter(crate::t!("ui.all_supported"), &document_extensions())
         .add_filter("PaintFE Project", &["pfe"])
         .add_filter(crate::t!("ui.paint_net_project_read_only"), &["pdn"])
+        .add_filter(crate::t!("psd.filter"), &["psd"])
         .add_filter(crate::t!("ui.images"), IMAGE_EXTENSIONS)
         .add_filter(crate::t!("ui.raw_files"), RAW_EXTENSIONS)
         .add_filter(crate::t!("ui.all_files"), &["*"])

@@ -2104,3 +2104,10 @@ automation.active=Yerel aracının son etkinliği
 glass.grain=İnce gren
 ui.retro_bevel=Retro kabartmalı denetimler
 ui.solid_accent_headers=Düz vurgu rengi başlıkları
+
+psd.filter=Photoshop belgesi
+psd.loss_editability=Düzenlenebilir metin piksellere dönüştürülecek ve katman klasörleri kaydedilmeyecek.
+psd.composite=Birleştirilmiş görüntü
+psd.composite_notice=Birleştirilmiş görüntü tek katman olarak açıldı. Özgün PSD değiştirilmedi.
+ai.refine_edges=Kenarları iyileştir
+ai.refine_edges_help=16 milyon piksele kadar ek kenar işleme. Daha uzun sürer.

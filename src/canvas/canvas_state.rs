@@ -533,6 +533,19 @@ impl CanvasState {
     /// If viewport is Some, only pixels within that rect will be computed.
     /// Uses chunk-based iteration with rayon parallelism.
     pub fn composite_viewport(&self, viewport: Option<Rect>) -> RgbaImage {
+        self.composite_viewport_with_preview(viewport, true)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn composite_committed(&self) -> RgbaImage {
+        self.composite_viewport_with_preview(None, false)
+    }
+
+    fn composite_viewport_with_preview(
+        &self,
+        viewport: Option<Rect>,
+        include_preview: bool,
+    ) -> RgbaImage {
         let mut result = RgbaImage::new(self.width, self.height);
 
         // Calculate chunk range to process
@@ -568,7 +581,8 @@ impl CanvasState {
                 }
             }
         }
-        if let Some(ref preview) = self.preview_layer {
+        let preview = self.preview_layer.as_ref().filter(|_| include_preview);
+        if let Some(preview) = preview {
             for key in preview.chunk_keys() {
                 let (cx, cy) = key;
                 if cx >= min_cx && cx < max_cx && cy >= min_cy && cy < max_cy {
@@ -583,11 +597,7 @@ impl CanvasState {
             .map(|idx| self.layer_effectively_visible(idx))
             .collect();
         let layers = &self.layers;
-        let preview = if self.preview_clear_pending {
-            &None
-        } else {
-            &self.preview_layer
-        };
+        let preview = preview.filter(|_| !self.preview_clear_pending);
         let preview_blend = self.preview_blend_mode;
         let preview_is_eraser = self.preview_is_eraser;
         let preview_replaces = self.preview_replaces_layer;
@@ -625,7 +635,7 @@ impl CanvasState {
                         None
                     };
                     let preview_chunk = if is_active {
-                        preview.as_ref().and_then(|p| p.get_chunk(cx, cy))
+                        preview.and_then(|p| p.get_chunk(cx, cy))
                     } else {
                         None
                     };

@@ -11,10 +11,11 @@ pub enum ModelProfile {
     ISNetRembg,
     ISNetClearCut,
     ISNetTransformers,
+    Rmbg2,
 }
 
 impl ModelProfile {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Auto,
         Self::BiRefNet,
         Self::U2Net,
@@ -22,6 +23,7 @@ impl ModelProfile {
         Self::ISNetRembg,
         Self::ISNetClearCut,
         Self::ISNetTransformers,
+        Self::Rmbg2,
     ];
 
     pub fn description(self) -> &'static str {
@@ -33,6 +35,7 @@ impl ModelProfile {
             Self::ISNetRembg => "IS-Net (rembg)",
             Self::ISNetClearCut => "IS-Net (ClearCut)",
             Self::ISNetTransformers => "IS-Net (Transformers.js)",
+            Self::Rmbg2 => "RMBG 2.0",
         }
     }
 
@@ -41,11 +44,15 @@ impl ModelProfile {
         path: &str,
         input_name: &str,
         size: u32,
+        first_output: &str,
     ) -> Result<Self, OnnxError> {
         if self != Self::Auto {
             return Ok(self);
         }
         let name = path.to_ascii_lowercase();
+        if input_name == "pixel_values" && first_output == "alphas" && size == 1024 {
+            return Ok(Self::Rmbg2);
+        }
         if name.contains("transformers") || name.contains("britishwerewolf") {
             return Ok(Self::ISNetTransformers);
         }
@@ -294,6 +301,24 @@ pub(super) fn normalize_mask(
             "Mask contains invalid values".into(),
         ));
     }
+    if profile == ModelProfile::Rmbg2 {
+        // CPU inference can overshoot a saturated alpha by a few f32 ULPs.
+        // Reject incompatible ranges instead of treating them as probabilities.
+        const ROUNDING_TOLERANCE: f32 = 8.0 * f32::EPSILON;
+        if element == 2
+            || values
+                .iter()
+                .any(|v| !(-ROUNDING_TOLERANCE..=1.0 + ROUNDING_TOLERANCE).contains(v))
+        {
+            return Err(OnnxError::InvalidOutput(
+                "RMBG 2.0 expects floating point alpha probabilities between zero and one".into(),
+            ));
+        }
+        for value in values {
+            *value = value.clamp(0.0, 1.0);
+        }
+        return Ok(());
+    }
     if element == 2 {
         return Ok(());
     }
@@ -329,6 +354,25 @@ pub(super) fn normalize_mask(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rmbg_detection_uses_the_tensor_contract_and_preserves_soft_alpha() {
+        assert_eq!(
+            ModelProfile::Auto
+                .resolve("model_fp16.onnx", "pixel_values", 1024, "alphas")
+                .unwrap(),
+            ModelProfile::Rmbg2,
+        );
+        assert!(
+            ModelProfile::Auto
+                .resolve("model_fp16.onnx", "pixel_values", 512, "alphas")
+                .is_err()
+        );
+        let mut alpha = [-f32::EPSILON, 0.1, 0.7, 1.0 + f32::EPSILON];
+        normalize_mask(&mut alpha, ModelProfile::Rmbg2, 1).unwrap();
+        assert_eq!(alpha, [0.0, 0.1, 0.7, 1.0]);
+        assert!(normalize_mask(&mut [1.1], ModelProfile::Rmbg2, 1).is_err());
+    }
     #[test]
     fn soft_threshold_preserves_default_alpha_and_transparent_endpoints() {
         let image = RgbaImage::from_pixel(2, 2, image::Rgba([255, 0, 0, 255]));

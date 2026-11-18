@@ -2103,3 +2103,10 @@ automation.active=本地智能体最近的活动
 glass.grain=细致颗粒
 ui.retro_bevel=复古立体控件
 ui.solid_accent_headers=纯色强调色标题栏
+
+psd.filter=Photoshop 文档
+psd.loss_editability=可编辑文本将转换为像素，图层文件夹不会保存。
+psd.composite=合成图像
+psd.composite_notice=已将合成图像打开为单个图层。原始 PSD 未更改。
+ai.refine_edges=细化边缘
+ai.refine_edges_help=对最多 1600 万像素的图像进行额外的边缘处理，耗时更长。
