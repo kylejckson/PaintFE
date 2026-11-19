@@ -2111,3 +2111,8 @@ psd.composite=Birleştirilmiş görüntü
 psd.composite_notice=Birleştirilmiş görüntü tek katman olarak açıldı. Özgün PSD değiştirilmedi.
 ai.refine_edges=Kenarları iyileştir
 ai.refine_edges_help=16 milyon piksele kadar ek kenar işleme. Daha uzun sürer.
+
+resolution.title=Yazdırma çözünürlüğü (DPI)
+resolution.set=Yazdırma çözünürlüğünü ayarla
+resolution.link_axes=Yatay ve dikey çözünürlüğü bağla
+resolution.save_loss=Bu biçim yazdırma çözünürlüğünü kaydetmez.

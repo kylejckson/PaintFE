@@ -2111,3 +2111,8 @@ psd.composite=합성 이미지
 psd.composite_notice=합성 이미지를 한 레이어로 열었습니다. 원본 PSD는 변경되지 않았습니다.
 ai.refine_edges=가장자리 다듬기
 ai.refine_edges_help=최대 1600만 픽셀 이미지에서 가장자리를 추가 처리합니다. 시간이 더 걸립니다.
+
+resolution.title=인쇄 해상도(DPI)
+resolution.set=인쇄 해상도 설정
+resolution.link_axes=가로 및 세로 해상도 연결
+resolution.save_loss=이 형식은 인쇄 해상도를 저장하지 않습니다.

@@ -2111,3 +2111,8 @@ psd.composite=Image composite
 psd.composite_notice=L’image composite a été ouverte sur un seul calque. Le PSD d’origine est intact.
 ai.refine_edges=Affiner les contours
 ai.refine_edges_help=Traitement supplémentaire des contours jusqu’à 16 millions de pixels. Prend plus de temps.
+
+resolution.title=Résolution d’impression (PPP)
+resolution.set=Définir la résolution d’impression
+resolution.link_axes=Lier les résolutions horizontale et verticale
+resolution.save_loss=Ce format n’enregistre pas la résolution d’impression.

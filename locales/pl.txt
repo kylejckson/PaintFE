@@ -2111,3 +2111,8 @@ psd.composite=Obraz scalony
 psd.composite_notice=Obraz scalony otwarto jako jedną warstwę. Oryginalny PSD nie został zmieniony.
 ai.refine_edges=Dopracuj krawędzie
 ai.refine_edges_help=Dodatkowe przetwarzanie krawędzi do 16 milionów pikseli. Zajmuje więcej czasu.
+
+resolution.title=Rozdzielczość druku (DPI)
+resolution.set=Ustaw rozdzielczość druku
+resolution.link_axes=Połącz rozdzielczość poziomą i pionową
+resolution.save_loss=Ten format nie zapisuje rozdzielczości druku.

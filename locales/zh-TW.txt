@@ -2110,3 +2110,8 @@ psd.composite=合成影像
 psd.composite_notice=已將合成影像開啟為單一圖層。原始 PSD 未變更。
 ai.refine_edges=細化邊緣
 ai.refine_edges_help=對最多 1600 萬像素的影像額外處理邊緣，需要較長時間。
+
+resolution.title=列印解析度（DPI）
+resolution.set=設定列印解析度
+resolution.link_axes=連動水平和垂直解析度
+resolution.save_loss=此格式不會儲存列印解析度。

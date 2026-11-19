@@ -60,7 +60,45 @@ struct MaskRecord {
 
 pub struct Import {
     pub canvas: CanvasState,
-    pub composite_only: bool,
+    pub fallback: Option<FallbackReason>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum FallbackReason {
+    NoLayers,
+    Channel(i16),
+    Blend([u8; 4]),
+    Clipping,
+    Mask,
+    BlendingRanges,
+    LayerData,
+    LayerTag([u8; 4]),
+}
+
+impl std::fmt::Display for FallbackReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let label = |id: &[u8; 4]| {
+            id.iter()
+                .map(|&b| {
+                    if b.is_ascii_graphic() || b == b' ' {
+                        char::from(b)
+                    } else {
+                        '?'
+                    }
+                })
+                .collect::<String>()
+        };
+        match self {
+            Self::NoLayers => f.write_str("PSD: no raster layer records"),
+            Self::Channel(id) => write!(f, "PSD channel {id}"),
+            Self::Blend(key) => write!(f, "PSD blend mode '{}'", label(key)),
+            Self::Clipping => f.write_str("PSD clipping layer"),
+            Self::Mask => f.write_str("PSD layer mask layout"),
+            Self::BlendingRanges => f.write_str("PSD layer blending ranges"),
+            Self::LayerData => f.write_str("PSD layer data"),
+            Self::LayerTag(key) => write!(f, "PSD layer feature '{}'", label(key)),
+        }
+    }
 }
 
 pub fn load(path: &Path) -> Result<Import> {
@@ -90,15 +128,15 @@ const BLEND_KEYS: [(BlendMode, &[u8; 4]); 9] = [
     (BlendMode::SoftLight, b"sLit"),
 ];
 
-fn records<'a>(info: &mut Reader<'a>) -> Result<(Vec<Record>, bool, bool)> {
+fn records<'a>(info: &mut Reader<'a>) -> Result<(Vec<Record>, bool, Option<FallbackReason>)> {
     if info.0.is_empty() {
-        return Ok((Vec::new(), false, false));
+        return Ok((Vec::new(), false, None));
     }
     let count = info.u16()? as i16;
     if usize::from(count.unsigned_abs()) > super::MAX_LAYERS {
         return Err("Too many Photoshop layers".into());
     }
-    let mut unsupported = false;
+    let mut fallback = None;
     let mut records = Vec::new();
     for _ in 0..count.unsigned_abs() {
         let y = info.i32()?;
@@ -116,7 +154,9 @@ fn records<'a>(info: &mut Reader<'a>) -> Result<(Vec<Record>, bool, bool)> {
         let mut channels = Vec::new();
         for _ in 0..len {
             let id = info.u16()? as i16;
-            unsupported |= !(-2..=2).contains(&id);
+            if !(-2..=2).contains(&id) {
+                fallback.get_or_insert(FallbackReason::Channel(id));
+            }
             if channels.iter().any(|&(old, _)| old == id) {
                 return Err("Duplicate Photoshop layer channel".into());
             }
@@ -125,14 +165,21 @@ fn records<'a>(info: &mut Reader<'a>) -> Result<(Vec<Record>, bool, bool)> {
         if info.take(4)? != b"8BIM" {
             return Err("Invalid Photoshop layer signature".into());
         }
-        let key = info.take(4)?;
+        let key: &[u8; 4] = info.take(4)?.try_into().unwrap();
         let mode = BLEND_KEYS
             .iter()
             .find_map(|&(mode, code)| (key == code).then_some(mode));
-        unsupported |= mode.is_none();
+        if mode.is_none() {
+            fallback.get_or_insert(FallbackReason::Blend(*key));
+        }
         let opacity = info.byte()?;
-        unsupported |= info.byte()? != 0; // clipping mask
+        if info.byte()? != 0 {
+            fallback.get_or_insert(FallbackReason::Clipping);
+        }
         let flags = info.byte()?;
+        if flags & 0x18 == 0x18 {
+            fallback.get_or_insert(FallbackReason::LayerData);
+        }
         info.byte()?;
         let mut extra = info.section()?;
         let mut mask_data = extra.section()?;
@@ -155,28 +202,35 @@ fn records<'a>(info: &mut Reader<'a>) -> Result<(Vec<Record>, bool, bool)> {
                     enabled: flags & 2 == 0,
                 })
             } else {
-                unsupported = true;
+                fallback.get_or_insert(FallbackReason::Mask);
                 None
             }
         } else {
-            unsupported |= !mask_data.0.is_empty();
+            if !mask_data.0.is_empty() {
+                fallback.get_or_insert(FallbackReason::Mask);
+            }
             None
         };
-        unsupported |= mask.is_some() != channels.iter().any(|&(id, _)| id == -2);
+        if mask.is_some() != channels.iter().any(|&(id, _)| id == -2) {
+            fallback.get_or_insert(FallbackReason::Mask);
+        }
         let ranges = extra.section()?.0;
         // Default blending ranges have black/white endpoints. Anything else needs
         // Photoshop's compositor and is handled by the embedded composite path.
-        unsupported |= !ranges.chunks_exact(4).remainder().is_empty()
-            || ranges.chunks_exact(4).any(|v| v != [0, 0, 255, 255]);
+        if !ranges.chunks_exact(4).remainder().is_empty()
+            || ranges.chunks_exact(4).any(|v| v != [0, 0, 255, 255])
+        {
+            fallback.get_or_insert(FallbackReason::BlendingRanges);
+        }
         let len = extra.byte()? as usize;
         let mut name = String::from_utf8_lossy(extra.take(len)?).into_owned();
         extra.take((4 - (len + 1) % 4) % 4)?;
         while extra.0.len() >= 12 {
             if extra.take(4)? != b"8BIM" {
-                unsupported = true;
+                fallback.get_or_insert(FallbackReason::LayerData);
                 break;
             }
-            let key = extra.take(4)?;
+            let key: &[u8; 4] = extra.take(4)?.try_into().unwrap();
             let block_len = extra.u32()? as usize;
             let mut block = Reader(extra.take(block_len)?);
             extra.take(block_len % 2)?;
@@ -193,9 +247,18 @@ fn records<'a>(info: &mut Reader<'a>) -> Result<(Vec<Record>, bool, bool)> {
                             .map(|v| u16::from_be_bytes([v[0], v[1]]))
                             .collect::<Vec<_>>(),
                     );
+                    name.truncate(name.trim_end_matches('\0').len());
                 }
                 b"lyid" | b"lclr" | b"lyvr" | b"shmd" | b"fxrp" | b"lspf" => {}
-                _ => unsupported = true,
+                // Layer name source is editor metadata. These pixel-related flags
+                // can be ignored only when they match the default raster behaviour.
+                b"lnsr" if block.0.len() == 4 => {}
+                b"iOpa" if block.0 == [255] || block.0 == [255, 0, 0, 0] => {}
+                b"clbl" if block.0 == [1, 0, 0, 0] => {}
+                b"infx" | b"knko" if block.0 == [0, 0, 0, 0] => {}
+                _ => {
+                    fallback.get_or_insert(FallbackReason::LayerTag(*key));
+                }
             }
         }
         records.push(Record {
@@ -211,7 +274,7 @@ fn records<'a>(info: &mut Reader<'a>) -> Result<(Vec<Record>, bool, bool)> {
             mask,
         });
     }
-    Ok((records, count < 0, unsupported))
+    Ok((records, count < 0, fallback))
 }
 
 fn unpack_row(mut input: Reader<'_>, output: &mut [u8]) -> Result<()> {
@@ -280,6 +343,26 @@ fn planes(data: &mut Reader<'_>, width: usize, rows: usize) -> Result<Vec<u8>> {
     }
 }
 
+fn read_resolution(mut resources: Reader<'_>) -> Option<super::resolution::Resolution> {
+    while !resources.0.is_empty() {
+        if resources.take(4).ok()? != b"8BIM" {
+            return None;
+        }
+        let id = resources.u16().ok()?;
+        let name = usize::from(resources.byte().ok()?);
+        resources.take((name + 1).next_multiple_of(2) - 1).ok()?;
+        let mut data = resources.section().ok()?;
+        resources.take(data.0.len() % 2).ok()?;
+        if id == 1005 && data.0.len() == 16 {
+            let x = f64::from(data.u32().ok()?) / 65_536.0;
+            data.take(4).ok()?;
+            let y = f64::from(data.u32().ok()?) / 65_536.0;
+            return super::resolution::Resolution::from_dpi(x, y);
+        }
+    }
+    None
+}
+
 fn decode(data: &[u8]) -> Result<Import> {
     let mut src = Reader(data);
     if src.take(4)? != b"8BPS" || src.u16()? != 1 {
@@ -294,18 +377,22 @@ fn decode(data: &[u8]) -> Result<Import> {
         return Err("Only 8-bit RGB Photoshop documents are supported".into());
     }
     src.section()?; // colour mode data
-    src.section()?; // image resources
+    let resources = src.section()?;
+    let resolution = read_resolution(resources);
     let mut layer_mask = src.section()?;
     let mut layer_info = if layer_mask.0.is_empty() {
         Reader(&[])
     } else {
         layer_mask.section()?
     };
-    let (records, merged_alpha, unsupported) = records(&mut layer_info)?;
+    let (records, merged_alpha, mut fallback) = records(&mut layer_info)?;
     let mut canvas = CanvasState::new(width, height);
     canvas.layers.clear();
-    let composite_only = unsupported || records.is_empty();
-    if composite_only {
+    canvas.resolution = resolution;
+    if records.is_empty() {
+        fallback.get_or_insert(FallbackReason::NoLayers);
+    }
+    if fallback.is_some() {
         let channels = planes(&mut src, width as usize, height as usize * channel_count)
             .map_err(|e| format!("Could not read the embedded Photoshop composite: {e}"))?;
         let area = width as usize * height as usize;
@@ -405,10 +492,7 @@ fn decode(data: &[u8]) -> Result<Import> {
         canvas.layers.reverse(); // PSD lists topmost layer first.
     }
     canvas.active_layer_index = canvas.layers.len() - 1;
-    Ok(Import {
-        canvas,
-        composite_only,
-    })
+    Ok(Import { canvas, fallback })
 }
 
 fn decode_mask(
@@ -467,6 +551,7 @@ mod tests {
         opacity: u8,
         flags: u8,
         mask: &[u8],
+        tag: Option<(&[u8; 4], &[u8])>,
     ) -> Vec<u8> {
         let mut data: Vec<_> = bounds.into_iter().flat_map(i32::to_be_bytes).collect();
         let ids = if mask.is_empty() {
@@ -487,11 +572,23 @@ mod tests {
         extra.push(name.len() as u8);
         extra.extend(name);
         extra.resize(extra.len().next_multiple_of(4), 0);
+        if let Some((key, data)) = tag {
+            extra.extend(b"8BIM");
+            extra.extend(key);
+            extra.extend(section(data));
+            if !data.len().is_multiple_of(2) {
+                extra.push(0);
+            }
+        }
         data.extend(section(&extra));
         data
     }
 
     fn fixture(unknown_blend: bool) -> Vec<u8> {
+        fixture_with_tag(unknown_blend, None)
+    }
+
+    fn fixture_with_tag(unknown_blend: bool, tag: Option<(&[u8; 4], &[u8])>) -> Vec<u8> {
         let mut file = b"8BPS\0\x01\0\0\0\0\0\0\0\x03".to_vec();
         file.extend(2u32.to_be_bytes());
         file.extend(3u32.to_be_bytes());
@@ -511,8 +608,9 @@ mod tests {
             128,
             2,
             &mask,
+            tag,
         ));
-        info.extend(record([1, 1, 2, 3], b"Base", b"norm", 255, 0, &[]));
+        info.extend(record([1, 1, 2, 3], b"Base", b"norm", 255, 0, &[], None));
         for values in [
             [10, 20],
             [30, 40],
@@ -537,9 +635,30 @@ mod tests {
     }
 
     #[test]
+    fn photoshop_raster_metadata_keeps_layers_but_active_features_use_composite() {
+        let ordinary = decode(&fixture(false)).unwrap();
+        for (key, value) in [
+            (b"lnsr", &[0, 0, 0, 0][..]),
+            (b"iOpa", &[255][..]),
+            (b"clbl", &[1, 0, 0, 0][..]),
+            (b"knko", &[0, 0, 0, 0][..]),
+        ] {
+            let imported = decode(&fixture_with_tag(false, Some((key, value)))).unwrap();
+            assert!(imported.fallback.is_none(), "{key:?}");
+            assert_eq!(imported.canvas.layers.len(), 2);
+            assert_eq!(imported.canvas.composite(), ordinary.canvas.composite());
+        }
+        for (key, value) in [(b"iOpa", &[128][..]), (b"lsct", &[0, 0, 0, 1][..])] {
+            let imported = decode(&fixture_with_tag(false, Some((key, value)))).unwrap();
+            assert_eq!(imported.fallback, Some(FallbackReason::LayerTag(*key)));
+            assert_eq!(imported.canvas.layers.len(), 1);
+        }
+    }
+
+    #[test]
     fn layer_order_offsets_opacity_visibility_and_live_mask_are_preserved() {
         let import = decode(&fixture(false)).unwrap();
-        assert!(!import.composite_only);
+        assert!(import.fallback.is_none());
         let layers = import.canvas.layers;
         assert_eq!(layers.len(), 2);
         assert_eq!(layers[0].name, "Base");
@@ -559,7 +678,7 @@ mod tests {
     fn unsupported_layer_uses_saved_composite_and_truncated_input_is_rejected() {
         let file = fixture(true);
         let import = decode(&file).unwrap();
-        assert!(import.composite_only);
+        assert_eq!(import.fallback, Some(FallbackReason::Blend(*b"??? ")));
         assert_eq!(import.canvas.layers.len(), 1);
         assert_eq!(
             import.canvas.layers[0].pixels.get_pixel(2, 1).0,

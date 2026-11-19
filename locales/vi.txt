@@ -2111,3 +2111,8 @@ psd.composite=Ảnh tổng hợp
 psd.composite_notice=Ảnh tổng hợp đã được mở dưới dạng một lớp. Tệp PSD gốc không thay đổi.
 ai.refine_edges=Tinh chỉnh cạnh
 ai.refine_edges_help=Xử lý cạnh bổ sung cho ảnh tối đa 16 triệu điểm ảnh. Tốn thêm thời gian.
+
+resolution.title=Độ phân giải in (DPI)
+resolution.set=Đặt độ phân giải in
+resolution.link_axes=Liên kết độ phân giải ngang và dọc
+resolution.save_loss=Định dạng này không lưu độ phân giải in.

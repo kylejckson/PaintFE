@@ -311,6 +311,7 @@ mod tests {
         begin(&ctx, &mut dialog, &preferences, true);
         if let ActiveDialog::RemoveBackground(d) = &mut dialog {
             d.threshold = 0.3;
+            d.refine_edges = true;
         }
         mark_applied(&ctx);
         finish(&ctx, &dialog, &mut preferences);
@@ -322,11 +323,14 @@ mod tests {
         );
         if let ActiveDialog::RemoveBackground(d) = &mut reopened {
             d.threshold = 0.8;
+            assert!(d.refine_edges);
+            d.refine_edges = false;
         }
         finish(&ctx, &reopened, &mut preferences); // Cancel must not replace 0.3.
         dialog = ActiveDialog::RemoveBackground(RemoveBackgroundDialog::new());
         begin(&ctx, &mut dialog, &preferences, true);
         assert_eq!(dialog.parameters()["threshold"], serde_json::json!(0.3f32));
+        assert_eq!(dialog.parameters()["refine_edges"], true);
         ctx.data_mut(|d| {
             let mut s = d.get_temp::<Session>(id()).unwrap();
             s.enabled = true;
@@ -339,6 +343,7 @@ mod tests {
         let mut fresh = ActiveDialog::RemoveBackground(RemoveBackgroundDialog::new());
         begin(&restarted, &mut fresh, &loaded, true);
         assert_eq!(fresh.parameters()["threshold"], serde_json::json!(0.3f32));
+        assert_eq!(fresh.parameters()["refine_edges"], true);
         ctx.data_mut(|d| {
             let mut s = d.get_temp::<Session>(id()).unwrap();
             s.reset = true;
@@ -346,6 +351,7 @@ mod tests {
         });
         begin(&ctx, &mut dialog, &preferences, false);
         assert_eq!(dialog.parameters()["threshold"], serde_json::json!(0.5f32));
+        assert_eq!(dialog.parameters()["refine_edges"], false);
     }
 }
 
@@ -434,6 +440,7 @@ crate::impl_dialog_parameters!(ColorRangeDialog {
     mode
 });
 crate::impl_dialog_parameters!(RemoveBackgroundDialog {
+    refine_edges,
     threshold,
     edge_feather,
     mask_expansion,

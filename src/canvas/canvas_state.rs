@@ -26,6 +26,7 @@ pub struct CanvasState {
     pub preview_texture_replaces_composite: bool,
     pub show_pixel_grid: bool, // Toggle for pixel grid overlay
     pub guides: crate::canvas::guides::Guides,
+    pub resolution: Option<crate::io::resolution::Resolution>,
     pub show_guidelines: bool, // Toggle for center/thirds guidelines overlay
     pub mirror_mode: MirrorMode, // Symmetry mirror mode
     pub show_wrap_preview: bool, // Toggle for 4-side seamless edge preview
@@ -170,6 +171,7 @@ impl CanvasState {
             preview_texture_replaces_composite: false,
             show_pixel_grid: true, // Enable by default
             guides: crate::canvas::guides::Guides::default(),
+            resolution: None,
             show_guidelines: false, // Disabled by default
             mirror_mode: MirrorMode::None,
             show_wrap_preview: false,

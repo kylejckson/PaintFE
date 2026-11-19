@@ -33,6 +33,7 @@ pub enum ActiveDialog {
     AddBrushTip(AddBrushTipDialog),
     AddShape(AddShapeDialog),
     ResizeImage(ResizeImageDialog),
+    PrintResolution(PrintResolutionDialog),
     ResizeCanvas(ResizeCanvasDialog),
     AlignLayer(AlignLayerDialog),
     GaussianBlur(GaussianBlurDialog),
@@ -109,6 +110,7 @@ impl ActiveDialog {
             ActiveDialog::AddBrushTip(_) => "AddBrushTip",
             ActiveDialog::AddShape(_) => "AddShape",
             ActiveDialog::ResizeImage(_) => "ResizeImage",
+            ActiveDialog::PrintResolution(_) => "PrintResolution",
             ActiveDialog::ResizeCanvas(_) => "ResizeCanvas",
             ActiveDialog::AlignLayer(_) => "AlignLayer",
             ActiveDialog::GaussianBlur(_) => "GaussianBlur",
@@ -668,6 +670,7 @@ impl ActiveDialog {
         match self {
             Self::None | Self::AddBrushTip(_) | Self::AddShape(_) => None,
             Self::ResizeImage(..) => Some(HistoryAction::ResizeImage),
+            Self::PrintResolution(..) => Some(HistoryAction::PrintResolution),
             Self::ResizeCanvas(..) => Some(HistoryAction::ResizeCanvas),
             Self::AlignLayer(..) => Some(HistoryAction::AlignLayer),
             Self::GaussianBlur(..) => Some(HistoryAction::GaussianBlur),

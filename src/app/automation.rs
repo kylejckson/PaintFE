@@ -15,7 +15,29 @@ mod automation_state {
         pub path: Option<std::path::PathBuf>,
         pub pending: Option<Pending>,
         pub job: String,
+        #[cfg(not(target_os = "windows"))]
         pub scanned: f64,
+        #[cfg(target_os = "windows")]
+        pub pipe: Option<crate::services::automation::pipe::Server>,
+    }
+    impl Session {
+        pub fn start(&mut self, path: std::path::PathBuf) -> Result<(), String> {
+            let token = uuid::Uuid::new_v4().to_string();
+            #[cfg(target_os = "windows")]
+            let pipe = crate::services::automation::pipe::Server::start()?;
+            #[cfg(target_os = "windows")]
+            let discovery = serde_json::json!({"token":token,"pipe":pipe.endpoint});
+            #[cfg(not(target_os = "windows"))]
+            let discovery = serde_json::json!({"token":token});
+            crate::services::plugins::atomic_write(
+                &path.join("session.json"), discovery.to_string().as_bytes(),
+            )?;
+            self.path = Some(path);
+            self.token = token;
+            #[cfg(target_os = "windows")]
+            { self.pipe = Some(pipe); }
+            Ok(())
+        }
     }
     impl Drop for Session {
         fn drop(&mut self) {
@@ -66,20 +88,13 @@ impl PaintFEApp {
                 }
             }
             s.token.clear();
+            #[cfg(target_os = "windows")]
+            { s.pipe = None; }
             return;
         }
         if s.path.is_none() {
-            match a::prepare().and_then(|path| {
-                let token = uuid::Uuid::new_v4().to_string();
-                crate::services::plugins::atomic_write(
-                    &path.join("session.json"),
-                    serde_json::json!({"token":token}).to_string().as_bytes(),
-                )?;
-                Ok((path, token))
-            }) {
-                Ok((path, token)) => {
-                    s.path = Some(path);
-                    s.token = token;
+            match a::prepare().and_then(|path| s.start(path)) {
+                Ok(()) => {
                     a::CANCEL.store(false, Ordering::Relaxed);
                     a::set_status(crate::t!("automation.waiting"));
                 }
@@ -187,6 +202,18 @@ impl PaintFEApp {
                 Err(e) => e,
             };
         }
+        #[cfg(target_os = "windows")]
+        {
+            let reap_ms = if s.pending.is_some() { 20 } else { 50 };
+            ctx.request_repaint_after(std::time::Duration::from_millis(reap_ms));
+            if let Some(request) = s.pipe.as_ref().and_then(|pipe| pipe.incoming.try_recv().ok()) {
+                let response = self.automation_envelope(ctx, &mut s, &request.envelope);
+                let _ = request.reply.try_send(Self::automation_reply(response));
+                ctx.request_repaint();
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
         let now = ctx.input(|i| i.time);
         if now - s.scanned < 0.09 {
@@ -224,25 +251,8 @@ impl PaintFEApp {
                 .and_then(|b| {
                     serde_json::from_slice::<serde_json::Value>(&b).map_err(|e| e.to_string())
                 })
-                .and_then(|v| {
-                    let expires = v["expires"].as_u64().unwrap_or(0);
-                    let time = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs();
-                    if v["token"].as_str() != Some(s.token.as_str())
-                        || expires < time
-                        || expires > time + 30
-                    {
-                        return Err("Expired or invalid automation session".into());
-                    }
-                    a::note_request();
-                    self.automation_call(ctx, &v["params"], &mut s)
-                });
-            let response = match result {
-                Ok(v) => v,
-                Err(e) => serde_json::json!({"isError":true,"content":[{"type":"text","text":e}]}),
-            };
+                .and_then(|envelope| self.automation_envelope(ctx, &mut s, &envelope));
+            let response = Self::automation_reply(result);
             let _ = crate::services::plugins::atomic_write(
                 &path.join(format!("{stem}.response")),
                 response.to_string().as_bytes(),
@@ -250,7 +260,32 @@ impl PaintFEApp {
             let _ = std::fs::remove_file(file);
             break;
         }
+        }
     }
+
+    fn automation_envelope(
+        &mut self, ctx: &egui::Context, s: &mut automation_state::Session,
+        envelope: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let expires = envelope["expires"].as_u64().unwrap_or(0);
+        let time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+        if envelope["token"].as_str() != Some(s.token.as_str())
+            || expires < time || expires > time + 30
+        {
+            return Err("Expired or invalid automation session".into());
+        }
+        crate::services::automation::note_request();
+        self.automation_call(ctx, &envelope["params"], s)
+    }
+
+    fn automation_reply(result: Result<serde_json::Value, String>) -> serde_json::Value {
+        match result {
+            Ok(value) => value,
+            Err(error) => serde_json::json!({"isError":true,"content":[{"type":"text","text":error}]}),
+        }
+    }
+
     fn automation_call(
         &mut self,
         _ctx: &egui::Context,

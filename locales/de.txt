@@ -2111,3 +2111,8 @@ psd.composite=Zusammengefügtes Bild
 psd.composite_notice=Das zusammengefügte Bild wurde als eine Ebene geöffnet. Die ursprüngliche PSD-Datei ist unverändert.
 ai.refine_edges=Kanten verfeinern
 ai.refine_edges_help=Zusätzliche Kantenbearbeitung bis 16 Millionen Pixel. Dauert länger.
+
+resolution.title=Druckauflösung (DPI)
+resolution.set=Druckauflösung festlegen
+resolution.link_axes=Horizontale und vertikale Auflösung verknüpfen
+resolution.save_loss=Dieses Format speichert die Druckauflösung nicht.

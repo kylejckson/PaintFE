@@ -373,15 +373,30 @@ fn run_one(
                     .unwrap_or_else(|| image::RgbaImage::new(state.width, state.height))
             };
 
-            encode_and_write(
-                &flat_img,
-                output,
-                format,
-                quality,
-                tiff_compression,
-                webp_lossless,
-            )
-            .map_err(|e| format!("save failed: {}", e))?;
+            if state.resolution.is_some() && format.preserves_resolution() {
+                crate::io::export::write_with_resolution(
+                    crate::io::PreparedExportImage::Rgba8(flat_img),
+                    output,
+                    crate::io::export::ExportOptions {
+                        format,
+                        quality,
+                        tiff_compression,
+                        webp_lossless,
+                        ..Default::default()
+                    },
+                    state.resolution,
+                )?;
+            } else {
+                encode_and_write(
+                    &flat_img,
+                    output,
+                    format,
+                    quality,
+                    tiff_compression,
+                    webp_lossless,
+                )
+                .map_err(|e| format!("save failed: {}", e))?;
+            }
         }
     }
 

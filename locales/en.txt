@@ -2112,3 +2112,8 @@ psd.composite=Photoshop composite
 psd.composite_notice=Opened the embedded Photoshop composite as one layer. The original PSD is unchanged.
 ai.refine_edges=Refine edges
 ai.refine_edges_help=Try extra overlapping crops around uncertain edges on larger images. This takes longer and supports images up to 16 million pixels.
+
+resolution.title=Print Resolution (DPI)
+resolution.set=Set print resolution
+resolution.link_axes=Link horizontal and vertical resolution
+resolution.save_loss=This format does not save the print resolution.

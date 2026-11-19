@@ -2111,3 +2111,8 @@ psd.composite=Imagine compozită
 psd.composite_notice=Imaginea compozită a fost deschisă pe un singur strat. PSD-ul original nu a fost modificat.
 ai.refine_edges=Rafinează marginile
 ai.refine_edges_help=Procesare suplimentară a marginilor până la 16 milioane de pixeli. Durează mai mult.
+
+resolution.title=Rezoluție de imprimare (DPI)
+resolution.set=Setează rezoluția de imprimare
+resolution.link_axes=Leagă rezoluția orizontală de cea verticală
+resolution.save_loss=Acest format nu salvează rezoluția de imprimare.

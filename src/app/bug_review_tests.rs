@@ -403,6 +403,7 @@ fn completed_file_load_waits_until_the_adjustment_closes() {
     let path = std::env::temp_dir().join("paintfe-modal-load-fixture.png");
     app.io_sender
         .send(IoResult::ImageLoaded {
+            resolution: None,
             pixel_format: crate::canvas::PixelFormat::RgbaU8,
             deep_pixels: None,
             hdr_metadata: Default::default(),

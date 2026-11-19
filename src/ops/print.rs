@@ -12,19 +12,18 @@ use std::path::Path;
 /// to like the native path does, so `window.print()` is the closest
 /// equivalent — it still goes through the user's real printer picker.
 #[cfg(target_arch = "wasm32")]
-pub fn print_image(composite: &RgbaImage) -> Result<(), String> {
+pub(crate) fn print_image_with_resolution(
+    composite: &RgbaImage,
+    resolution: Option<crate::io::resolution::Resolution>,
+) -> Result<(), String> {
     use base64::Engine;
-    use image::ImageEncoder;
-
-    let mut png_bytes: Vec<u8> = Vec::new();
-    image::codecs::png::PngEncoder::new(&mut png_bytes)
-        .write_image(
-            composite.as_raw(),
-            composite.width(),
-            composite.height(),
-            image::ExtendedColorType::Rgba8,
-        )
-        .map_err(|e| format!("Failed to encode print image: {}", e))?;
+    let mut png_bytes = Vec::new();
+    crate::io::export::png::write_with_resolution(
+        &crate::io::PreparedExportImage::Rgba8(composite.clone()),
+        Default::default(),
+        &mut png_bytes,
+        resolution,
+    )?;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
 
     let window = web_sys::window().ok_or("no window")?;
@@ -50,12 +49,18 @@ pub fn print_image(composite: &RgbaImage) -> Result<(), String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn print_image(composite: &RgbaImage) -> Result<(), String> {
+pub(crate) fn print_image_with_resolution(
+    composite: &RgbaImage,
+    resolution: Option<crate::io::resolution::Resolution>,
+) -> Result<(), String> {
     let dir = std::env::temp_dir();
     let path = dir.join("paintfe_print.png");
-    composite
-        .save(&path)
-        .map_err(|e| format!("Failed to save print image: {}", e))?;
+    crate::io::export::write_with_resolution(
+        crate::io::PreparedExportImage::Rgba8(composite.clone()),
+        &path,
+        Default::default(),
+        resolution,
+    )?;
 
     open_with_os(&path)
 }

@@ -2111,3 +2111,8 @@ psd.composite=Imagen combinada
 psd.composite_notice=Se abrió la imagen combinada en una capa. El PSD original no se modificó.
 ai.refine_edges=Refinar bordes
 ai.refine_edges_help=Procesamiento adicional de bordes hasta 16 millones de píxeles. Tarda más.
+
+resolution.title=Resolución de impresión (DPI)
+resolution.set=Establecer la resolución de impresión
+resolution.link_axes=Vincular la resolución horizontal y vertical
+resolution.save_loss=Este formato no guarda la resolución de impresión.

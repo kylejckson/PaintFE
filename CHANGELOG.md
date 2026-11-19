@@ -6,6 +6,27 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.5.3] - 2026-11-19
+
+- Set print resolution without changing the image’s pixel dimensions.
+- Restore PaintFE when opening a file while the window is minimised on Windows.
+- Reduce disk activity from local MCP connections on Windows.
+
+### Added
+
+- Set print DPI from **Canvas → Print Resolution** and see the resulting size in inches or centimetres. PaintFE saves DPI in PFE, PNG, JPEG, TIFF and PSD. Related to discussion 249.
+
+### Improved
+
+- Open more raster PSDs with their layers intact. When PaintFE opens the flattened preview, it now shows which feature triggered the fallback. Related to issue 246.
+- Keep the last applied **Refine edges** setting between background-removal runs. Related to issue 247.
+- Restore the existing window when opening a file from Explorer or the command line on Windows. Related to issue 248.
+- Use a local named pipe for Windows MCP connections, removing the request and reply files previously written for each call. Related to issue 245.
+
+### Maintenance
+
+- Update the GitHub release action pin. Related to pull request 229.
+
 ## [1.5.2] - 2026-11-18
 
 - Open and save layered Photoshop PSD files.

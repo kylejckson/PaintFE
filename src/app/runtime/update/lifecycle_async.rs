@@ -99,13 +99,23 @@ impl PaintFEApp {
         // --- Single-instance IPC: open files sent from other PaintFE invocations ---
         {
             let current_time = ctx.input(|i| i.time);
-            while !self.document_modal_open()
+            let mut activate = false;
+            while self.deferred_ipc_files.len() < 64
                 && let Ok(path) = self.ipc_receiver.try_recv()
             {
-                self.open_file_by_path(path, current_time);
-                // Bring our window to the foreground (the sender already tried via
-                // FindWindow, but this handles the case where it didn't have permission).
+                self.deferred_ipc_files.push_back(path);
+                activate = true;
+            }
+            if activate {
+                if ctx.input(|i| i.viewport().minimized == Some(true)) {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                }
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            }
+            while !self.document_modal_open()
+                && let Some(path) = self.deferred_ipc_files.pop_front()
+            {
+                self.open_file_by_path(path, current_time);
             }
         }
 
@@ -470,6 +480,7 @@ impl PaintFEApp {
                     self.finish_image_from_bytes(decoded, name_hint)
                 }
                 IoResult::ImageLoaded {
+                    resolution,
                     tiled,
                     pixel_format,
                     deep_pixels,
@@ -482,6 +493,7 @@ impl PaintFEApp {
                     self.pending_open_paths
                         .remove(&Self::normalize_open_path(&path));
                     let mut canvas_state = CanvasState::new(width, height);
+                    canvas_state.resolution = resolution;
                     if let Some(layer) = canvas_state.layers.first_mut() {
                         layer.pixels = tiled;
                         layer.pixel_format = pixel_format;
@@ -543,6 +555,7 @@ impl PaintFEApp {
                     self.finish_save(project_id, result)
                 }
                 IoResult::AnimatedLoaded {
+                    resolution,
                     tiled,
                     width,
                     height,
@@ -560,6 +573,7 @@ impl PaintFEApp {
                         fps
                     );
                     let mut canvas_state = CanvasState::new(width, height);
+                    canvas_state.resolution = resolution;
                     if let Some(layer) = canvas_state.layers.first_mut() {
                         layer.pixels = tiled;
                         layer.name = "Frame 1".to_string();

@@ -1,5 +1,9 @@
 //! Local stdio MCP bridge. The GUI owns all document mutations.
-//! IPC files live in an owner-restricted session directory, never in theme/plugin packs.
+//! The session directory is restricted to the owner. Windows uses a local pipe
+//! for each live connection, Unix uses the existing request mailbox.
+
+#[cfg(target_os = "windows")]
+pub(crate) mod pipe;
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -74,25 +78,7 @@ pub fn prepare() -> Result<PathBuf, String> {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
-        let who = std::process::Command::new("whoami.exe")
-            .args(["/user", "/fo", "csv", "/nh"])
-            .creation_flags(0x08000000)
-            .output()
-            .map_err(|e| e.to_string())?;
-        let identity = String::from_utf8_lossy(&who.stdout);
-        let sid = identity
-            .trim()
-            .split(',')
-            .next_back()
-            .unwrap_or("")
-            .trim_matches('"');
-        if !sid.starts_with("S-1-")
-            || !sid
-                .bytes()
-                .all(|b| b.is_ascii_digit() || b == b'S' || b == b'-')
-        {
-            return Err("Cannot determine automation owner".into());
-        }
+        let sid = owner_sid()?;
         let reset = std::process::Command::new("icacls.exe")
             .arg(&path)
             .arg("/reset")
@@ -115,6 +101,31 @@ pub fn prepare() -> Result<PathBuf, String> {
     }
     Ok(path)
 }
+#[cfg(target_os = "windows")]
+fn owner_sid() -> Result<String, String> {
+    use std::os::windows::process::CommandExt;
+    let who = std::process::Command::new("whoami.exe")
+        .args(["/user", "/fo", "csv", "/nh"])
+        .creation_flags(0x08000000)
+        .output()
+        .map_err(|e| e.to_string())?;
+    let identity = String::from_utf8_lossy(&who.stdout);
+    let sid = identity
+        .trim()
+        .split(',')
+        .next_back()
+        .unwrap_or("")
+        .trim_matches('"');
+    if !sid.starts_with("S-1-")
+        || !sid
+            .bytes()
+            .all(|b| b.is_ascii_digit() || b == b'S' || b == b'-')
+    {
+        return Err("Cannot determine automation owner".into());
+    }
+    Ok(sid.to_owned())
+}
+
 pub fn tools() -> Value {
     let target = json!({"type":"object","properties":{"document":{"type":"string"},"layer":{"type":"string"},"revision":{"type":"integer","minimum":0}},"required":["document","layer","revision"],"additionalProperties":false});
     let mut list = vec![
@@ -198,6 +209,8 @@ pub fn bridge() -> i32 {
     let mut input = stdin.lock();
     let mut output = std::io::stdout().lock();
     let mut ready = false;
+    #[cfg(target_os = "windows")]
+    let mut pipe: Option<pipe::Client> = None;
     loop {
         let mut bytes = Vec::new();
         let n = match input
@@ -248,6 +261,21 @@ pub fn bridge() -> i32 {
             }
             "ping" => Ok(json!({})),
             "tools/list" if ready => Ok(json!({"tools":tools()})),
+            #[cfg(target_os = "windows")]
+            "tools/call" if ready => {
+                let connected = match pipe.take().filter(pipe::Client::reusable) {
+                    Some(client) => Ok(client),
+                    None => session_file().and_then(|session| pipe::Client::connect(&session)),
+                };
+                connected.and_then(|mut client| {
+                    let result = client.call(&request["params"]);
+                    if result.is_ok() {
+                        pipe = Some(client);
+                    }
+                    result
+                })
+            }
+            #[cfg(not(target_os = "windows"))]
             "tools/call" if ready => call(&request["params"]),
             _ => Err("Unknown method or session not initialized".into()),
         };
@@ -265,17 +293,33 @@ pub fn bridge() -> i32 {
         }
     }
 }
-fn call(params: &Value) -> Result<Value, String> {
-    let path = root();
-    let session: Value = serde_json::from_slice(
-        &super::plugins::read_limited(&path.join("session.json"), 4096)
+fn session_file() -> Result<Value, String> {
+    serde_json::from_slice(
+        &super::plugins::read_limited(&root().join("session.json"), 4096)
             .map_err(|_| "Open PaintFE and enable AI automation first.")?,
     )
-    .map_err(|_| "Invalid automation session")?;
+    .map_err(|_| "Invalid automation session".into())
+}
+
+pub(crate) fn envelope(token: &str, params: &Value) -> Value {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    json!({"token":token,"params":params,"expires":now+15})
+}
+
+#[cfg(not(target_os = "windows"))]
+fn call(params: &Value) -> Result<Value, String> {
+    let path = root();
+    let session = session_file()?;
     let id = uuid::Uuid::new_v4().to_string();
     let pending = path.join(format!("{id}.request"));
     let response = path.join(format!("{id}.response"));
-    let request = json!({"token":session["token"],"params":params,"expires":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()+15});
+    let token = session["token"]
+        .as_str()
+        .ok_or("Invalid automation session")?;
+    let request = envelope(token, params);
     let bytes = serde_json::to_vec(&request).map_err(|e| e.to_string())?;
     if bytes.len() > 512 * 1024 {
         return Err("Request too large".into());

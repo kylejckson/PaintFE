@@ -14,6 +14,10 @@ image there first. PSD import interprets RGB samples in the normal PaintFE
 working space. Full Photoshop colour-managed rendering, CMYK, layered
 high-bit-depth documents and PSB are outside this first pass.
 
+The composite notice includes the first unsupported feature the importer
+found. When reporting a file that opens flattened, include that detail and,
+if possible, a small PSD with the same layer types and settings.
+
 Choose **Photoshop document** in File > Save As to write an 8-bit RGB PSD.
 Export preserves raster layers, names, visibility, opacity, supported blend
 modes and simple masks, and writes a merged preview. Opened PSDs use Save As

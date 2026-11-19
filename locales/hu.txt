@@ -2111,3 +2111,8 @@ psd.composite=Egyesített kép
 psd.composite_notice=Az egyesített kép egy rétegként nyílt meg. Az eredeti PSD nem változott.
 ai.refine_edges=Élek finomítása
 ai.refine_edges_help=További élfeldolgozás legfeljebb 16 millió képpontig. Több időt vesz igénybe.
+
+resolution.title=Nyomtatási felbontás (DPI)
+resolution.set=Nyomtatási felbontás beállítása
+resolution.link_axes=Vízszintes és függőleges felbontás összekapcsolása
+resolution.save_loss=Ez a formátum nem menti a nyomtatási felbontást.

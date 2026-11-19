@@ -35,17 +35,7 @@ fn python_client_draws_through_real_bridge() {
     let original = a.projects[0].canvas_state.layers[0].pixels.to_rgba_image();
     let baseline = a.projects[0].history.undo_count();
     let state = automation_state::state(&ctx);
-    let token = uuid::Uuid::new_v4().to_string();
-    std::fs::write(
-        directory.join("session.json"),
-        serde_json::json!({"token":token}).to_string(),
-    )
-    .unwrap();
-    {
-        let mut s = state.lock().unwrap();
-        s.path = Some(directory);
-        s.token = token;
-    }
+    state.lock().unwrap().start(directory.clone()).unwrap();
     let clock = Instant::now();
     for mode in ["inspect", "draw", "brush", "denied"] {
         a.settings.automation.editing = mode != "denied";
@@ -143,6 +133,10 @@ with Client(sys.argv[1]) as c:
             original
         );
     }
+    assert!(std::fs::read_dir(&directory).unwrap().all(|entry| {
+        let path = entry.unwrap().path();
+        path.file_name().is_some_and(|name| name == "session.json")
+    }));
     drop(a);
     drop(ctx);
     drop(state);

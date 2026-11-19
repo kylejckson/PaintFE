@@ -2111,3 +2111,8 @@ psd.composite=Imagem composta
 psd.composite_notice=A imagem composta foi aberta em uma camada. O PSD original não foi alterado.
 ai.refine_edges=Refinar bordas
 ai.refine_edges_help=Processamento extra de bordas até 16 milhões de pixels. Demora mais.
+
+resolution.title=Resolução de impressão (DPI)
+resolution.set=Definir resolução de impressão
+resolution.link_axes=Vincular resolução horizontal e vertical
+resolution.save_loss=Este formato não salva a resolução de impressão.

@@ -91,7 +91,16 @@ pub fn write(
     path: &Path,
     options: ExportOptions,
 ) -> Result<(), String> {
-    write_with_tracking(image, path, options, true)
+    write_with_resolution(image, path, options, None)
+}
+
+pub(crate) fn write_with_resolution(
+    image: PreparedExportImage,
+    path: &Path,
+    options: ExportOptions,
+    resolution: Option<super::resolution::Resolution>,
+) -> Result<(), String> {
+    write_with_tracking(image, path, options, true, resolution)
 }
 
 pub(crate) fn write_atomically(
@@ -137,19 +146,20 @@ fn write_with_tracking(
     path: &Path,
     options: ExportOptions,
     tracked: bool,
+    resolution: Option<super::resolution::Resolution>,
 ) -> Result<(), String> {
     options.validate()?;
     if options.format == SaveFormat::Psd {
         return Err("PSD export requires the editable document".into());
     }
-    if formats::write(&image, path, options, tracked)? {
+    if formats::write(&image, path, options, tracked, resolution)? {
         return Ok(());
     }
     match options.format {
         SaveFormat::Png => {
             let mut writer =
                 std::io::BufWriter::new(std::fs::File::create(path).map_err(|e| e.to_string())?);
-            png::write(&image, options.png, &mut writer)?;
+            png::write_with_resolution(&image, options.png, &mut writer, resolution)?;
             writer.flush().map_err(|e| e.to_string())
         }
         SaveFormat::Gif => {
@@ -206,7 +216,7 @@ pub fn preview(
                     preview_image: image.rgba8(),
                 });
             }
-            write_with_tracking(image, &path, options, false)?;
+            write_with_tracking(image, &path, options, false, None)?;
             let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
             let decoded = super::decode_image_path(&path)
                 .map_err(|e| e.to_string())?

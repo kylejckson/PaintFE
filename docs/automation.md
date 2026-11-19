@@ -4,7 +4,7 @@ PaintFE can act as an MCP tool server for an external agent. No model, account o
 
 Open Preferences > AI and enable local agent connections. Reading is separate from document editing; sandboxed scripts require another permission. Copy MCP connection settings into a client that supports local stdio servers. The command is your existing PaintFE executable with `--mcp`. Keep the editor open. Disabling connections cancels pending edits and removes the live session.
 
-The bridge uses standard MCP JSON-RPC over stdin/stdout. Its connection to the GUI uses bounded request files in an owner-restricted local session directory. It opens no network listener and never fetches an AI model. A connected cloud AI client may upload document previews to its provider, so choose your client accordingly.
+The bridge uses standard MCP JSON-RPC over stdin/stdout. On Windows it reuses a local, same-user named pipe for requests and replies. The private session file contains connection details. Linux and macOS use bounded request and reply files in a private session directory. PaintFE opens no network listener and never fetches an AI model. A connected cloud AI client may upload document previews to its provider, so choose your client accordingly.
 
 Tools list documents/layers and revisions, return bounded previews, paint brush/pencil strokes, draw outlined rectangles/ellipses, select rectangles, clear selections, add/select layers, set layer opacity, undo/redo and run bounded raster scripts. A straight line is a two-point stroke. Coordinates are document pixels, independent of zoom and window position. Alpha is part of the RGBA colour.
 
@@ -12,7 +12,7 @@ Before editing, call `documents` and supply its document, layer and revision ide
 
 Script processing uses the existing isolated same-binary worker and sandbox. No shell, network, arbitrary filesystem, modules or document resizing is granted. Agent tools cannot save, close or overwrite documents. Use PaintFE's normal save workflow after reviewing the result. Editable text, arbitrary UI interaction and remote HTTP clients are outside this first MCP tool set.
 
-Linux/macOS use the same protocol and a private owner-only session directory. Windows restricts its directory to the current user's SID. No theme or community pack can enable these permissions.
+All platforms use the same MCP tool protocol. Windows restricts its session directory and pipe to the current user's SID and rejects remote pipe connections. No theme or community pack can enable these permissions.
 
 ## Connect a client
 

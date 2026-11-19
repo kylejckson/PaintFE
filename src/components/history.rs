@@ -956,6 +956,7 @@ pub struct SnapshotCommand {
 #[derive(Clone)]
 pub struct CanvasSnapshot {
     pub guides: crate::canvas::guides::Guides,
+    pub resolution: Option<crate::io::resolution::Resolution>,
     pub width: u32,
     pub height: u32,
     pub layers: Vec<LayerSnapshot>,
@@ -989,6 +990,7 @@ impl CanvasSnapshot {
     pub fn capture(state: &CanvasState) -> Self {
         Self {
             guides: state.guides.clone(),
+            resolution: state.resolution,
             width: state.width,
             height: state.height,
             active_layer_index: state.active_layer_index,
@@ -1022,6 +1024,7 @@ impl CanvasSnapshot {
 
     pub fn restore_into(&self, state: &mut CanvasState) {
         state.guides = self.guides.clone();
+        state.resolution = self.resolution;
         state.width = self.width;
         state.height = self.height;
         state.active_layer_index = self.active_layer_index;

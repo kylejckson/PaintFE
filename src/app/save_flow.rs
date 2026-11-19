@@ -31,10 +31,11 @@ enum SavePayload {
     Project(crate::io::PfeData),
     #[cfg(not(target_arch = "wasm32"))]
     Photoshop(Result<crate::io::psd::Export, String>),
-    Image(crate::io::PreparedExportImage),
+    Image(crate::io::PreparedExportImage, Option<crate::io::resolution::Resolution>),
     Frames(
         Vec<image::RgbaImage>,
         Vec<crate::canvas::WebpFrameCompression>,
+        Option<crate::io::resolution::Resolution>,
     ),
 }
 
@@ -56,6 +57,10 @@ impl Project {
             })
     }
 
+    fn drops_resolution(&self, format: SaveFormat) -> bool {
+        self.canvas_state.resolution.is_some() && !format.preserves_resolution()
+    }
+
     fn save_losses(&mut self, action: &crate::components::dialogs::SaveAction) -> Vec<String> {
         if action.format == SaveFormat::Pfe {
             return Vec::new();
@@ -69,6 +74,9 @@ impl Project {
             return losses;
         }
         let mut losses = Vec::new();
+        if self.drops_resolution(action.format) {
+            losses.push(crate::t!("resolution.save_loss"));
+        }
         if !self.canvas_state.guides.items.is_empty() {
             losses.push(crate::t!("guides.save_loss"));
         }
@@ -226,8 +234,9 @@ impl PaintFEApp {
                     .iter()
                     .map(|l| l.webp_frame_compression)
                     .collect(),
-            ), project.has_editable_structure()),
-            _ => (SavePayload::Image(crate::io::prepare_export_image(&project.canvas_state)), project.has_editable_structure()),
+                project.canvas_state.resolution,
+            ), project.has_editable_structure() || project.drops_resolution(action.format)),
+            _ => (SavePayload::Image(crate::io::prepare_export_image(&project.canvas_state), project.canvas_state.resolution), project.has_editable_structure() || project.drops_resolution(action.format)),
         };
         let project_id = project.id;
         self.save_jobs.insert(
@@ -273,8 +282,10 @@ impl PaintFEApp {
             .is_some_and(|project| project.save_revision() == job.revision);
         if let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) {
             // An export must not replace an existing editable project's save target.
+            let saved_format = project.file_handler.last_export_options.format;
             let retain_project = job.editable_loss
-                && project.file_handler.last_export_options.format.preserves_layers();
+                && (saved_format.preserves_layers()
+                    || (project.drops_resolution(action.format) && saved_format.preserves_resolution()));
             if !retain_project {
                 project.file_handler.current_path = Some(action.path.clone());
                 project.file_handler.last_export_options = action.options;
@@ -499,10 +510,10 @@ fn write_save_atomically(
             }
             #[cfg(not(target_arch = "wasm32"))]
             SavePayload::Photoshop(data) => data?.write(temporary)?,
-            SavePayload::Image(image) => {
-                crate::io::export::write(image, temporary, action.options)?
+            SavePayload::Image(image, resolution) => {
+                crate::io::export::write_with_resolution(image, temporary, action.options, resolution)?
             }
-            SavePayload::Frames(frames, modes) => match action.format {
+            SavePayload::Frames(frames, modes, resolution) => match action.format {
                 SaveFormat::Gif => crate::io::encode_animated_gif_options(
                     &frames,
                     action.animation_fps,
@@ -510,7 +521,7 @@ fn write_save_atomically(
                     temporary,
                 ),
                 SaveFormat::Png => {
-                    crate::io::encode_animated_png(&frames, action.animation_fps, temporary)
+                    crate::io::encode_animated_png_with_resolution(&frames, action.animation_fps, temporary, resolution)
                 }
                 SaveFormat::Webp => crate::io::encode_animated_webp(
                     &frames,

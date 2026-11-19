@@ -62,3 +62,18 @@ Opacity and Flow are hidden from the tool options bar by default. Open Brush set
 Preferences > Editing > Brush controls > Show advanced brush controls puts both controls back in the bar. Eraser shows Flow only, since its strength comes from colour alpha. Changing visibility preserves the current values. Tablet pressure controls in Brush settings appear when pressure input is enabled in Preferences > Pen & Tablet. Tool options retain their reserved height when controls are shown or hidden.
 
 Show recommended controls for paintbrush presets is enabled by default. It brings strength controls into the bar for the paintbrush presets, where paint loading and gradual buildup are useful. Disable it to keep those controls inside Brush settings too. See [Brushes](brushes.md) for the browser, tips and paintbrush controls.
+
+## Print resolution
+
+Choose **Canvas > Print Resolution (DPI)** to set a physical resolution. With
+the axes linked, one value sets both directions. The dialog shows the physical
+size in inches or centimetres. For example, 3000 × 2400 pixels at 300 DPI makes
+a 10 × 8 inch image. To change the number of pixels, use **Resize Image**.
+
+PFE, PNG, JPEG, TIFF and PSD can save the resolution. JPEG output rounds each
+axis to a whole DPI. PaintFE warns when the selected format cannot save it.
+A PFE document with print resolution uses the newer PFE6 record. Open that
+project in a PaintFE version that supports print resolution.
+
+Native Print passes the resolution to your system print viewer. For the size
+shown in the dialog, select Actual size or 100% in that viewer when available.

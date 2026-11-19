@@ -42,6 +42,44 @@ fn png_colour_alpha_and_palette_losses_use_the_same_options_as_the_save_job() {
 }
 
 #[test]
+fn export_that_drops_dpi_keeps_resolution_aware_save_target() {
+    let mut app = app();
+    let root = directory();
+    let original = root.join("original.png");
+    let copy = root.join("copy.bmp");
+    let project = &mut app.projects[0];
+    project.file_handler.current_path = Some(original.clone());
+    project.file_handler.last_export_options.format = SaveFormat::Png;
+    project.canvas_state.resolution = crate::io::resolution::Resolution::from_dpi(300.0, 300.0);
+    project.mark_dirty();
+    let id = project.id;
+    app.request_save(
+        PendingSave {
+            project_id: id,
+            action: action(copy.clone(), SaveFormat::Bmp),
+            update_path: true,
+        },
+        0.0,
+    );
+    assert!(
+        app.save_warning
+            .as_ref()
+            .unwrap()
+            .losses
+            .contains(&crate::t!("resolution.save_loss"))
+    );
+    assert!(!copy.exists());
+    app.resolve_save_warning(1, 0.0);
+    wait(&mut app, &egui::Context::default());
+    assert!(copy.exists());
+    assert!(app.projects[0].is_dirty);
+    assert_eq!(
+        app.projects[0].file_handler.current_path.as_ref(),
+        Some(&original)
+    );
+}
+
+#[test]
 fn gif_zero_threshold_warns_before_discarding_binary_transparency() {
     let mut app = app();
     app.projects[0].canvas_state.layers[0]
@@ -227,7 +265,7 @@ fn psd_save_as_preserves_layers_and_supports_quick_save() {
         Some(&path)
     );
     let import = crate::io::psd::load(&path).unwrap();
-    assert!(!import.composite_only);
+    assert!(import.fallback.is_none());
     assert_eq!(import.canvas.layers.len(), 2);
     let layer = &import.canvas.layers[1];
     assert_eq!(layer.name, "Ink 🖌 層");
@@ -562,7 +600,7 @@ fn failed_encoding_does_not_truncate_an_existing_image() {
     std::fs::write(&path, b"original bytes").unwrap();
     let result = write_save_atomically(
         &action(path.clone(), SaveFormat::Bmp),
-        SavePayload::Frames(vec![], vec![]),
+        SavePayload::Frames(vec![], vec![], None),
     );
     assert!(result.is_err());
     assert_eq!(std::fs::read(path).unwrap(), b"original bytes");
@@ -869,7 +907,7 @@ fn oversized_webp_is_recoverable_and_does_not_replace_or_leave_temporary_files()
         request.webp_lossless = lossless;
         let result = write_save_atomically(
             &request,
-            SavePayload::Image(crate::io::PreparedExportImage::Rgba8(image.clone())),
+            SavePayload::Image(crate::io::PreparedExportImage::Rgba8(image.clone()), None),
         );
         assert!(result.unwrap_err().contains("16383"));
         assert_eq!(std::fs::read(&path).unwrap(), b"original");

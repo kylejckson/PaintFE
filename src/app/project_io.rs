@@ -579,7 +579,7 @@ impl PaintFEApp {
                 rayon::spawn(move || {
                     let result = if _format == "psd" {
                         crate::io::psd::load(&path).map(|import| {
-                            let notice = import.composite_only.then(|| crate::t!("psd.composite_notice"));
+                            let notice = import.fallback.map(|reason| format!("{}\n{reason}", crate::t!("psd.composite_notice")));
                             (import.canvas, notice)
                         })
                     } else {
@@ -650,6 +650,7 @@ impl PaintFEApp {
 
                                 // Send first frame immediately so the project opens fast
                                 let _ = sender.send(IoResult::AnimatedLoaded {
+                                    resolution: crate::io::resolution::read_path(&path),
                                     tiled: first_tiled,
                                     width,
                                     height,
@@ -708,6 +709,7 @@ impl PaintFEApp {
                             let tiled = TiledImage::from_rgba_image(&image);
                             // RAW files open as PNG (user must Save As to choose format)
                             let _ = sender.send(IoResult::ImageLoaded {
+                                resolution: crate::io::resolution::read_path(&path),
                                 tiled,
                                 pixel_format: crate::canvas::PixelFormat::RgbaU8,
                                 deep_pixels: None,
@@ -771,6 +773,7 @@ impl PaintFEApp {
                             .unwrap_or(SaveFormat::Png);
 
                         let _ = sender.send(IoResult::ImageLoaded {
+                                resolution: crate::io::resolution::read_path(&path),
                             tiled,
                             pixel_format,
                             deep_pixels,

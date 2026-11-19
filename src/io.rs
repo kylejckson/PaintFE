@@ -25,6 +25,7 @@ pub mod jxl;
 mod pfe_masks;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod psd;
+pub mod resolution;
 
 pub fn is_heif_path(path: &Path) -> bool {
     path.extension()
@@ -328,11 +329,15 @@ pub enum PfeData {
     V3(ProjectFileV3),
     V4(pfe_masks::ProjectFileV4),
     V5(pfe_guides::ProjectFileV5),
+    V6(pfe_guides::ProjectFileV6),
 }
 
-/// Build a serializable PFE project, selecting V1 through V4 based on content.
+/// Build a serializable PFE project, selecting a version based on content.
 /// Safe to call on the main thread, then move the result to a background thread.
 pub fn build_pfe(state: &CanvasState) -> PfeData {
+    if let Some(resolution) = state.resolution {
+        return PfeData::V6(pfe_guides::build_v6(state, resolution));
+    }
     if !state.guides.items.is_empty() {
         return PfeData::V5(pfe_guides::build(state));
     }
@@ -374,6 +379,7 @@ pub fn write_pfe(data: &PfeData, path: &Path) -> Result<(), PfeError> {
         PfeData::V3(project) => write_pfe_v3(project, path),
         PfeData::V4(project) => pfe_masks::write(project, path),
         PfeData::V5(project) => pfe_guides::write(project, path),
+        PfeData::V6(project) => pfe_guides::write_v6(project, path),
     }
 }
 
@@ -576,6 +582,7 @@ pub fn load_pfe_from_bytes(raw: &[u8]) -> Result<CanvasState, PfeError> {
     match magic {
         "PFE4" => pfe_masks::load(raw),
         "PFE5" => pfe_guides::load(raw),
+        "PFE6" => pfe_guides::load_v6(raw),
         PFE_MAGIC_V3 => load_pfe_v3(raw),
         PFE_MAGIC_V2 => load_pfe_v2(raw),
         PFE_MAGIC_V1 => load_pfe_v1(raw),
@@ -800,8 +807,8 @@ pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
     #[cfg(not(target_arch = "wasm32"))]
     if ext == "psd" {
         let import = psd::load(path)?;
-        if import.composite_only {
-            eprintln!("{}", crate::t!("psd.composite_notice"));
+        if let Some(reason) = import.fallback {
+            eprintln!("{}\n{reason}", crate::t!("psd.composite_notice"));
         }
         return Ok(import.canvas);
     }
@@ -848,6 +855,7 @@ pub fn load_image_sync(path: &Path) -> Result<CanvasState, String> {
     };
 
     Ok(CanvasState {
+        resolution: resolution::read_path(path),
         width: w,
         height: h,
         layers: vec![layer],
@@ -1000,6 +1008,7 @@ fn canvas_from_pfe_v3(project: ProjectFileV3) -> Result<CanvasState, PfeError> {
 
     let active = project.active_layer_index.min(layers.len() - 1);
     Ok(CanvasState {
+        resolution: None,
         width: project.width,
         height: project.height,
         layers,
@@ -1159,6 +1168,7 @@ fn load_pfe_v2(raw: &[u8]) -> Result<CanvasState, PfeError> {
     let active = project.active_layer_index.min(layers.len() - 1);
 
     Ok(CanvasState {
+        resolution: None,
         width: project.width,
         height: project.height,
         layers,
@@ -1288,6 +1298,7 @@ fn load_pfe_v1(raw: &[u8]) -> Result<CanvasState, PfeError> {
     let active = project.active_layer_index.min(layers.len() - 1);
 
     Ok(CanvasState {
+        resolution: None,
         width: project.width,
         height: project.height,
         layers,
@@ -1414,6 +1425,7 @@ fn load_pfe_v0(raw: &[u8]) -> Result<CanvasState, PfeError> {
     let active = project.active_layer_index.min(layers.len() - 1);
 
     Ok(CanvasState {
+        resolution: None,
         width: project.width,
         height: project.height,
         layers,
@@ -1930,8 +1942,14 @@ pub fn encode_and_write(
             .map_err(|e| ImageError::IoError(std::io::Error::other(e)))?;
         }
         SaveFormat::Jpeg => {
-            export::formats::encode_jpeg(image, &mut writer, quality, export::JpegSampling::Full)
-                .map_err(|e| ImageError::IoError(std::io::Error::other(e)))?;
+            export::formats::encode_jpeg(
+                image,
+                &mut writer,
+                quality,
+                export::JpegSampling::Full,
+                None,
+            )
+            .map_err(|e| ImageError::IoError(std::io::Error::other(e)))?;
         }
         SaveFormat::Heic => {
             writer.write_all(&heic::encode_rgba8(image, quality)?)?;
@@ -2927,6 +2945,15 @@ pub fn encode_animated_gif_options(
 /// `frames`: RGBA images for each frame (all must be same dimensions).
 /// `fps`: target playback speed.
 pub fn encode_animated_png(frames: &[RgbaImage], fps: f32, path: &Path) -> Result<(), String> {
+    encode_animated_png_with_resolution(frames, fps, path, None)
+}
+
+pub(crate) fn encode_animated_png_with_resolution(
+    frames: &[RgbaImage],
+    fps: f32,
+    path: &Path,
+    resolution: Option<resolution::Resolution>,
+) -> Result<(), String> {
     if frames.is_empty() {
         return Err("No frames to encode".to_string());
     }
@@ -2941,6 +2968,7 @@ pub fn encode_animated_png(frames: &[RgbaImage], fps: f32, path: &Path) -> Resul
     let writer = BufWriter::new(file);
 
     let mut encoder = png::Encoder::new(writer, width, height);
+    encoder.set_pixel_dims(resolution.map(resolution::Resolution::png_dimensions));
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
     encoder

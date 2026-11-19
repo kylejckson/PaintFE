@@ -20,6 +20,7 @@ pub(super) fn write(
     path: &Path,
     o: ExportOptions,
     tracked: bool,
+    resolution: Option<crate::io::resolution::Resolution>,
 ) -> Result<bool, String> {
     use crate::components::dialogs::SaveFormat;
     let handled = matches!(
@@ -31,7 +32,9 @@ pub(super) fn write(
             | SaveFormat::Avif
             | SaveFormat::Heic
     ) || (o.format == SaveFormat::Tiff
-        && (o.raster_depth != RasterDepth::Automatic || o.raster_mode != RasterMode::Automatic));
+        && (resolution.is_some()
+            || o.raster_depth != RasterDepth::Automatic
+            || o.raster_mode != RasterMode::Automatic));
     if !handled {
         return Ok(false);
     }
@@ -47,13 +50,13 @@ pub(super) fn write(
         return Ok(true);
     }
     if o.format == SaveFormat::Tiff {
-        write_tiff(image, path, o)?;
+        write_tiff(image, path, o, resolution)?;
         return Ok(true);
     }
     let rgba = image.rgba8();
     let mut writer = BufWriter::new(std::fs::File::create(path).map_err(|e| e.to_string())?);
     let result: Result<(), String> = match o.format {
-        SaveFormat::Jpeg => encode_jpeg(&rgba, &mut writer, o.quality, o.jpeg_sampling),
+        SaveFormat::Jpeg => encode_jpeg(&rgba, &mut writer, o.quality, o.jpeg_sampling, resolution),
         SaveFormat::Webp => {
             #[cfg(not(target_arch = "wasm32"))]
             {
@@ -161,6 +164,7 @@ pub(crate) fn encode_jpeg(
     writer: impl std::io::Write,
     quality: u8,
     sampling: JpegSampling,
+    resolution: Option<crate::io::resolution::Resolution>,
 ) -> Result<(), String> {
     let w = u16::try_from(rgba.width()).map_err(|_| "JPEG dimensions exceed 65535")?;
     let h = u16::try_from(rgba.height()).map_err(|_| "JPEG dimensions exceed 65535")?;
@@ -173,6 +177,13 @@ pub(crate) fn encode_jpeg(
     )
     .ok_or("Invalid JPEG pixels")?;
     let mut encoder = jpeg_encoder::Encoder::new(writer, quality);
+    if let Some(resolution) = resolution {
+        let [x, y] = resolution.dpi().map(|n| n.round() as u16);
+        encoder.set_density(jpeg_encoder::PixelDensity {
+            density: (x, y),
+            unit: jpeg_encoder::PixelDensityUnit::Inches,
+        });
+    }
     use jpeg_encoder::SamplingFactor::*;
     encoder.set_sampling_factor(match sampling {
         JpegSampling::Full => R_4_4_4,
@@ -185,7 +196,12 @@ pub(crate) fn encode_jpeg(
         .map_err(|e| e.to_string())
 }
 
-fn write_tiff(image: &PreparedExportImage, path: &Path, o: ExportOptions) -> Result<(), String> {
+fn write_tiff(
+    image: &PreparedExportImage,
+    path: &Path,
+    o: ExportOptions,
+    resolution: Option<crate::io::resolution::Resolution>,
+) -> Result<(), String> {
     let (w, h, rgba) = match image {
         PreparedExportImage::Rgba8(i) => (
             i.width(),
@@ -238,24 +254,44 @@ fn write_tiff(image: &PreparedExportImage, path: &Path, o: ExportOptions) -> Res
     let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
     let mut encoder =
         tiff::encoder::TiffEncoder::new(BufWriter::new(file)).map_err(|e| e.to_string())?;
-    macro_rules! encode {
-        ($ty:ty,$data:expr) => {
-            match o.tiff_compression {
-                TiffCompression::None => encoder.write_image::<$ty>(w, h, $data),
-                TiffCompression::Lzw => encoder.write_image_with_compression::<$ty, _>(
-                    w,
-                    h,
-                    tiff::encoder::compression::Lzw,
-                    $data,
-                ),
-                TiffCompression::Deflate => encoder.write_image_with_compression::<$ty, _>(
-                    w,
-                    h,
-                    tiff::encoder::compression::Deflate::default(),
-                    $data,
-                ),
+    macro_rules! with_compression {
+        ($ty:ty, $data:expr, $compression:expr) => {{
+            let mut image = encoder
+                .new_image_with_compression::<$ty, _>(w, h, $compression)
+                .map_err(|e| e.to_string())?;
+            if mode == RasterMode::Rgba {
+                // The RGBA samples written below are straight (unassociated) alpha.
+                image
+                    .encoder()
+                    .write_tag(tiff::tags::Tag::ExtraSamples, &[2u16][..])
+                    .map_err(|e| e.to_string())?;
             }
-            .map_err(|e| e.to_string())
+            if let Some(resolution) = resolution {
+                use tiff::{encoder::Rational, tags::ResolutionUnit};
+                let [x, y] = resolution.ppm().map(|ppm| Rational {
+                    n: ppm * 127,
+                    d: 5000,
+                });
+                image.resolution_unit(ResolutionUnit::Inch);
+                image.x_resolution(x);
+                image.y_resolution(y);
+            }
+            image.write_data($data).map_err(|e| e.to_string())
+        }};
+    }
+    macro_rules! encode {
+        ($ty:ty, $data:expr) => {
+            match o.tiff_compression {
+                TiffCompression::None => {
+                    with_compression!($ty, $data, tiff::encoder::compression::Uncompressed)
+                }
+                TiffCompression::Lzw => {
+                    with_compression!($ty, $data, tiff::encoder::compression::Lzw)
+                }
+                TiffCompression::Deflate => {
+                    with_compression!($ty, $data, tiff::encoder::compression::Deflate::default())
+                }
+            }
         };
     }
     use tiff::encoder::colortype::*;

@@ -2111,3 +2111,8 @@ psd.composite=Sloučený obraz
 psd.composite_notice=Sloučený obraz byl otevřen v jedné vrstvě. Původní PSD se nezměnil.
 ai.refine_edges=Zpřesnit okraje
 ai.refine_edges_help=Dodatečné zpracování okrajů u snímků do 16 milionů pixelů trvá déle.
+
+resolution.title=Rozlišení tisku (DPI)
+resolution.set=Nastavit rozlišení tisku
+resolution.link_axes=Propojit vodorovné a svislé rozlišení
+resolution.save_loss=Tento formát neukládá rozlišení tisku.

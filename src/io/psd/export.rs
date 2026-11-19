@@ -218,6 +218,7 @@ pub(crate) struct Export {
     layer_info_bytes: u32,
     layer_info_padding: bool,
     merged_alpha: bool,
+    resolution: Option<super::super::resolution::Resolution>,
 }
 
 impl Export {
@@ -272,7 +273,7 @@ impl Export {
                 temporary_bytes = temporary_bytes.max(5 * mask.bounds.samples());
             }
             // Match the importer's budgets so files we produce can be reopened here.
-            if layer_info + composite_bytes + 48 > MAX_FILE as u64
+            if layer_info + composite_bytes + 76 > MAX_FILE as u64
                 || decoded_tiles + temporary_bytes > MAX_BYTES as u64
             {
                 return Err(SIZE_LIMIT.into());
@@ -287,6 +288,7 @@ impl Export {
             layer_info_bytes: layer_info.next_multiple_of(2) as u32,
             layer_info_padding: !layer_info.is_multiple_of(2),
             merged_alpha,
+            resolution: state.resolution,
         })
     }
 
@@ -304,7 +306,21 @@ impl Export {
         out.write_all(&height.to_be_bytes())?;
         out.write_all(&width.to_be_bytes())?;
         out.write_all(&[0, 8, 0, 3])?; // 8-bit RGB
-        out.write_all(&[0; 8])?; // Colour mode data and image resources
+        out.write_all(&[0; 4])?; // Colour mode data
+        if let Some(resolution) = self.resolution {
+            let [x, y] = resolution.dpi().map(|dpi| (dpi * 65_536.0).round() as u32);
+            out.write_all(&28u32.to_be_bytes())?;
+            out.write_all(b"8BIM")?;
+            out.write_all(&1005u16.to_be_bytes())?;
+            out.write_all(&[0; 2])?; // Empty Pascal resource name
+            out.write_all(&16u32.to_be_bytes())?;
+            for value in [x, y] {
+                out.write_all(&value.to_be_bytes())?;
+                out.write_all(&[0, 1, 0, 1])?; // Display and physical units: inches
+            }
+        } else {
+            out.write_all(&[0; 4])?;
+        }
         out.write_all(&(self.layer_info_bytes + 8).to_be_bytes())?;
         out.write_all(&self.layer_info_bytes.to_be_bytes())?;
         let count = self.layers.len() as i16;

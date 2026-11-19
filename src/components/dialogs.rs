@@ -658,6 +658,13 @@ impl SaveFormat {
         matches!(self, SaveFormat::Png | SaveFormat::Gif | SaveFormat::Webp)
     }
 
+    pub(crate) fn preserves_resolution(&self) -> bool {
+        matches!(
+            self,
+            Self::Pfe | Self::Psd | Self::Png | Self::Jpeg | Self::Tiff
+        )
+    }
+
     pub fn preserves_layers(&self) -> bool {
         matches!(self, Self::Pfe | Self::Psd)
     }
@@ -736,6 +743,7 @@ pub fn generate_preview(
                 &mut buffer,
                 quality,
                 crate::io::export::JpegSampling::Full,
+                None,
             )
             .ok()?;
 

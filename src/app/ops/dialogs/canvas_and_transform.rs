@@ -8,6 +8,7 @@ impl PaintFEApp {
             dialog,
             ActiveDialog::None
                 | ActiveDialog::ResizeImage(_)
+                | ActiveDialog::PrintResolution(_)
                 | ActiveDialog::ResizeCanvas(_)
                 | ActiveDialog::AlignLayer(_)
                 | ActiveDialog::GaussianBlur(_)
@@ -19,6 +20,26 @@ impl PaintFEApp {
 
         match dialog {
             ActiveDialog::None => {}
+
+            ActiveDialog::PrintResolution(dlg) => match dlg.show(ctx) {
+                DialogResult::Ok(after) => {
+                    self.active_dialog = ActiveDialog::None;
+                    if let Some(project) = self.projects.iter_mut().find(|p| p.id == dlg.document) {
+                        let before = project.canvas_state.resolution;
+                        if before != after {
+                            project.canvas_state.resolution = after;
+                            project.history.push(Box::new(crate::io::resolution::ChangeResolution { before, after }));
+                            project.mark_dirty();
+                        }
+                    }
+                    return true;
+                }
+                DialogResult::Cancel => {
+                    self.active_dialog = ActiveDialog::None;
+                    return true;
+                }
+                _ => {}
+            },
 
             ActiveDialog::ResizeImage(dlg) => {
                 match crate::ui::dialogs::remember::show_result(ctx, dlg.show(ctx)) {

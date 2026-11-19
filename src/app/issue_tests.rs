@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn interprocess_open_restores_a_minimised_editor_without_dismissing_its_modal() {
+    let mut app = app();
+    let ctx = egui::Context::default();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    app.ipc_receiver = receiver;
+    app.save_file_dialog.open = true;
+    let path = PathBuf::from("queued-shell-open.png");
+    sender.send(path.clone()).unwrap();
+    let mut raw = egui::RawInput::default();
+    raw.viewports
+        .get_mut(&egui::ViewportId::ROOT)
+        .unwrap()
+        .minimized = Some(true);
+    let output = ctx.run_ui(raw, |_| app.update_runtime_lifecycle_async(&ctx));
+    let commands = &output.viewport_output[&egui::ViewportId::ROOT].commands;
+    let restore = commands
+        .iter()
+        .position(|c| matches!(c, egui::ViewportCommand::Minimized(false)))
+        .unwrap();
+    let focus = commands
+        .iter()
+        .position(|c| matches!(c, egui::ViewportCommand::Focus))
+        .unwrap();
+    assert!(restore < focus);
+    assert!(app.save_file_dialog.open);
+    assert_eq!(app.deferred_ipc_files.pop_front(), Some(path));
+    assert!(app.deferred_ipc_files.is_empty());
+}
+
+#[test]
 fn dropped_heic_uses_system_codec_and_keeps_alpha_and_save_target() {
     if !crate::io::heic::capabilities().decode {
         return;
@@ -42,6 +72,7 @@ fn heif_source_retains_save_target_and_repairs_pre_pack_documents() {
     let image = image::RgbaImage::from_pixel(2, 2, image::Rgba([1, 2, 3, 128]));
     app.io_sender
         .send(IoResult::ImageLoaded {
+            resolution: None,
             tiled: TiledImage::from_rgba_image(&image),
             width: 2,
             height: 2,

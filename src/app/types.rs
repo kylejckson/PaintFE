@@ -104,6 +104,7 @@ pub enum IoResult {
     },
     /// An image file was decoded and tiled, ready to become a new project.
     ImageLoaded {
+        resolution: Option<crate::io::resolution::Resolution>,
         tiled: TiledImage,
         pixel_format: crate::canvas::PixelFormat,
         deep_pixels: Option<crate::experimental::DeepRgbaBuffer>,
@@ -126,6 +127,7 @@ pub enum IoResult {
     /// Animated file opened: first frame loaded as a project with this ID,
     /// remaining frames arrive separately.
     AnimatedLoaded {
+        resolution: Option<crate::io::resolution::Resolution>,
         tiled: TiledImage,
         width: u32,
         height: u32,
@@ -319,6 +321,7 @@ pub struct PaintFEApp {
 
     // Single-instance IPC: file paths sent from other PaintFE invocations
     ipc_receiver: mpsc::Receiver<PathBuf>,
+    deferred_ipc_files: std::collections::VecDeque<PathBuf>,
     /// File paths to open on the first update() frame (from positional CLI args).
     pending_startup_files: Vec<PathBuf>,
     /// Paths currently being opened asynchronously so duplicate drop events

@@ -17,6 +17,75 @@ pub struct ResizeImageDialog {
     comparison_previews: Vec<(String, egui::TextureHandle)>,
 }
 
+pub struct PrintResolutionDialog {
+    pub document: uuid::Uuid,
+    size: [u32; 2],
+    dpi: [f32; 2],
+    specified: bool,
+    linked: bool,
+    centimetres: bool,
+}
+
+impl PrintResolutionDialog {
+    pub fn new(document: uuid::Uuid, canvas: &CanvasState) -> Self {
+        let dpi = canvas.resolution.map_or([300.0; 2], |r| r.dpi().map(|n| n as f32));
+        Self {
+            document,
+            size: [canvas.width, canvas.height],
+            dpi,
+            specified: canvas.resolution.is_some(),
+            linked: dpi[0] == dpi[1],
+            centimetres: false,
+        }
+    }
+
+    pub fn show(&mut self, ctx: &egui::Context) -> DialogResult<Option<crate::io::resolution::Resolution>> {
+        let colors = DialogColors::from_ctx(ctx);
+        let mut result = DialogResult::Open;
+        crate::ui::polish::window(ctx, "dialog_print_resolution")
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                let close = paint_dialog_header(ui, &colors, "", &t!("resolution.title"));
+                ui.checkbox(&mut self.specified, t!("resolution.set"));
+                ui.add_enabled_ui(self.specified, |ui| {
+                    if ui.checkbox(&mut self.linked, t!("resolution.link_axes")).changed() && self.linked {
+                        self.dpi[1] = self.dpi[0];
+                    }
+                    egui::Grid::new("print_resolution_axes").show(ui, |ui| {
+                        for (index, label) in [t!("dialog.resize_image.width"), t!("dialog.resize_image.height")].into_iter().enumerate() {
+                            ui.label(label);
+                            ui.add_enabled_ui(index == 0 || !self.linked, |ui| {
+                                let changed = ui.add(crate::ui::controls::Numeric::new(&mut self.dpi[index])
+                                    .range(1.0..=65_535.0)
+                                    .suffix(" DPI")
+                                    .fixed_decimals(2)
+                                    .id_salt(index))
+                                    .changed();
+                                if changed && self.linked { self.dpi[1] = self.dpi[0]; }
+                            });
+                            ui.end_row();
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut self.centimetres, false, "in");
+                        ui.selectable_value(&mut self.centimetres, true, "cm");
+                        let factor = if self.centimetres { 2.54 } else { 1.0 };
+                        ui.label(format!("{:.2} × {:.2}", f64::from(self.size[0]) / f64::from(self.dpi[0]) * factor, f64::from(self.size[1]) / f64::from(self.dpi[1]) * factor));
+                    });
+                });
+                let (ok, cancel) = dialog_footer(ui, &colors);
+                if close || cancel {
+                    result = DialogResult::Cancel;
+                } else if ok {
+                    result = DialogResult::Ok(self.specified.then(|| crate::io::resolution::Resolution::from_dpi(f64::from(self.dpi[0]), f64::from(self.dpi[1]))).flatten());
+                }
+            });
+        result
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum ResizePreset {
     #[default]

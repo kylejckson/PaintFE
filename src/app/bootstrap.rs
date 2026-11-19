@@ -390,6 +390,7 @@ impl PaintFEApp {
             last_viewport_title: None,
             last_viewport_theme: None,
             ipc_receiver,
+            deferred_ipc_files: Default::default(),
             close_initial_blank: !startup_files.is_empty() && create_canvas_on_startup,
             pending_startup_files: startup_files,
             pending_open_paths: HashSet::new(),

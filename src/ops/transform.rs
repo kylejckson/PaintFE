@@ -169,6 +169,9 @@ pub fn rotate_canvas_90cw(state: &mut CanvasState) {
         return;
     }
     state.guides.rotate_quarter(true, state.width, state.height);
+    state.resolution = state
+        .resolution
+        .map(crate::io::resolution::Resolution::transpose);
     let new_pixels: Vec<_> = state
         .layers
         .par_iter()
@@ -191,6 +194,9 @@ pub fn rotate_canvas_90ccw(state: &mut CanvasState) {
     state
         .guides
         .rotate_quarter(false, state.width, state.height);
+    state.resolution = state
+        .resolution
+        .map(crate::io::resolution::Resolution::transpose);
     let new_pixels: Vec<_> = state
         .layers
         .par_iter()

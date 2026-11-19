@@ -2111,3 +2111,8 @@ psd.composite=Samengevoegde afbeelding
 psd.composite_notice=De samengevoegde afbeelding is geopend als één laag. Het oorspronkelijke PSD-bestand is ongewijzigd.
 ai.refine_edges=Randen verfijnen
 ai.refine_edges_help=Extra randbewerking tot 16 miljoen pixels. Dit duurt langer.
+
+resolution.title=Afdrukresolutie (DPI)
+resolution.set=Afdrukresolutie instellen
+resolution.link_axes=Horizontale en verticale resolutie koppelen
+resolution.save_loss=Dit formaat slaat de afdrukresolutie niet op.

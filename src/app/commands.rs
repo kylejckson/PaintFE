@@ -298,7 +298,7 @@ impl PaintFEApp {
                 if let Some(project) = self.active_project_mut() {
                     project.canvas_state.ensure_all_text_layers_rasterized();
                     let composite = project.canvas_state.composite();
-                    if let Err(e) = crate::ops::print::print_image(&composite) {
+                    if let Err(e) = crate::ops::print::print_image_with_resolution(&composite, project.canvas_state.resolution) {
                         eprintln!("Print error: {}", e);
                     }
                 }

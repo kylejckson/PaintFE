@@ -281,13 +281,35 @@ fn main_inner() -> Result<(), eframe::Error> {
     // Single-instance: if another PaintFE GUI is already running, send the
     // file paths to it via named pipe and exit this process.
     if ipc::try_send_to_existing(&startup_files) {
-        ipc::focus_existing_window();
         std::process::exit(0);
     }
 
     // We are the first instance — start the IPC listener so future
     // invocations can send their file paths to us.
-    let ipc_receiver = ipc::start_listener();
+    let ipc_window = std::sync::Arc::new(std::sync::Mutex::new(
+        None::<std::sync::Weak<winit::window::Window>>,
+    ));
+    let ipc_receiver = ipc::start_listener({
+        let ipc_window = ipc_window.clone();
+        move || {
+            let window = ipc_window
+                .lock()
+                .ok()
+                .and_then(|slot| slot.as_ref().and_then(std::sync::Weak::upgrade));
+            if let Some(window) = window {
+                #[cfg(target_os = "windows")]
+                {
+                    // Winit owns the window state. Restoring from the launching
+                    // process can leave its renderer suspended.
+                    if window.is_minimized() == Some(true) {
+                        window.set_minimized(false);
+                    }
+                    window.focus_window();
+                }
+                window.request_redraw();
+            }
+        }
+    });
     drop(profile);
 
     // Load application icon (window title bar, taskbar, Alt+Tab)
@@ -393,6 +415,9 @@ fn main_inner() -> Result<(), eframe::Error> {
             drop(renderer_profile);
             if let Some(window) = cc.winit_window() {
                 paintfe::services::frame_pacing::register_window(window.clone());
+                if let Ok(mut slot) = ipc_window.lock() {
+                    *slot = Some(std::sync::Arc::downgrade(window));
+                }
             }
             creation_flag.store(true, std::sync::atomic::Ordering::Release);
             if let Some(state) = &cc.wgpu_render_state {

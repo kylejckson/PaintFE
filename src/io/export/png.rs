@@ -60,6 +60,15 @@ pub fn write(
     options: PngOptions,
     writer: impl Write,
 ) -> Result<(), String> {
+    write_with_resolution(image, options, writer, None)
+}
+
+pub(crate) fn write_with_resolution(
+    image: &PreparedExportImage,
+    options: PngOptions,
+    writer: impl Write,
+    resolution: Option<crate::io::resolution::Resolution>,
+) -> Result<(), String> {
     if !(2..=256).contains(&options.palette_colors) {
         return Err("PNG palette must contain 2 to 256 colours".into());
     }
@@ -116,6 +125,7 @@ pub fn write(
     };
     let mut info = png::Info::with_size(width, height);
     info.interlaced = options.interlaced;
+    info.pixel_dims = resolution.map(crate::io::resolution::Resolution::png_dimensions);
     let mut encoder = png::Encoder::with_info(writer, info).map_err(|e| e.to_string())?;
     encoder.set_color(color);
     encoder.set_depth(if sixteen {

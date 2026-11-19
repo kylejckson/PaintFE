@@ -109,6 +109,14 @@ impl PaintFEApp {
                         }
                         if self.assets.menu_item_shortcut_below_enabled(ui, HistoryAction::ResizeImage.icon(), &t!("menu.canvas.resize_image"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ResizeImage).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ResizeImage); ui.close(); }
                         if self.assets.menu_item_shortcut_below_enabled(ui, HistoryAction::ResizeCanvas.icon(), &t!("menu.canvas.resize_canvas"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ResizeCanvas).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ResizeCanvas); ui.close(); }
+                        if ui.add_enabled(no_dialog, egui::Button::new(t!("resolution.title"))).clicked()
+                            && let Some(project) = self.active_project()
+                        {
+                            self.active_dialog = ActiveDialog::PrintResolution(
+                                crate::ops::dialogs::PrintResolutionDialog::new(project.id, &project.canvas_state),
+                            );
+                            ui.close();
+                        }
                         let has_sel = self
                             .active_project()
                             .is_some_and(|p| p.canvas_state.has_selection());

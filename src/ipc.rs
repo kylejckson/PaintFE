@@ -62,9 +62,21 @@ mod platform {
 
     const PIPE_NAME: &str = r"\\.\pipe\PaintFE_OpenFile";
 
+    fn pipe_name() -> Vec<u16> {
+        if let Some(profile) = std::env::var_os("PAINTFE_TEST_STORAGE_DIR") {
+            use std::hash::{Hash, Hasher};
+            let mut key = std::hash::DefaultHasher::new();
+            profile.hash(&mut key);
+            to_wide(&format!("{PIPE_NAME}_test_{:016x}", key.finish()))
+        } else {
+            to_wide(PIPE_NAME)
+        }
+    }
+
     // Win32 constants
     const GENERIC_READ: u32 = 0x8000_0000;
     const GENERIC_WRITE: u32 = 0x4000_0000;
+    const FILE_READ_ATTRIBUTES: u32 = 0x0000_0080;
     const OPEN_EXISTING: u32 = 3;
     const INVALID_HANDLE_VALUE: isize = -1;
     const PIPE_ACCESS_INBOUND: u32 = 0x0000_0001;
@@ -118,6 +130,7 @@ mod platform {
         ) -> isize;
 
         fn GetLastError() -> u32;
+        fn GetNamedPipeServerProcessId(pipe: isize, server_pid: *mut u32) -> i32;
     }
 
     /// Encode a Rust string as a null-terminated wide (UTF-16) string for Win32 APIs.
@@ -132,12 +145,12 @@ mod platform {
             return false;
         }
 
-        let pipe_name_wide = to_wide(PIPE_NAME);
+        let pipe_name_wide = pipe_name();
 
         unsafe {
             let handle = CreateFileW(
                 pipe_name_wide.as_ptr(),
-                GENERIC_WRITE,
+                GENERIC_WRITE | FILE_READ_ATTRIBUTES,
                 0,
                 std::ptr::null(),
                 OPEN_EXISTING,
@@ -147,6 +160,11 @@ mod platform {
 
             if handle == INVALID_HANDLE_VALUE {
                 return false;
+            }
+            let mut server_pid = 0;
+            GetNamedPipeServerProcessId(handle, &mut server_pid);
+            if server_pid != 0 {
+                winapi::um::winuser::AllowSetForegroundWindow(server_pid);
             }
 
             // Serialize paths as newline-separated UTF-8
@@ -158,7 +176,7 @@ mod platform {
 
             let bytes = data.as_bytes();
             let mut written = 0u32;
-            let _ok = WriteFile(
+            let ok = WriteFile(
                 handle,
                 bytes.as_ptr(),
                 bytes.len() as u32,
@@ -166,18 +184,22 @@ mod platform {
                 std::ptr::null(),
             );
 
+            let sent = ok != 0 && written as usize == bytes.len();
             CloseHandle(handle);
-            true
+            if sent && server_pid != 0 {
+                focus_existing_window(server_pid);
+            }
+            sent
         }
     }
 
     /// Start the named pipe listener in a background thread.
     /// Received file paths are sent through the returned channel.
-    pub fn start_listener() -> mpsc::Receiver<PathBuf> {
+    pub fn start_listener(wake_editor: impl Fn() + Send + 'static) -> mpsc::Receiver<PathBuf> {
         let (tx, rx) = mpsc::channel();
 
         std::thread::spawn(move || {
-            let pipe_name_wide = to_wide(PIPE_NAME);
+            let pipe_name_wide = pipe_name();
 
             loop {
                 // Create a new pipe instance for each client connection
@@ -246,6 +268,7 @@ mod platform {
                                 }
                             }
                         }
+                        wake_editor();
                     }
                 }
 
@@ -263,26 +286,34 @@ mod platform {
         rx
     }
 
-    /// Try to bring the existing PaintFE window to the foreground after
-    /// sending files via pipe. Uses `FindWindowW` + `SetForegroundWindow`.
-    pub fn focus_existing_window() {
-        unsafe extern "system" {
-            fn FindWindowW(lpClassName: *const u16, lpWindowName: *const u16) -> isize;
-            fn SetForegroundWindow(hWnd: isize) -> i32;
-            fn ShowWindow(hWnd: isize, nCmdShow: i32) -> i32;
-            fn IsIconic(hWnd: isize) -> i32;
-        }
-        const SW_RESTORE: i32 = 9;
+    fn focus_existing_window(server_pid: u32) {
+        use winapi::shared::minwindef::{BOOL, LPARAM};
+        use winapi::shared::windef::HWND;
+        use winapi::um::winuser::{
+            EnumWindows, GW_OWNER, GetWindow, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
+            SetForegroundWindow,
+        };
 
-        let title = to_wide("PaintFE");
-        unsafe {
-            let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
-            if hwnd != 0 {
-                // If minimized, restore first
-                if IsIconic(hwnd) != 0 {
-                    ShowWindow(hwnd, SW_RESTORE);
+        let mut window: (u32, HWND) = (server_pid, std::ptr::null_mut());
+        unsafe extern "system" fn find_main(hwnd: HWND, data: LPARAM) -> BOOL {
+            let (server_pid, target) = unsafe { &mut *(data as *mut (u32, HWND)) };
+            let mut pid = 0;
+            unsafe {
+                GetWindowThreadProcessId(hwnd, &mut pid);
+                if pid == *server_pid
+                    && IsWindowVisible(hwnd) != 0
+                    && GetWindow(hwnd, GW_OWNER).is_null()
+                {
+                    *target = hwnd;
+                    return 0;
                 }
-                SetForegroundWindow(hwnd);
+            }
+            1
+        }
+        unsafe {
+            EnumWindows(Some(find_main), (&mut window as *mut (u32, HWND)) as LPARAM);
+            if !window.1.is_null() && IsIconic(window.1) == 0 {
+                SetForegroundWindow(window.1);
             }
         }
     }
@@ -300,12 +331,10 @@ mod platform {
         false
     }
 
-    pub fn start_listener() -> mpsc::Receiver<PathBuf> {
+    pub fn start_listener(_wake_editor: impl Fn() + Send + 'static) -> mpsc::Receiver<PathBuf> {
         let (_tx, rx) = mpsc::channel();
         rx
     }
-
-    pub fn focus_existing_window() {}
 }
 
 // ============================================================================
@@ -320,11 +349,6 @@ pub fn try_send_to_existing(paths: &[PathBuf]) -> bool {
 
 /// Start the single-instance listener. Returns a channel receiver that
 /// delivers file paths sent from newly-launched PaintFE instances.
-pub fn start_listener() -> mpsc::Receiver<PathBuf> {
-    platform::start_listener()
-}
-
-/// Attempt to bring the existing PaintFE window to the foreground.
-pub fn focus_existing_window() {
-    platform::focus_existing_window();
+pub fn start_listener(wake_editor: impl Fn() + Send + 'static) -> mpsc::Receiver<PathBuf> {
+    platform::start_listener(wake_editor)
 }

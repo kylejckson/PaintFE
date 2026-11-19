@@ -2111,3 +2111,8 @@ psd.composite=Immagine composita
 psd.composite_notice=L’immagine composita è stata aperta su un solo livello. Il PSD originale è intatto.
 ai.refine_edges=Migliora bordi
 ai.refine_edges_help=Elaborazione aggiuntiva dei bordi fino a 16 milioni di pixel. Richiede più tempo.
+
+resolution.title=Risoluzione di stampa (DPI)
+resolution.set=Imposta la risoluzione di stampa
+resolution.link_axes=Collega la risoluzione orizzontale e verticale
+resolution.save_loss=Questo formato non salva la risoluzione di stampa.
