@@ -637,6 +637,8 @@ impl Default for KeyBindings {
         map.insert(Copy, KeyCombo::ctrl_key(Key::C));
         map.insert(Cut, KeyCombo::ctrl_key(Key::X));
         map.insert(Paste, KeyCombo::ctrl_key(Key::V));
+        map.insert(Menu(crate::config::commands::MenuCommand::EditPasteAsLayer), KeyCombo::ctrl_shift_key(Key::V));
+        map.insert(Menu(crate::config::commands::MenuCommand::DuplicateLayer), KeyCombo::ctrl_shift_key(Key::D));
         map.insert(SelectAll, KeyCombo::ctrl_key(Key::A));
         map.insert(Deselect, KeyCombo::ctrl_key(Key::D));
         map.insert(ClearSelectedPixels, KeyCombo::key(Key::Delete));
@@ -726,6 +728,8 @@ impl KeyBindings {
                 BindableAction::Menu(crate::config::commands::MenuCommand::CanvasCropToSelection),
                 BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Cw),
                 BindableAction::Menu(crate::config::commands::MenuCommand::CanvasRotate90Ccw),
+                BindableAction::Menu(crate::config::commands::MenuCommand::EditPasteAsLayer),
+                BindableAction::Menu(crate::config::commands::MenuCommand::DuplicateLayer),
             ] {
                 if default != action && self.bindings.get(&default) == Some(&combo) {
                     self.bindings.remove(&default);

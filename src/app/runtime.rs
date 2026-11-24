@@ -47,6 +47,7 @@ impl PaintFEApp {
                     .store(true, std::sync::atomic::Ordering::Relaxed);
                 self.preview_job_token = self.preview_job_token.wrapping_add(1);
                 self.pending_preview = None;
+                #[cfg(not(target_arch = "wasm32"))]
                 crate::services::optional_packs::avif::cancel();
             }
         });
@@ -80,6 +81,8 @@ impl PaintFEApp {
 
 impl eframe::App for PaintFEApp {
     fn raw_input_hook(&mut self, ctx: &egui::Context, input: &mut egui::RawInput) {
+        #[cfg(target_arch = "wasm32")]
+        crate::web_bridge::append_pen_events(input);
         #[cfg(target_os = "windows")]
         {
             crate::windows_key_probe::bridge_raw_input(input);

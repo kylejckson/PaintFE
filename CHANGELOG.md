@@ -6,6 +6,26 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.5.4] - 2026-11-24
+
+- Save smaller layered PSDs with lossless compression.
+- Build plugin effects with repeatable randomness, point picking and native drawing tools.
+- Paste into a new layer or duplicate the active layer from the keyboard.
+
+### Added
+
+- Script API 2 adds seed and image-point controls, active colours, drawing primitives, blend operations, gradient tables, subpixel sampling and temporary raster copies. Existing API 1 packs are still supported. Related to discussion 257.
+- Ctrl+Shift+V pastes into a new layer and Ctrl+Shift+D duplicates the active layer. Ctrl+Shift+X continues to crop to the selection. All three can be rebound.
+- Added an icon for **Canvas → Print Resolution**.
+
+### Fixed and improved
+
+- Compress PSD layers, masks and merged previews losslessly where it saves space. Related to issue 246.
+- Stop Document Info from passing clicks through to the canvas, and let users finish typing a scale before Resize Image updates the dimensions. Related to issues 250 and 253.
+- Improve Fill antialiasing, one-pixel selections, live selection bounds and feathering. Feather, Expand and Contract each get their own Undo step. Related to issues 251, 252 and 254.
+- Improve pen tracking on desktop and in the browser. Related to issue 255.
+- Replace the outdated README release highlights with a link to the changelog. Related to issue 258.
+
 ## [1.5.3] - 2026-11-19
 
 - Set print resolution without changing the image’s pixel dimensions.

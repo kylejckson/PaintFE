@@ -1514,44 +1514,49 @@ pub fn feather_selection(state: &mut CanvasState, radius: f32) {
         None => return,
     };
     let (w, h) = (mask.width(), mask.height());
-    let passes = ((radius / 2.0) as u32).max(1);
-    let r = (radius as usize).max(1);
-    let mut data = mask.into_raw();
+    let r = radius.round().clamp(1.0, 200.0) as usize;
+    let (width, height) = (w as usize, h as usize);
+    let data = mask.into_raw();
+    let mut horizontal = vec![0; data.len()];
+    let mut output = vec![0; data.len()];
 
-    for _ in 0..passes {
-        // Horizontal pass
-        let mut tmp = data.clone();
-        for y in 0..h as usize {
-            let row_start = y * w as usize;
-            for x in 0..w as usize {
-                let x0 = x.saturating_sub(r);
-                let x1 = (x + r).min(w as usize - 1);
-                let count = x1 - x0 + 1;
-                let mut sum = 0u32;
-                for xi in x0..=x1 {
-                    sum += data[row_start + xi] as u32;
-                }
-                tmp[row_start + x] = (sum / count as u32) as u8;
+    // A single separable box has exactly the requested support in each axis.
+    // Rolling sums keep the work independent of the radius.
+    for (row, filtered) in data.chunks_exact(width).zip(horizontal.chunks_exact_mut(width)) {
+        let mut sum: u32 = row.iter().take(r + 1).map(|&a| u32::from(a)).sum();
+        for (x, pixel) in filtered.iter_mut().enumerate() {
+            let begin = x.saturating_sub(r);
+            let end = (x + r + 1).min(width);
+            *pixel = (sum / (end - begin) as u32) as u8;
+            if x >= r {
+                sum -= u32::from(row[begin]);
+            }
+            if end < width {
+                sum += u32::from(row[end]);
             }
         }
-        // Vertical pass
-        let mut out = tmp.clone();
-        for x in 0..w as usize {
-            for y in 0..h as usize {
-                let y0 = y.saturating_sub(r);
-                let y1 = (y + r).min(h as usize - 1);
-                let count = y1 - y0 + 1;
-                let mut sum = 0u32;
-                for yi in y0..=y1 {
-                    sum += tmp[yi * w as usize + x] as u32;
-                }
-                out[y * w as usize + x] = (sum / count as u32) as u8;
+    }
+    let mut sums = vec![0u32; width];
+    for y in 0..height.min(r + 1) {
+        for (x, sum) in sums.iter_mut().enumerate() {
+            *sum += u32::from(horizontal[y * width + x]);
+        }
+    }
+    for y in 0..height {
+        let begin = y.saturating_sub(r);
+        let end = (y + r + 1).min(height);
+        for (x, sum) in sums.iter_mut().enumerate() {
+            output[y * width + x] = (*sum / (end - begin) as u32) as u8;
+            if y >= r {
+                *sum -= u32::from(horizontal[begin * width + x]);
+            }
+            if end < height {
+                *sum += u32::from(horizontal[end * width + x]);
             }
         }
-        data = out;
     }
 
-    state.selection_mask = image::GrayImage::from_raw(w, h, data);
+    state.selection_mask = image::GrayImage::from_raw(w, h, output);
     state.invalidate_selection_overlay();
     state.mark_dirty(None);
 }

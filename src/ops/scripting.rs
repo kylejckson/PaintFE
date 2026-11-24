@@ -291,7 +291,9 @@ type SharedContext = Arc<Mutex<ScriptContext>>;
 // ============================================================================
 
 /// Create a new sandboxed Rhai engine with all PaintFE host functions registered.
-fn create_engine(ctx: SharedContext) -> Engine {
+pub(crate) const DEFAULT_SCRIPT_COLOURS: [[u8; 4]; 2] = [[0, 0, 0, 255], [255; 4]];
+
+fn create_engine(ctx: SharedContext, colours: [[u8; 4]; 2]) -> Engine {
     let mut engine = Engine::new();
     engine.set_module_resolver(rhai::module_resolvers::DummyModuleResolver::new());
     engine.set_max_functions(128);
@@ -326,6 +328,7 @@ fn create_engine(ctx: SharedContext) -> Engine {
     register_utility_api(&mut engine, ctx.clone());
     register_selection_api(&mut engine, ctx.clone());
     bulk::register(&mut engine, ctx.clone());
+    bulk::register_image_tools(&mut engine, ctx, colours);
 
     engine
 }
@@ -1623,7 +1626,7 @@ pub fn execute_script(
                 canvas_ops: Vec::new(),
             }));
 
-            let engine = create_engine(ctx.clone());
+            let engine = create_engine(ctx.clone(), DEFAULT_SCRIPT_COLOURS);
             let mut scope = Scope::new();
 
             let ast = engine.compile(&source).map_err(|e| {
@@ -1866,6 +1869,19 @@ pub fn execute_script_parameters(
     values: &std::collections::BTreeMap<String, serde_json::Value>,
     seed: Option<u64>,
 ) -> Result<(Vec<u8>, u32, u32, Vec<String>, Vec<CanvasOpRequest>), ScriptError> {
+    execute_script_with_colours(source, pixels, width, height, mask, values, seed, DEFAULT_SCRIPT_COLOURS)
+}
+
+pub(crate) fn execute_script_with_colours(
+    source: &str,
+    pixels: Vec<u8>,
+    width: u32,
+    height: u32,
+    mask: Option<Vec<u8>>,
+    values: &std::collections::BTreeMap<String, serde_json::Value>,
+    seed: Option<u64>,
+    colours: [[u8; 4]; 2],
+) -> Result<(Vec<u8>, u32, u32, Vec<String>, Vec<CanvasOpRequest>), ScriptError> {
     let cancel_flag = Arc::new(AtomicBool::new(false));
 
     // Dummy channel — sync mode ignores progress/preview messages
@@ -1894,7 +1910,7 @@ pub fn execute_script_parameters(
         canvas_ops: Vec::new(),
     }));
 
-    let engine = create_engine(ctx.clone());
+    let engine = create_engine(ctx.clone(), colours);
     let mut scope = Scope::new();
     fn dynamic(value: &serde_json::Value) -> Dynamic {
         match value {

@@ -81,6 +81,19 @@ fn set_clipboard_image(
     });
 }
 
+#[cfg(test)]
+pub(crate) fn test_with_internal_image(image: RgbaImage, check: impl FnOnce()) {
+    struct Restore(Option<ClipboardPayload>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            *APP_CLIPBOARD.lock().unwrap_or_else(|e| e.into_inner()) = self.0.take();
+        }
+    }
+    let _restore = Restore(APP_CLIPBOARD.lock().unwrap_or_else(|e| e.into_inner()).take());
+    set_clipboard_image(image, None, false, None);
+    check();
+}
+
 fn copy_image_to_clipboard(
     img: RgbaImage,
     origin_center: Option<Pos2>,

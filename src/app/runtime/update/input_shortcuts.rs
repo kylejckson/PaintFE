@@ -93,6 +93,17 @@ impl PaintFEApp {
                 i.pointer.hover_pos().is_some(),
             )
         });
+        // Native clipboard events may accompany a shifted canvas shortcut.
+        let shifted_clipboard = |key| ctx.input(|i| {
+            (i.modifiers.ctrl || i.modifiers.command) && (i.modifiers.shift || i.modifiers.alt)
+                || i.raw.events.iter().any(|event| matches!(
+                    event,
+                    egui::Event::Key { key: logical, physical_key, modifiers, .. }
+                        if (*logical == key || *physical_key == Some(key))
+                            && (modifiers.ctrl || modifiers.command)
+                            && (modifiers.shift || modifiers.alt)
+                ))
+        });
         let vk_probe = crate::windows_key_probe::snapshot();
         let linux_probe = crate::linux_key_probe::snapshot();
 
@@ -273,12 +284,17 @@ impl PaintFEApp {
         if !modal_open && !is_rebinding && !panel_keyboard_focus {
             let editing_document_text = self.tools_panel.active_tool == Tool::Text
                 && self.tools_panel.text_state.is_editing;
+            let mut layer_paste_handled = false;
             for command in crate::config::commands::MenuCommand::ALL
                 .iter()
                 .filter(|_| !editing_document_text)
             {
                 let action = crate::config::keybindings::BindableAction::Menu(*command);
                 if self.settings.keybindings.is_pressed(ctx, action) {
+                    if *command == crate::config::commands::MenuCommand::EditPasteAsLayer {
+                        layer_paste_handled = true;
+                        self.last_paste_trigger_time = ctx.input(|i| i.time);
+                    }
                     self.execute_menu_command(ctx, action);
                 }
             }
@@ -538,7 +554,7 @@ impl PaintFEApp {
                 let cut_poll_edge = poll_ctrl_x_down && !self.prev_ctrl_x_down;
                 let cut_vk_edge =
                     vk_probe.ctrl_down && vk_probe.x_press_count != self.prev_vk_x_press_count;
-                if cut_pressed || cut_poll_edge || cut_vk_edge {
+                if cut_from_binding || (!shifted_clipboard(egui::Key::X) && (cut_pressed || cut_poll_edge || cut_vk_edge)) {
                     let has_sel = self
                         .active_project()
                         .is_some_and(|p| p.canvas_state.has_selection());
@@ -661,7 +677,9 @@ impl PaintFEApp {
                     && !paste_poll_edge
                     && !paste_vk_edge
                     && !recent_paste;
-                if paste_primary_trigger || paste_poll_edge || paste_vk_edge || release_only_trigger
+                if !layer_paste_handled && (paste_from_binding
+                    || (!shifted_clipboard(egui::Key::V)
+                        && (paste_primary_trigger || paste_poll_edge || paste_vk_edge || release_only_trigger)))
                 {
                     self.last_paste_trigger_time = now;
                     // Compute cursor canvas position before mutable borrow
@@ -1431,52 +1449,35 @@ impl PaintFEApp {
                 || self.pointer_over_cursor_blocking_ui(ctx)
                 || ui_blocks_canvas_input;
 
-            // Compute current canvas position from mouse (without borrowing self mutably).
-            let cur_canvas_pos: Option<(i32, i32)> =
-                if self.active_project_index < self.projects.len() {
-                    ctx.input(|i| i.pointer.hover_pos()).and_then(|pos| {
-                        canvas_rect.and_then(|rect| {
-                            self.canvas
-                                .screen_to_canvas_pub(
-                                    pos,
-                                    rect,
-                                    &self.projects[self.active_project_index].canvas_state,
-                                )
-                                .map(|(x, y)| (x as i32, y as i32))
-                        })
-                    })
-                } else {
-                    None
-                };
+            let cur_canvas_pos = ctx.input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
+                .zip(canvas_rect)
+                .zip(self.active_project())
+                .map(|((pos, rect), project)| {
+                    let (x, y) = self.canvas.screen_to_canvas_unclamped(pos, rect, &project.canvas_state);
+                    (x.floor() as i32, y.floor() as i32)
+                });
 
             if primary_pressed
                 && over_canvas
                 && !over_ui
                 && let Some(cp) = cur_canvas_pos
+                && let Some(bounds) = self.active_project().and_then(|p| p.canvas_state.selection_mask_bounds())
+                && let Some(handle) = Self::hit_selection_handle(cp, bounds, self.canvas.zoom)
             {
                 if let Some(project) = self.active_project_mut() {
                     project.canvas_state.materialize_full_selection();
+                    project.canvas_state.selection_transform_preview_bounds = None;
                 }
                 self.move_sel_dragging = true;
                 self.move_sel_last_canvas = Some(cp);
-                self.move_sel_start_mask = self
-                    .active_project()
-                    .and_then(|p| p.canvas_state.selection_mask.clone());
-                self.move_sel_start_bounds = self
-                    .move_sel_start_mask
-                    .as_ref()
-                    .and_then(Self::selection_mask_bounds_for_move);
-                self.move_sel_handle = self
-                    .move_sel_start_bounds
-                    .and_then(|b| Self::hit_selection_handle(cp, b, self.canvas.zoom));
+                self.move_sel_start_mask = self.active_project().and_then(|p| p.canvas_state.selection_mask.clone());
+                self.move_sel_start_bounds = Some(bounds);
+                self.move_sel_handle = Some(handle);
                 self.move_sel_preserved_ratio = None;
                 self.move_sel_ratio_lock_active = false;
-                if let Some(project) = self.active_project_mut() {
-                    project.canvas_state.selection_transform_preview_bounds = None;
-                }
             }
 
-            if primary_down
+            if (primary_down || primary_released)
                 && self.move_sel_dragging
                 && let Some((cx, cy)) = cur_canvas_pos
                 && let Some((lx, ly)) = self.move_sel_last_canvas
@@ -1555,11 +1556,22 @@ impl PaintFEApp {
                     } else {
                         self.move_sel_preserved_ratio
                     };
+                    let grab_edge = match handle {
+                        crate::ops::shapes::ShapeHandle::TopLeft => (start_bounds.0 as i32, start_bounds.1 as i32),
+                        crate::ops::shapes::ShapeHandle::TopRight => (start_bounds.2 as i32, start_bounds.1 as i32),
+                        crate::ops::shapes::ShapeHandle::BottomLeft => (start_bounds.0 as i32, start_bounds.3 as i32),
+                        crate::ops::shapes::ShapeHandle::BottomRight => (start_bounds.2 as i32, start_bounds.3 as i32),
+                        crate::ops::shapes::ShapeHandle::Left => (start_bounds.0 as i32, ly),
+                        crate::ops::shapes::ShapeHandle::Right => (start_bounds.2 as i32, ly),
+                        crate::ops::shapes::ShapeHandle::Top => (lx, start_bounds.1 as i32),
+                        crate::ops::shapes::ShapeHandle::Bottom => (lx, start_bounds.3 as i32),
+                        _ => (lx, ly),
+                    };
                     if let Some(preview_bounds) = Self::selection_resize_bounds_from_handle(
                         start_bounds,
                         handle,
-                        (cx, cy),
-                        aspect_ratio,
+                        (grab_edge.0 + cx - lx, grab_edge.1 + cy - ly),
+                        if (cx, cy) == (lx, ly) { None } else { aspect_ratio },
                         canvas_dimensions,
                     ) && let Some(project) = self.active_project_mut()
                     {
@@ -1623,25 +1635,6 @@ impl PaintFEApp {
         modal_open
     }
 
-    fn selection_mask_bounds_for_move(mask: &image::GrayImage) -> Option<(u32, u32, u32, u32)> {
-        let (w, h) = mask.dimensions();
-        let mut min_x = w;
-        let mut min_y = h;
-        let mut max_x = 0;
-        let mut max_y = 0;
-        for y in 0..h {
-            for x in 0..w {
-                if mask.get_pixel(x, y)[0] > 0 {
-                    min_x = min_x.min(x);
-                    min_y = min_y.min(y);
-                    max_x = max_x.max(x + 1);
-                    max_y = max_y.max(y + 1);
-                }
-            }
-        }
-        (min_x < max_x && min_y < max_y).then_some((min_x, min_y, max_x, max_y))
-    }
-
     fn hit_selection_handle(
         pos: (i32, i32),
         bounds: (u32, u32, u32, u32),
@@ -1659,44 +1652,49 @@ impl PaintFEApp {
             ),
             (
                 crate::ops::shapes::ShapeHandle::Top,
-                (x0 + x1) as f32 * 0.5,
+                (x0 + x1 + 1) as f32 * 0.5,
                 y0 as f32,
             ),
             (
                 crate::ops::shapes::ShapeHandle::TopRight,
-                x1 as f32,
+                (x1 + 1) as f32,
                 y0 as f32,
             ),
             (
                 crate::ops::shapes::ShapeHandle::Right,
-                x1 as f32,
-                (y0 + y1) as f32 * 0.5,
+                (x1 + 1) as f32,
+                (y0 + y1 + 1) as f32 * 0.5,
             ),
             (
                 crate::ops::shapes::ShapeHandle::BottomRight,
-                x1 as f32,
-                y1 as f32,
+                (x1 + 1) as f32,
+                (y1 + 1) as f32,
             ),
             (
                 crate::ops::shapes::ShapeHandle::Bottom,
-                (x0 + x1) as f32 * 0.5,
-                y1 as f32,
+                (x0 + x1 + 1) as f32 * 0.5,
+                (y1 + 1) as f32,
             ),
             (
                 crate::ops::shapes::ShapeHandle::BottomLeft,
                 x0 as f32,
-                y1 as f32,
+                (y1 + 1) as f32,
             ),
             (
                 crate::ops::shapes::ShapeHandle::Left,
                 x0 as f32,
-                (y0 + y1) as f32 * 0.5,
+                (y0 + y1 + 1) as f32 * 0.5,
             ),
         ];
-        for (h, x, y) in pts {
-            if (px - x).abs() <= tol && (py - y).abs() <= tol {
-                return Some(h);
-            }
+        if let Some((handle, _)) = pts.into_iter()
+            .filter_map(|(handle, x, y)| {
+                let dx = px - x;
+                let dy = py - y;
+                (dx.abs() <= tol && dy.abs() <= tol).then_some((handle, dx * dx + dy * dy))
+            })
+            .min_by(|(_, a), (_, b)| a.total_cmp(b))
+        {
+            return Some(handle);
         }
         if px >= x0 as f32 && px <= x1 as f32 && py >= y0 as f32 && py <= y1 as f32 {
             Some(crate::ops::shapes::ShapeHandle::Move)

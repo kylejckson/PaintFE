@@ -707,6 +707,11 @@ impl Assets {
         );
         self.load_icon(
             ctx,
+            Icon::MenuCanvasPrintResolution,
+            include_bytes!("../../assets/icons/menu/canvas_print_res.png"),
+        );
+        self.load_icon(
+            ctx,
             Icon::MenuCanvasCrop,
             include_bytes!("../../assets/icons/menu/canvas_crop.png"),
         );

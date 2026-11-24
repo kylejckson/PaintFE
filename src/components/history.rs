@@ -437,6 +437,7 @@ pub enum LayerOperation {
         visible: bool,
         folder_id: Option<u64>,
         opacity: f32,
+        blend_mode: crate::canvas::BlendMode,
         content: LayerContent,
         pixel_format: crate::canvas::PixelFormat,
         hdr_metadata: crate::canvas::HdrMetadata,
@@ -650,6 +651,7 @@ impl Command for LayerOpCommand {
                 }
             }
             LayerOperation::Duplicate {
+                blend_mode,
                 new_index,
                 pixels,
                 mask,
@@ -679,6 +681,7 @@ impl Command for LayerOpCommand {
                 layer.visible = *visible;
                 layer.folder_id = *folder_id;
                 layer.opacity = *opacity;
+                layer.blend_mode = *blend_mode;
                 layer.content = content.clone();
                 layer.pixel_format = *pixel_format;
                 layer.hdr_metadata = hdr_metadata.clone();

@@ -96,6 +96,14 @@ impl PaintFEApp {
                         if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::ColorRange.icon(), &format!("{}...", crate::t!("ui.select_color_range")), has_project, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::SelectColorRange)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::SelectColorRange)); ui.close(); }
                         if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::SelectAll.icon(), &t!("menu.edit.select_content_bounds"), has_project, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::EditSelectContentBounds)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::EditSelectContentBounds)); ui.close(); }
 
+                        if self.assets.menu_item_shortcut_enabled(
+                            ui, Icon::LayerDuplicate, &t!("layer.duplicate_layer"),
+                            has_project && !modal_open && self.paste_overlay.is_none(), &menu_kb,
+                            crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::DuplicateLayer),
+                        ).clicked() {
+                            self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::DuplicateLayer));
+                            ui.close();
+                        }
                         ui.separator();
 
                         if self.assets.menu_item_shortcut_enabled(ui, Icon::MenuEditPreferences, &t!("menu.edit.preferences"), true, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::EditPreferences)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::EditPreferences)); ui.close(); }
@@ -109,7 +117,12 @@ impl PaintFEApp {
                         }
                         if self.assets.menu_item_shortcut_below_enabled(ui, HistoryAction::ResizeImage.icon(), &t!("menu.canvas.resize_image"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ResizeImage).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ResizeImage); ui.close(); }
                         if self.assets.menu_item_shortcut_below_enabled(ui, HistoryAction::ResizeCanvas.icon(), &t!("menu.canvas.resize_canvas"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::ResizeCanvas).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::ResizeCanvas); ui.close(); }
-                        if ui.add_enabled(no_dialog, egui::Button::new(t!("resolution.title"))).clicked()
+                        if self.assets.menu_item_enabled(
+                            ui,
+                            Icon::MenuCanvasPrintResolution,
+                            &t!("resolution.title"),
+                            no_dialog,
+                        ).clicked()
                             && let Some(project) = self.active_project()
                         {
                             self.active_dialog = ActiveDialog::PrintResolution(
@@ -1373,7 +1386,7 @@ impl PaintFEApp {
         if let Some(id) = ctx.data(|d| d.get_temp::<uuid::Uuid>(info_id)) {
             let mut open = true;
             if let Some(project) = self.projects.iter().find(|p| p.id == id) {
-                crate::ui::polish::window(ctx, "document_info_inspector")
+                let inspector = crate::ui::polish::window(ctx, "document_info_inspector")
                     .title_bar(false)
                     .collapsible(false)
                     .resizable(true)
@@ -1398,6 +1411,9 @@ impl PaintFEApp {
                             },
                         );
                     });
+                if let Some(inspector) = inspector {
+                    self.remember_ui_cursor_rect(inspector.response.rect);
+                }
             } else {
                 open = false;
             }

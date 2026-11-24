@@ -1,6 +1,6 @@
 [package]
 name = "PaintFE"
-version = "1.5.3"
+version = "1.5.4"
 edition = "2024"
 
 [lib]
@@ -76,6 +76,7 @@ wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [
     "console", "Window", "Document", "Element", "HtmlElement", "Node", "HtmlAnchorElement",
     "HtmlInputElement", "FileList", "File", "Event", "EventTarget", "CssStyleDeclaration",
+    "HtmlCanvasElement", "PointerEvent", "DomRect",
     "Blob", "BlobPropertyBag", "Url", "ClipboardEvent", "DataTransfer", "DataTransferItem",
     "DataTransferItemList", "Clipboard", "ClipboardItem", "Navigator", "Response", "Storage",
 ] }

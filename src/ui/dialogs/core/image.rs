@@ -390,23 +390,27 @@ impl ResizeImageDialog {
 
                         // Scale row
                         ui.label(t!("dialog.resize_image.scale"));
-                        let s_changed = numeric_field_with_buttons(
-                            ui,
-                            &mut self.scale_percent,
-                            0.5,
-                            1.0..=10000.0,
-                            "%",
-                            5.0,
+                        let s_changed = ui.add(
+                            crate::ui::controls::Numeric::new(&mut self.scale_percent)
+                                .id_salt("resize_image_scale")
+                                .speed(0.5)
+                                .range(1.0..=10000.0)
+                                .suffix("%")
+                                .steppers(5.0)
+                                .update_while_editing(false)
                         );
+                        #[cfg(test)]
+                        ctx.data_mut(|d| d.insert_temp(egui::Id::new("resize_image_scale_rect"), s_changed.rect));
+                        let s_changed = s_changed.changed();
                         ui.label("");
                         ui.end_row();
 
                         if s_changed {
                             self.preset = ResizePreset::Custom;
                             self.width =
-                                (self.original_w as f32 * self.scale_percent / 100.0).round();
+                                (self.original_w as f32 * self.scale_percent / 100.0).round().clamp(1.0, 20000.0);
                             self.height =
-                                (self.original_h as f32 * self.scale_percent / 100.0).round();
+                                (self.original_h as f32 * self.scale_percent / 100.0).round().clamp(1.0, 20000.0);
                             self.aspect_ratio = self.width / self.height.max(1.0);
                             self.sync_inputs_from_values();
                         }
@@ -1847,6 +1851,45 @@ mod issue_185_dimension_controls_tests {
             }
         });
         assert_eq!(actual, Some(displayed));
+    }
+
+    #[test]
+    fn resize_image_accepts_scale_digits_before_committing() {
+        crate::i18n::init();
+        let ctx = egui::Context::default();
+        let mut fonts = egui::FontDefinitions::default();
+        fonts.families.insert(
+            egui::FontFamily::Name("WidgetTitle".into()),
+            fonts.families[&egui::FontFamily::Proportional].clone(),
+        );
+        ctx.set_fonts(fonts);
+        let mut dialog = ResizeImageDialog::new(&CanvasState::new(76, 38));
+        let mut run = |events| {
+            let _ = ctx.run_ui(egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000., 800.))),
+                events,
+                ..Default::default()
+            }, |_| { dialog.show(&ctx); });
+            (dialog.width, dialog.height, dialog.scale_percent)
+        };
+        for _ in 0..3 { run(vec![]); }
+        let point = ctx.data(|d| d.get_temp::<egui::Rect>(egui::Id::new("resize_image_scale_rect")))
+            .unwrap().center();
+        for pressed in [true, false] {
+            run(vec![egui::Event::PointerMoved(point), egui::Event::PointerButton {
+                pos: point, button: egui::PointerButton::Primary, pressed,
+                modifiers: egui::Modifiers::NONE,
+            }]);
+        }
+        run(vec![]);
+        let key = |key, modifiers| egui::Event::Key {
+            key, physical_key: None, pressed: true, repeat: false, modifiers,
+        };
+        run(vec![key(egui::Key::A, egui::Modifiers::COMMAND)]);
+        for digit in ["1", "0", "0", "0"] {
+            assert_eq!(run(vec![egui::Event::Text(digit.into())]), (76., 38., 100.));
+        }
+        assert_eq!(run(vec![key(egui::Key::Enter, egui::Modifiers::NONE)]), (760., 380., 1000.));
     }
 
     #[test]

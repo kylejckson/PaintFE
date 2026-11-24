@@ -33,8 +33,6 @@ impl ToolsPanel {
                 let esc_pressed = escape_pressed_global;
                 let alt_held = ui.input(|i| i.modifiers.alt);
                 let ctrl_held = ui.input(|i| i.modifiers.command);
-                let is_secondary_pressed =
-                    ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary));
 
                 // Idle Enter deselection is handled by the app preference and History.
                 if esc_pressed {
@@ -56,7 +54,7 @@ impl ToolsPanel {
                 //   else      -> context bar mode
                 if (is_primary_pressed || is_secondary_pressed)
                     && !self.selection_state.dragging
-                    && let Some(pos_f) = canvas_pos_unclamped
+                    && let Some(pos_f) = raw_motion_events.first().copied().or(canvas_pos_unclamped)
                 {
                     let pos2 = Pos2::new(pos_f.0, pos_f.1);
                     self.selection_state.dragging = true;
@@ -80,7 +78,7 @@ impl ToolsPanel {
                 let any_button_down = is_primary_down || is_secondary_down;
                 let any_button_released = is_primary_released || is_secondary_released;
 
-                if any_button_down
+                if (any_button_down || any_button_released)
                     && self.selection_state.dragging
                     && let Some(pos_f) = canvas_pos_unclamped
                 {
@@ -126,22 +124,15 @@ impl ToolsPanel {
                         self.selection_state.drag_start,
                         self.selection_state.drag_end,
                     ) {
-                        let raw_min_x = start.x.min(end.x).max(0.0);
-                        let raw_min_y = start.y.min(end.y).max(0.0);
-                        let raw_max_x = start.x.max(end.x).max(0.0);
-                        let raw_max_y = start.y.max(end.y).max(0.0);
-                        let min_x = (raw_min_x as u32).min(canvas_state.width.saturating_sub(1));
-                        let min_y = (raw_min_y as u32).min(canvas_state.height.saturating_sub(1));
-                        let max_x = (raw_max_x as u32).min(canvas_state.width.saturating_sub(1));
-                        let max_y = (raw_max_y as u32).min(canvas_state.height.saturating_sub(1));
-
                         let sel_before = canvas_state.selection_mask.clone();
                         let sel_before_all = canvas_state.selection_all;
+                        let moved_within_pixel = self.active_tool == Tool::RectangleSelect
+                            && start.distance_sq(end) > 0.0001;
 
-                        // Allow single-pixel selections for pixel art accuracy.
-                        // Deselect only happens on a zero-size drag (start == end,
-                        // which resolves to a single point).
-                        if max_x > min_x || max_y > min_y {
+                        if let Some((min_x, min_y, max_x, max_y)) = self.selection_state
+                            .clipped_bounds(canvas_state.width, canvas_state.height)
+                            && (max_x > min_x || max_y > min_y || moved_within_pixel)
+                        {
                             let shape = match self.active_tool {
                                 Tool::RectangleSelect => SelectionShape::Rectangle {
                                     min_x,
@@ -160,8 +151,7 @@ impl ToolsPanel {
                             };
 
                             canvas_state.apply_selection_shape(&shape, effective_mode);
-                        } else {
-                            // Zero-size click => deselect
+                        } else if start == end && effective_mode == SelectionMode::Replace {
                             canvas_state.clear_selection();
                         }
 
@@ -173,6 +163,7 @@ impl ToolsPanel {
                             }
                             _ => HistoryAction::EllipseSelect.label("Ellipse Select"),
                         };
+                        if sel_before != sel_after || sel_before_all != sel_after_all {
                         self.pending_history_commands
                             .push(Box::new(SelectionCommand::new_states(
                                 tool_name,
@@ -181,6 +172,7 @@ impl ToolsPanel {
                                 sel_after,
                                 sel_after_all,
                             )));
+                        }
                     }
 
                     self.selection_state.drag_start = None;

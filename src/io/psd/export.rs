@@ -106,6 +106,99 @@ impl Bounds {
     }
 }
 
+/// A PSD RLE stream stores all row lengths before the encoded rows. Keep only
+/// those lengths between passes so encoding never buffers an entire channel.
+struct RowEncoding {
+    lengths: Option<Vec<u16>>,
+    bytes: u64,
+}
+
+impl RowEncoding {
+    fn measure(width: usize, rows: usize, mut read_row: impl FnMut(usize, &mut Vec<u8>)) -> Self {
+        let raw = Self {
+            lengths: None,
+            bytes: 2 + width as u64 * rows as u64,
+        };
+        if width <= 4 {
+            return raw;
+        }
+        let mut row = Vec::with_capacity(width);
+        let mut packed = Vec::with_capacity(width);
+        let mut lengths = Vec::with_capacity(rows);
+        let mut bytes = 2 + 2 * rows as u64;
+        for y in 0..rows {
+            row.clear();
+            read_row(y, &mut row);
+            pack_row(&row, &mut packed);
+            let Ok(length) = u16::try_from(packed.len()) else {
+                return raw;
+            };
+            bytes += u64::from(length);
+            if bytes >= raw.bytes {
+                return raw;
+            }
+            lengths.push(length);
+        }
+        Self {
+            lengths: Some(lengths),
+            bytes,
+        }
+    }
+
+    fn write(
+        &self,
+        out: &mut impl Write,
+        rows: usize,
+        row: &mut Vec<u8>,
+        packed: &mut Vec<u8>,
+        mut read_row: impl FnMut(usize, &mut Vec<u8>),
+    ) -> std::io::Result<()> {
+        out.write_all(&[0, u8::from(self.lengths.is_some())])?;
+        if let Some(lengths) = &self.lengths {
+            for len in lengths {
+                out.write_all(&len.to_be_bytes())?;
+            }
+        }
+        for y in 0..rows {
+            row.clear();
+            read_row(y, row);
+            if self.lengths.is_some() {
+                pack_row(row, packed);
+                out.write_all(packed)?;
+            } else {
+                out.write_all(row)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+fn pack_row(mut row: &[u8], output: &mut Vec<u8>) {
+    output.clear();
+    let run_at_start = |bytes: &[u8]| {
+        bytes
+            .iter()
+            .take(128)
+            .take_while(|&&v| v == bytes[0])
+            .count()
+    };
+    while !row.is_empty() {
+        let run = run_at_start(row);
+        if run >= 3 {
+            output.extend([(1i16 - run as i16) as u8, row[0]]);
+            row = &row[run..];
+        } else {
+            let mut len = run;
+            while len < row.len().min(128) && run_at_start(&row[len..]) < 3 {
+                len += 1;
+            }
+            output.push((len - 1) as u8);
+            output.extend_from_slice(&row[..len]);
+            row = &row[len..];
+        }
+    }
+}
+
 struct PlaneSource {
     pixels: TiledImage,
     bounds: Bounds,
@@ -119,27 +212,20 @@ impl PlaneSource {
         }
     }
 
-    fn channel_bytes(&self) -> u64 {
-        2 + self.bounds.samples()
+    fn encoding(&self, index: usize, mask: bool) -> RowEncoding {
+        RowEncoding::measure(
+            (self.bounds.right - self.bounds.left) as usize,
+            (self.bounds.bottom - self.bounds.top) as usize,
+            |y, row| self.read_row(y, row, index, mask),
+        )
     }
 
-    fn write_channel(
-        &self,
-        out: &mut impl Write,
-        row: &mut Vec<u8>,
-        index: usize,
-        mask: bool,
-    ) -> std::io::Result<()> {
-        out.write_all(&[0, 0])?; // Raw planar channel
-        for y in self.bounds.top..self.bounds.bottom {
-            row.clear();
-            row.extend((self.bounds.left..self.bounds.right).map(|x| {
-                let value = self.pixels.get_pixel(x, y)[index];
-                if mask { 255 - value } else { value }
-            }));
-            out.write_all(row)?;
-        }
-        Ok(())
+    fn read_row(&self, y: usize, row: &mut Vec<u8>, index: usize, mask: bool) {
+        let y = self.bounds.top + y as u32;
+        row.extend((self.bounds.left..self.bounds.right).map(|x| {
+            let value = self.pixels.get_pixel(x, y)[index];
+            if mask { 255 - value } else { value }
+        }));
     }
 }
 
@@ -147,22 +233,26 @@ struct ExportLayer {
     pixels: PlaneSource,
     mask: Option<PlaneSource>,
     record: Vec<u8>,
+    channels: [RowEncoding; 4],
+    mask_encoding: Option<RowEncoding>,
 }
 
 impl ExportLayer {
     fn new(layer: &crate::canvas::Layer, visible: bool) -> Self {
         let pixels = PlaneSource::new(&layer.pixels);
         let mask = layer.mask.as_ref().map(PlaneSource::new);
+        let channels = std::array::from_fn(|index| pixels.encoding(index, false));
+        let mask_encoding = mask.as_ref().map(|mask| mask.encoding(3, true));
         let mut record = Vec::new();
         pixels.bounds.write(&mut record);
         record.extend(if mask.is_some() { 5u16 } else { 4u16 }.to_be_bytes());
-        for id in [0i16, 1, 2, -1] {
+        for (id, channel) in [0i16, 1, 2, -1].into_iter().zip(&channels) {
             record.extend(id.to_be_bytes());
-            record.extend((pixels.channel_bytes() as u32).to_be_bytes());
+            record.extend((channel.bytes as u32).to_be_bytes());
         }
-        if let Some(mask) = &mask {
+        if let Some(mask_encoding) = &mask_encoding {
             record.extend((-2i16).to_be_bytes());
-            record.extend((mask.channel_bytes() as u32).to_be_bytes());
+            record.extend((mask_encoding.bytes as u32).to_be_bytes());
         }
         record.extend(b"8BIM");
         record.extend(blend_key(layer.blend_mode).expect("representable PSD layer"));
@@ -208,6 +298,8 @@ impl ExportLayer {
             pixels,
             mask,
             record,
+            channels,
+            mask_encoding,
         }
     }
 }
@@ -264,11 +356,16 @@ impl Export {
             }
             let visible = flatten || state.layer_effectively_visible(idx);
             let layer = ExportLayer::new(layer, visible);
-            layer_info += layer.record.len() as u64 + 4 * layer.pixels.channel_bytes();
+            layer_info += layer.record.len() as u64
+                + layer
+                    .channels
+                    .iter()
+                    .map(|channel| channel.bytes)
+                    .sum::<u64>();
             decoded_tiles += layer.pixels.bounds.tiled_bytes();
             let mut temporary_bytes = 5 * layer.pixels.bounds.samples();
-            if let Some(mask) = &layer.mask {
-                layer_info += mask.channel_bytes();
+            if let Some((mask, encoding)) = layer.mask.as_ref().zip(layer.mask_encoding.as_ref()) {
+                layer_info += encoding.bytes;
                 decoded_tiles += mask.bounds.tiled_bytes();
                 temporary_bytes = temporary_bytes.max(5 * mask.bounds.samples());
             }
@@ -330,34 +427,48 @@ impl Export {
             out.write_all(&layer.record)?;
         }
         let mut row = Vec::with_capacity(width as usize);
+        let mut packed = Vec::with_capacity(width as usize);
         for layer in &self.layers {
-            for index in 0..4 {
-                layer.pixels.write_channel(out, &mut row, index, false)?;
+            let pixels = &layer.pixels;
+            let rows = (pixels.bounds.bottom - pixels.bounds.top) as usize;
+            for (index, encoding) in layer.channels.iter().enumerate() {
+                encoding.write(out, rows, &mut row, &mut packed, |y, row| {
+                    pixels.read_row(y, row, index, false);
+                })?;
             }
-            if let Some(mask) = &layer.mask {
-                mask.write_channel(out, &mut row, 3, true)?;
+            if let Some((mask, encoding)) = layer.mask.as_ref().zip(layer.mask_encoding.as_ref()) {
+                let rows = (mask.bounds.bottom - mask.bounds.top) as usize;
+                encoding.write(out, rows, &mut row, &mut packed, |y, row| {
+                    mask.read_row(y, row, 3, true);
+                })?;
             }
         }
         if self.layer_info_padding {
             out.write_all(&[0])?;
         }
         out.write_all(&[0; 4])?; // Global layer mask
-        out.write_all(&[0, 0])?; // Raw merged image
-        for channel in 0..usize::from(channel_count) {
-            for pixels in self.composite.rows() {
-                row.clear();
-                row.extend(pixels.map(|p| {
-                    if self.merged_alpha && channel < 3 {
-                        // The PSD merged RGB planes are matted against white.
-                        let alpha = u16::from(p[3]);
-                        ((u16::from(p[channel]) * alpha + 127) / 255 + 255 - alpha) as u8
-                    } else {
-                        p[channel]
-                    }
-                }));
-                out.write_all(&row)?;
-            }
-        }
+        let rows = usize::from(channel_count) * height as usize;
+        let read_row = |index: usize, row: &mut Vec<u8>| {
+            let channel = index / height as usize;
+            let y = (index % height as usize) as u32;
+            row.extend((0..width).map(|x| {
+                let p = self.composite.get_pixel(x, y);
+                if self.merged_alpha && channel < 3 {
+                    // The PSD merged RGB planes are matted against white.
+                    let alpha = u16::from(p[3]);
+                    ((u16::from(p[channel]) * alpha + 127) / 255 + 255 - alpha) as u8
+                } else {
+                    p[channel]
+                }
+            }));
+        };
+        RowEncoding::measure(width as usize, rows, read_row).write(
+            out,
+            rows,
+            &mut row,
+            &mut packed,
+            read_row,
+        )?;
         out.flush()
     }
 }
@@ -366,6 +477,56 @@ impl Export {
 mod tests {
     use super::*;
     use image::Rgba;
+
+    #[test]
+    fn packbits_roundtrips_long_runs_and_literal_boundaries() {
+        let mut row: Vec<u8> = (0..=255).cycle().take(385).collect();
+        row.extend([6; 129]);
+        row.extend([7, 7, 8, 9, 9, 9]);
+        let mut packed = Vec::new();
+        pack_row(&row, &mut packed);
+        let mut decoded = vec![0; row.len()];
+        super::super::unpack_row(super::super::Reader(&packed), &mut decoded).unwrap();
+        assert_eq!(decoded, row);
+        let raw = RowEncoding::measure(256, 10, |_, row| row.extend(0..=255u8));
+        assert!(raw.lengths.is_none());
+        assert_eq!(raw.bytes, 2562);
+    }
+
+    #[test]
+    fn compressed_layers_mask_and_merged_preview_roundtrip() {
+        let mut state = CanvasState::new(320, 160);
+        let layer = &mut state.layers[0];
+        layer.pixels = TiledImage::new_filled(320, 160, Rgba([51, 102, 153, 255]));
+        layer.mask = Some(TiledImage::new_filled(320, 160, Rgba([0, 0, 0, 96])));
+        layer.mask_enabled = false;
+        let expected = state.composite_committed();
+        let export = Export::prepare(&state).unwrap();
+        assert!(
+            export.layers[0]
+                .channels
+                .iter()
+                .all(|c| c.lengths.is_some())
+        );
+        assert!(
+            export.layers[0]
+                .mask_encoding
+                .as_ref()
+                .unwrap()
+                .lengths
+                .is_some()
+        );
+        let mut file = Vec::new();
+        export.write_to(&mut file).unwrap();
+        assert!(file.len() < 20_000, "PSD was {} bytes", file.len());
+        let loaded = super::super::decode(&file).unwrap();
+        assert_eq!(loaded.canvas.composite_committed(), expected);
+        assert!(!loaded.canvas.layers[0].mask_enabled);
+        assert_eq!(
+            loaded.canvas.layers[0].mask.as_ref().unwrap().get_pixel(100, 70)[3],
+            96
+        );
+    }
 
     #[test]
     fn odd_mask_channel_is_padded_and_merged_preview_uses_committed_alpha() {

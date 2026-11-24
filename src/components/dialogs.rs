@@ -1565,7 +1565,6 @@ impl SaveFileDialog {
                                 && !crate::io::heic::capabilities().encode;
                             #[cfg(target_arch = "wasm32")]
                             let needs_heic = self.format == SaveFormat::Heic;
-                            #[cfg(not(target_arch = "wasm32"))]
                             if save_clicked && !needs_jxl && !needs_avif && !needs_heic {
                                 let full_filename =
                                     format!("{}.{}", self.filename, self.format.extension());

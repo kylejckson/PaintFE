@@ -134,24 +134,28 @@ const SEARCH_ENTRIES: &[SearchEntry] = &[
         english: "Optional HEIC library libheif DLL",
         section: "heic.system_title",
     },
+    #[cfg(not(target_arch = "wasm32"))]
     SearchEntry {
         tab: SettingsTab::OptionalFeatures,
         key: "heic.choose_library",
         english: "Choose libheif DLL",
         section: "heic.system_title",
     },
+    #[cfg(not(target_arch = "wasm32"))]
     SearchEntry {
         tab: SettingsTab::OptionalFeatures,
         key: "heic.test_library",
         english: "Check HEIC support",
         section: "heic.system_title",
     },
+    #[cfg(not(target_arch = "wasm32"))]
     SearchEntry {
         tab: SettingsTab::OptionalFeatures,
         key: "heic.use_system",
         english: "Use system codec",
         section: "heic.system_title",
     },
+    #[cfg(not(target_arch = "wasm32"))]
     SearchEntry {
         tab: SettingsTab::OptionalFeatures,
         key: "heic.system_title",

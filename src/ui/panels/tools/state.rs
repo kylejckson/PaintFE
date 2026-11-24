@@ -618,6 +618,26 @@ pub struct SelectionToolState {
     pub aspect_ratio_input: String,
 }
 
+impl SelectionToolState {
+    pub(crate) fn clipped_bounds(&self, width: u32, height: u32) -> Option<(u32, u32, u32, u32)> {
+        let start = self.drag_start?;
+        let end = self.drag_end?;
+        let min = start.min(end);
+        let max = start.max(end);
+        if width == 0 || height == 0 || max.x < 0.0 || max.y < 0.0
+            || min.x >= width as f32 || min.y >= height as f32
+        {
+            return None;
+        }
+        Some((
+            min.x as u32,
+            min.y as u32,
+            (max.x as u32).min(width - 1),
+            (max.y as u32).min(height - 1),
+        ))
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SelectionAspectRatio {
     Fixed(f32),
@@ -1995,6 +2015,14 @@ impl Default for ShapesToolState {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct PaintContact {
+    pub(crate) pos: Pos2,
+    pub(crate) force: Option<f32>,
+    pub(crate) started: bool,
+    pub(crate) ended: bool,
+}
+
 pub struct ToolsPanel {
     pub active_tool: Tool,
     pub record_tool_adjustments: bool,
@@ -2118,6 +2146,7 @@ pub struct ToolsPanel {
     /// Floating child UI that must block canvas input/cursor handling.
     pub cursor_blocking_rect: Option<egui::Rect>,
     canvas_pointer_active: bool,
+    paint_contact: Option<(egui::TouchDeviceId, egui::TouchId, Pos2, Option<f32>)>,
 }
 
 impl Default for ToolsPanel {
@@ -2211,6 +2240,7 @@ impl Default for ToolsPanel {
             brush_tip_context_menu: None,
             cursor_blocking_rect: None,
             canvas_pointer_active: false,
+            paint_contact: None,
         }
     }
 }

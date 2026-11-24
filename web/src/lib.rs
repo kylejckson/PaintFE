@@ -29,10 +29,13 @@ impl WebHandle {
     }
 
     #[wasm_bindgen]
-    pub async fn start(&self, canvas: web_sys::HtmlCanvasElement) -> Result<(), wasm_bindgen::JsValue> {
+    pub async fn start(
+        &self,
+        canvas: web_sys::HtmlCanvasElement,
+    ) -> Result<(), wasm_bindgen::JsValue> {
         self.runner
             .start(
-                canvas,
+                canvas.clone(),
                 eframe::WebOptions::default(),
                 Box::new(|cc| {
                     paintfe::i18n::init();
@@ -43,10 +46,13 @@ impl WebHandle {
                     // inert IPC receiver (single-instance IPC is a native-only
                     // concept — the non-Windows fallback channel never
                     // receives anything, which is exactly what we want here).
-                    let ipc_receiver = paintfe::ipc::start_listener();
-                    Ok(Box::new(PaintFEApp::new(cc, Vec::new(), ipc_receiver)) as Box<dyn eframe::App>)
+                    let ipc_receiver = paintfe::ipc::start_listener(|| {});
+                    Ok(Box::new(PaintFEApp::new(cc, Vec::new(), ipc_receiver))
+                        as Box<dyn eframe::App>)
                 }),
             )
-            .await
+            .await?;
+        paintfe::web_bridge::register_pen_input(&canvas)?;
+        Ok(())
     }
 }

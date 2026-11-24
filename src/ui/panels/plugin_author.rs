@@ -80,7 +80,7 @@ pub fn create(ctx: &Context, source: &str) {
         kind: crate::services::plugins::PackKind::Effects,
         appearance: String::new(),
         schema: 1,
-        api: 1,
+        api: 2,
         id: format!(
             "local.effect-{}",
             &uuid::Uuid::new_v4().simple().to_string()[..8]
@@ -166,6 +166,11 @@ fn package(
             sha256: hash(b),
         })
         .collect();
+    if manifest.effects.iter().flat_map(|e| &e.parameters)
+        .any(|p| matches!(p.kind.as_str(), "seed" | "point"))
+    {
+        manifest.api = 2;
+    }
     manifest.validate()?;
     let envelope = Envelope {
         payload: serde_json::to_string(&manifest).map_err(|e| e.to_string())?,
@@ -430,6 +435,15 @@ fn overview(ui: &mut egui::Ui, d: &mut Draft) {
     }
     ui.add_space(12.);
     ui.collapsing(tr("advanced"), |ui| {
+        ui.horizontal(|ui| {
+            ui.label(tr("script_api"));
+            egui::ComboBox::from_id_salt("script_api")
+                .selected_text(d.manifest.api.to_string())
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut d.manifest.api, 1, "1");
+                    ui.selectable_value(&mut d.manifest.api, 2, "2");
+                });
+        });
         for (key, value) in [
             ("version", &mut d.manifest.version),
             ("license", &mut d.manifest.license),
@@ -562,13 +576,15 @@ fn effect_fields(ui: &mut egui::Ui, d: &mut Draft) {
                     egui::ComboBox::from_id_salt("kind")
                         .selected_text(tr(&p.kind))
                         .show_ui(ui, |ui| {
-                            for kind in ["number", "integer", "boolean", "text", "choice", "colour"]
+                            for kind in ["number", "integer", "boolean", "text", "choice", "colour", "seed", "point"]
                             {
                                 ui.selectable_value(&mut p.kind, kind.to_string(), tr(kind));
                             }
                         });
                     if p.kind != previous {
                         p.default = match p.kind.as_str() {
+                            "seed" => 1.into(),
+                            "point" => serde_json::json!([0.5, 0.5]),
                             "boolean" => false.into(),
                             "text" => "".into(),
                             "choice" => {

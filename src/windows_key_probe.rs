@@ -165,11 +165,11 @@ mod imp {
                     {
                         input.events.push(egui::Event::Copy)
                     }
-                    egui::Key::X if !input.events.iter().any(|e| matches!(e, egui::Event::Cut)) => {
+                    egui::Key::X if !modifiers.shift && !input.events.iter().any(|e| matches!(e, egui::Event::Cut)) => {
                         input.events.push(egui::Event::Cut)
                     }
                     egui::Key::V
-                        if !input
+                        if !modifiers.shift && !input
                             .events
                             .iter()
                             .any(|e| matches!(e, egui::Event::Paste(_))) =>

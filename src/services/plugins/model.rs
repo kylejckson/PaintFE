@@ -222,6 +222,10 @@ impl Parameter {
                     && n <= self.max
                     && (self.kind != "integer" || n.fract() == 0.)
             }),
+            "seed" => value.as_u64().is_some_and(|seed| seed <= u32::MAX as u64),
+            "point" => value.as_array().is_some_and(|p| {
+                p.len() == 2 && p.iter().all(|v| v.as_f64().is_some_and(|n| (0.0..=1.0).contains(&n)))
+            }),
             "boolean" => value.is_boolean(),
             "text" => value.as_str().is_some_and(|s| s.chars().count() <= 2048),
             "choice" => value
@@ -257,9 +261,10 @@ fn is_effects(kind: &PackKind) -> bool {
     *kind == PackKind::Effects
 }
 impl Manifest {
+    pub fn supports_script_api(&self) -> bool { matches!(self.api, 1 | 2) }
     pub fn validate(&self) -> Result<(), String> {
         self.validate_listing()?;
-        if self.api != 1 {
+        if !self.supports_script_api() {
             return Err("This plugin requires another Script API version.".into());
         }
         Ok(())
@@ -350,6 +355,9 @@ impl Manifest {
             {
                 return Err("Invalid plugin effect".into());
             }
+            if self.api <= 2 && e.parameters.iter().filter(|p| p.kind == "seed").count() > 1 {
+                return Err("An effect can have only one random seed parameter".into());
+            }
             let mut params = BTreeSet::new();
             for p in &e.parameters {
                 if !identifier(&p.id)
@@ -372,7 +380,8 @@ impl Manifest {
                             || p.max >= i64::MAX as f64))
                     || p.choices.len() > 64
                     || p.choices.iter().any(|c| !text(c, 80))
-                    || (self.api == 1 && !p.validate_value(&p.default))
+                    || (self.api <= 2 && !p.validate_value(&p.default))
+                    || (self.api == 1 && matches!(p.kind.as_str(), "seed" | "point"))
                 {
                     return Err("Invalid plugin parameter".into());
                 }

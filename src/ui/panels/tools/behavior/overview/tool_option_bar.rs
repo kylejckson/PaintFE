@@ -1123,6 +1123,16 @@ impl ToolsPanel {
             .on_hover_text(crate::t!(
                 "ui.lock_rectangular_selections_to_width_height_use_image_for_the_canvas_r"
             ));
+            egui::ComboBox::from_id_salt("rectangle_selection_aspect_presets")
+                .selected_text("")
+                .width(20.0)
+                .show_ui(ui, |ui| {
+                    for ratio in ["1:1", "3:4", "4:3", "16:9", "9:16", "21:9", "3:2", "5:4", "1.85:1", "2.35:1"] {
+                        if ui.selectable_label(self.selection_state.aspect_ratio_input == ratio, ratio).clicked() {
+                            self.selection_state.aspect_ratio_input = ratio.to_owned();
+                        }
+                    }
+                });
             if let Err(error) =
                 parse_selection_aspect_ratio(&self.selection_state.aspect_ratio_input)
             {
@@ -1176,13 +1186,6 @@ impl ToolsPanel {
         )
         .on_hover_text(crate::t!("ui.radius_in_pixels_for_feather_expand_contract"));
         if ui
-            .button(crate::t!("ui.feather"))
-            .on_hover_text(crate::t!("ui.blur_soften_selection_edge_by_radius"))
-            .clicked()
-        {
-            self.pending_sel_modify = Some(SelectionModifyOp::Feather(self.sel_modify_radius));
-        }
-        if ui
             .button(crate::t!("liquify_mode.expand"))
             .on_hover_text(crate::t!("ui.grow_selection_by_radius"))
             .clicked()
@@ -1199,6 +1202,13 @@ impl ToolsPanel {
             self.pending_sel_modify = Some(SelectionModifyOp::Contract(
                 self.sel_modify_radius.round() as i32,
             ));
+        }
+        if ui
+            .button(crate::t!("ui.feather"))
+            .on_hover_text(crate::t!("ui.blur_soften_selection_edge_by_radius"))
+            .clicked()
+        {
+            self.pending_sel_modify = Some(SelectionModifyOp::Feather(self.sel_modify_radius));
         }
     }
 

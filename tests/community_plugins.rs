@@ -141,7 +141,7 @@ fn catalogue_and_path_boundaries_are_portable() {
 #[test]
 fn future_api_can_be_listed_but_cannot_be_installed() {
     let mut m = manifest(COLOUR);
-    m.api = 2;
+    m.api = 3;
     assert!(m.validate_listing().is_ok());
     assert!(m.validate().is_err());
 }
@@ -172,6 +172,7 @@ fn request(source: &str) -> worker::Request {
         width: 8,
         height: 6,
         values: BTreeMap::new(),
+        colours: None,
         seed: 19,
         effect,
         has_mask: false,
@@ -425,4 +426,67 @@ fn community_icon_archive_has_bounded_expansion_and_safe_paths() {
         &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/icon_packs/luminous.zip"),
     )
     .unwrap();
+}
+
+#[test]
+fn script_api_two_parameters_reject_invalid_values() {
+    let mut manifest = manifest(COLOUR);
+    let p = &mut manifest.effects[0].parameters[0];
+    p.kind = "point".into();
+    p.default = serde_json::json!([0.25, 0.75]);
+    assert!(!p.validate_value(&serde_json::json!([1.01, 0.0])));
+    assert!(!p.validate_value(&serde_json::json!([0.5])));
+    assert!(manifest.validate().is_err());
+    manifest.api = 2;
+    assert!(manifest.validate().is_ok());
+    let p = &mut manifest.effects[0].parameters[0];
+    p.kind = "seed".into();
+    p.default = serde_json::json!(0);
+    assert!(!p.validate_value(&serde_json::json!(-1)));
+    assert!(!p.validate_value(&serde_json::json!(4_294_967_296u64)));
+    assert!(manifest.validate().is_ok());
+}
+
+#[test]
+fn api_two_worker_respects_selection_colours_seed_and_point() {
+    let run = |seed: u32| {
+        let mut r = request(
+            r#"
+            let x = floor(params.anchor[0] * 8.0).to_int();
+            let c = primary_colour();
+            c[1] = rand_int(0, 255);
+            fill_rect(x, 0, 2, 2, c);
+        "#,
+        );
+        let mut p = manifest(COLOUR).effects[0].parameters[0].clone();
+        p.id = "anchor".into();
+        p.kind = "point".into();
+        p.default = serde_json::json!([0.5, 0.5]);
+        let mut q = p.clone();
+        q.id = "seed".into();
+        q.kind = "seed".into();
+        q.default = serde_json::json!(seed);
+        r.effect.parameters = vec![p, q];
+        r.values = r.effect.defaults();
+        r.colours = Some([[211, 20, 44, 255], [15, 16, 17, 255]]);
+        r.has_mask = true;
+        let mut mask = vec![255; 48];
+        mask[5] = 0;
+        worker::execute(
+            r,
+            [0, 0, 0, 255].repeat(48),
+            Some(mask),
+            &AtomicBool::new(false),
+        )
+        .unwrap()
+        .pixels
+    };
+    let a = run(741);
+    let b = run(741);
+    assert_eq!(a, b);
+    assert_eq!(
+        &a[16..20].iter().step_by(2).copied().collect::<Vec<_>>(),
+        &[211, 44]
+    );
+    assert_eq!(&a[20..24], &[0, 0, 0, 255]);
 }

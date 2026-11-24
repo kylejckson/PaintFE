@@ -1439,8 +1439,8 @@ impl Canvas {
                 (image_rect.min.y + y0 as f32 * self.zoom).round(),
             );
             let max = Pos2::new(
-                (image_rect.min.x + x1 as f32 * self.zoom).round(),
-                (image_rect.min.y + y1 as f32 * self.zoom).round(),
+                (image_rect.min.x + (x1 + 1) as f32 * self.zoom).round(),
+                (image_rect.min.y + (y1 + 1) as f32 * self.zoom).round(),
             );
             let rect = Rect::from_min_max(min, max);
             painter.rect_stroke(
@@ -1485,27 +1485,17 @@ impl Canvas {
                 if !t.selection_state.dragging {
                     return None;
                 }
-                let start = t.selection_state.drag_start?;
-                let end = t.selection_state.drag_end?;
-                Some((t.active_tool, start, end))
+                Some((t.active_tool, t.selection_state.clipped_bounds(state.width, state.height)?))
             });
 
-            if let Some((tool, start, end)) = sel_preview {
-                let min_x = start.x.min(end.x);
-                let min_y = start.y.min(end.y);
-                let max_x = start.x.max(end.x);
-                let max_y = start.y.max(end.y);
-
-                // Snap to pixel grid: the selection of pixel (x,y) covers the
-                // screen region [x*zoom, (x+1)*zoom), so floor the min and
-                // ceil(max+1) to ensure the overlay aligns with pixel edges.
+            if let Some((tool, (min_x, min_y, max_x, max_y))) = sel_preview {
                 let screen_min = Pos2::new(
-                    (image_rect.min.x + min_x.floor() * self.zoom).round(),
-                    (image_rect.min.y + min_y.floor() * self.zoom).round(),
+                    (image_rect.min.x + min_x as f32 * self.zoom).round(),
+                    (image_rect.min.y + min_y as f32 * self.zoom).round(),
                 );
                 let screen_max = Pos2::new(
-                    (image_rect.min.x + (max_x.floor() + 1.0) * self.zoom).round(),
-                    (image_rect.min.y + (max_y.floor() + 1.0) * self.zoom).round(),
+                    (image_rect.min.x + (max_x + 1) as f32 * self.zoom).round(),
+                    (image_rect.min.y + (max_y + 1) as f32 * self.zoom).round(),
                 );
                 let sel_rect = Rect::from_min_max(screen_min, screen_max);
 
@@ -1870,16 +1860,12 @@ impl Canvas {
         // EXTRACT DEBUG INFO before tools is consumed
         // ====================================================================
         // Selection drag info (for debug display).
-        let sel_drag_info: Option<(f32, f32)> = tools.as_ref().and_then(|t| {
+        let sel_drag_info = tools.as_ref().and_then(|t| {
             if !t.selection_state.dragging {
                 return None;
             }
-            let s = t.selection_state.drag_start?;
-            let e = t.selection_state.drag_end?;
-            let w = (e.x - s.x).abs();
-            let h = (e.y - s.y).abs();
-            Some((w, h))
-        });
+            t.selection_state.clipped_bounds(state.width, state.height)
+        }).or(state.selection_transform_preview_bounds);
 
         // Paste overlay info (for debug display).
         let paste_info: Option<(f32, f32, f32, f32, f32, f32)> = paste_overlay.as_ref().map(|o| {
@@ -1912,33 +1898,6 @@ impl Canvas {
                         "Line: {:.1}px | Pos: ({:.0}, {:.0}) \u{2192} ({:.0}, {:.0})",
                         length, p0.x, p0.y, p3.x, p3.y
                     ))
-                } else {
-                    None
-                }
-            }
-            crate::components::tools::Tool::RectangleSelect
-            | crate::components::tools::Tool::EllipseSelect => {
-                if t.selection_state.dragging {
-                    if let (Some(s), Some(e)) =
-                        (t.selection_state.drag_start, t.selection_state.drag_end)
-                    {
-                        let w = (e.x - s.x).abs();
-                        let h = (e.y - s.y).abs();
-                        let cx = (s.x + e.x) / 2.0;
-                        let cy = (s.y + e.y) / 2.0;
-                        let label =
-                            if t.active_tool == crate::components::tools::Tool::RectangleSelect {
-                                "Rect"
-                            } else {
-                                "Ellipse"
-                            };
-                        Some(format!(
-                            "{}: {:.0}x{:.0} | Center: ({:.0}, {:.0})",
-                            label, w, h, cx, cy
-                        ))
-                    } else {
-                        None
-                    }
                 } else {
                     None
                 }
@@ -2094,11 +2053,21 @@ impl Canvas {
                 || pointer_over_blocking_ui
                 || ui_blocks_canvas_input;
 
+            let popup_open = egui::Popup::is_any_open(ui.ctx());
+            let mut contact_motion = Vec::new();
+            let paint_contact = ui.input(|i| tools.track_paint_contact(
+                &i.events,
+                |pos| canvas_rect.contains(pos)
+                    && !modal_open && paste_overlay.is_none()
+                    && !ui_blocks_canvas_input && !pointer_over_blocking_ui
+                    && !popup_open,
+                &mut contact_motion,
+            ));
             // Get mouse position and check if over canvas.
             // On Wayland with a graphics tablet the stylus may route events as
             // Touch rather than Pointer, so fall back to the most recent touch
             // position when the pointer position is unavailable.
-            let mouse_pos = ui.input(|i| {
+            let mouse_pos = paint_contact.map(|contact| contact.pos).or_else(|| ui.input(|i| {
                 i.pointer.interact_pos().or_else(|| {
                     i.events.iter().rev().find_map(|e| match e {
                         egui::Event::PointerButton {
@@ -2112,7 +2081,7 @@ impl Canvas {
                         _ => None,
                     })
                 })
-            });
+            }));
             let pointer_over_canvas = mouse_pos.is_some_and(|pos| canvas_rect.contains(pos));
             let raw_pointer_button_on_canvas = ui.input(|i| {
                 if pointer_over_egui || pointer_over_blocking_ui || ui_blocks_canvas_input {
@@ -2214,7 +2183,9 @@ impl Canvas {
             // positions between frames. Processing all of them eliminates gaps.
             // When painting, use unclamped conversion so strokes can start from
             // off-canvas and still track motion back onto the canvas.
-            let raw_motion_events: Vec<(f32, f32)> = if is_painting {
+            let raw_motion_events: Vec<(f32, f32)> = if paint_contact.is_some() {
+                contact_motion.into_iter().map(|pos| self.screen_to_canvas_unclamped(pos, canvas_rect, state)).collect()
+            } else if is_painting {
                 ui.input(|i| collect_stroke_motion(&i.events, image_rect, self.zoom))
             } else {
                 Vec::new()
@@ -2277,11 +2248,13 @@ impl Canvas {
                 && !paste_consumed_input
                 && (!ui_blocking
                     || raw_pointer_button_on_canvas
+                    || (paint_contact.is_some() && !ui_blocks_canvas_input)
                     || text_drag_override
                     || keyboard_tool_override
                     || pending_tool_commit)
                 && (pointer_over_canvas
                     || raw_pointer_button_on_canvas
+                    || (paint_contact.is_some() && !ui_blocks_canvas_input)
                     || is_painting
                     || tool_drag_active
                     || text_handles_active
@@ -2297,7 +2270,7 @@ impl Canvas {
                         tools.fill_state.pending_clicks.push_back(click);
                     }
                 }
-                tools.handle_input(
+                tools.handle_input_with_contact(
                     ui,
                     state,
                     canvas_pos,
@@ -2313,6 +2286,7 @@ impl Canvas {
                     secondary_color_f32,
                     self.gpu_renderer_for_sync_readback(),
                     ui_blocks_canvas_input,
+                    paint_contact,
                 );
 
                 // Consume zoom/pan action emitted by the Zoom or Pan tool
@@ -3200,14 +3174,9 @@ impl Canvas {
                     "Paste Preview: {:.0}x{:.0} | Pos: ({:.0}, {:.0}) | Rot: {:.1}deg | Scale: {:.0}%",
                     sw, sh, cx, cy, rot_deg, scale_pct
                 )
-            } else if let Some((w, h)) = sel_drag_info {
-                // Selection being drawn — show selection dimensions.
-                let mouse_info = if let Some((mx, my)) = canvas_pos {
-                    format!(" | Cursor: {}, {}", mx, my)
-                } else {
-                    String::new()
-                };
-                format!("Selection: {:.0}x{:.0}{}", w, h, mouse_info)
+            } else if let Some((x0, y0, x1, y1)) = sel_drag_info {
+                format!("{}: {}x{} | ({}, {}) - ({}, {})",
+                    crate::t!("info.selection_bounds"), x1 - x0 + 1, y1 - y0 + 1, x0, y0, x1, y1)
             } else {
                 // Default — build custom info based on settings
                 let mut parts = Vec::new();

@@ -494,3 +494,41 @@ fn deferred_colour_and_median_pipelines_keep_pixel_results_on_first_use() {
     assert!(gpu.invert_pipeline.is_initialized());
     assert!(gpu.median_pipeline.is_initialized());
 }
+
+#[test]
+fn gpu_fill_aa_smooths_diagonal_without_blending_source_twice() {
+    require_gpu!(gpu);
+    let distances: Vec<u8> = (0..7)
+        .flat_map(|y| (0..7).map(move |x| if x <= y { 0 } else { 255 }))
+        .collect();
+    let background = [40, 80, 220, 255].repeat(49);
+    let colour = [251, 91, 52, 255];
+    let mut output = Vec::new();
+    for aa in [false, true] {
+        gpu.fill_preview_pipeline.generate_into(
+            &gpu.ctx,
+            &distances,
+            1,
+            &background,
+            1,
+            None,
+            7,
+            7,
+            0,
+            0,
+            7,
+            7,
+            0,
+            aa,
+            colour,
+            &mut output,
+        );
+        let pixel = |x: usize, y: usize| {
+            let offset = (y * 7 + x) * 4;
+            &output[offset..offset + 4]
+        };
+        assert_eq!(pixel(3, 3), &[251, 91, 52, if aa { 192 } else { 255 }]);
+        assert_eq!(pixel(2, 4), &colour);
+        assert_eq!(pixel(4, 2), &[0; 4]);
+    }
+}

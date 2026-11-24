@@ -18,6 +18,7 @@ use wasm_bindgen::prelude::*;
 thread_local! {
     static PENDING: RefCell<HashMap<&'static str, Vec<(String, Vec<u8>)>>> =
         RefCell::new(HashMap::new());
+    static PEN_EVENTS: RefCell<Vec<egui::Event>> = const { RefCell::new(Vec::new()) };
     static EGUI_CTX: RefCell<Option<egui::Context>> = const { RefCell::new(None) };
 }
 
@@ -112,4 +113,103 @@ pub fn trigger_open_picker() {
 /// Take all project/image files that have finished reading since the last call.
 pub fn drain_pending_opens() -> Vec<(String, Vec<u8>)> {
     drain_pending(OPEN_TAG)
+}
+
+/// eframe's web backend handles pointer buttons but listens for mouse moves.
+/// Bridge pen move/pressure separately, leaving its normal mouse and touch handlers intact.
+pub fn register_pen_input(canvas: &web_sys::HtmlCanvasElement) -> Result<(), JsValue> {
+    canvas.style().set_property("touch-action", "none")?;
+    let target = canvas.clone();
+    let mut contact = None;
+    let callback =
+        Closure::<dyn FnMut(web_sys::PointerEvent)>::new(move |event: web_sys::PointerEvent| {
+            if event.pointer_type() != "pen" || !event.is_primary() {
+                return;
+            }
+            let id = event.pointer_id();
+            let phase = match event.type_().as_str() {
+                "pointerdown" if event.button() == 0 && contact.is_none() => {
+                    contact = Some(id);
+                    let _ = target.set_pointer_capture(id);
+                    egui::TouchPhase::Start
+                }
+                "pointermove" if contact == Some(id) => egui::TouchPhase::Move,
+                "pointerup" if contact == Some(id) => {
+                    contact = None;
+                    egui::TouchPhase::End
+                }
+                "pointercancel" | "lostpointercapture" if contact == Some(id) => {
+                    contact = None;
+                    egui::TouchPhase::Cancel
+                }
+                _ => return,
+            };
+            let bounds = target.get_bounding_client_rect();
+            let zoom =
+                EGUI_CTX.with(|ctx| ctx.borrow().as_ref().map_or(1., egui::Context::zoom_factor));
+            let pos = egui::pos2(
+                (f64::from(event.client_x()) - bounds.left()) as f32 / zoom,
+                (f64::from(event.client_y()) - bounds.top()) as f32 / zoom,
+            );
+            PEN_EVENTS.with(|events| {
+                let mut events = events.borrow_mut();
+                if events.len() >= 512
+                    && let Some(index) = events.iter().position(|event| {
+                        matches!(
+                            event,
+                            egui::Event::Touch {
+                                phase: egui::TouchPhase::Move,
+                                ..
+                            }
+                        )
+                    })
+                {
+                    events.remove(index);
+                }
+                events.push(egui::Event::Touch {
+                    device_id: egui::TouchDeviceId(u64::MAX),
+                    id: egui::TouchId(id as u64),
+                    phase,
+                    pos,
+                    force: Some(event.pressure()),
+                });
+            });
+            wake();
+        });
+    for event in [
+        "pointerdown",
+        "pointermove",
+        "pointerup",
+        "pointercancel",
+        "lostpointercapture",
+    ] {
+        // eframe runs application logic synchronously from its pointerdown handler.
+        canvas.add_event_listener_with_callback_and_bool(
+            event,
+            callback.as_ref().unchecked_ref(),
+            true,
+        )?;
+    }
+    callback.forget(); // The canvas and its listeners live for the page.
+    Ok(())
+}
+
+pub(crate) fn append_pen_events(input: &mut egui::RawInput) {
+    PEN_EVENTS.with(|events| {
+        for event in events.borrow_mut().drain(..) {
+            if let egui::Event::Touch { pos, phase, .. } = event {
+                match phase {
+                    egui::TouchPhase::Move => input.events.push(egui::Event::PointerMoved(pos)),
+                    egui::TouchPhase::Cancel => input.events.push(egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: input.modifiers,
+                    }),
+                    _ => {}
+                }
+            }
+            input.events.push(event);
+        }
+    });
 }

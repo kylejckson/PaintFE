@@ -1164,7 +1164,7 @@ fn card(
             } else if let Some(listing) = s.listing(&m.id)
                 && ui
                     .add_enabled(
-                        s.task.is_none() && m.api == 1,
+                        s.task.is_none() && m.supports_script_api(),
                         egui::Button::new(tr("install")),
                     )
                     .on_hover_text(tr("install_notice"))
@@ -1204,7 +1204,7 @@ fn details(ui: &mut Ui, s: &mut Browser, id: &str, ctx: &Context, height: f32) {
         .max_height((height - 34.).max(120.))
         .show(ui, |ui| {
             ui.heading(&m.name);
-            if m.api != 1 {
+            if !m.supports_script_api() {
                 ui.weak(format!("{} {}", tr("requires_api"), m.api));
             }
             ui.weak(format!("{} · {} · {}", m.author, m.version, m.license));
@@ -1242,7 +1242,7 @@ fn details(ui: &mut Ui, s: &mut Browser, id: &str, ctx: &Context, height: f32) {
                     });
                     if ui
                         .add_enabled(
-                            s.task.is_none() && m.api == 1,
+                            s.task.is_none() && m.supports_script_api(),
                             egui::Button::new(tr(if current.is_none() {
                                 "install"
                             } else if newer {

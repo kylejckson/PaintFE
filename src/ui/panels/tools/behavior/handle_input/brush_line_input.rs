@@ -27,6 +27,7 @@ impl ToolsPanel {
         shift_held: bool,
         enter_pressed: bool,
         escape_pressed_global: bool,
+        is_paint_contact: bool,
     ) {
         match self.active_tool {
             Tool::Brush | Tool::Eraser | Tool::Pencil => {
@@ -57,7 +58,7 @@ impl ToolsPanel {
                         .get(canvas_state.active_layer_index)
                         .is_some_and(|l| l.has_live_mask());
                 let supports_resize_drag = matches!(self.active_tool, Tool::Brush | Tool::Eraser);
-                let resize_modifier_held = supports_resize_drag && self.brush_resize_drag_modifier_held(ui);
+                let resize_modifier_held = supports_resize_drag && !is_paint_contact && self.brush_resize_drag_modifier_held(ui);
                 let resize_drag_threshold = 4.0;
 
                 if supports_resize_drag
@@ -958,6 +959,7 @@ mod mega_pass_input_tests {
                     false,
                     false,
                     false,
+                    false,
                 );
             });
         };
@@ -1025,6 +1027,7 @@ mod mega_pass_input_tests {
                     true,
                     true,
                     true,
+                    false,
                     false,
                     false,
                     false,

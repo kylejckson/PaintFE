@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "PaintFE"
-version = "1.4.23"
+version = "1.5.4"
 dependencies = [
  "ab_glyph",
  "arboard",
@@ -42,6 +42,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tiff 0.9.1",
+ "ttf-parser",
  "uuid",
  "wasm-bindgen",
  "wasm-bindgen-futures",

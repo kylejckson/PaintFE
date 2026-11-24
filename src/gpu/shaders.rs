@@ -803,65 +803,22 @@ fn cs_fill_preview(@builtin(global_invocation_id) gid: vec3<u32>) {
     let x = u.region_x + gid.x;
     let y = u.region_y + gid.y;
     let out_coord = vec2<i32>(i32(gid.x), i32(gid.y));
-    let canvas_coord = vec2<i32>(i32(x), i32(y));
-
     if (!fill_active(i32(x), i32(y))) {
-        textureStore(out_tex, out_coord, vec4<f32>(0.0, 0.0, 0.0, 0.0));
+        textureStore(out_tex, out_coord, vec4<f32>(0.0));
         return;
     }
 
-    if (u.anti_aliased == 0u) {
-        textureStore(out_tex, out_coord, u.fill_color);
-        return;
-    }
-
-    let left_active = fill_active(i32(x) - 1, i32(y));
-    let right_active = fill_active(i32(x) + 1, i32(y));
-    let up_active = fill_active(i32(x), i32(y) - 1);
-    let down_active = fill_active(i32(x), i32(y) + 1);
-    let boundary = !left_active || !right_active || !up_active || !down_active;
-
-    if (!boundary) {
-        textureStore(out_tex, out_coord, u.fill_color);
-        return;
-    }
-
-    var neighbor_fill_count = 0u;
-    var total_neighbors = 0u;
-    for (var dy = -1; dy <= 1; dy = dy + 1) {
-        for (var dx = -1; dx <= 1; dx = dx + 1) {
-            if (dx == 0 && dy == 0) {
-                continue;
-            }
-            let nx = i32(x) + dx;
-            let ny = i32(y) + dy;
-            if (nx >= 0 && ny >= 0 && nx < i32(u.canvas_width) && ny < i32(u.canvas_height)) {
-                total_neighbors = total_neighbors + 1u;
-                if (fill_active(nx, ny)) {
-                    neighbor_fill_count = neighbor_fill_count + 1u;
-                }
-            }
+    var color = u.fill_color;
+    if (u.anti_aliased != 0u) {
+        let left = x == 0u || fill_active(i32(x) - 1, i32(y));
+        let right = x + 1u == u.canvas_width || fill_active(i32(x) + 1, i32(y));
+        let up = y == 0u || fill_active(i32(x), i32(y) - 1);
+        let down = y + 1u == u.canvas_height || fill_active(i32(x), i32(y) + 1);
+        if ((left != right) && (up != down)) {
+            color.a = color.a * (192.0 / 255.0);
         }
     }
-
-    if (total_neighbors == 0u || neighbor_fill_count == total_neighbors) {
-        textureStore(out_tex, out_coord, u.fill_color);
-        return;
-    }
-
-    // Preserve pixel precision for tiny regions and 1px structures.
-    // Softening these can make valid fills appear invisible.
-    if (neighbor_fill_count <= 2u) {
-        textureStore(out_tex, out_coord, u.fill_color);
-        return;
-    }
-
-    let ratio = f32(neighbor_fill_count) / f32(total_neighbors);
-    let t = ratio * ratio * (3.0 - 2.0 * ratio);
-    let bg = textureLoad(bg_tex, canvas_coord, 0);
-    let rgb = u.fill_color.rgb * t + bg.rgb * (1.0 - t);
-    let alpha = u.fill_color.a * t;
-    textureStore(out_tex, out_coord, vec4<f32>(rgb, alpha));
+    textureStore(out_tex, out_coord, color);
 }
 "#;
 

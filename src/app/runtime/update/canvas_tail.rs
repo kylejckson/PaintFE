@@ -381,16 +381,28 @@ impl PaintFEApp {
             && project.canvas_state.has_selection()
         {
             use crate::components::tools::SelectionModifyOp;
-            match op {
+            let state = &mut project.canvas_state;
+            let before = state.selection_mask.clone();
+            let before_all = state.selection_all;
+            let action = match op {
                 SelectionModifyOp::Feather(r) => {
-                    crate::ops::adjustments::feather_selection(&mut project.canvas_state, r)
+                    crate::ops::adjustments::feather_selection(state, r);
+                    "Feather Selection"
                 }
                 SelectionModifyOp::Expand(r) => {
-                    crate::ops::adjustments::expand_selection(&mut project.canvas_state, r)
+                    crate::ops::adjustments::expand_selection(state, r);
+                    "Expand Selection"
                 }
                 SelectionModifyOp::Contract(r) => {
-                    crate::ops::adjustments::contract_selection(&mut project.canvas_state, r)
+                    crate::ops::adjustments::contract_selection(state, r);
+                    "Contract Selection"
                 }
+            };
+            if before != state.selection_mask || before_all != state.selection_all {
+                project.history.push(Box::new(crate::components::history::SelectionCommand::new_states(
+                    crate::components::history::HistoryAction::RectangleSelect.label(action),
+                    before, before_all, state.selection_mask.clone(), state.selection_all,
+                )));
             }
         }
 

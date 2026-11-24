@@ -32,6 +32,8 @@ pub struct Request {
     pub height: u32,
     pub values: Values,
     pub seed: u64,
+    #[serde(default)]
+    pub colours: Option<[[u8; 4]; 2]>,
     pub effect: Effect,
     pub has_mask: bool,
 }
@@ -191,14 +193,20 @@ fn process(at: &Path) -> Result<(), String> {
     } else {
         None
     };
-    let (mut output, w, h, console, ops) = crate::ops::scripting::execute_script_parameters(
+    let seed = r.effect.parameters.iter().find(|p| p.kind == "seed")
+        .and_then(|p| r.values.get(&p.id))
+        .and_then(serde_json::Value::as_u64)
+        .map(|seed| seed + 1)
+        .unwrap_or(r.seed);
+    let (mut output, w, h, console, ops) = crate::ops::scripting::execute_script_with_colours(
         &r.source,
         input,
         r.width,
         r.height,
         mask.clone(),
         &r.values,
-        Some(r.seed),
+        Some(seed),
+        r.colours.unwrap_or(crate::ops::scripting::DEFAULT_SCRIPT_COLOURS),
     )
     .map_err(|e| e.friendly_message())?;
     if w != r.width || h != r.height || !ops.is_empty() || output.len() != n {

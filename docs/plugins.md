@@ -16,7 +16,19 @@ Open an image and choose an installed effect from its Filter submenu. Adjust its
 
 The host owns the dialog and cancellation. Scripts run in a separate process with resource and time limits. They cannot request downloads, open arbitrary files or resize the document through this plugin API. A failed or cancelled result does not replace document pixels. Stale results are rejected if the document or target layer changed.
 
-API 1 supports 8-bit raster layers up to 16 million pixels. Deep-colour layers, text layers, mask editing and document transforms need other editing paths. Selection isolation is enforced by the host. Run ordinary scripts in the Script Editor for supported document-transform macros.
+The script API supports 8-bit raster layers up to 16 million pixels. Deep-colour layers, text layers, mask editing and document transforms need other editing paths. Selection isolation is enforced by the host. Run ordinary scripts in the Script Editor for supported document-transform macros.
+
+## Script API 2
+
+Package effects that use the new capabilities with Script API 2. API 1 packs continue to work.
+
+- A `seed` parameter accepts an unsigned 32-bit integer and offers a **Reroll** button. Each effect can have one seed. The same seed repeats the random sequence on each preview.
+- A `point` parameter stores `[x, y]` in `params`, with both values from 0 to 1. Use **Pick from preview** or type the coordinates. Multiply by `width() - 1` and `height() - 1` for pixel-centre coordinates.
+- `primary_colour()` and `secondary_colour()` return the RGBA colours captured when the effect opens. Standalone scripts use black and white defaults.
+- `fill_rect(x, y, width, height, rgba)`, `fill_circle(x, y, radius, rgba)` and `draw_line(x0, y0, x1, y1, width, rgba)` draw on the working pixels and respect the selection. Rectangles take integer coordinates. Circles and lines accept fractional coordinates.
+- `blend_rgba(bottom, top, mode, opacity)` uses PaintFE's blending. Use an English mode name such as `"Soft Light"` and opacity from 0 to 1.
+- `gradient_lut(start, end, count)` builds a two-colour RGBA table with 2 to 256 entries. `sample_pixel(x, y)` uses alpha-aware bilinear sampling, clamped to the image bounds.
+- `snapshot_pixels()` returns a temporary image handle. Use `sample_snapshot(handle, x, y)` or `blend_snapshot(handle, dx, dy, mode, opacity)` to sample or composite the copy with a fractional offset. `release_snapshot(handle)` frees it. A script can hold up to four copies totalling 64 MiB.
 
 ## Managing and authoring
 

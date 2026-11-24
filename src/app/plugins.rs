@@ -47,6 +47,10 @@ impl PaintFEApp {
                     state.height,
                 )),
                 mask: state.selection_mask.as_ref().map(|m| m.as_raw().clone()),
+                colours: [
+                    self.colors_panel.get_primary_color().to_srgba_unmultiplied(),
+                    self.colors_panel.get_secondary_color().to_srgba_unmultiplied(),
+                ],
                 pack,
                 effect,
                 source,

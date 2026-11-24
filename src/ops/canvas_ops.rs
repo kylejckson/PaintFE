@@ -446,6 +446,7 @@ pub fn duplicate_layer(state: &mut CanvasState, history: &mut HistoryManager) {
 
     history.push(Box::new(LayerOpCommand::new(LayerOperation::Duplicate {
         source_index: idx,
+        blend_mode: state.layers[new_idx].blend_mode,
         new_index: new_idx,
         pixels: dup_pixels,
         mask: dup_mask,

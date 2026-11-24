@@ -564,7 +564,7 @@ impl LayersPanel {
         self.mark_full_dirty(canvas_state);
     }
 
-    fn duplicate_layer(
+    pub(crate) fn duplicate_layer(
         &mut self,
         layer_idx: usize,
         canvas_state: &mut CanvasState,
@@ -619,6 +619,7 @@ impl LayersPanel {
         // Record history
         history.push(Box::new(LayerOpCommand::new(LayerOperation::Duplicate {
             source_index: layer_idx,
+            blend_mode: canvas_state.layers[new_index].blend_mode,
             new_index,
             pixels,
             mask,

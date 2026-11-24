@@ -611,6 +611,7 @@ impl PaintFEApp {
                         height,
                         values: Default::default(),
                         seed: 0,
+                        colours: None,
                         effect,
                         has_mask: mask.is_some(),
                     },

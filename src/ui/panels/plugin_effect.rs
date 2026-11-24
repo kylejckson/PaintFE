@@ -22,6 +22,7 @@ pub struct Target {
     pub pack: String,
     pub effect: Effect,
     pub source: String,
+    pub colours: [[u8; 4]; 2],
 }
 pub struct Applied {
     pub target: Target,
@@ -51,6 +52,7 @@ struct Session {
     live: bool,
     error: String,
     show_original: bool,
+    point_picker: Option<String>,
     apply: bool,
     histogram: [u32; 64],
 }
@@ -91,6 +93,7 @@ pub fn open(ctx: &Context, target: Target) {
             live: true,
             error: String::new(),
             show_original: false,
+            point_picker: None,
             apply: false,
             histogram: [0; 64],
         });
@@ -120,6 +123,7 @@ impl Session {
                     height: target.height,
                     values,
                     seed: 37477,
+                    colours: Some(target.colours),
                     effect: target.effect,
                     has_mask: target.mask.is_some(),
                 },
@@ -151,6 +155,41 @@ pub fn parameter(ui: &mut Ui, p: &Parameter, value: &mut serde_json::Value) -> b
     let before = value.clone();
     ui.push_id(&p.id, |ui| {
         match p.kind.as_str() {
+            "seed" => {
+                let mut seed = value.as_u64().unwrap_or(1) as u32;
+                ui.horizontal(|ui| {
+                    ui.label(&p.label);
+                    ui.add(crate::ui::controls::Numeric::new(&mut seed).id_salt("seed"));
+                    if ui.button(tr("reroll_seed")).clicked() {
+                        let random = uuid::Uuid::new_v4().as_u128() as u32;
+                        seed = if random == seed {
+                            seed.wrapping_add(1)
+                        } else {
+                            random
+                        };
+                    }
+                });
+                *value = seed.into();
+            }
+            "point" => {
+                let mut point = read_point(value);
+                ui.label(&p.label);
+                ui.horizontal(|ui| {
+                    for (axis, v) in ["X", "Y"].into_iter().zip(&mut point) {
+                        ui.label(axis);
+                        ui.add(
+                            crate::ui::controls::Numeric::new(v)
+                                .id_salt(axis)
+                                .range(0.0..=1.0)
+                                .speed(0.005)
+                                .max_decimals(4),
+                        );
+                    }
+                });
+                if point != read_point(value) {
+                    *value = serde_json::json!(point);
+                }
+            }
             "number" => {
                 let mut v = value.as_f64().unwrap_or(p.min);
                 ui.add(
@@ -234,6 +273,13 @@ pub fn parameter(ui: &mut Ui, p: &Parameter, value: &mut serde_json::Value) -> b
     });
     *value != before
 }
+fn read_point(value: &serde_json::Value) -> [f64; 2] {
+    [
+        value[0].as_f64().unwrap_or(0.5),
+        value[1].as_f64().unwrap_or(0.5),
+    ]
+}
+
 fn texture(ctx: &Context, id: &str, w: u32, h: u32, pixels: &[u8]) -> egui::TextureHandle {
     let img = image::RgbaImage::from_raw(w, h, pixels.to_vec()).unwrap();
     let img = p::thumbnail(&img, 720, 480);
@@ -419,11 +465,24 @@ fn controls_body(ui: &mut Ui, s: &mut Session) {
             .entry(p.id.clone())
             .or_insert_with(|| p.default.clone());
         parameter(ui, p, v);
+        if p.kind == "point" {
+            let picking = s.point_picker.as_deref() == Some(p.id.as_str());
+            if ui.selectable_label(picking, tr("pick_point")).clicked() {
+                s.point_picker = (!picking).then(|| p.id.clone());
+            }
+        }
     }
     if before != s.values {
         s.changed();
     }
 }
+fn preview_point(rect: egui::Rect, pos: egui::Pos2) -> [f64; 2] {
+    [
+        f64::from(((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0)),
+        f64::from(((pos.y - rect.top()) / rect.height()).clamp(0.0, 1.0)),
+    ]
+}
+
 fn preview(ui: &mut Ui, s: &mut Session) {
     ui.checkbox(&mut s.show_original, tr("show_original"));
     let t = if s.show_original {
@@ -432,11 +491,24 @@ fn preview(ui: &mut Ui, s: &mut Session) {
         s.texture.as_ref().or(s.original.as_ref())
     };
     if let Some(t) = t {
-        ui.add(
+        let response = ui.add(
             egui::Image::new(t)
                 .max_size(egui::vec2(ui.available_width(), 340.))
-                .maintain_aspect_ratio(true),
+                .maintain_aspect_ratio(true)
+                .sense(if s.point_picker.is_some() {
+                    egui::Sense::click()
+                } else {
+                    egui::Sense::hover()
+                }),
         );
+        if response.clicked()
+            && let Some(pos) = response.interact_pointer_pos()
+            && let Some(id) = s.point_picker.take()
+        {
+            let point = preview_point(response.rect, pos);
+            s.values.insert(id, serde_json::json!(point));
+            s.changed();
+        }
     }
     if s.target.effect.histogram {
         let (rect, _) =
@@ -477,6 +549,8 @@ mod tests {
                 vec!["A".into(), "B".into()],
             ),
             ("colour", serde_json::json!([12, 80, 180, 127]), vec![]),
+            ("seed", serde_json::json!(17), vec![]),
+            ("point", serde_json::json!([0.25, 0.75]), vec![]),
         ];
         for dark in [false, true] {
             for zoom in [1., 1.5] {
@@ -534,6 +608,7 @@ mod tests {
                 histogram: false,
             },
             source: "apply_invert();".into(),
+            colours: crate::ops::scripting::DEFAULT_SCRIPT_COLOURS,
         };
         open(&ctx, target);
         let shared = state(&ctx);
@@ -547,4 +622,12 @@ mod tests {
         assert!(s.dirty);
         *slot = None;
     }
+}
+
+#[cfg(test)]
+#[test]
+fn image_point_maps_to_normalized_preview_coordinates() {
+    let rect = egui::Rect::from_min_size(egui::pos2(140., 60.), egui::vec2(320., 160.));
+    assert_eq!(preview_point(rect, egui::pos2(220., 180.)), [0.25, 0.75]);
+    assert_eq!(preview_point(rect, egui::pos2(480., 0.)), [1.0, 0.0]);
 }

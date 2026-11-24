@@ -623,6 +623,7 @@ impl ToolsPanel {
         selection_mask: Option<&GrayImage>,
         width: u32,
         height: u32,
+        anti_aliased: bool,
     ) -> Vec<u8> {
         let (bx0, by0, bx1, by1) = fill_bbox;
         let wu = width as usize;
@@ -637,7 +638,13 @@ impl ToolsPanel {
             let row_offset = (span.y - by0) as usize * region_w as usize * 4;
             for x in span.x0..=span.x1 {
                 let mask_idx = span.y as usize * wu + x as usize;
-                let coverage = fill_mask[mask_idx];
+                let coverage = if anti_aliased && Self::fill_boundary_corner(
+                    fill_mask, selection_mask, width, height, x, span.y,
+                ) {
+                    192
+                } else {
+                    fill_mask[mask_idx]
+                };
                 if coverage == 0 {
                     continue;
                 }
@@ -651,6 +658,22 @@ impl ToolsPanel {
         }
 
         region_buf
+    }
+
+    /// A corner in the fill boundary needs coverage smoothing. Straight edges
+    /// and one-pixel lines stay solid, including at the canvas boundary.
+    fn fill_boundary_corner(
+        fill_mask: &[u8], selection_mask: Option<&GrayImage>, width: u32, height: u32,
+        x: u32, y: u32,
+    ) -> bool {
+        let active = |x: u32, y: u32| {
+            Self::fill_pixel_is_active(fill_mask, selection_mask, width, height, x, y)
+        };
+        let left = x == 0 || active(x - 1, y);
+        let right = x + 1 == width || active(x + 1, y);
+        let up = y == 0 || active(x, y - 1);
+        let down = y + 1 == height || active(x, y + 1);
+        (left != right) && (up != down)
     }
 
     #[inline]
@@ -861,6 +884,7 @@ impl ToolsPanel {
                         selection_mask.as_ref(),
                         width,
                         height,
+                        anti_aliased,
                     ),
                     region_w,
                     region_h,
@@ -1230,7 +1254,7 @@ impl ToolsPanel {
             )
         };
 
-        let fill_mask = Self::build_threshold_mask(&region_index, fill_threshold, anti_aliased);
+        let fill_mask = Self::build_threshold_mask(&region_index, fill_threshold, false);
         let Some(fill_bbox) = region_index.threshold_bbox(fill_threshold) else {
             return;
         };
@@ -1241,6 +1265,7 @@ impl ToolsPanel {
             selection_mask.as_ref(),
             width,
             height,
+            anti_aliased,
         );
         let region_w = fill_bbox.2.saturating_sub(fill_bbox.0) + 1;
         let region_h = fill_bbox.3.saturating_sub(fill_bbox.1) + 1;
@@ -1722,4 +1747,30 @@ impl ToolsPanel {
     // ================================================================
     // Lasso: scanline polygon rasterization into selection mask
     // ================================================================
+}
+
+#[cfg(test)]
+mod fill_aa_tests {
+    use super::*;
+
+    #[test]
+    fn aa_smooths_staircase_but_not_straight_edges_or_thin_lines() {
+        let mask: Vec<u8> = (0..7).flat_map(|y| (0..7).map(move |x| if x <= y {255} else {0})).collect();
+        let rect = (0, 0, 6, 6);
+        let color = Rgba([251, 91, 52, 255]);
+        let plain = ToolsPanel::build_fill_preview_region(&mask, rect, color, None, 7, 7, false);
+        let smooth = ToolsPanel::build_fill_preview_region(&mask, rect, color, None, 7, 7, true);
+        let pixel = |x: usize, y: usize| (y * 7 + x) * 4;
+        let diagonal = pixel(3, 3);
+        assert_eq!(&plain[diagonal..diagonal + 4], &[251, 91, 52, 255]);
+        assert_eq!(&smooth[diagonal..diagonal + 4], &[251, 91, 52, 192]);
+        assert_eq!(smooth[pixel(2, 4) + 3], 255);
+        assert_eq!(smooth[pixel(4, 2) + 3], 0);
+        for width in [1, 3] {
+            let mask: Vec<u8> = (0..49).map(|i| if (2..2 + width).contains(&(i % 7)) {255} else {0}).collect();
+            let plain = ToolsPanel::build_fill_preview_region(&mask, rect, color, None, 7, 7, false);
+            let smooth = ToolsPanel::build_fill_preview_region(&mask, rect, color, None, 7, 7, true);
+            assert_eq!(plain, smooth);
+        }
+    }
 }

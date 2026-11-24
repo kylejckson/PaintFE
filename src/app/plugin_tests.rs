@@ -137,6 +137,7 @@ fn result(app: &PaintFEApp) -> Applied {
             histogram: false,
         },
         source: "apply_invert();".into(),
+        colours: crate::ops::scripting::DEFAULT_SCRIPT_COLOURS,
     };
     let mut output = pixels;
     for p in output.chunks_exact_mut(4) {

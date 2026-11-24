@@ -120,7 +120,96 @@ impl ToolsPanel {
         result
     }
 
+    pub(crate) fn track_paint_contact(
+        &mut self,
+        events: &[egui::Event],
+        accepts_start: impl Fn(Pos2) -> bool,
+        motion: &mut Vec<Pos2>,
+    ) -> Option<PaintContact> {
+        if !matches!(self.active_tool, Tool::Brush | Tool::Pencil | Tool::Eraser) {
+            self.paint_contact = None;
+            return None;
+        }
+        let mut started = false;
+        for event in events {
+            match *event {
+                egui::Event::Touch { device_id, id, phase, pos, force } => {
+                    let force = force.filter(|value| value.is_finite()).map(|v| v.clamp(0.0, 1.0));
+                    if phase == egui::TouchPhase::Start && self.paint_contact.is_none() && accepts_start(pos) {
+                        self.paint_contact = Some((device_id, id, pos, force));
+                        started = true;
+                        motion.push(pos);
+                    } else if let Some((device, owner, last_pos, last_force)) = self.paint_contact
+                        && (device, owner) == (device_id, id)
+                    {
+                        let force = force.or(last_force);
+                        match phase {
+                            egui::TouchPhase::Move => {
+                                self.paint_contact = Some((device, owner, pos, force));
+                                motion.push(pos);
+                            }
+                            egui::TouchPhase::End | egui::TouchPhase::Cancel => {
+                                self.paint_contact = None;
+                                let pos = if phase == egui::TouchPhase::Cancel { last_pos } else { pos };
+                                if pos != last_pos {
+                                    motion.push(pos);
+                                }
+                                return Some(PaintContact { pos, force: last_force, started, ended: true });
+                            }
+                            egui::TouchPhase::Start => {}
+                        }
+                    }
+                }
+                egui::Event::WindowFocused(false) => {
+                    if let Some((_, _, pos, force)) = self.paint_contact.take() {
+                        return Some(PaintContact { pos, force, started, ended: true });
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.paint_contact.map(|(_, _, pos, force)| PaintContact { pos, force, started, ended: false })
+    }
+
     pub fn handle_input(
+        &mut self,
+        ui: &egui::Ui,
+        canvas_state: &mut CanvasState,
+        canvas_pos: Option<(u32, u32)>,
+        canvas_pos_f32: Option<(f32, f32)>,
+        canvas_pos_f32_clamped: Option<(f32, f32)>,
+        canvas_pos_unclamped: Option<(f32, f32)>,
+        raw_motion_events: &[(f32, f32)],
+        painter: &egui::Painter,
+        canvas_rect: Rect,
+        workspace_rect: Rect,
+        zoom: f32,
+        primary_color_f32: [f32; 4],
+        secondary_color_f32: [f32; 4],
+        gpu_renderer: Option<&mut crate::gpu::GpuRenderer>,
+        ui_blocks_canvas_input: bool,
+    ) {
+        self.handle_input_with_contact(
+            ui,
+            canvas_state,
+            canvas_pos,
+            canvas_pos_f32,
+            canvas_pos_f32_clamped,
+            canvas_pos_unclamped,
+            raw_motion_events,
+            painter,
+            canvas_rect,
+            workspace_rect,
+            zoom,
+            primary_color_f32,
+            secondary_color_f32,
+            gpu_renderer,
+            ui_blocks_canvas_input,
+            None,
+        );
+    }
+
+    pub(crate) fn handle_input_with_contact(
         &mut self,
         ui: &egui::Ui,
         canvas_state: &mut CanvasState,
@@ -137,6 +226,7 @@ impl ToolsPanel {
         secondary_color_f32: [f32; 4],
         mut gpu_renderer: Option<&mut crate::gpu::GpuRenderer>,
         ui_blocks_canvas_input: bool,
+        paint_contact: Option<PaintContact>,
     ) {
         gpu_renderer = gpu_renderer.filter(|gpu| {
             gpu.ctx
@@ -465,6 +555,16 @@ impl ToolsPanel {
             ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary));
         let mut is_secondary_released = ui.input(|i| i.pointer.secondary_released());
         let mut is_secondary_clicked = ui.input(|i| i.pointer.secondary_clicked());
+        if let Some(contact) = paint_contact {
+            is_primary_down = !contact.ended;
+            is_primary_pressed = contact.started;
+            is_primary_released = contact.ended;
+            is_primary_clicked = contact.started && contact.ended;
+            is_secondary_down = false;
+            is_secondary_pressed = false;
+            is_secondary_released = false;
+            is_secondary_clicked = false;
+        }
         if self.paint_requires_release {
             let fresh_press = (is_primary_pressed && !is_secondary_down)
                 || (is_secondary_pressed && !is_primary_down);
@@ -481,7 +581,7 @@ impl ToolsPanel {
                 return;
             }
         }
-        let pointer_over_canvas = ui.input(|i| {
+        let pointer_over_canvas = paint_contact.is_some_and(|c| workspace_rect.contains(c.pos)) || ui.input(|i| {
             i.pointer
                 .hover_pos()
                 .or_else(|| i.pointer.interact_pos())
@@ -526,7 +626,7 @@ impl ToolsPanel {
                 (c[3] * 255.0).round() as u8,
             );
         }
-        let shift_held = ui.input(|i| i.modifiers.shift);
+        let shift_held = paint_contact.is_none() && ui.input(|i| i.modifiers.shift);
         let enter_pressed = (ui.input(|i| i.key_pressed(egui::Key::Enter)) || self.injected_enter_pressed)
             && !crate::ui::numeric::editor_handled_finish_key(ui.ctx(), egui::Key::Enter);
         let escape_pressed_global = (ui.input(|i| i.key_pressed(egui::Key::Escape)) || self.injected_escape_pressed)
@@ -557,7 +657,7 @@ impl ToolsPanel {
             .unwrap_or(true)
         {
             self.tool_state.current_pressure = 1.0;
-        } else if let Some(p) = touch_pressure {
+        } else if let Some(p) = paint_contact.map(|c| c.force.unwrap_or(1.0)).or(touch_pressure) {
             self.tool_state.current_pressure = p.clamp(0.0, 1.0);
         } else if !is_primary_down && !is_secondary_down {
             // Reset to full pressure when not actively drawing
@@ -592,6 +692,7 @@ impl ToolsPanel {
                     shift_held,
                     enter_pressed,
                     escape_pressed_global,
+                    paint_contact.is_some(),
                 ),
             Tool::RectangleSelect
             | Tool::EllipseSelect

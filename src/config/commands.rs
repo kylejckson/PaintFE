@@ -7,6 +7,7 @@ pub enum MenuCommand {
     FilePrint,
     FileQuit,
     EditPasteAsLayer,
+    DuplicateLayer,
     EditInvertSelection,
     SelectColorRange,
     EditSelectContentBounds,
@@ -60,6 +61,7 @@ impl MenuCommand {
         Self::FilePrint,
         Self::FileQuit,
         Self::EditPasteAsLayer,
+        Self::DuplicateLayer,
         Self::EditInvertSelection,
         Self::SelectColorRange,
         Self::EditSelectContentBounds,
@@ -217,6 +219,12 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         action: BindableAction::Paste,
         label_key: "menu.edit.paste",
+        category_key: "keybind_category.edit",
+        needs_document: true,
+    },
+    CommandSpec {
+        action: BindableAction::Menu(MenuCommand::DuplicateLayer),
+        label_key: "layer.duplicate_layer",
         category_key: "keybind_category.edit",
         needs_document: true,
     },

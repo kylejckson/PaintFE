@@ -69,6 +69,8 @@ impl PaintFEApp {
             false
         };
         match action {
+            BindableAction::Menu(crate::config::commands::MenuCommand::DuplicateLayer) =>
+                no_dialog && self.paste_overlay.is_none() && has_project,
             BindableAction::NewFile => true,
             BindableAction::OpenFile => true,
             BindableAction::Save => has_project,
@@ -340,6 +342,14 @@ impl PaintFEApp {
                     None
                 };
                 self.queue_paste_from_clipboard(ctx, cursor_canvas);
+            }
+            BindableAction::Menu(crate::config::commands::MenuCommand::DuplicateLayer) => {
+                self.finish_pending_line_edit();
+                self.commit_pending_tool_history();
+                if let Some(project) = self.projects.get_mut(self.active_project_index) {
+                    let index = project.canvas_state.active_layer_index;
+                    self.layers_panel.duplicate_layer(index, &mut project.canvas_state, &mut project.history);
+                }
             }
             BindableAction::Menu(crate::config::commands::MenuCommand::EditPasteAsLayer) => {
                 // Paste clipboard contents as a new layer

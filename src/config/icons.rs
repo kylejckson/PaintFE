@@ -134,6 +134,7 @@ pub enum Icon {
 
     // === Menu: Canvas ===
     MenuCanvasResize,
+    MenuCanvasPrintResolution,
     MenuCanvasCrop,
     MenuCanvasFlipH,
     MenuCanvasFlipV,
@@ -513,6 +514,7 @@ impl Icon {
             Icon::MenuEditPreferences => "\u{2699}",
             // Menu: Canvas
             Icon::MenuCanvasResize => "\u{1F4D0}",
+            Icon::MenuCanvasPrintResolution => "\u{1F5A8}",
             Icon::MenuCanvasCrop => "\u{2702}",
             Icon::MenuCanvasFlipH => "\u{2194}",
             Icon::MenuCanvasFlipV => "\u{2195}",

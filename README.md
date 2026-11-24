@@ -23,15 +23,7 @@ the releases page. Arabic includes a bundled font; see
 
 ![PaintFE photo workspace in light mode with Luminous icons](screenshot/main_screenshot.png)
 
-## What's new in 1.4.0
-
-- **A fresh look:** Luminous icons, a new app logo, and redesigned Color, Palette, and History panels. Classic icons remain available, and custom packs load from folders or ZIPs.
-- **A workspace that fits you:** panel snapping, faint alignment guides, saved layouts, configurable motion, and refined numeric controls.
-- **Better painting and pixel art:** corrected brush hardness, reliable soft-stroke overlap, a clearer pixel grid, raw Pencil input, and a Pixel Art preset.
-- **A faster feel:** improved painting, hover, click, and menu responsiveness, plus stepped zoom and improved Fit to Window.
-- **More editing control:** paste cropping and before/after effect comparison, alongside fixes for stale canvases, layer thumbnails, and icon-pack colors.
-
-See the [changelog](CHANGELOG.md) for the full release history.
+See the [changelog](CHANGELOG.md) for recent changes and the full release history.
 
 ## Painting and Pixel Art
 

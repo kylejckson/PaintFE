@@ -179,9 +179,8 @@ impl PaintFEApp {
         let popup_blocks_input = crate::ui::polish::popup_blocks_input(ctx);
         let started_over_ui = ctx.input(|i| {
             i.events.iter().any(|event| {
-                if let egui::Event::PointerButton {
-                    pos, pressed: true, ..
-                } = event
+                if let egui::Event::PointerButton { pos, pressed: true, .. }
+                    | egui::Event::Touch { pos, phase: egui::TouchPhase::Start, .. } = event
                 {
                     popup_blocks_input
                         || self
@@ -197,7 +196,7 @@ impl PaintFEApp {
         if started_over_ui {
             self.ui_pointer_capture_active = true;
         }
-        let any_down = ctx.input(|i| i.pointer.any_down());
+        let any_down = ctx.input(|i| i.pointer.any_down() || i.any_touches());
         if !any_down && !started_over_ui {
             self.ui_pointer_capture_active = false;
             return false;
