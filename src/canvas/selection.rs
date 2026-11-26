@@ -3,7 +3,7 @@
 // ============================================================================
 
 /// How a new selection shape interacts with the existing mask.
-#[derive(Clone, Copy, Debug, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
 pub enum SelectionMode {
     /// Clear any existing selection, then set the new shape.
     #[default]
@@ -17,6 +17,24 @@ pub enum SelectionMode {
 }
 
 impl SelectionMode {
+    pub(crate) fn settings_key(self) -> &'static str {
+        match self {
+            Self::Replace => "normal",
+            Self::Add => "add",
+            Self::Subtract => "subtract",
+            Self::Intersect => "intersect",
+        }
+    }
+
+    pub(crate) fn from_settings_key(key: &str) -> Self {
+        match key {
+            "add" => Self::Add,
+            "subtract" => Self::Subtract,
+            "intersect" => Self::Intersect,
+            _ => Self::Replace,
+        }
+    }
+
     pub fn label(&self) -> String {
         match self {
             SelectionMode::Replace => t!("selection_mode.normal"),

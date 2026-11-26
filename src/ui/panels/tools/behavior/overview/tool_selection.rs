@@ -18,6 +18,9 @@ impl ToolsPanel {
         }
         if self.active_tool != new_tool {
             log_info!("Tool: switch to {:?}", new_tool);
+            if self.active_tool == Tool::Lasso {
+                self.lasso_state.cancel_drag();
+            }
             // Deactivate perspective crop when switching away
             if self.active_tool == Tool::PerspectiveCrop {
                 self.perspective_crop_state.active = false;

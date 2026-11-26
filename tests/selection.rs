@@ -10,6 +10,121 @@ mod common;
 use image::Rgba;
 use paintfe::canvas::{CanvasState, SelectionMode, SelectionShape};
 
+#[test]
+fn selection_modifiers_match_a_disk_and_preserve_original_soft_coverage() {
+    use paintfe::ops::adjustments::{contract_selection, expand_selection, feather_selection};
+
+    let (width, height) = (23, 21);
+    let source = image::GrayImage::from_fn(width, height, |x, y| {
+        let alpha = match (x, y) {
+            (0..=7, 0..=10) | (5..=14, 9..=17) => 255,
+            (17, 11) => 99,
+            _ => 0,
+        };
+        image::Luma([alpha])
+    });
+    for radius in [1i32, 3, 6] {
+        let mut expanded = CanvasState::new(width, height);
+        let mut contracted = CanvasState::new(width, height);
+        let mut feathered = CanvasState::new(width, height);
+        for state in [&mut expanded, &mut contracted, &mut feathered] {
+            state.selection_mask = Some(source.clone());
+        }
+        expand_selection(&mut expanded, radius);
+        contract_selection(&mut contracted, radius);
+        feather_selection(&mut feathered, radius as f32);
+        for (x, y, pixel) in source.enumerate_pixels() {
+            let mut closest = None;
+            let mut erode = false;
+            for dy in -radius..=radius {
+                for dx in -radius..=radius {
+                    let distance = dx * dx + dy * dy;
+                    if distance > radius * radius {
+                        continue;
+                    }
+                    let (sx, sy) = (x as i32 + dx, y as i32 + dy);
+                    let alpha = if sx >= 0 && sy >= 0 && sx < width as i32 && sy < height as i32 {
+                        source.get_pixel(sx as u32, sy as u32).0[0]
+                    } else {
+                        0
+                    };
+                    if alpha == 0 {
+                        erode = true;
+                    } else if closest.is_none_or(|(best, _)| distance < best) {
+                        closest = Some((distance, alpha));
+                    }
+                }
+            }
+            let original = pixel.0[0];
+            let expected_expand = if original == 0 && closest.is_some() {
+                255
+            } else {
+                original
+            };
+            let expected_contract = if erode { 0 } else { original };
+            let expected_feather = if original != 0 {
+                original
+            } else {
+                closest.map_or(0, |(distance, alpha)| {
+                    let weight = 1.0 - (distance as f32).sqrt() / (radius + 1) as f32;
+                    ((f32::from(alpha) * weight).round() as u8).max(1)
+                })
+            };
+            assert_eq!(
+                expanded.selection_mask.as_ref().unwrap().get_pixel(x, y).0[0],
+                expected_expand
+            );
+            assert_eq!(
+                contracted
+                    .selection_mask
+                    .as_ref()
+                    .unwrap()
+                    .get_pixel(x, y)
+                    .0[0],
+                expected_contract
+            );
+            assert_eq!(
+                feathered.selection_mask.as_ref().unwrap().get_pixel(x, y).0[0],
+                expected_feather
+            );
+        }
+    }
+}
+
+#[test]
+fn selection_modifiers_cross_tile_seams_and_contract_select_all_from_each_edge() {
+    use paintfe::ops::adjustments::{contract_selection, expand_selection, feather_selection};
+
+    let mut state = CanvasState::new(1100, 560);
+    state.selection_all = true;
+    contract_selection(&mut state, 200);
+    assert_eq!(state.selection_mask_bounds(), Some((200, 200, 899, 359)));
+    assert!(!state.selection_all);
+    contract_selection(&mut state, 10);
+    assert_eq!(state.selection_mask_bounds(), Some((210, 210, 889, 349)));
+    let contracted = state.selection_mask.clone();
+    expand_selection(&mut state, 60);
+    let expanded = state.selection_mask.clone().unwrap();
+    state.selection_mask = contracted;
+    feather_selection(&mut state, 60.0);
+    let feathered = state.selection_mask.unwrap();
+    assert!(
+        expanded
+            .pixels()
+            .zip(feathered.pixels())
+            .all(|(a, b)| (a.0[0] > 0) == (b.0[0] > 0))
+    );
+    for x in 150u32..950 {
+        for y in 150u32..210 {
+            let dx = x.abs_diff(x.clamp(210u32, 889));
+            assert_eq!(
+                expanded.get_pixel(x, y).0[0] > 0,
+                dx * dx + (210 - y).pow(2) <= 60 * 60
+            );
+        }
+    }
+}
+
 // =============================================================================
 // Rectangle selection
 // =============================================================================

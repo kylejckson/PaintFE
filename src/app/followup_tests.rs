@@ -257,8 +257,12 @@ fn rectangle_drag_bounds_clip_to_inclusive_canvas_pixels() {
     assert_eq!(state.clipped_bounds(8, 4), None);
 }
 
-fn editor_frame(app: &mut PaintFEApp, ctx: &egui::Context, events: Vec<egui::Event>) {
-    let _ = ctx.run_ui(
+fn editor_frame(
+    app: &mut PaintFEApp,
+    ctx: &egui::Context,
+    events: Vec<egui::Event>,
+) -> egui::FullOutput {
+    ctx.run_ui(
         egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
@@ -272,7 +276,7 @@ fn editor_frame(app: &mut PaintFEApp, ctx: &egui::Context, events: Vec<egui::Eve
             app.show_runtime_dialogs_menu(ctx, ui);
             app.show_runtime_canvas_tail(ctx, ui, modal);
         },
-    );
+    )
 }
 
 fn primary_at(pos: egui::Pos2, pressed: bool) -> egui::Event {
@@ -281,6 +285,120 @@ fn primary_at(pos: egui::Pos2, pressed: bool) -> egui::Event {
         button: egui::PointerButton::Primary,
         pressed,
         modifiers: egui::Modifiers::NONE,
+    }
+}
+
+#[test]
+fn lasso_empty_gestures_leave_history_and_subtracting_from_select_all_undoes_cleanly() {
+    use crate::canvas::SelectionMode;
+    use crate::components::tools::Tool;
+
+    let mut app = app();
+    let ctx = context();
+    app.tools_panel.active_tool = Tool::Lasso;
+    for _ in 0..3 {
+        editor_frame(&mut app, &ctx, vec![]);
+    }
+    app.canvas.set_view_state(8., egui::Vec2::ZERO);
+    editor_frame(&mut app, &ctx, vec![]);
+    let rect = app.canvas.last_image_rect.unwrap();
+    let at = |x, y| rect.min + egui::vec2(x, y) * 8.;
+    let button_at = |pos, pressed, button| egui::Event::PointerButton {
+        pos,
+        button,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    let primary = egui::PointerButton::Primary;
+    let secondary = egui::PointerButton::Secondary;
+    app.projects[0].canvas_state.selection_all = true;
+    let baseline = app.projects[0].history.undo_count();
+    let start = at(6.05, 6.05);
+    let drag = |app: &mut PaintFEApp, button, points: &[egui::Pos2]| {
+        editor_frame(
+            app,
+            &ctx,
+            vec![
+                egui::Event::PointerMoved(points[0]),
+                button_at(points[0], true, button),
+            ],
+        );
+        for &point in &points[1..] {
+            editor_frame(app, &ctx, vec![egui::Event::PointerMoved(point)]);
+        }
+        let end = *points.last().unwrap();
+        editor_frame(app, &ctx, vec![button_at(end, false, button)]);
+    };
+    drag(&mut app, secondary, &[start]);
+    for mode in [
+        SelectionMode::Add,
+        SelectionMode::Subtract,
+        SelectionMode::Intersect,
+    ] {
+        app.tools_panel.lasso_state.mode = mode;
+        drag(&mut app, primary, &[start]);
+        drag(&mut app, primary, &[start, at(6.40, 6.05), at(6.05, 6.40)]);
+    }
+    assert!(app.projects[0].canvas_state.selection_all);
+    assert_eq!(app.projects[0].history.undo_count(), baseline);
+
+    drag(
+        &mut app,
+        secondary,
+        &[start, at(10., 6.), at(10., 10.), at(6., 10.)],
+    );
+    let project = &mut app.projects[0];
+    assert!(!project.canvas_state.selection_all);
+    let mask = project.canvas_state.selection_mask.as_ref().unwrap();
+    assert_eq!(mask.get_pixel(7, 7).0[0], 0);
+    assert_eq!(mask.get_pixel(3, 3).0[0], 255);
+    assert_eq!(project.history.undo_count(), baseline + 1);
+    assert!(project.history.undo(&mut project.canvas_state).is_some());
+    assert!(project.canvas_state.selection_all);
+    assert!(project.history.redo(&mut project.canvas_state).is_some());
+    assert!(!project.canvas_state.selection_all);
+}
+
+#[test]
+fn lasso_draws_the_closing_segment_for_both_mouse_buttons() {
+    use crate::components::tools::Tool;
+
+    let mut app = app();
+    let ctx = context();
+    app.tools_panel.active_tool = Tool::Lasso;
+    for _ in 0..3 {
+        editor_frame(&mut app, &ctx, vec![]);
+    }
+    app.canvas.set_view_state(8., egui::Vec2::ZERO);
+    editor_frame(&mut app, &ctx, vec![]);
+    let top_left = app.canvas.last_image_rect.unwrap().min;
+    let start = top_left + egui::vec2(48., 40.);
+    let bend = top_left + egui::vec2(88., 88.);
+    let end = top_left + egui::vec2(120., 48.);
+    for button in [egui::PointerButton::Primary, egui::PointerButton::Secondary] {
+        let button_at = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        editor_frame(
+            &mut app,
+            &ctx,
+            vec![egui::Event::PointerMoved(start), button_at(start, true)],
+        );
+        editor_frame(&mut app, &ctx, vec![egui::Event::PointerMoved(bend)]);
+        let frame = editor_frame(&mut app, &ctx, vec![egui::Event::PointerMoved(end)]);
+        assert!(
+            frame.shapes.iter().any(|clipped| {
+                matches!(&clipped.shape, egui::Shape::LineSegment { points, stroke }
+                if stroke.width == 0.75
+                    && points[0].distance(end) < 0.5
+                    && points[1].distance(start) < 0.5)
+            }),
+            "missing closing preview for {button:?}"
+        );
+        editor_frame(&mut app, &ctx, vec![button_at(end, false)]);
     }
 }
 

@@ -327,15 +327,11 @@ impl ToolsPanel {
                 let is_secondary_pressed =
                     ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary));
 
-                // Idle Enter deselection is handled by the app preference and History.
+                // Idle deselection is handled by the app preferences and History.
                 if esc_pressed {
-                    if self.lasso_state.dragging {
-                        self.lasso_state.dragging = false;
-                        self.lasso_state.points.clear();
-                    }
-                    canvas_state.clear_selection();
-                    canvas_state.mark_dirty(None);
+                    self.lasso_state.cancel_drag();
                     ui.ctx().request_repaint();
+                    return;
                 }
 
                 // Start lasso drag - lock effective mode from modifier keys at drag start
@@ -361,72 +357,82 @@ impl ToolsPanel {
                     self.lasso_state.points.push(Pos2::new(pos_f.0, pos_f.1));
                 }
 
-                // Accumulate points while dragging
-                let any_button_down = is_primary_down || is_secondary_down;
-                if any_button_down && self.lasso_state.dragging {
-                    if let Some(pos_f) = canvas_pos_unclamped {
-                        let p = Pos2::new(pos_f.0, pos_f.1);
-                        // Only add if moved at least 1px from last point
-                        if let Some(last) = self.lasso_state.points.last() {
-                            let d = (*last - p).length();
-                            if d >= 1.0 {
-                                self.lasso_state.points.push(p);
-                            }
-                        }
+                let (button_down, button_released) = if self.lasso_state.right_click_drag {
+                    (is_secondary_down, is_secondary_released)
+                } else {
+                    (is_primary_down, is_primary_released)
+                };
+                let pointer = canvas_pos_unclamped.map(|(x, y)| Pos2::new(x, y));
+                if self.lasso_state.dragging && (button_down || button_released) {
+                    if let Some(point) = pointer
+                        && let Some(last) = self.lasso_state.points.last()
+                        && (last.distance_sq(point) >= 0.25f32.powi(2)
+                            || (button_released && *last != point))
+                    {
+                        self.lasso_state.points.push(point);
                     }
                     ui.ctx().request_repaint();
                 }
 
-                // Draw lasso preview path
                 if self.lasso_state.dragging && self.lasso_state.points.len() >= 2 {
-                    let screen_pts: Vec<Pos2> = self
+                    let to_screen = |point: Pos2| canvas_rect.min + point.to_vec2() * zoom;
+                    let path: Vec<_> = self
                         .lasso_state
                         .points
                         .iter()
-                        .map(|cp| {
-                            Pos2::new(
-                                canvas_rect.min.x + cp.x * zoom,
-                                canvas_rect.min.y + cp.y * zoom,
-                            )
-                        })
+                        .copied()
+                        .map(to_screen)
                         .collect();
-                    // Draw the path
+                    let start = path[0];
+                    let end = pointer.map_or(path[path.len() - 1], to_screen);
                     painter.add(egui::Shape::line(
-                        screen_pts.clone(),
+                        path.clone(),
                         egui::Stroke::new(1.5, Color32::WHITE),
                     ));
                     painter.add(egui::Shape::line(
-                        screen_pts,
+                        path,
                         egui::Stroke::new(0.8, Color32::from_black_alpha(150)),
                     ));
+                    painter.line_segment(
+                        [end, start],
+                        egui::Stroke::new(1.5, Color32::from_black_alpha(100)),
+                    );
+                    painter.line_segment(
+                        [end, start],
+                        egui::Stroke::new(0.75, Color32::from_white_alpha(150)),
+                    );
                 }
 
-                // Finish on release - rasterize polygon into selection mask
-                let any_button_released = is_primary_released || is_secondary_released;
-                if any_button_released && self.lasso_state.dragging {
+                // Finish only when the button that started the gesture is released.
+                if button_released && self.lasso_state.dragging {
                     let effective_mode = self.lasso_state.drag_effective_mode;
                     self.lasso_state.dragging = false;
-                    let pts = std::mem::take(&mut self.lasso_state.points);
-                    let sel_before = canvas_state.selection_mask.clone();
-                    let sel_before_all = canvas_state.selection_all;
-                    if pts.len() >= 3 {
-                        // Scanline-fill the polygon into the selection mask
-                        Self::apply_lasso_selection(canvas_state, &pts, effective_mode);
+                    let points = std::mem::take(&mut self.lasso_state.points);
+                    let clear_on_click = effective_mode == SelectionMode::Replace
+                        && points.len() == 1
+                        && Some(points[0]) == pointer;
+                    ui.ctx().request_repaint();
+                    if points.len() < 3 && !clear_on_click {
+                        return;
+                    }
+                    let before = canvas_state.selection_mask.clone();
+                    let before_all = canvas_state.selection_all;
+                    if points.len() >= 3 {
+                        Self::apply_lasso_selection(canvas_state, &points, effective_mode);
                     } else {
-                        // Tiny lasso -> deselect
                         canvas_state.clear_selection();
                     }
-                    let sel_after = canvas_state.selection_mask.clone();
-                    let sel_after_all = canvas_state.selection_all;
-                    self.pending_history_commands
-                        .push(Box::new(SelectionCommand::new_states(
+                    if before != canvas_state.selection_mask
+                        || before_all != canvas_state.selection_all
+                    {
+                        self.pending_history_commands.push(Box::new(SelectionCommand::new_states(
                             HistoryAction::Lasso.label("Lasso Select"),
-                            sel_before,
-                            sel_before_all,
-                            sel_after,
-                            sel_after_all,
+                            before,
+                            before_all,
+                            canvas_state.selection_mask.clone(),
+                            canvas_state.selection_all,
                         )));
-                    ui.ctx().request_repaint();
+                    }
                 }
             }
 

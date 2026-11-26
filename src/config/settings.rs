@@ -363,6 +363,8 @@ pub struct AppSettings {
     pub persisted_pressure_min_size: f32,
     pub persisted_pressure_min_opacity: f32,
     pub persisted_brush_mode: String,
+    pub persisted_selection_mode: crate::canvas::SelectionMode,
+    pub persisted_lasso_mode: crate::canvas::SelectionMode,
     pub persisted_brush_tip: String,
     pub persisted_brush_engine: crate::brushes::BrushEngineSettings,
     /// Custom brush tips persisted across restarts: (name, category, base64_png_data)
@@ -607,6 +609,8 @@ impl Default for AppSettings {
             persisted_pressure_min_size: 0.1,
             persisted_pressure_min_opacity: 0.1,
             persisted_brush_mode: "normal".to_string(),
+            persisted_selection_mode: Default::default(),
+            persisted_lasso_mode: Default::default(),
             persisted_brush_tip: String::new(),
             persisted_brush_engine: Default::default(),
             custom_brush_tips: Vec::new(),
@@ -1730,6 +1734,11 @@ impl AppSettings {
             self.persisted_brush_mode
         ));
         content.push_str(&format!(
+            "persisted_selection_mode={}\npersisted_lasso_mode={}\n",
+            self.persisted_selection_mode.settings_key(),
+            self.persisted_lasso_mode.settings_key(),
+        ));
+        content.push_str(&format!(
             "persisted_brush_tip={}\n",
             self.persisted_brush_tip
         ));
@@ -2390,6 +2399,13 @@ impl AppSettings {
                 "persisted_brush_mode" => {
                     s.persisted_brush_mode = val.to_string();
                 }
+                "persisted_selection_mode" => {
+                    s.persisted_selection_mode =
+                        crate::canvas::SelectionMode::from_settings_key(val);
+                }
+                "persisted_lasso_mode" => {
+                    s.persisted_lasso_mode = crate::canvas::SelectionMode::from_settings_key(val);
+                }
                 "persisted_brush_tip" => {
                     s.persisted_brush_tip = val.to_string();
                 }
@@ -2829,6 +2845,8 @@ mod refinement_tests {
             },
             escape_deselect: false,
             enter_deselect: true,
+            persisted_selection_mode: crate::canvas::SelectionMode::Add,
+            persisted_lasso_mode: crate::canvas::SelectionMode::Intersect,
             paste_at_source_position: false,
             paste_keep_visible: false,
             legacy_clipboard_shortcuts: false,
@@ -2882,6 +2900,11 @@ mod refinement_tests {
         assert_eq!(restored.tool_shelf.separator_opacity, 0.35);
         assert!(!restored.escape_deselect);
         assert!(restored.enter_deselect);
+        assert_eq!(
+            restored.persisted_selection_mode,
+            settings.persisted_selection_mode
+        );
+        assert_eq!(restored.persisted_lasso_mode, settings.persisted_lasso_mode);
         assert!(!restored.paste_at_source_position);
         assert!(!restored.paste_keep_visible);
         assert!(!restored.legacy_clipboard_shortcuts);

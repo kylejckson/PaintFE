@@ -22,7 +22,8 @@ impl PaintFEApp {
             .show(root_ui, |ui| {
                 if modal_open { ui.disable(); }
                 egui::MenuBar::new().config(crate::ui::menus::config()).ui(ui, |ui| {
-                    ui.menu_button(t!("menu.file"), |ui| {
+                    let top_menus = crate::ui::menus::TopMenus::new(ui);
+                    top_menus.button(ui, t!("menu.file"), |ui| {
                         if self.assets.menu_item_shortcut_enabled(ui, Icon::MenuFileNew, &t!("menu.file.new"), true, &menu_kb, crate::config::keybindings::BindableAction::NewFile).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::NewFile); ui.close(); }
                         if self.assets.menu_item_shortcut_enabled(ui, Icon::MenuFileOpen, &t!("menu.file.open"), true, &menu_kb, crate::config::keybindings::BindableAction::OpenFile).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::OpenFile); ui.close(); }
                         ui.menu_button(crate::t!("ui.recent_files"), |ui| {
@@ -67,7 +68,7 @@ impl PaintFEApp {
                         if self.assets.menu_item_shortcut_enabled(ui, Icon::MenuFileQuit, &t!("menu.file.quit"), true, &menu_kb, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::FileQuit)).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::Menu(crate::config::commands::MenuCommand::FileQuit)); ui.close(); }
                     });
 
-                    ui.menu_button(t!("menu.edit"), |ui| {
+                    top_menus.button(ui, t!("menu.edit"), |ui| {
                         let can_undo = self.can_undo_action();
                         let can_redo = self.can_redo_action();
 
@@ -111,7 +112,7 @@ impl PaintFEApp {
 
                     // ==================== CANVAS MENU (was: Image) ====================
                     let no_dialog = !modal_open;
-                    ui.add_enabled_ui(has_project, |ui| ui.menu_button(t!("menu.canvas"), |ui| {
+                    ui.add_enabled_ui(has_project, |ui| top_menus.button(ui, t!("menu.canvas"), |ui| {
                         if !has_project {
                             ui.disable();
                         }
@@ -180,7 +181,7 @@ impl PaintFEApp {
                     // (Layers menu removed -- layer operations are now in the Layers Panel context menu)
 
                     // ==================== COLOR MENU (was: Adjustments) ====================
-                    ui.add_enabled_ui(has_project, |ui| ui.menu_button(t!("menu.color"), |ui| {
+                    ui.add_enabled_ui(has_project, |ui| top_menus.button(ui, t!("menu.color"), |ui| {
                         if !has_project {
                             ui.disable();
                         }
@@ -212,7 +213,7 @@ impl PaintFEApp {
                     }));
 
                     // ==================== FILTER MENU (was: Effects) ====================
-                    ui.menu_button(t!("menu.filter"), |ui| {
+                    top_menus.button(ui, t!("menu.filter"), |ui| {
                         #[cfg(not(target_arch = "wasm32"))]
                         {
                             crate::ui::panels::plugin_browser::menu(ui,has_project && no_dialog);
@@ -416,7 +417,7 @@ impl PaintFEApp {
                     });
 
                     // ==================== GENERATE MENU (was: Effects > Render) ====================
-                    ui.add_enabled_ui(has_project, |ui| ui.menu_button(t!("menu.generate"), |ui| {
+                    ui.add_enabled_ui(has_project, |ui| top_menus.button(ui, t!("menu.generate"), |ui| {
                         if !has_project {
                             ui.disable();
                         }
@@ -426,7 +427,7 @@ impl PaintFEApp {
                         if self.assets.menu_item_shortcut_enabled(ui, HistoryAction::Contours.icon(), &t!("menu.generate.contours"), no_dialog, &menu_kb, crate::config::keybindings::BindableAction::GenerateContours).clicked() { self.execute_menu_command(ctx, crate::config::keybindings::BindableAction::GenerateContours); ui.close(); }
                     }));
 
-                    let view_menu = ui.menu_button(t!("menu.view"), |ui| {
+                    let view_menu = top_menus.button(ui, t!("menu.view"), |ui| {
                         // Panel toggles
                         ui.label(egui::RichText::new(crate::t!("menu.view.panels_heading")).strong().size(11.0));
                         self.show_command_toggle(ui,ctx,crate::config::commands::MenuCommand::ViewTools,self.window_visibility.tools);
@@ -488,9 +489,9 @@ impl PaintFEApp {
                         });
                     });
                     #[cfg(test)]
-                    ctx.data_mut(|d|d.insert_temp(egui::Id::new("view_menu_test_rect"),view_menu.response.rect));
+                    ctx.data_mut(|d|d.insert_temp(egui::Id::new("view_menu_test_rect"),view_menu.rect));
                     let _=view_menu;
-                    ui.menu_button(t!("help.title"), |ui| {
+                    top_menus.button(ui, t!("help.title"), |ui| {
                         if self.show_command_button(ui,ctx,crate::config::commands::MenuCommand::HelpQuickStart) { ui.close(); }
                         if self.show_command_button(ui,ctx,crate::config::commands::MenuCommand::HelpAiSetup) { ui.close(); }
                         self.show_command_button(ui,ctx,crate::config::commands::MenuCommand::HelpDocumentation);

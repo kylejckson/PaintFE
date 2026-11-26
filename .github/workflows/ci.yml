@@ -59,7 +59,7 @@ jobs:
 
       - name: Install locked native codec build tools
         run: |
-          python -m pip install --require-hashes --only-binary=:all: -r .github/requirements-native.txt
+          python -m pip install --require-hashes --only-binary=:all: -r .github/requirements-build.txt -r .github/requirements-native.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -c "import sysconfig; print(sysconfig.get_path('scripts'))" >> $env:GITHUB_PATH
 

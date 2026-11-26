@@ -643,10 +643,6 @@ impl PaintFEApp {
                                     let after = crate::components::history::CanvasSnapshot::capture(&project.canvas_state);
                                     project.history.push(Box::new(SnapshotCommand::from_snapshots(desc, before, after)));
                                 }
-                                if keep_selection {
-                                    self.tools_panel.selection_state.mode =
-                                        crate::canvas::SelectionMode::Replace;
-                                }
                                 if needs_mask {
                                     // Second undo step: crop the canvas to the (possibly
                                     // trimmed) pasted bounds. Mirrors do_snapshot_op.

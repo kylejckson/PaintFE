@@ -2241,6 +2241,7 @@ impl Canvas {
                     || tools.shapes_state.placed.is_some()
                     || tools.line_state.line_tool.stage
                         == crate::components::tools::LineStage::Editing
+                    || tools.lasso_state.dragging
                     || tools.perspective_crop_state.active);
             let allow_input = !modal_open
                 && (paste_overlay.is_none()
@@ -2260,6 +2261,21 @@ impl Canvas {
                     || text_handles_active
                     || keyboard_tool_override
                     || pending_tool_commit);
+
+            if tools.lasso_state.dragging {
+                let button = if tools.lasso_state.right_click_drag {
+                    egui::PointerButton::Secondary
+                } else {
+                    egui::PointerButton::Primary
+                };
+                if ui.input(|i| {
+                    !i.focused
+                        || ((!allow_input || ui_blocks_canvas_input)
+                            && i.pointer.button_released(button))
+                }) {
+                    tools.lasso_state.cancel_drag();
+                }
+            }
 
             if allow_input {
                 if tools.active_tool == crate::components::tools::Tool::Fill {

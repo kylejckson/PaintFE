@@ -8,6 +8,63 @@ pub fn config() -> egui::containers::menu::MenuConfig {
         })
 }
 
+/// Tracks only this bar's root menus. A context menu or combo box cannot start hover navigation.
+pub struct TopMenus {
+    active_id: egui::Id,
+    hovering_switches: bool,
+}
+
+impl TopMenus {
+    pub fn new(ui: &egui::Ui) -> Self {
+        let active_id = ui.id().with("open_root_menu");
+        let previous = ui.ctx().data(|data| data.get_temp::<egui::Id>(active_id));
+        Self {
+            active_id,
+            hovering_switches: previous.is_some_and(|id| egui::Popup::is_id_open(ui.ctx(), id))
+                && !ui.input(|input| input.key_pressed(egui::Key::Escape)),
+        }
+    }
+
+    pub fn button(
+        &self,
+        ui: &mut egui::Ui,
+        title: impl Into<egui::WidgetText>,
+        contents: impl FnOnce(&mut egui::Ui),
+    ) -> egui::Response {
+        let response = ui.button(title);
+        let id = egui::Popup::default_response_id(&response);
+        let menu_config = config();
+        let mut popup = egui::Popup::menu(&response)
+            .close_behavior(menu_config.close_behavior)
+            .style(menu_config.style.clone())
+            .info(egui::UiStackInfo::new(egui::UiKind::Menu).with_tag_value(
+                egui::containers::menu::MenuConfig::MENU_CONFIG_TAG,
+                menu_config,
+            ));
+        if self.hovering_switches
+            && response.enabled()
+            && !response.clicked()
+            && !egui::Popup::is_id_open(ui.ctx(), id)
+            && ui.input(|input| {
+                !input.pointer.any_down()
+                    && input.pointer.delta() != egui::Vec2::ZERO
+                    && input
+                        .pointer
+                        .hover_pos()
+                        .is_some_and(|pos| response.interact_rect.contains(pos))
+            })
+        {
+            popup = popup.open_memory(Some(true.into()));
+        }
+        popup.show(contents);
+        if egui::Popup::is_id_open(ui.ctx(), id) {
+            ui.ctx()
+                .data_mut(|data| data.insert_temp(self.active_id, id));
+        }
+        response
+    }
+}
+
 pub fn context_menu(
     response: &egui::Response,
     contents: impl FnOnce(&mut egui::Ui),
@@ -34,6 +91,78 @@ pub fn row_size(ui: &egui::Ui, width: f32, height: f32) -> egui::Vec2 {
 mod tests {
     use super::*;
     use crate::config::{brushes::Assets, icons::Icon};
+
+    #[test]
+    fn root_menus_switch_on_hover_only_when_this_bar_has_an_open_menu() {
+        let ctx = egui::Context::default();
+        let menus = ["File", "Canvas", "Help"];
+        let frame = |events| {
+            let mut positions = [egui::Pos2::ZERO; 3];
+            let mut open = None;
+            let _ = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(500.0, 300.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    egui::MenuBar::new().config(config()).ui(ui, |ui| {
+                        let roots = TopMenus::new(ui);
+                        for (index, label) in menus.into_iter().enumerate() {
+                            let response = ui
+                                .add_enabled_ui(index != 1, |ui| {
+                                    roots.button(ui, label, |ui| {
+                                        ui.label("Example entry");
+                                        ui.menu_button("Nested menu", |ui| {
+                                            ui.label("Child");
+                                        });
+                                    })
+                                })
+                                .inner;
+                            positions[index] = response.rect.center();
+                            if egui::Popup::is_id_open(
+                                ui.ctx(),
+                                egui::Popup::default_response_id(&response),
+                            ) {
+                                open = Some(label);
+                            }
+                        }
+                    });
+                },
+            );
+            (positions, open)
+        };
+        let ([file, disabled, help], _) = frame(Vec::new());
+        let move_to = |pos| frame(vec![egui::Event::PointerMoved(pos)]).1;
+        let press = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            pressed,
+            button: egui::PointerButton::Primary,
+            modifiers: egui::Modifiers::NONE,
+        };
+
+        assert_eq!(move_to(help), None);
+        let unrelated = egui::Id::new("different_popup");
+        egui::Popup::open_id(&ctx, unrelated);
+        assert_eq!(move_to(file), None);
+        egui::Popup::close_id(&ctx, unrelated);
+        frame(vec![press(file, true)]);
+        assert_eq!(frame(vec![press(file, false)]).1, Some("File"));
+        assert_eq!(move_to(disabled), Some("File"));
+        assert_eq!(move_to(help), Some("Help"));
+        assert_eq!(move_to(file), Some("File"));
+        assert_eq!(frame(vec![]).1, Some("File"));
+        let outside = egui::pos2(300., 200.);
+        frame(vec![
+            egui::Event::PointerMoved(outside),
+            press(outside, true),
+        ]);
+        assert_eq!(frame(vec![press(outside, false)]).1, None);
+        assert_eq!(move_to(help), None);
+    }
 
     #[derive(Default)]
     struct Menu {

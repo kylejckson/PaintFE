@@ -2305,6 +2305,13 @@ pub struct LassoState {
     pub drag_effective_mode: SelectionMode,
 }
 
+impl LassoState {
+    pub(crate) fn cancel_drag(&mut self) {
+        self.dragging = false;
+        self.points.clear();
+    }
+}
+
 /// State for the Perspective Crop tool.
 #[derive(Clone, Debug)]
 pub struct PerspectiveCropState {

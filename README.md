@@ -82,14 +82,16 @@ PaintFE -i photo.png --format jpeg --quality 90 -o out.jpg
 | `-s` / `--script` | Path to a `.rhai` script |
 | `-o` / `--output` | Output file path for a single input |
 | `--output-dir` | Output directory for batch jobs |
-| `-f` / `--format` | `png`, `jpeg`, `jxl`, `webp`, `tiff`, `bmp`, `tga`, `ico`, `gif` (static), or `pfe` |
+| `-f` / `--format` | `png`, `jpeg`, `jxl`, `webp`, `tiff`, `bmp`, `tga`, `ico`, `gif` (static), `psd`, or `pfe` |
 | `-q` / `--quality` | JPEG/lossy WebP quality (1-100, default 90) |
 | `--webp-lossy` | Use lossy WebP; WebP output defaults to lossless |
 | `--tiff-compression` | `none`, `lzw`, or `deflate` |
-| `--flatten` | Raster exports are flattened; PFE output preserves layers |
+| `--flatten` | Raster exports are flattened; PFE and supported PSD output can preserve layers |
 | `-v` / `--verbose` | Script output and per-file timing information |
 
 Exit `0` means all files succeeded. Exit `1` means at least one failed; remaining files still process. CLI mode is selected with `-i` or `--input` and does not open the editor. On Linux, use `./PaintFE` if the executable is not on your PATH.
+
+Run `PaintFE --mcp` to start the separate stdio bridge for a local MCP client. Keep the desktop editor open with local agent connections enabled under **Preferences > AI**. [MCP setup and example](docs/automation.md)
 
 </details>
 
@@ -114,9 +116,11 @@ Photo sources and artwork details are listed in [screenshot credits](screenshot/
 
 | | Formats |
 |---|---|
-| **Read** | PNG, JPEG, JPEG XL, HEIC/HEIF, AVIF (optional desktop pack), WebP, BMP, TIFF, TGA, GIF, APNG, PFE, PDN, and supported camera RAW files |
-| **Write** | PNG, JPEG, JPEG XL (desktop), HEIC/HEIF (system codec), AVIF (optional desktop pack), WebP, BMP, TIFF, TGA, ICO, GIF, APNG, and PFE |
+| **Read** | PNG, JPEG, JPEG XL, HEIC/HEIF, AVIF (optional desktop pack), WebP, BMP, TIFF, TGA, GIF, APNG, PFE, PDN, PSD (desktop), and supported camera RAW files |
+| **Write** | PNG, JPEG, JPEG XL (desktop), HEIC/HEIF (system codec), AVIF (optional desktop pack), WebP, BMP, TIFF, TGA, ICO, GIF, APNG, PSD (desktop), and PFE |
 | **Animation** | GIF, APNG, and WebP import and export |
+
+PSD supports 8-bit RGB raster layers and simple masks. PaintFE can open the merged preview when it encounters unsupported layer features. PSD export uses lossless compression where it reduces file size. Use PFE to preserve PaintFE-specific editing data.
 
 PFE is PaintFE's layered project format. Animated export uses each visible layer as a frame, with frame rate, loop count, and format-specific compression options in the export dialog.
 

@@ -33,6 +33,7 @@ impl ToolsPanel {
 
     pub(crate) fn clear_selection_tool_session(&mut self) {
         self.clear_magic_wand_async_state();
+        self.lasso_state.cancel_drag();
     }
 
     pub fn show_compact(

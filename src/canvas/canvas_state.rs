@@ -1821,6 +1821,17 @@ impl CanvasState {
 
     /// Apply a selection shape to the mask according to `mode`.
     pub fn apply_selection_shape(&mut self, shape: &SelectionShape, mode: SelectionMode) {
+        self.apply_selection_coverage(shape.bounds(self.width, self.height), mode, |x, y| {
+            shape.contains(x, y)
+        });
+    }
+
+    pub(crate) fn apply_selection_coverage(
+        &mut self,
+        (bx0, by0, bx1, by1): (u32, u32, u32, u32),
+        mode: SelectionMode,
+        coverage: impl Fn(u32, u32) -> u8,
+    ) {
         let w = self.width;
         let h = self.height;
 
@@ -1848,8 +1859,6 @@ impl CanvasState {
             *mask = GrayImage::new(w, h);
         }
 
-        let (bx0, by0, bx1, by1) = shape.bounds(w, h);
-
         match mode {
             SelectionMode::Replace => {
                 // Zero the whole mask first, then fill the shape.
@@ -1858,7 +1867,7 @@ impl CanvasState {
                 }
                 for y in by0..=by1 {
                     for x in bx0..=bx1 {
-                        let v = shape.contains(x, y);
+                        let v = coverage(x, y);
                         if v > 0 {
                             mask.put_pixel(x, y, Luma([v]));
                         }
@@ -1868,7 +1877,7 @@ impl CanvasState {
             SelectionMode::Add => {
                 for y in by0..=by1 {
                     for x in bx0..=bx1 {
-                        let new_val = shape.contains(x, y);
+                        let new_val = coverage(x, y);
                         if new_val > 0 {
                             let old = mask.get_pixel(x, y).0[0];
                             mask.put_pixel(x, y, Luma([old.max(new_val)]));
@@ -1879,7 +1888,7 @@ impl CanvasState {
             SelectionMode::Subtract => {
                 for y in by0..=by1 {
                     for x in bx0..=bx1 {
-                        let sub_val = shape.contains(x, y);
+                        let sub_val = coverage(x, y);
                         if sub_val > 0 {
                             let old = mask.get_pixel(x, y).0[0];
                             mask.put_pixel(x, y, Luma([old.saturating_sub(sub_val)]));
@@ -1898,7 +1907,7 @@ impl CanvasState {
                 // Then restore pixels that exist in both
                 for y in by0..=by1 {
                     for x in bx0..=bx1 {
-                        let shape_val = shape.contains(x, y);
+                        let shape_val = coverage(x, y);
                         if shape_val > 0 {
                             let old_val = old_mask.get_pixel(x, y).0[0];
                             if old_val > 0 {

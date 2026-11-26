@@ -965,6 +965,8 @@ impl PaintFEApp {
 
     fn apply_persisted_tool_settings(&mut self) {
         self.tools_panel.active_tool = Self::key_to_tool(&self.settings.persisted_active_tool);
+        self.tools_panel.selection_state.mode = self.settings.persisted_selection_mode;
+        self.tools_panel.lasso_state.mode = self.settings.persisted_lasso_mode;
 
         self.tools_panel.properties.size = self.settings.persisted_brush_size.clamp(1.0, 1024.0);
         self.tools_panel.properties.hardness =
@@ -1060,6 +1062,8 @@ impl PaintFEApp {
         let mut hasher = DefaultHasher::new();
 
         Self::tool_to_key(self.tools_panel.active_tool).hash(&mut hasher);
+        self.tools_panel.selection_state.mode.hash(&mut hasher);
+        self.tools_panel.lasso_state.mode.hash(&mut hasher);
         self.tools_panel.properties.size.to_bits().hash(&mut hasher);
         self.tools_panel
             .properties
@@ -1349,6 +1353,8 @@ impl PaintFEApp {
 
         self.settings.persisted_active_tool =
             Self::tool_to_key(self.tools_panel.active_tool).to_string();
+        self.settings.persisted_selection_mode = self.tools_panel.selection_state.mode;
+        self.settings.persisted_lasso_mode = self.tools_panel.lasso_state.mode;
         self.settings.persisted_brush_size = self.tools_panel.properties.size;
         self.settings.persisted_brush_hardness = self.tools_panel.properties.hardness;
         self.settings.persisted_brush_flow = self.tools_panel.properties.flow;

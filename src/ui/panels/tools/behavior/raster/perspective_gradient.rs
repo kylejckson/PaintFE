@@ -1,91 +1,53 @@
 impl ToolsPanel {
     fn apply_lasso_selection(canvas_state: &mut CanvasState, points: &[Pos2], mode: SelectionMode) {
-        let w = canvas_state.width;
-        let h = canvas_state.height;
-
-        // Build a fresh mask from polygon
-        let mut lasso_mask = image::GrayImage::new(w, h);
-
-        // Scanline fill: for each row, find intersection x-coords with polygon edges
-        let n = points.len();
-        for y in 0..h {
-            let yf = y as f32 + 0.5; // centre of pixel row
-            let mut nodes: Vec<f32> = Vec::new();
-            // Walk polygon edges (including closing edge n-1 → 0)
-            for i in 0..n {
-                let j = (i + 1) % n;
-                let yi = points[i].y;
-                let yj = points[j].y;
-                // Check if this edge crosses the scanline
-                if (yi < yf && yj >= yf) || (yj < yf && yi >= yf) {
-                    // x-intercept
-                    let t = (yf - yi) / (yj - yi);
-                    let x = points[i].x + t * (points[j].x - points[i].x);
-                    nodes.push(x);
-                }
-            }
-            nodes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            // Fill between pairs of intersections
-            let mut k = 0;
-            while k + 1 < nodes.len() {
-                let x_start = (nodes[k].max(0.0) as u32).min(w);
-                let x_end = ((nodes[k + 1] + 1.0).max(0.0) as u32).min(w);
-                for x in x_start..x_end {
-                    lasso_mask.put_pixel(x, y, image::Luma([255u8]));
-                }
-                k += 2;
-            }
+        if points.len() < 3
+            || (canvas_state.selection_all && mode == SelectionMode::Add)
+            || (!canvas_state.has_selection()
+                && matches!(mode, SelectionMode::Subtract | SelectionMode::Intersect))
+        {
+            return;
+        }
+        let (w, h) = (canvas_state.width, canvas_state.height);
+        let mut bounds = egui::Rect::NOTHING;
+        for &point in points {
+            bounds.extend_with(point);
+        }
+        // Sample at pixel centres on both axes. The upper scanline/column edge is exclusive.
+        let pixel_edge = |v: f32, limit: u32| ((v - 0.5).ceil() as u32).min(limit);
+        let x0 = pixel_edge(bounds.min.x, w);
+        let x1 = pixel_edge(bounds.max.x, w);
+        let y0 = pixel_edge(bounds.min.y, h);
+        let y1 = pixel_edge(bounds.max.y, h);
+        if x0 >= x1 || y0 >= y1 {
+            return;
         }
 
-        // Merge into the existing selection mask
-        match mode {
-            SelectionMode::Replace => {
-                canvas_state.selection_mask = Some(lasso_mask);
-            }
-            SelectionMode::Add => {
-                if let Some(ref mut existing) = canvas_state.selection_mask {
-                    for y in 0..h {
-                        for x in 0..w {
-                            if lasso_mask.get_pixel(x, y).0[0] > 0 {
-                                existing.put_pixel(x, y, image::Luma([255u8]));
-                            }
-                        }
-                    }
-                } else {
-                    canvas_state.selection_mask = Some(lasso_mask);
+        let mut mask = image::GrayImage::new(x1 - x0, y1 - y0);
+        let mut nodes = Vec::with_capacity(points.len());
+        let mut covered_pixel = false;
+        for y in y0..y1 {
+            let yf = y as f32 + 0.5;
+            nodes.clear();
+            for (&a, &b) in points.iter().zip(points.iter().cycle().skip(1)) {
+                if (a.y > yf) != (b.y > yf) {
+                    nodes.push(a.x + (yf - a.y) / (b.y - a.y) * (b.x - a.x));
                 }
             }
-            SelectionMode::Subtract => {
-                if let Some(ref mut existing) = canvas_state.selection_mask {
-                    for y in 0..h {
-                        for x in 0..w {
-                            if lasso_mask.get_pixel(x, y).0[0] > 0 {
-                                existing.put_pixel(x, y, image::Luma([0u8]));
-                            }
-                        }
-                    }
+            nodes.sort_unstable_by(f32::total_cmp);
+            for span in nodes.chunks_exact(2) {
+                let begin = pixel_edge(span[0], x1).max(x0);
+                let end = pixel_edge(span[1], x1).max(x0);
+                covered_pixel |= begin < end;
+                for x in begin..end {
+                    mask.put_pixel(x - x0, y - y0, image::Luma([255]));
                 }
-                // If no existing mask, subtracting from nothing → no-op
-            }
-            SelectionMode::Intersect => {
-                if let Some(ref existing) = canvas_state.selection_mask {
-                    let mut result = image::GrayImage::new(w, h);
-                    for y in 0..h {
-                        for x in 0..w {
-                            let new_val = lasso_mask.get_pixel(x, y).0[0];
-                            let old_val = existing.get_pixel(x, y).0[0];
-                            if new_val > 0 && old_val > 0 {
-                                result.put_pixel(x, y, image::Luma([new_val.min(old_val)]));
-                            }
-                        }
-                    }
-                    canvas_state.selection_mask = Some(result);
-                }
-                // No existing mask → intersection with nothing = empty
             }
         }
-
-        canvas_state.invalidate_selection_overlay();
+        if covered_pixel {
+            canvas_state.apply_selection_coverage((x0, y0, x1 - 1, y1 - 1), mode, |x, y| {
+                mask.get_pixel(x - x0, y - y0).0[0]
+            });
+        }
     }
 
     // ================================================================

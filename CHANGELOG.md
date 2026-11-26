@@ -6,6 +6,16 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ---
 
+## [1.5.5] - 2026-11-26
+
+- Expand and Contract selections faster, especially at larger radii.
+- Preview the lasso’s closing edge and keep your selection modes between sessions.
+- Switch between top-level menus by hovering while one is open.
+
+Contract now shrinks selections away from canvas edges, including Select All. Feather reaches as far as Expand at the same radius and preserves the original selection strength. Empty lasso gestures in Add or Subtract leave the selection and Undo history alone.
+
+The README now covers layered PSD support and `PaintFE --mcp`. Added the missing Script API labels and corrected the Windows CI dependency setup.
+
 ## [1.5.4] - 2026-11-24
 
 - Save smaller layered PSDs with lossless compression.
